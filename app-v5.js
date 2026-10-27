@@ -1962,6 +1962,7 @@
         let localPageStructureMutationToken = null;
         let remotePageMergeToken = null;
         let remotePageStructureApplyInProgress = false;
+        let remoteMergeCheckpointPending = null;
         let activePageStoreWrites = 0;
         const activePageStoreTransactions = new Set();
         const activeMetaStoreTransactions = new Set();
@@ -18885,6 +18886,7 @@
                         : await ensurePageDataLoaded(pageIndex, { keepLoaded: true });
                     assertContext?.();
                     if (!materializedPage) continue;
+                    const pageCheckpoint = markRemotePageBodyForCheckpoint(pageIndex);
                     materializedPage.sidePanel = buildPanel(cursor);
                     noteCollabPageFieldChanged(materializedPage, 'sidePanel');
                     renderPageSidePanel(pageIndex, materializedPage.sidePanel);
@@ -18894,10 +18896,7 @@
                             structureToken: options.structureToken || null
                         });
                     assertContext?.();
-                    if (!saved) {
-                        pageDirty.add(pageIndex);
-                        pageDirtyMode.set(pageIndex, 'full');
-                    }
+                    settleRemotePageBodyCheckpoint(pageCheckpoint, saved);
                     changed = true;
                 }
                 const effectivePage = state.pages[pageIndex] || page;
@@ -22251,6 +22250,32 @@
             };
         }
 
+        function markRemotePageBodyForCheckpoint(pageIndex) {
+            // Register the write before mutating a remote page. Even an early
+            // false return or thrown write must leave a body for replay to save.
+            pageDirty.add(pageIndex);
+            pageDirtyMode.set(pageIndex, 'full');
+            invalidatePageMutationCaches(pageIndex);
+            return {
+                ...captureDocumentPersistenceContext(), pageIndex,
+                page: state.pages[pageIndex],
+                generation: pageDirtyGeneration.get(pageIndex)
+            };
+        }
+
+        function settleRemotePageBodyCheckpoint(checkpoint, saved) {
+            if (!saved || collabPageStoreRewritePending
+                || !isDocumentPersistenceContextCurrent(checkpoint)
+                || state.pages[checkpoint.pageIndex] !== checkpoint.page
+                || pageDirtyGeneration.get(checkpoint.pageIndex) !== checkpoint.generation
+                || pendingStrokeOps.get(checkpoint.pageIndex)?.length
+                || strokeOpsQueue.some(op => op?.pageIndex === checkpoint.pageIndex)) return;
+            // A successful direct write needs no second page transaction in
+            // the final merge checkpoint. New local work keeps its dirty flag.
+            pageDirty.delete(checkpoint.pageIndex);
+            pageDirtyMode.delete(checkpoint.pageIndex);
+        }
+
         async function savePageToIndexedDb(pageIndex, page, options = {}) {
             const deferCheckpoint = () => { if (options.checkpointOutcome) options.checkpointOutcome.deferred = true; return false; };
             const structureToken = options.structureToken || null;
@@ -23475,10 +23500,11 @@
                 if (Number.isFinite(op?.pageIndex)) pendingIndices.add(op.pageIndex);
             });
             if (strokeOpsQueue.length > 0) {
-                await flushStrokeOpsQueue({
+                const opsSaved = await flushStrokeOpsQueue({
                     structureToken: options.structureToken || null
                 });
                 assertContext?.();
+                if (!opsSaved) throw new Error('Could not checkpoint pending strokes before collaborative merge');
             }
             const indices = Array.from(pendingIndices)
                 .filter(index => index >= 0 && index < state.pages.length)
@@ -23493,12 +23519,13 @@
                 pageDirtyMode.set(index, 'full');
             }
             if (indices.length > 0) {
-                await flushDirtyPages({
+                const pagesSaved = await flushDirtyPages({
                     force: true,
                     structureToken: options.structureToken || null,
                     assertContext
                 });
                 assertContext?.();
+                if (!pagesSaved) throw new Error('Could not checkpoint pending pages before collaborative merge');
             }
         }
 
@@ -23508,6 +23535,7 @@
         // previews, calendarPageConfig) goes into localStorage as a backup.
         async function saveToStorage(controller = null) {
             const persistenceContext = captureDocumentPersistenceContext();
+            const remoteCheckpointAtStart = remoteMergeCheckpointPending;
             if (controller?.aborted) return { ok: false, savedAt: null, cancelled: true };
             const checkpointOutcome = {};
             const opsFlushed = await flushStrokeOpsQueue({ abortSignal: controller, checkpointOutcome });
@@ -23535,6 +23563,20 @@
                     cancelled: !isDocumentPersistenceContextCurrent(persistenceContext),
                     deferred: !!checkpointOutcome.deferred && !checkpointOutcome.failed };
             }
+            // An interrupted merge may have promoted a photo register before
+            // receiving its body. A local checkpoint must not publish that pair
+            // while replay (or a properly stamped local edit) can still repair it.
+            // PDF rendering caches are excluded by getCollabBackgroundValue;
+            // custom photo bytes stay available when stroke arrays unload.
+            if (isDocumentPersistenceContextCurrent(remoteMergeCheckpointPending)
+                && state.pages.some(page => {
+                    const key = getCollabPageFieldKey(page?.pageId, 'background');
+                    const record = state.collabFields?.fields?.[key];
+                    return record && ihnStableStringify(getCollabBackgroundValue(page))
+                        !== ihnStableStringify(record.value);
+                })) {
+                return { ok: false, savedAt: null, cancelled: false, deferred: true };
+            }
             const checkpointGeneration = pageMutationGeneration;
             const savedAt = Date.now();
             const payload = buildMetaPayload(savedAt);
@@ -23556,6 +23598,20 @@
                 return { ok: false, savedAt, cancelled: false, deferred: true };
             }
             if (ok) {
+                if (remoteCheckpointAtStart
+                    && remoteMergeCheckpointPending === remoteCheckpointAtStart
+                    && isDocumentPersistenceContextCurrent(remoteCheckpointAtStart)
+                    && !remotePageMergeToken) {
+                    // A manual/local checkpoint can repair the same failed
+                    // merge without another peer packet. Its complete body and
+                    // metadata commit proves local durability, not a Drive save.
+                    remoteMergeCheckpointPending = null;
+                    state.pages.forEach((_, index) => invalidatePageMutationCaches(index));
+                    bumpDriveContentVersion();
+                    driveDirty = true;
+                    scheduleDriveSync();
+                    window.InhouseOfflineLibrary?.scheduleCapture();
+                }
                 confirmLocalSave(savedAt);
                 state.lastSavedAt = savedAt;
                 updateSaveTimestamp();
@@ -24591,6 +24647,7 @@
                 localPageStructureMutationToken = null;
             }
             documentSessionId += 1;
+            remoteMergeCheckpointPending = null;
             wakeDocumentBackgroundWork();
             documentSessionActivated = true;
             clearTimeout(localSaveRetryTimer);
@@ -24993,6 +25050,7 @@
                 || strokeOpsFlushInProgress
                 || strokeOpsQueue.length > 0
                 || pageDirty.size > 0
+                || isDocumentPersistenceContextCurrent(remoteMergeCheckpointPending)
                 || (includeMigration && hasPendingLegacyPageMigration())
             );
         }
@@ -28659,16 +28717,18 @@
                     }
                     return kept;
                 };
-                page.strokes = filterItems(page.strokes, 'stroke');
-                page.images = filterItems(page.images, 'image');
+                const keptStrokes = filterItems(page.strokes, 'stroke');
+                const keptImages = filterItems(page.images, 'image');
+                if (removedItems.length === 0) continue;
+                const pageCheckpoint = markRemotePageBodyForCheckpoint(removal.pageIndex);
+                page.strokes = keptStrokes;
+                page.images = keptImages;
                 const causalLosers = removedItems
                     .filter(removed => !removed.isWinnerPage)
                     .map(removed => removed.item);
                 if (causalLosers.length > 0) {
                     trackDeletedStrokeIds(page, causalLosers);
                 }
-                if (removedItems.length === 0) continue;
-
                 removedCount += removedItems.length;
                 page.strokeCount = getVisibleStrokeCount(page);
                 page.needsRedraw = true;
@@ -28678,10 +28738,7 @@
                         structureToken: options.structureToken || null
                     });
                 assertContext?.();
-                if (!saved) {
-                    pageDirty.add(removal.pageIndex);
-                    pageDirtyMode.set(removal.pageIndex, 'full');
-                }
+                settleRemotePageBodyCheckpoint(pageCheckpoint, saved);
                 if (activePageIndices.has(removal.pageIndex)) {
                     redrawPage(removal.pageIndex);
                 } else {
@@ -28754,8 +28811,10 @@
                 throw new Error('Timed out waiting for a local page-structure mutation');
             }
             let mergeCompleted = false;
+            let backgroundFieldCheckpoint = null;
             try {
             assertRemoteMergeContext();
+            const recoveringCheckpoint = isDocumentPersistenceContextCurrent(remoteMergeCheckpointPending);
             const selectedPageAtStart = state.pages[state.selection?.pageIndex];
             const selectionIdentity = selectedPageAtStart?.pageId ? {
                 pageId: selectedPageAtStart.pageId,
@@ -28816,6 +28875,7 @@
                 remoteNameFallback,
                 remoteCalendarFallback
             );
+            backgroundFieldCheckpoint = { local: localFieldMetadata, remote: remoteFieldMetadata };
             const mergedFieldMetadata = ihnMergeFieldMeta(
                 localFieldMetadata,
                 remoteFieldMetadata
@@ -29288,11 +29348,13 @@
                 newPage.strokeCount = getVisibleStrokeCount(newPage);
                 state.pages.push(newPage);
                 const newPageIdx = state.pages.length - 1;
+                const pageCheckpoint = markRemotePageBodyForCheckpoint(newPageIdx);
                 createPageElement(newPageIdx, false, false);
-                await savePageToIndexedDb(newPageIdx, newPage, {
+                const newPageSaved = await savePageToIndexedDb(newPageIdx, newPage, {
                     structureToken: mergeToken
                 });
                 assertRemoteMergeContext();
+                settleRemotePageBodyCheckpoint(pageCheckpoint, newPageSaved);
                 if ((newPage.backgroundSource === 'custom' || newPage.backgroundSource === 'pdf')
                     && Number.isFinite(newPage.pdfPageIndex)
                     && !newPage.backgroundImage) {
@@ -29625,13 +29687,26 @@
                 const originalBackgroundRecord = localFieldMetadata.fields?.[backgroundFieldKey] || null;
                 const remoteBackgroundRecord = remoteFieldMetadata.fields?.[backgroundFieldKey] || null;
                 const mergedBackgroundRecord = currentMergedFieldMetadata.fields?.[backgroundFieldKey] || null;
-                // The document registers were merged before hydrating pages.
-                // Compare against the original local register, not that already
-                // merged map, while still allowing a newer local edit to win.
-                const remoteBackgroundWins = structuralIdentityChanged || (
-                    ihnStableStringify(mergedBackgroundRecord) === ihnStableStringify(remoteBackgroundRecord)
-                    && ihnStableStringify(mergedBackgroundRecord) !== ihnStableStringify(originalBackgroundRecord)
+                // A failed merge can have installed the remote register before
+                // reaching this page. Compare the actual photo as well, and
+                // never pair a winning register with unrelated payload bytes.
+                const remoteBackgroundRecordWins = ihnStableStringify(mergedBackgroundRecord)
+                    === ihnStableStringify(remoteBackgroundRecord);
+                const localBackgroundMatchesRegister = ihnStableStringify(localBackgroundValue)
+                    === ihnStableStringify(resolvedBackgroundValue);
+                const remoteBackgroundNeedsApply = remoteBackgroundRecordWins && (
+                    !localBackgroundMatchesRegister
+                    || ihnStableStringify(mergedBackgroundRecord) !== ihnStableStringify(originalBackgroundRecord)
                 );
+                const remoteBackgroundMatchesRegister = remoteBackgroundNeedsApply
+                    && ihnStableStringify(getCollabBackgroundValue(remotePageData))
+                        === ihnStableStringify(resolvedBackgroundValue);
+                if (remoteBackgroundNeedsApply && !localBackgroundMatchesRegister
+                    && !remoteBackgroundMatchesRegister) {
+                    throw new Error('Collaborative photo does not match its background register');
+                }
+                const remoteBackgroundWins = structuralIdentityChanged
+                    || (remoteBackgroundNeedsApply && remoteBackgroundMatchesRegister);
                 const nextBackgroundSource = remoteBackgroundWins
                     ? String(resolvedBackgroundValue?.backgroundSource || remoteBackgroundSource)
                     : localBackgroundSource;
@@ -29686,6 +29761,7 @@
                     && JSON.stringify(remoteLegacyCoverStrokes) !== JSON.stringify(currentPage.legacyCoverStrokes || null);
 
                 if (strokeContentChanged || imageContentChanged || strokeIdsChanged || imageIdsChanged || deletedIdsChanged || deletionStampsChanged || dimensionChanged || sharedContentChanged || templateKindChanged || backgroundChanged || legacyCoverChanged) {
+                    const pageCheckpoint = markRemotePageBodyForCheckpoint(i);
                     currentPage.strokes = mergedStrokes;
                     currentPage.images = mergedImages;
                     currentPage.backgroundSource = nextBackgroundSource;
@@ -29734,6 +29810,7 @@
                             pageDirtyMode.set(i, 'full');
                         }
                     }
+                    settleRemotePageBodyCheckpoint(pageCheckpoint, savedPage);
                     if (activePageIndices.has(i)) {
                         redrawPage(i);
                     }
@@ -29769,6 +29846,7 @@
                     localPanelValue
                 );
                 if (ihnStableStringify(resolvedPanelValue) !== ihnStableStringify(localPanelValue)) {
+                    const pageCheckpoint = markRemotePageBodyForCheckpoint(i);
                     if (resolvedPanelValue === null) {
                         currentPage.sidePanel = null;
                     } else {
@@ -29792,6 +29870,7 @@
                             structureToken: mergeToken
                         });
                     assertRemoteMergeContext();
+                    settleRemotePageBodyCheckpoint(pageCheckpoint, panelSaved);
                     if (!panelSaved) {
                         pageDirty.add(i);
                         pageDirtyMode.set(i, 'full');
@@ -29855,7 +29934,7 @@
             }
             assertRemoteMergeContext();
 
-            if (changed) {
+            if (changed || recoveringCheckpoint) {
                 // Publish metadata only after every merged page body is durable.
                 // A failed page transaction must leave the previous complete
                 // checkpoint authoritative rather than exposing a torn merge.
@@ -29883,8 +29962,12 @@
                 if (!indexedDbSaved && !backupSaved) {
                     throw new Error('Could not create a durable merged metadata checkpoint');
                 }
+                remoteMergeCheckpointPending = null;
+                // An interrupted merge already changed memory. Its replay must
+                // still invalidate exports and schedule the PDF after recovery.
+                changed = true;
                 state.lastSavedAt = savedAt;
-                if (structureChanged) {
+                if (structureChanged || recoveringCheckpoint) {
                     renderAllPages();
                 } else {
                     scheduleVisiblePageUpdate(true);
@@ -29925,7 +30008,6 @@
                     }
                 }
             }
-            mergeCompleted = true;
             if (changed && !options.captureContentHash) {
                 // Drive can replace content without a local gesture. Retire
                 // the old P2P digest and relay that revision to existing peers.
@@ -29936,13 +30018,43 @@
                 getCollabStructureSnapshot(), state.calendarPageConfig, state.exportName,
                 getCollabFieldSnapshot()
             ) : '';
+            mergeCompleted = true;
             return { changed, hasLocalMerges, pagesNeedingPdfBackground, contentHash };
             } finally {
+                const sameDocument = () => isDocumentSessionTokenValid(mergeSessionToken)
+                    && String(state.driveFileId || '') === mergeFileId;
+                if (!mergeCompleted && sameDocument()) {
+                    // Register merging precedes page hydration. If an earlier
+                    // write interrupted the loop, a later photo still owns its
+                    // old body. Restore that body's original register before a
+                    // manual checkpoint or page-order rewrite can publish it.
+                    // A newer local register is never rolled back. Custom photo
+                    // bytes remain attached even when stroke arrays unload.
+                    if (backgroundFieldCheckpoint) {
+                        for (const page of state.pages) {
+                            if (!page?.pageId) continue;
+                            const key = getCollabPageFieldKey(page.pageId, 'background');
+                            const original = backgroundFieldCheckpoint.local.fields?.[key];
+                            const incoming = backgroundFieldCheckpoint.remote.fields?.[key];
+                            const current = state.collabFields?.fields?.[key];
+                            if (!incoming || !current
+                                || ihnStableStringify(current) !== ihnStableStringify(incoming)
+                                || ihnStableStringify(current) === ihnStableStringify(original)) continue;
+                            const bodyValue = ihnStableStringify(getCollabBackgroundValue(page));
+                            if (bodyValue === ihnStableStringify(current.value)
+                                || (original && bodyValue !== ihnStableStringify(original.value))) continue;
+                            if (original) state.collabFields.fields[key] = original;
+                            else delete state.collabFields.fields[key];
+                        }
+                    }
+                    remoteMergeCheckpointPending = { sessionToken: mergeSessionToken, fileId: mergeFileId };
+                }
                 // If rendering or persistence fails after the in-memory order
                 // changed, still retire the old numeric page mapping before
                 // releasing the lock. The unacknowledged remote snapshot will
                 // be replayed and complete any partially applied page content.
                 if (!mergeCompleted
+                    && sameDocument()
                     && collabPageStoreRewritePending
                     && !collabPageStoreRewritePromise) {
                     try {
@@ -29955,6 +30067,7 @@
                     remotePageStructureApplyInProgress = false;
                 }
                 releaseRemotePageMerge(mergeToken);
+                if (!mergeCompleted && sameDocument()) refreshSaveIndicatorState();
             }
         }
 
