@@ -64,6 +64,11 @@ pub struct GraphicsConfig {
     pub render_scale: f32,
     /// Lowest scale the dynamic resolution may use.
     pub min_render_scale: f32,
+    /// Most internal pixels (millions) whatever the window size: a 2880x1800
+    /// laptop panel or a 4K monitor renders at this budget and the
+    /// upscaler (FSR 1 EASU) fills the window, so a preset costs the same
+    /// GPU time on any display. 0 = no cap.
+    pub max_render_mpix: f32,
     /// Shadow map size per cascade (texels).
     pub shadow_resolution: u32,
     /// Cascades 0..pcss_cascades use contact-hardening PCSS; the rest a
@@ -100,6 +105,20 @@ pub struct GraphicsConfig {
     /// Sun shadow casters with a bounding radius under this many cascade
     /// texels are skipped (small facade details in the far cascades).
     pub shadow_caster_texels: f32,
+    /// Camera and object motion blur (McGuire reconstruction filter).
+    pub motion_blur: bool,
+    /// Gather samples per moving pixel (4-24).
+    pub motion_blur_samples: u32,
+    /// Froxel volumetric fog with shadowed sun and lamps: 0 off (analytic
+    /// height fog only), 1 coarse (16 px x 48 slices, 120 m), 2 (12 px x
+    /// 64, 160 m), 3 fine (8 px x 96, 200 m).
+    pub volumetric_fog: u32,
+    /// GTAO bent normals: cone-traced specular occlusion and bent diffuse
+    /// ambient (off: the Lagarde specular occlusion fit).
+    pub bent_normals: bool,
+    /// Edge-adaptive upscaling (FSR 1 EASU) when the render scale is below
+    /// 1; off: bilinear upsample with CAS.
+    pub fsr: bool,
     /// Show the frame profiler overlay at start (F11 toggles it).
     pub profiler_overlay: bool,
     /// Write the per-frame profile to this CSV file (empty: off).
@@ -117,6 +136,7 @@ impl Default for GraphicsConfig {
             dynamic_resolution: true,
             render_scale: 1.0,
             min_render_scale: 0.75,
+            max_render_mpix: 3.7,
             shadow_resolution: 2048,
             pcss_cascades: 2,
             far_cascade_interval: 2,
@@ -134,6 +154,11 @@ impl Default for GraphicsConfig {
             max_texture_size: 4096,
             lod_detail: 1.0,
             shadow_caster_texels: 2.5,
+            motion_blur: true,
+            motion_blur_samples: 10,
+            volumetric_fog: 2,
+            bent_normals: true,
+            fsr: true,
             profiler_overlay: false,
             profiler_csv: String::new(),
         };
@@ -162,6 +187,13 @@ impl GraphicsConfig {
         };
         self.render_scale = scale;
         self.min_render_scale = min_scale;
+        // Internal pixel budgets: ~1280x800, 1080p, 1440p, 4K.
+        self.max_render_mpix = match p {
+            Preset::Low => 1.0,
+            Preset::Medium => 2.1,
+            Preset::High => 3.7,
+            _ => 8.3,
+        };
         self.dynamic_resolution = dynamic;
         self.shadow_resolution = shadow;
         self.pcss_cascades = pcss;
@@ -192,6 +224,16 @@ impl GraphicsConfig {
             Preset::High => 2.5,
             _ => 1.5,
         };
+        // Research pass 2 (docs/rendering_research.md 9-12): motion blur off
+        // on Low, volumetric fog off on Low (analytic fog), bent normals from
+        // Medium, FSR 1 upscaling wherever the render scale drops below 1.
+        (self.motion_blur, self.motion_blur_samples, self.volumetric_fog, self.bent_normals) = match p {
+            Preset::Low => (false, 6, 0, false),
+            Preset::Medium => (true, 6, 1, true),
+            Preset::High => (true, 10, 2, true),
+            _ => (true, 16, 3, true),
+        };
+        self.fsr = true;
     }
 
     /// Clamps every value to what the renderer supports.
@@ -200,6 +242,7 @@ impl GraphicsConfig {
         self.target_fps = self.target_fps.clamp(20.0, 360.0);
         self.render_scale = self.render_scale.clamp(0.25, 2.0);
         self.min_render_scale = self.min_render_scale.clamp(0.25, self.render_scale);
+        self.max_render_mpix = if self.max_render_mpix <= 0.0 { 0.0 } else { self.max_render_mpix.clamp(0.3, 40.0) };
         // Multiples of 512 (1536 is the Medium size).
         self.shadow_resolution = (self.shadow_resolution.clamp(512, 8192).div_ceil(512) * 512).min(8192);
         self.pcss_cascades = self.pcss_cascades.min(4);
@@ -211,6 +254,8 @@ impl GraphicsConfig {
         self.max_texture_size = self.max_texture_size.clamp(256, 16384);
         self.lod_detail = self.lod_detail.clamp(0.1, 4.0);
         self.shadow_caster_texels = self.shadow_caster_texels.clamp(0.5, 16.0);
+        self.motion_blur_samples = self.motion_blur_samples.clamp(4, 24);
+        self.volumetric_fog = self.volumetric_fog.min(3);
         self
     }
 
@@ -234,24 +279,87 @@ impl GraphicsConfig {
         toml::to_string_pretty(self).unwrap_or_default()
     }
 
+    /// Largest render scale for a `width` x `height` output: `render_scale`
+    /// within the internal pixel budget (`max_render_mpix`).
+    pub fn max_scale_for(&self, width: u32, height: u32) -> f32 {
+        let px = width as f32 * height as f32;
+        if self.max_render_mpix <= 0.0 || px <= 0.0 {
+            return self.render_scale;
+        }
+        self.render_scale.min((self.max_render_mpix * 1e6 / px).sqrt()).max(0.25)
+    }
+
+    /// The automatic configuration for an adapter: [`Self::auto_preset`],
+    /// then the tuning of its GPU class. Intel integrated graphics
+    /// ([`is_intel_integrated`]) share LPDDR memory bandwidth with the CPU,
+    /// so they keep the Medium look (same lighting, AO, reflections, bloom,
+    /// camera stage) with the costs that scale with bandwidth cut: a 1.2 MP
+    /// internal budget upscaled by FSR 1 (2880x1800 -> ~1390x870), dynamic
+    /// resolution down to 35%, 1536 shadow maps with only the first cascade
+    /// PCSS and the far cascades every 4th frame, 12-step SSR, 2048 lights,
+    /// one shadowed spot, no motion blur or volumetric froxels (the analytic
+    /// fog and lamp glow stay), bent normals on (they cost ALU, not memory).
+    pub fn for_adapter(info: &wgpu::AdapterInfo) -> (Preset, GraphicsConfig) {
+        let preset = Self::auto_preset(info);
+        let mut c = Self::for_preset(preset);
+        if is_intel_integrated(info) {
+            c.apply_preset(Preset::Medium);
+            c.max_render_mpix = 1.2;
+            c.render_scale = 1.0;
+            c.min_render_scale = 0.35;
+            c.dynamic_resolution = true;
+            c.shadow_resolution = 1536;
+            c.pcss_cascades = 1;
+            c.far_cascade_interval = 4;
+            c.shadow_distance_scale = 0.8;
+            c.shadow_caster_texels = 4.0;
+            c.ssr_steps = 12;
+            c.max_lights = 2048;
+            c.spot_shadows = 1;
+            c.lod_detail = 0.75;
+            c.motion_blur = false;
+            c.volumetric_fog = 0;
+            c.bent_normals = true;
+            c.dof = false;
+            c.fsr = true;
+        }
+        (preset, c)
+    }
+
     /// Preset for an adapter: discrete GPUs get High (dynamic resolution
-    /// holds the frame rate on mid-range cards), integrated GPUs Low or
-    /// Medium, software rasterizers Low.
+    /// holds the frame rate on mid-range cards) except old or entry-level
+    /// ones and laptop parts with little VRAM (Medium); integrated GPUs
+    /// Low, or Medium for the strong ones (Radeon 780M class, Arc, Apple
+    /// M); software rasterizers (WARP, lavapipe) and unknown devices Low.
     pub fn auto_preset(info: &wgpu::AdapterInfo) -> Preset {
         let name = info.name.to_lowercase();
+        if crate::gpu::is_software(info) {
+            return Preset::Low;
+        }
         match info.device_type {
             wgpu::DeviceType::DiscreteGpu => {
-                // Old or entry-level discrete cards.
-                let entry = ["gtx 9", "gtx 10", "gt 1030", "rx 4", "rx 5", "r9 ", "mx1", "mx2", "mx3", "mx4", "mx5", "rx 6400", "rx 6500", "gtx 750", "quadro p"].iter().any(|k| name.contains(k));
+                // Old, entry-level or 2-4 GB discrete cards (GTX 1060 3/6 GB,
+                // RX 470-590, GTX 1650, MX laptop chips).
+                let entry = [
+                    "gtx 9", "gtx 10", "gt 1030", "gtx 1650", "gtx 1630", "rx 4", "rx 5", "r9 ", "r7 ", "mx1", "mx2", "mx3", "mx4", "mx5", "rx 6300", "rx 6400", "rx 6500", "rx 550", "gtx 750", "gtx 7", "quadro p", "quadro k", "quadro m", "rtx 3050 laptop", "rtx 2050", "arc a3",
+                ]
+                .iter()
+                .any(|k| name.contains(k));
                 if entry { Preset::Medium } else { Preset::High }
             }
             wgpu::DeviceType::IntegratedGpu => {
-                let strong = ["radeon 780m", "radeon 760m", "radeon 890m", "radeon 880m", "arc", "apple m"].iter().any(|k| name.contains(k));
+                let strong = ["radeon 780m", "radeon 760m", "radeon 890m", "radeon 880m", "radeon 8060s", "radeon 8050s", "arc", "apple m"].iter().any(|k| name.contains(k));
                 if strong { Preset::Medium } else { Preset::Low }
             }
             wgpu::DeviceType::Cpu | wgpu::DeviceType::VirtualGpu | wgpu::DeviceType::Other => Preset::Low,
         }
     }
+}
+
+/// Intel integrated graphics (PCI vendor 0x8086): UHD, Iris Xe and the Arc
+/// (Xe-LPG) iGPUs of Meteor / Lunar / Arrow Lake laptops.
+pub fn is_intel_integrated(info: &wgpu::AdapterInfo) -> bool {
+    info.vendor == 0x8086 && info.device_type == wgpu::DeviceType::IntegratedGpu
 }
 
 /// Internal resolution controller: keeps the GPU frame time under the
@@ -273,12 +381,20 @@ impl DynamicResolution {
 
     /// Feeds one frame's GPU time (ms); returns the scale to use.
     pub fn update(&mut self, gpu_ms: f32, cfg: &GraphicsConfig) -> f32 {
-        let max = cfg.render_scale;
+        self.update_capped(gpu_ms, cfg, cfg.render_scale)
+    }
+
+    /// [`Self::update`] with the largest scale for the output size
+    /// ([`GraphicsConfig::max_scale_for`]).
+    pub fn update_capped(&mut self, gpu_ms: f32, cfg: &GraphicsConfig, max: f32) -> f32 {
+        let max = max.min(cfg.render_scale);
+        let min = cfg.min_render_scale.min(max);
         if !cfg.dynamic_resolution {
             self.scale = max;
             return max;
         }
         if gpu_ms <= 0.0 {
+            self.scale = self.scale.clamp(min, max);
             return self.scale;
         }
         self.avg_ms = if self.avg_ms == 0.0 { gpu_ms } else { self.avg_ms * 0.85 + gpu_ms * 0.15 };
@@ -295,12 +411,12 @@ impl DynamicResolution {
             self.under = 0;
         }
         let step = 0.05;
-        if self.over > 15 && self.scale > cfg.min_render_scale {
+        if self.over > 15 && self.scale > min {
             // GPU time scales roughly with pixel count (scale^2).
             let want = self.scale * (budget / self.avg_ms).sqrt();
-            self.scale = (want.max(self.scale - 0.15)).max(cfg.min_render_scale);
+            self.scale = (want.max(self.scale - 0.15)).max(min);
             self.scale = (self.scale / step).floor() * step;
-            self.scale = self.scale.max(cfg.min_render_scale);
+            self.scale = self.scale.max(min);
             self.over = 0;
             self.avg_ms = 0.0;
         } else if self.under > 60 && self.scale < max {
@@ -308,7 +424,7 @@ impl DynamicResolution {
             self.under = 0;
             self.avg_ms = 0.0;
         }
-        self.scale = self.scale.clamp(cfg.min_render_scale, max);
+        self.scale = self.scale.clamp(min, max);
         self.scale
     }
 }
@@ -328,6 +444,23 @@ mod tests {
         assert!(!l.ssr && h.ssr && h.taa && h.ssao);
         assert_eq!(h.render_scale, 1.0);
         assert_eq!(GraphicsConfig::default(), h);
+    }
+
+    #[test]
+    fn auto_preset_by_adapter() {
+        let info = |name: &str, t: wgpu::DeviceType| wgpu::AdapterInfo { name: name.into(), device_type: t, ..wgpu::AdapterInfo::new(wgpu::DeviceType::Other, wgpu::Backend::Dx12) };
+        assert_eq!(GraphicsConfig::auto_preset(&info("NVIDIA GeForce GTX 1060 6GB", wgpu::DeviceType::DiscreteGpu)), Preset::Medium);
+        assert_eq!(GraphicsConfig::auto_preset(&info("Radeon RX 570 Series", wgpu::DeviceType::DiscreteGpu)), Preset::Medium);
+        assert_eq!(GraphicsConfig::auto_preset(&info("NVIDIA GeForce RTX 3070", wgpu::DeviceType::DiscreteGpu)), Preset::High);
+        assert_eq!(GraphicsConfig::auto_preset(&info("Intel(R) Iris(R) Xe Graphics", wgpu::DeviceType::IntegratedGpu)), Preset::Low);
+        assert_eq!(GraphicsConfig::auto_preset(&info("Microsoft Basic Render Driver", wgpu::DeviceType::Cpu)), Preset::Low);
+        // Intel Arc (Meteor Lake) iGPU: the Medium look on a 1.2 MP budget.
+        let arc = wgpu::AdapterInfo { vendor: 0x8086, ..info("Intel(R) Arc(TM) Graphics", wgpu::DeviceType::IntegratedGpu) };
+        let (_, c) = GraphicsConfig::for_adapter(&arc);
+        assert!(!c.motion_blur && c.volumetric_fog == 0 && c.ssao && c.ssr && c.bloom && c.fsr);
+        let s = c.max_scale_for(2880, 1800);
+        assert!((2880.0 * s * 1800.0 * s) <= 1.25e6 && s > 0.45, "{s}");
+        assert_eq!(GraphicsConfig::for_preset(Preset::High).max_scale_for(1920, 1080), 1.0);
     }
 
     #[test]
