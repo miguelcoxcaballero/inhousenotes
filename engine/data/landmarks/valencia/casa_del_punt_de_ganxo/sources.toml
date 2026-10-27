@@ -35,7 +35,20 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Valencia_Casa_del_Punt_de_Ganxo_from_the_southwest.jpg"
+file = "photos/02_La_Seu_Valencia_Valencia_Spain_panoramio_8.jpg"
+title = "File:La Seu, València, Valencia, Spain - panoramio (8).jpg"
+url = "https://commons.wikimedia.org/wiki/File:La_Seu%2C_Val%C3%A8ncia%2C_Valencia%2C_Spain_-_panoramio_%288%29.jpg"
+author = "chisloup"
+license = "CC BY 3.0"
+width = 1280
+height = 1707
+camera = [-2.46, 45.27]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/03_Valencia_Casa_del_Punt_de_Ganxo_from_the_southwest.jpg"
 title = "File:Valencia Casa del Punt de Ganxo from the southwest.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_Casa_del_Punt_de_Ganxo_from_the_southwest.jpg"
 author = "Ymblanter"
@@ -48,7 +61,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Edificio_de_la_Placa_de_l_Almoina_325882528.jpg"
+file = "photos/04_Edificio_de_la_Placa_de_l_Almoina_325882528.jpg"
 title = "File:Edificio de la Plaça de l'Almoina (325882528).jpg"
 url = "https://commons.wikimedia.org/wiki/File:Edificio_de_la_Pla%C3%A7a_de_l%27Almoina_%28325882528%29.jpg"
 author = "Visentico / Sento"
@@ -61,7 +74,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Belle_facade_d_immeuble.jpg"
+file = "photos/05_Belle_facade_d_immeuble.jpg"
 title = "File:Belle façade d'immeuble.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Belle_fa%C3%A7ade_d%27immeuble.JPG"
 author = "Toutaitanous"
@@ -73,7 +86,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Mensula_de_la_facana_posterior_de_la_casa_del_Punt_de_Ganxo_.jpg"
+file = "photos/06_Mensula_de_la_facana_posterior_de_la_casa_del_Punt_de_Ganxo_.jpg"
 title = "File:Mènsula de la façana posterior de la casa del Punt de Ganxo, València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:M%C3%A8nsula_de_la_fa%C3%A7ana_posterior_de_la_casa_del_Punt_de_Ganxo%2C_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -85,7 +98,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Facana_posterior_de_la_casa_del_Punt_de_Ganxo_Valencia.jpg"
+file = "photos/07_Facana_posterior_de_la_casa_del_Punt_de_Ganxo_Valencia.jpg"
 title = "File:Façana posterior de la casa del Punt de Ganxo, València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_posterior_de_la_casa_del_Punt_de_Ganxo%2C_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -97,7 +110,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Casa_del_Punt_de_Ganxo_02.jpg"
+file = "photos/08_Casa_del_Punt_de_Ganxo_02.jpg"
 title = "File:Casa del Punt de Ganxo 02.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Casa_del_Punt_de_Ganxo_02.jpg"
 author = "Dorieo"
@@ -109,7 +122,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Placa_de_l_Arquebisbe_Valencia_03.jpg"
+file = "photos/09_Placa_de_l_Arquebisbe_Valencia_03.jpg"
 title = "File:Plaça de l'Arquebisbe, València 03.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Pla%C3%A7a_de_l%27Arquebisbe%2C_Val%C3%A8ncia_03.jpg"
 author = "Dorieo"
@@ -121,7 +134,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_Edificio_Punto_de_Gancho_Valencia.jpg"
+file = "photos/10_Edificio_Punto_de_Gancho_Valencia.jpg"
 title = "File:Edificio \"Punto de Gancho\". Valencia.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Edificio_%22Punto_de_Gancho%22._Valencia.jpg"
 author = "José Luis Filpo Cabana"
@@ -134,7 +147,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/10_292_Casa_del_Punt_de_Ganxo_Valencia_facana_que_dona_a_la_pla.jpg"
+file = "photos/11_292_Casa_del_Punt_de_Ganxo_Valencia_facana_que_dona_a_la_pla.jpg"
 title = "File:292 Casa del Punt de Ganxo (València), façana que dóna a la plaça de l'Arquebisbe.jpg"
 url = "https://commons.wikimedia.org/wiki/File:292_Casa_del_Punt_de_Ganxo_%28Val%C3%A8ncia%29%2C_fa%C3%A7ana_que_d%C3%B3na_a_la_pla%C3%A7a_de_l%27Arquebisbe.jpg"
 author = "Enric"
@@ -146,7 +159,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/11_Casa_del_Punt_de_Ganxo_Valencia_05.jpg"
+file = "photos/12_Casa_del_Punt_de_Ganxo_Valencia_05.jpg"
 title = "File:Casa del Punt de Ganxo, Valencia 05.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Casa_del_Punt_de_Ganxo%2C_Valencia_05.jpg"
 author = "Dorieo"
@@ -154,19 +167,6 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_La_Seu_Valencia_Valencia_Spain_panoramio_8.jpg"
-title = "File:La Seu, València, Valencia, Spain - panoramio (8).jpg"
-url = "https://commons.wikimedia.org/wiki/File:La_Seu%2C_Val%C3%A8ncia%2C_Valencia%2C_Spain_-_panoramio_%288%29.jpg"
-author = "chisloup"
-license = "CC BY 3.0"
-width = 1280
-height = 1707
-camera = [-2.46, 45.27]
-exterior = "unknown"
 selected = false
 side = ""
 
@@ -183,19 +183,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_Valencia_Museo_de_la_Ciudad_PM_51914.jpg"
-title = "File:València, Museo de la Ciudad-PM 51914.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia%2C_Museo_de_la_Ciudad-PM_51914.jpg"
-author = "PMRMaeyaert"
-license = "CC BY-SA 3.0 es"
-width = 500
-height = 735
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Valencia_Placa_de_l_Almoina_PM_51922.jpg"
+file = "photos/14_Valencia_Placa_de_l_Almoina_PM_51922.jpg"
 title = "File:València, Plaça de l'Almoina-PM 51922.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia%2C_Pla%C3%A7a_de_l%27Almoina-PM_51922.jpg"
 author = "PMRMaeyaert"
@@ -207,7 +195,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Casa_Sancho_o_del_Punt_de_Gantxo_de_Manuel_Peris_Ferrando_en.jpg"
+file = "photos/15_Casa_Sancho_o_del_Punt_de_Gantxo_de_Manuel_Peris_Ferrando_en.jpg"
 title = "File:Casa Sancho o del Punt de Gantxo de Manuel Peris Ferrando en la plaza de la Almoina, 4, 1906.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Casa_Sancho_o_del_Punt_de_Gantxo_de_Manuel_Peris_Ferrando_en_la_plaza_de_la_Almoina%2C_4%2C_1906.jpg"
 author = "Juan Mayordomo"

@@ -49,7 +49,32 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Almodi_P1130824.jpg"
+file = "photos/03_Almudin_de_Valencia_001.jpg"
+title = "File:Almudín de Valencia - 001.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Almud%C3%ADn_de_Valencia_-_001.jpg"
+author = "Américo Toledano"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+camera = [-47.56, 13.93]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/04_Almodi_de_Valencia_porxo.jpg"
+title = "File:Almodí de València, porxo.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Almod%C3%AD_de_Val%C3%A8ncia%2C_porxo.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 948
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_Almodi_P1130824.jpg"
 title = "File:Almodí P1130824.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Almod%C3%AD_P1130824.JPG"
 author = "Pere prlpz ( talk )"
@@ -61,7 +86,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Facana_de_l_Almodi_a_la_Placa_de_Sant_Lluis_Bertran.jpg"
+file = "photos/06_Palau_de_Colomina_i_Almodi_Valencia_01.jpg"
+title = "File:Palau de Colomina i Almodí, València 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_Colomina_i_Almod%C3%AD%2C_Val%C3%A8ncia_01.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_Facana_de_l_Almodi_a_la_Placa_de_Sant_Lluis_Bertran.jpg"
 title = "File:Façana de l'Almodí a la Plaça de Sant Lluís Bertran.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_de_l%27Almod%C3%AD_a_la_Pla%C3%A7a_de_Sant_Llu%C3%ADs_Bertran.jpg"
 author = "Dorieo"
@@ -73,7 +110,91 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Placa_de_l_Almoina_des_de_la_catedral_Valencia.jpg"
+file = "photos/08_204_L_Almodi_Valencia_angle_sud_est.jpg"
+title = "File:204 L'Almodí (València), angle sud-est.jpg"
+url = "https://commons.wikimedia.org/wiki/File:204_L%27Almod%C3%AD_%28Val%C3%A8ncia%29%2C_angle_sud-est.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/09_203_L_Almodi_Valencia_facana_est_pl_Sant_Lluis_Bertran.jpg"
+title = "File:203 L'Almodí (València), façana est, pl. Sant Lluís Bertran.jpg"
+url = "https://commons.wikimedia.org/wiki/File:203_L%27Almod%C3%AD_%28Val%C3%A8ncia%29%2C_fa%C3%A7ana_est%2C_pl._Sant_Llu%C3%ADs_Bertran.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/10_Porxo_de_l_Almodi_Valencia.jpg"
+title = "File:Porxo de l'Almodí, València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Porxo_de_l%27Almod%C3%AD%2C_Val%C3%A8ncia.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 920
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/11_Almodi_P1130828.jpg"
+title = "File:Almodí P1130828.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Almod%C3%AD_P1130828.JPG"
+author = "Pere prlpz ( talk )"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/12_Valencia_Almodi_1.jpg"
+title = "File:Valencia - Almodí 1.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Almod%C3%AD_1.jpg"
+author = "Zarateman"
+license = "CC0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/13_The_Almudin_and_Fuente_de_San_Lluis_Bertran_in_Ciutat_Vella_.jpg"
+title = "File:The Almudín and Fuente de San Lluis Bertran in Ciutat Vella, Valencia, Spain.jpg"
+url = "https://commons.wikimedia.org/wiki/File:The_Almud%C3%ADn_and_Fuente_de_San_Lluis_Bertran_in_Ciutat_Vella%2C_Valencia%2C_Spain.jpg"
+author = "MCAE Consulting"
+license = "CC0"
+width = 1280
+height = 1075
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/14_206_Font_de_la_pl_Sant_Lluis_Bertran_Valencia_al_fons_l_Almo.jpg"
+title = "File:206 Font de la pl. Sant Lluís Bertran (València), al fons l'Almodí.jpg"
+url = "https://commons.wikimedia.org/wiki/File:206_Font_de_la_pl._Sant_Llu%C3%ADs_Bertran_%28Val%C3%A8ncia%29%2C_al_fons_l%27Almod%C3%AD.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/15_Placa_de_l_Almoina_des_de_la_catedral_Valencia.jpg"
 title = "File:Plaça de l'Almoina des de la catedral, València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Pla%C3%A7a_de_l%27Almoina_des_de_la_catedral%2C_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -86,31 +207,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_203_L_Almodi_Valencia_facana_est_pl_Sant_Lluis_Bertran.jpg"
-title = "File:203 L'Almodí (València), façana est, pl. Sant Lluís Bertran.jpg"
-url = "https://commons.wikimedia.org/wiki/File:203_L%27Almod%C3%AD_%28Val%C3%A8ncia%29%2C_fa%C3%A7ana_est%2C_pl._Sant_Llu%C3%ADs_Bertran.jpg"
-author = "Enric"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/07_Almodi_P1130828.jpg"
-title = "File:Almodí P1130828.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Almod%C3%AD_P1130828.JPG"
-author = "Pere prlpz ( talk )"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Facana_de_l_Almodi_a_la_Placa_de_Sant_Lluis_Bertran_02.jpg"
+file = "photos/16_Facana_de_l_Almodi_a_la_Placa_de_Sant_Lluis_Bertran_02.jpg"
 title = "File:Façana de l'Almodí a la Plaça de Sant Lluís Bertran 02.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_de_l%27Almod%C3%AD_a_la_Pla%C3%A7a_de_Sant_Llu%C3%ADs_Bertran_02.jpg"
 author = "Dorieo"
@@ -118,103 +215,6 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Almudin_de_Valencia_001.jpg"
-title = "File:Almudín de Valencia - 001.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Almud%C3%ADn_de_Valencia_-_001.jpg"
-author = "Américo Toledano"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-camera = [-47.56, 13.93]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_204_L_Almodi_Valencia_angle_sud_est.jpg"
-title = "File:204 L'Almodí (València), angle sud-est.jpg"
-url = "https://commons.wikimedia.org/wiki/File:204_L%27Almod%C3%AD_%28Val%C3%A8ncia%29%2C_angle_sud-est.jpg"
-author = "Enric"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Almodi_de_Valencia_porxo.jpg"
-title = "File:Almodí de València, porxo.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Almod%C3%AD_de_Val%C3%A8ncia%2C_porxo.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 948
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_Palau_de_Colomina_i_Almodi_Valencia_01.jpg"
-title = "File:Palau de Colomina i Almodí, València 01.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_Colomina_i_Almod%C3%AD%2C_Val%C3%A8ncia_01.jpg"
-author = "Dorieo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Valencia_Almodi_1.jpg"
-title = "File:Valencia - Almodí 1.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Almod%C3%AD_1.jpg"
-author = "Zarateman"
-license = "CC0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_The_Almudin_and_Fuente_de_San_Lluis_Bertran_in_Ciutat_Vella_.jpg"
-title = "File:The Almudín and Fuente de San Lluis Bertran in Ciutat Vella, Valencia, Spain.jpg"
-url = "https://commons.wikimedia.org/wiki/File:The_Almud%C3%ADn_and_Fuente_de_San_Lluis_Bertran_in_Ciutat_Vella%2C_Valencia%2C_Spain.jpg"
-author = "MCAE Consulting"
-license = "CC0"
-width = 1280
-height = 1075
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_206_Font_de_la_pl_Sant_Lluis_Bertran_Valencia_al_fons_l_Almo.jpg"
-title = "File:206 Font de la pl. Sant Lluís Bertran (València), al fons l'Almodí.jpg"
-url = "https://commons.wikimedia.org/wiki/File:206_Font_de_la_pl._Sant_Llu%C3%ADs_Bertran_%28Val%C3%A8ncia%29%2C_al_fons_l%27Almod%C3%AD.jpg"
-author = "Enric"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_Porxo_de_l_Almodi_Valencia.jpg"
-title = "File:Porxo de l'Almodí, València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Porxo_de_l%27Almod%C3%AD%2C_Val%C3%A8ncia.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 920
-exterior = "unknown"
 selected = false
 side = ""
 

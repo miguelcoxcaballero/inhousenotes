@@ -46,21 +46,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Campanario_iglesia_Santa_Cruz_desde_la_calle_Na_Jordana.jpg"
-title = "File:Campanario iglesia Santa Cruz desde la calle Na Jordana.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Campanario_iglesia_Santa_Cruz_desde_la_calle_Na_Jordana.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-camera = [-326.33, -54.83]
-heading = 109.8
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/04_Columnes_de_la_facana_de_l_esglesia_del_Carme_Valencia.jpg"
+file = "photos/03_Columnes_de_la_facana_de_l_esglesia_del_Carme_Valencia.jpg"
 title = "File:Columnes de la façana de l'església del Carme, València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Columnes_de_la_fa%C3%A7ana_de_l%27esgl%C3%A9sia_del_Carme%2C_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -72,9 +58,21 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Barrio_del_Carmen_21_A.jpg"
+file = "photos/04_Barrio_del_Carmen_21_A.jpg"
 title = "File:Barrio del Carmen 21.A.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Barrio_del_Carmen_21.A.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_Exterior_de_la_Iglesia_de_la_Santa_Cruz_Valencia_02.jpg"
+title = "File:Exterior de la Iglesia de la Santa Cruz, Valencia 02.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Exterior_de_la_Iglesia_de_la_Santa_Cruz%2C_Valencia_02.jpg"
 author = "19Tarrestnom65"
 license = "CC BY-SA 4.0"
 width = 1280
@@ -122,43 +120,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_Exterior_de_la_Iglesia_de_la_Santa_Cruz_Valencia_02.jpg"
-title = "File:Exterior de la Iglesia de la Santa Cruz, Valencia 02.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Exterior_de_la_Iglesia_de_la_Santa_Cruz%2C_Valencia_02.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Maqueta_de_la_facana_de_l_esglesia_del_convent_del_Carme_Val.jpg"
-title = "File:Maqueta de la façana de l'església del convent del Carme, València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Maqueta_de_la_fa%C3%A7ana_de_l%27esgl%C3%A9sia_del_convent_del_Carme%2C_Val%C3%A8ncia.jpg"
+file = "photos/09_Facana_i_cupula_convent_del_Carme_de_Valencia.jpg"
+title = "File:Façana i cúpula, convent del Carme de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_i_c%C3%BApula%2C_convent_del_Carme_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1842
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Convent_del_Carme_P1400009.jpg"
-title = "File:Convent del Carme P1400009.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Convent_del_Carme_P1400009.JPG"
-author = "Pere prlpz ( talk )"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 1707
+height = 1718
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_Valencia_Reial_Monestir_de_Nostra_Senyora_del_Carme_Centre_d.jpg"
+file = "photos/10_Valencia_Reial_Monestir_de_Nostra_Senyora_del_Carme_Centre_d.jpg"
 title = "File:Valencia - Reial Monestir de Nostra Senyora del Carme (Centre del Carme) 04.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Reial_Monestir_de_Nostra_Senyora_del_Carme_%28Centre_del_Carme%29_04.jpg"
 author = "Zarateman"
@@ -170,7 +144,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Carmen1.jpg"
+file = "photos/11_Carmen1.jpg"
 title = "File:Carmen1.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Carmen1.JPG"
 author = "Un valencià"
@@ -182,20 +156,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_Concentracio_suport_a_Perez_Pont_6.jpg"
-title = "File:Concentració suport a Pérez Pont 6.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Concentraci%C3%B3_suport_a_P%C3%A9rez_Pont_6.jpg"
-author = "Francesc Fort"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 961
-camera = [-45.49, 34.11]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_673_Esglesia_del_Carme_Valencia_facana_sud_campanar_d_espada.jpg"
+file = "photos/12_673_Esglesia_del_Carme_Valencia_facana_sud_campanar_d_espada.jpg"
 title = "File:673 Església del Carme (València), façana sud, campanar d'espadanya.jpg"
 url = "https://commons.wikimedia.org/wiki/File:673_Esgl%C3%A9sia_del_Carme_%28Val%C3%A8ncia%29%2C_fa%C3%A7ana_sud%2C_campanar_d%27espadanya.jpg"
 author = "Enric"
@@ -207,13 +168,13 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Facana_i_cupula_convent_del_Carme_de_Valencia.jpg"
-title = "File:Façana i cúpula, convent del Carme de València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_i_c%C3%BApula%2C_convent_del_Carme_de_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
+file = "photos/13_Exterior_de_la_Iglesia_de_la_Santa_Cruz_Valencia_06.jpg"
+title = "File:Exterior de la Iglesia de la Santa Cruz, Valencia 06.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Exterior_de_la_Iglesia_de_la_Santa_Cruz%2C_Valencia_06.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
 width = 1280
-height = 1718
+height = 1707
 exterior = true
 selected = false
 side = ""
