@@ -32,8 +32,8 @@ width = 1280
 height = 960
 camera = [18.71, -16.97]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "E"
 
 [[photo]]
 file = "photos/02_Torres_de_Cuart_Valencia_Espana_2014_06_30_DD_89.jpg"
@@ -44,8 +44,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 2056
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W"
 
 [[photo]]
 file = "photos/03_Torres_de_Cuart_Valencia_Espana_2014_06_30_DD_90.jpg"
@@ -68,8 +68,8 @@ license = "Public domain"
 width = 1280
 height = 1260
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W"
 
 [[photo]]
 file = "photos/05_Torres_de_Cuart_Valencia_Espana_2014_06_30_DD_92.jpg"
@@ -79,7 +79,7 @@ author = "Diego Delso"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 849
-exterior = true
+exterior = false
 selected = false
 side = ""
 
@@ -92,7 +92,7 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1005
 camera = [7.66, 1.88]
-exterior = true
+exterior = false
 selected = false
 side = ""
 
@@ -106,8 +106,8 @@ width = 1280
 height = 1707
 camera = [-4.73, 12.04]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "top"
 
 [[photo]]
 file = "photos/08_El_Carme_Valencia_Valencia_Spain_panoramio.jpg"
@@ -132,8 +132,8 @@ width = 1280
 height = 960
 camera = [-18.83, 1.01]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "gate passage"
 
 [[photo]]
 file = "photos/10_Torres_de_Quart_Valencia_035.jpg"
@@ -145,8 +145,8 @@ width = 1280
 height = 2158
 camera = [-21.96, -195.76]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "E"
 
 [[photo]]
 file = "photos/11_At_Valencia_2025_368.jpg"
@@ -158,8 +158,8 @@ width = 1280
 height = 1920
 camera = [-36.61, 26.04]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SE"
 
 [[photo]]
 file = "photos/12_Torres_de_Quart_de_Valencia.jpg"
@@ -171,8 +171,8 @@ width = 1280
 height = 853
 camera = [-2.55, 4.09]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W"
 
 [[photo]]
 file = "photos/13_At_Valencia_2025_667.jpg"
@@ -185,8 +185,8 @@ height = 1707
 camera = [-15.55, -6.48]
 heading = 147.7
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W"
 
 [[photo]]
 file = "photos/14_Quart1.jpg"
@@ -197,8 +197,8 @@ license = "Public domain"
 width = 1280
 height = 857
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W"
 
 [[photo]]
 file = "photos/15_Merlets_i_terrassa_de_les_Torres_de_Quart_de_Valencia.jpg"
@@ -209,8 +209,8 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "top"
 
 [[photo]]
 file = "photos/16_Palau_del_Marques_de_Dosaigues_P1130975.jpg"
@@ -220,9 +220,282 @@ author = "Pere López"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 1707
-exterior = true
+exterior = false
 selected = false
 side = ""
+
+[[photo]]
+file = "photos/17_2023_Valencia_TorresDeQuart01.jpg"
+title = "File:2023 Valencia-TorresDeQuart01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:2023_Valencia-TorresDeQuart01.jpg"
+author = "CésarOP"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "E"
+notes = "inner face from Placa de Santa Ursula; [[view]]"
+
+[[photo]]
+file = "photos/18_2023_Valencia_TorresDeQuart02.jpg"
+title = "File:2023 Valencia-TorresDeQuart02.jpg"
+url = "https://commons.wikimedia.org/wiki/File:2023_Valencia-TorresDeQuart02.jpg"
+author = "CésarOP"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "SE"
+notes = "south tower from Carrer de Quart; [[view]]"
+
+[[photo]]
+file = "photos/19_Torres_de_Cuart_Valencia_Espa_a_2014_06_30_DD_91.jpg"
+title = "File:Torres de Cuart, Valencia, España, 2014-06-30, DD 91.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Torres_de_Cuart,_Valencia,_España,_2014-06-30,_DD_91.JPG"
+author = "Diego Delso"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 2039
+exterior = true
+selected = true
+side = "SE"
+notes = "inner stair and south tower east face, close"
+
+[[photo]]
+file = "photos/20_Torres_de_Cuart_Valencia_Espa_a_2014_06_30_DD_94.jpg"
+title = "File:Torres de Cuart, Valencia, España, 2014-06-30, DD 94.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Torres_de_Cuart,_Valencia,_España,_2014-06-30,_DD_94.JPG"
+author = "Diego Delso"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 2219
+exterior = true
+selected = true
+side = "top"
+notes = "gate terrace, upper wall and stairs from above"
+
+[[photo]]
+file = "photos/21_Torres_de_Cuart_Valencia_Espa_a_2014_06_30_DD_99.jpg"
+title = "File:Torres de Cuart, Valencia, España, 2014-06-30, DD 99.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Torres_de_Cuart,_Valencia,_España,_2014-06-30,_DD_99.JPG"
+author = "Diego Delso"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1841
+exterior = true
+selected = true
+side = "top"
+notes = "tower terrace, stair turret dome"
+
+[[photo]]
+file = "photos/22_Torres_de_Cuart_Valencia_Espa_a_2014_06_30_DD_104.jpg"
+title = "File:Torres de Cuart, Valencia, España, 2014-06-30, DD 104.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Torres_de_Cuart,_Valencia,_España,_2014-06-30,_DD_104.JPG"
+author = "Diego Delso"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1810
+exterior = true
+selected = true
+side = "top"
+notes = "tower crown merlons seen from the other tower"
+
+[[photo]]
+file = "photos/23_Torres_de_Cuart_Valencia_Espa_a_2014_06_30_DD_105.jpg"
+title = "File:Torres de Cuart, Valencia, España, 2014-06-30, DD 105.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Torres_de_Cuart,_Valencia,_España,_2014-06-30,_DD_105.JPG"
+author = "Diego Delso"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "top"
+notes = "machicolated gallery and wall-walk over the gate"
+
+[[photo]]
+file = "photos/24_Torres_de_Cuart_Valencia_Espa_a_2014_06_30_DD_106.jpg"
+title = "File:Torres de Cuart, Valencia, España, 2014-06-30, DD 106.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Torres_de_Cuart,_Valencia,_España,_2014-06-30,_DD_106.JPG"
+author = "Diego Delso"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 853
+exterior = false
+selected = false
+side = ""
+notes = "view from the top, not of the towers"
+
+[[photo]]
+file = "photos/25_Torres_de_Quart_upper_view_of_towers_Valencia_Spain.jpg"
+title = "File:Torres de Quart - upper view of towers - Valencia Spain.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Torres_de_Quart_-_upper_view_of_towers_-_Valencia_Spain.jpg"
+author = "MCAE Consulting"
+license = "CC0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "W"
+notes = "outer face looking up, gate recess"
+
+[[photo]]
+file = "photos/26_Top_of_the_Torres_de_Quart_Aug_2019.jpg"
+title = "File:Top of the Torres de Quart, Aug 2019.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Top_of_the_Torres_de_Quart,_Aug_2019.jpg"
+author = "Katarzyna Chwaleba"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "top"
+notes = "stair turret dome and merlons"
+
+[[photo]]
+file = "photos/27_Torres_de_Quart_Valencia_034.jpg"
+title = "File:Torres de Quart - Valencia - 034.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Torres_de_Quart_-_Valencia_-_034.jpg"
+author = "Américo Toledano"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 2022
+exterior = false
+selected = false
+side = ""
+notes = "interior: pointed arch from inside the hall"
+
+[[photo]]
+file = "photos/28_At_Valencia_2025_346.jpg"
+title = "File:At Valencia 2025 346.jpg"
+url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_346.jpg"
+author = "Photograph by Mike Peel (www.mikepeel.net)."
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1920
+exterior = true
+selected = true
+side = "N"
+notes = "north tower from the garden; [[view]]; tapial banding"
+
+[[photo]]
+file = "photos/29_At_Valencia_2025_361.jpg"
+title = "File:At Valencia 2025 361.jpg"
+url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_361.jpg"
+author = "Photograph by Mike Peel (www.mikepeel.net)."
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "W"
+notes = "gate wall between the towers from below: corbels, shields"
+
+[[photo]]
+file = "photos/30_Vista_lateral_de_les_torres_de_Quart_Val_ncia.jpg"
+title = "File:Vista lateral de les torres de Quart, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Vista_lateral_de_les_torres_de_Quart,_València.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1909
+exterior = true
+selected = true
+side = "SE"
+notes = "south tower from the south-east"
+
+[[photo]]
+file = "photos/31_Torres_quart_frontal.jpg"
+title = "File:Torres quart frontal.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Torres_quart_frontal.jpg"
+author = "Felivet"
+license = "Public domain"
+width = 1280
+height = 1934
+exterior = true
+selected = true
+side = "SW"
+notes = "both towers from the south-west; [[view]]"
+
+[[photo]]
+file = "photos/32_Torres_de_Quart_Valencia_001.jpg"
+title = "File:Torres de Quart - Valencia - 001.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Torres_de_Quart_-_Valencia_-_001.jpg"
+author = "Américo Toledano"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 2119
+exterior = true
+selected = true
+side = "S"
+notes = "south side from 220 m along Guillem de Castro; [[view]] (height calibration)"
+
+[[photo]]
+file = "photos/33_Torres_de_Quart_Valencia_038.jpg"
+title = "File:Torres de Quart - Valencia - 038.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Torres_de_Quart_-_Valencia_-_038.jpg"
+author = "Américo Toledano"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 2275
+exterior = false
+selected = false
+side = ""
+notes = "interior stair"
+
+[[photo]]
+file = "photos/37_At_Valencia_2025_671.jpg"
+title = "File:At Valencia 2025 671.jpg"
+url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_671.jpg"
+author = "Photograph by Mike Peel (www.mikepeel.net)."
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "E"
+notes = "inner grand stair"
+
+[[photo]]
+file = "photos/38_Torres_de_Quart_2023.jpg"
+title = "File:Torres de Quart, 2023.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Torres_de_Quart,_2023.jpg"
+author = "Dudva"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "W"
+notes = "outer face, ultra-wide (no pinhole fit)"
+
+[[photo]]
+file = "photos/39_TorresDeQuart.jpg"
+title = "File:TorresDeQuart.JPG"
+url = "https://commons.wikimedia.org/wiki/File:TorresDeQuart.JPG"
+author = "Arne Hückelheim"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1194
+exterior = true
+selected = true
+side = "W"
+notes = "outer face, low sun; [[view]]"
+
+[[photo]]
+file = "photos/43_Valencia_Torres_de_Quart_2023_02_10.jpg"
+title = "File:Valencia - Torres de Quart 2023-02-10.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Torres_de_Quart_2023-02-10.jpg"
+author = "Rafa Esteve"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1920
+exterior = true
+selected = true
+side = "W"
+notes = "north tower crown close up"
 
 [[plan]]
 file = "plans/01_Valencia_Gate_OAW.png"

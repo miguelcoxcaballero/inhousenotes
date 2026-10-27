@@ -23,6 +23,17 @@ pub enum Preset {
 impl Preset {
     pub const ALL: [Preset; 4] = [Preset::Low, Preset::Medium, Preset::High, Preset::Ultra];
 
+    /// `low`, `medium` (`med`), `high` or `ultra`, any case.
+    pub fn parse(s: &str) -> Option<Preset> {
+        Some(match s.trim().to_lowercase().as_str() {
+            "low" => Preset::Low,
+            "medium" | "med" => Preset::Medium,
+            "high" => Preset::High,
+            "ultra" => Preset::Ultra,
+            _ => return None,
+        })
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Preset::Low => "Low",
@@ -72,8 +83,12 @@ pub struct GraphicsConfig {
     pub contact_shadows: bool,
     pub taa: bool,
     pub bloom: bool,
-    /// Point lights shaded per pixel (nearest first, at most 64).
+    /// Local lights per frame after frustum culling, closest first (the
+    /// light clusters bound the per-pixel cost; far lights also lose their
+    /// sprite when cut).
     pub max_lights: u32,
+    /// Spot lights with their own shadow map (0-4, 1024² each).
+    pub spot_shadows: u32,
     /// Textures larger than this are uploaded from a smaller mip (restart
     /// or map change to apply).
     pub max_texture_size: u32,
@@ -107,7 +122,8 @@ impl Default for GraphicsConfig {
             contact_shadows: true,
             taa: true,
             bloom: true,
-            max_lights: 64,
+            max_lights: 4096,
+            spot_shadows: 4,
             max_texture_size: 4096,
             lod_detail: 1.0,
             profiler_overlay: false,
@@ -130,10 +146,10 @@ impl GraphicsConfig {
     pub fn apply_preset(&mut self, p: Preset) {
         self.preset = p;
         let (scale, min_scale, dynamic, shadow, pcss, far, sdist, ao_half, ssr, ssr_steps, contact, lights, tex, lod) = match p {
-            Preset::Low => (0.75, 0.5, true, 1024, 0, 4, 0.6, true, false, 16, false, 16, 1024, 0.5),
-            Preset::Medium => (0.9, 0.6, true, 1536, 1, 3, 0.8, true, true, 16, true, 32, 2048, 0.75),
-            Preset::High => (1.0, 0.75, true, 2048, 2, 2, 1.0, true, true, 32, true, 64, 4096, 1.0),
-            Preset::Ultra => (1.0, 1.0, false, 4096, 4, 1, 1.0, false, true, 48, true, 64, 4096, 1.5),
+            Preset::Low => (0.75, 0.5, true, 1024, 0, 4, 0.6, true, false, 16, false, 512, 1024, 0.5),
+            Preset::Medium => (0.9, 0.6, true, 1536, 1, 3, 0.8, true, true, 16, true, 2048, 2048, 0.75),
+            Preset::High => (1.0, 0.75, true, 2048, 2, 2, 1.0, true, true, 32, true, 4096, 4096, 1.0),
+            Preset::Ultra => (1.0, 1.0, false, 4096, 4, 1, 1.0, false, true, 48, true, 65535, 4096, 1.5),
             Preset::Custom => return,
         };
         self.render_scale = scale;
@@ -151,6 +167,11 @@ impl GraphicsConfig {
         self.taa = true;
         self.bloom = true;
         self.max_lights = lights;
+        self.spot_shadows = match p {
+            Preset::Low => 0,
+            Preset::Medium => 2,
+            _ => 4,
+        };
         self.max_texture_size = tex;
         self.lod_detail = lod;
     }
@@ -167,7 +188,8 @@ impl GraphicsConfig {
         self.far_cascade_interval = self.far_cascade_interval.clamp(1, 8);
         self.shadow_distance_scale = self.shadow_distance_scale.clamp(0.25, 2.0);
         self.ssr_steps = self.ssr_steps.clamp(8, 64);
-        self.max_lights = self.max_lights.min(crate::MAX_LIGHTS as u32);
+        self.max_lights = self.max_lights.clamp(16, crate::MAX_LIGHTS as u32);
+        self.spot_shadows = self.spot_shadows.min(crate::lights::MAX_SPOT_SHADOWS as u32);
         self.max_texture_size = self.max_texture_size.clamp(256, 16384);
         self.lod_detail = self.lod_detail.clamp(0.1, 4.0);
         self

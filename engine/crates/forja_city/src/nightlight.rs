@@ -275,15 +275,25 @@ pub fn street_lamp_color(pos: Vec3, madrid: bool) -> (Vec3, bool) {
     }
 }
 
-/// Light of a lantern-style street lamp whose bulb is at `bulb`.
+/// Outer half angle of the full cut-off street luminaires (degrees from
+/// the nadir): nothing is emitted above ~70 degrees, so lamps light the
+/// ground, facades only get the low spill and the sky none.
+pub const CUTOFF_DEG: f32 = 68.0;
+
+/// Light of a lantern-style street lamp whose bulb is at `bulb`: a full
+/// cut-off cone straight down (modern lanterns hide the source above a
+/// reflector; Madrid and Valencia retrofitted them for light pollution).
 pub fn street_lamp(bulb: Vec3, color: Vec3, candelabra: bool) -> CityLight {
-    let (i, r) = if candelabra { (60.0, 15.0) } else { (40.0, 13.0) };
-    CityLight::point(LightKind::Street, bulb, color, i, r).with_size(if candelabra { 0.9 } else { 0.35 })
+    let (i, r) = if candelabra { (60.0, 16.0) } else { (40.0, 14.0) };
+    CityLight::spot(LightKind::Street, bulb, Vec3::NEG_Y, CUTOFF_DEG, color, i, r).with_size(if candelabra { 0.9 } else { 0.35 })
 }
 
-/// Facade lantern on a bracket.
-pub fn wall_lantern(bulb: Vec3, color: Vec3) -> CityLight {
-    CityLight::point(LightKind::Wall, bulb, color, 20.0, 10.0).with_size(0.3)
+/// Facade lantern on a bracket: a cut-off cone aimed down and a little away
+/// from the wall it hangs on (`out`, the facade normal), dimmer than a
+/// street lamp so the wall above stays dark.
+pub fn wall_lantern(bulb: Vec3, color: Vec3, out: Vec3) -> CityLight {
+    let dir = (Vec3::NEG_Y + out.normalize_or(Vec3::ZERO) * 0.3).normalize();
+    CityLight::spot(LightKind::Wall, bulb, dir, CUTOFF_DEG - 4.0, color, 14.0, 10.0).with_size(0.3)
 }
 
 /// Tall LED road light aimed down at the carriageway.
@@ -515,6 +525,20 @@ mod tests {
         assert!(k2.x > k2.y && k2.y > k2.z);
         assert!((k6.x - k6.z).abs() < 0.15, "{k6:?}");
         assert!(sodium().z < 0.2);
+    }
+
+    #[test]
+    fn street_luminaires_are_full_cut_off() {
+        let c = kelvin(2700.0);
+        for l in [street_lamp(Vec3::Y * 4.0, c, true), street_lamp(Vec3::Y * 3.5, c, false), wall_lantern(Vec3::Y * 3.0, c, Vec3::Z), road_light(Vec3::Y * 9.0, c)] {
+            let s = l.spot.expect("street luminaires are downward cones");
+            // No light at or above the horizontal: the cone's upper edge
+            // stays below it.
+            let nadir = s.dir.dot(Vec3::NEG_Y).clamp(-1.0, 1.0).acos();
+            assert!(nadir + s.outer < std::f32::consts::FRAC_PI_2, "{:?}: tilt {nadir} + cone {}", l.kind, s.outer);
+        }
+        // A wall lantern leans away from its wall.
+        assert!(wall_lantern(Vec3::Y * 3.0, c, Vec3::Z).spot.unwrap().dir.z > 0.1);
     }
 
     #[test]
