@@ -27,7 +27,7 @@ fn cross(ns: Control, ew: Control) -> RoadGraphSpec {
             lanes: vec![LaneSpec { offset: -1.75, forward: true, width: 3.2 }, LaneSpec { offset: 1.75, forward: false, width: 3.2 }],
             parking: vec![],
             speed_limit: 50.0 * KMH,
-            ends: [EndSpec { control, crosswalk: Some(3.0), crosswalk_width: 4.0, stop_line: 6.0, ahead_only: false }, EndSpec::default()],
+            ends: [EndSpec { control, crosswalk: Some(3.0), crosswalk_width: 4.0, stop_line: 6.0, ..Default::default() }, EndSpec::default()],
         });
     }
     spec
@@ -273,4 +273,48 @@ fn a_car_brakes_for_the_player_standing_in_the_road() {
     assert!(v.v < 0.1 && v.s < 70.0 - 0.3, "s {} v {}", v.s, v.v);
     assert!(honked, "no honk");
     assert_eq!(s.stats.player_collisions, 0);
+}
+
+/// Step at which vehicle `id` first enters a junction connector.
+fn entry_step(s: &mut TrafficSim, ids: &[u64], secs: f32) -> Vec<Option<usize>> {
+    let mut out = vec![None; ids.len()];
+    let mut step = 0;
+    run(s, secs, |s| {
+        step += 1;
+        for (k, id) in ids.iter().enumerate() {
+            if out[k].is_none() && s.vehicle_index(*id).is_some_and(|i| s.net.lanes[s.vehicles[i].lane as usize].is_connector()) {
+                out[k] = Some(step);
+            }
+        }
+    });
+    out
+}
+
+#[test]
+fn all_way_stop_goes_in_order_of_arrival() {
+    let mut s = sim(&cross(Control::Stop, Control::Stop));
+    // The east car arrives first, the south one a few seconds later.
+    let first = s.spawn_vehicle_to(inbound(&s.net, 2), ARM - 30.0, 8.0, outbound(&s.net, 3)).expect("east");
+    let second = s.spawn_vehicle_to(inbound(&s.net, 1), ARM - 60.0, 8.0, outbound(&s.net, 0)).expect("south");
+    let e = entry_step(&mut s, &[first, second], 30.0);
+    let (a, b) = (e[0].expect("first crossed"), e[1].expect("second crossed"));
+    assert!(a < b, "{a} {b}");
+    assert_eq!(s.stats.stop_sign_violations, 0);
+    assert_eq!(s.stats.vehicle_collisions, 0);
+}
+
+#[test]
+fn permissive_left_turn_waits_for_a_gap_in_oncoming_traffic() {
+    let mut s = sim(&cross(Control::Signal, Control::Signal));
+    let from = inbound(&s.net, 1);
+    let p = phase_of(&s, from);
+    s.net.signals[0].forced = Some(p);
+    // Left from the south into the west arm, oncoming straight from the north.
+    let left = s.spawn_vehicle_to(from, ARM - 20.0, 6.0, outbound(&s.net, 3)).expect("left");
+    let oncoming = s.spawn_vehicle_to(inbound(&s.net, 0), ARM - 50.0, 12.0, outbound(&s.net, 1)).expect("oncoming");
+    let e = entry_step(&mut s, &[left, oncoming], 30.0);
+    let (l, o) = (e[0].expect("left turned"), e[1].expect("oncoming passed"));
+    assert!(l > o, "turned at {l} before the oncoming car at {o}");
+    assert_eq!(s.stats.vehicle_collisions, 0);
+    assert_eq!(s.stats.box_violations, 0);
 }

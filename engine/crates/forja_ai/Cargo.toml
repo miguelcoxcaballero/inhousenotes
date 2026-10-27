@@ -16,3 +16,7 @@ forja_city = { workspace = true, optional = true }
 
 [dev-dependencies]
 image.workspace = true
+
+[[example]]
+name = "city_review"
+required-features = ["city"]

@@ -43,11 +43,13 @@ pub struct EndSpec {
     pub stop_line: f32,
     /// Only straight ahead allowed from here (R-400).
     pub ahead_only: bool,
+    /// The street's raised median is open at this junction.
+    pub median_open: bool,
 }
 
 impl Default for EndSpec {
     fn default() -> Self {
-        Self { control: Control::None, crosswalk: None, crosswalk_width: 4.0, stop_line: 1.0, ahead_only: false }
+        Self { control: Control::None, crosswalk: None, crosswalk_width: 4.0, stop_line: 1.0, ahead_only: false, median_open: false }
     }
 }
 
@@ -180,7 +182,7 @@ pub fn grid_city(o: &GridOptions) -> RoadGraphSpec {
                 Control::Yield
             }
         };
-        let end = |n: usize| EndSpec { control: control(n), crosswalk: Some(3.0), crosswalk_width: 4.0, stop_line: 6.0, ahead_only: false };
+        let end = |n: usize| EndSpec { control: control(n), crosswalk: Some(3.0), crosswalk_width: 4.0, stop_line: 6.0, ahead_only: false, median_open: false };
         spec.streets.push(StreetSpec {
             nodes: [a, b],
             points,

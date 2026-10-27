@@ -28,6 +28,8 @@ pub struct SegmentIn {
     /// Zebra centre distance and stop line distance from each end.
     pub crosswalk: Option<f32>,
     pub stop_line: f32,
+    /// Where the raised median is open (turns across it allowed).
+    pub median_openings: Vec<Vec2>,
 }
 
 /// Road sign kinds the AI understands (Spanish codes).
@@ -136,26 +138,13 @@ pub fn build_graph(segs: &[SegmentIn], signs: &[SignIn]) -> (RoadGraphSpec, Vec<
         };
         end_node[h.seg][h.end] = n;
     }
-    // Half width of the widest street meeting at each node (box size along
-    // a through street).
-    let mut node_half = vec![0.0f32; nodes.len()];
-    for (i, s) in segs.iter().enumerate() {
-        for n in end_node[i] {
-            if n != usize::MAX {
-                node_half[n] = node_half[n].max(s.half_width);
-            }
-        }
-    }
-    // 3. Split segments at the nodes they pass through.
-    let mut spec = RoadGraphSpec { nodes: nodes.iter().map(|(p, _)| NodeSpec { pos: *p, signal_offset: 0.0 }).collect(), ..Default::default() };
-    for (i, s) in segs.iter().enumerate() {
-        if end_node[i].contains(&usize::MAX) {
-            continue;
-        }
+    // 3. Interior stations: nodes a segment passes through, with the half
+    // length of their box along it (the widest street ending there).
+    let interior = |i: usize, nodes: &[(Vec2, usize)], end_node: &[[usize; 2]]| -> Vec<(f32, usize, f32)> {
+        let s = &segs[i];
         let len = s.a.distance(s.b);
         let dir = (s.b - s.a) / len;
-        // (u along the segment, node, trim to the street portion).
-        let mut stations: Vec<(f32, usize, Option<f32>)> = vec![(0.0, end_node[i][0], Some(0.0)), (len, end_node[i][1], Some(0.0))];
+        let mut out = Vec::new();
         for (n, (p, _)) in nodes.iter().enumerate() {
             if end_node[i].contains(&n) {
                 continue;
@@ -163,36 +152,114 @@ pub fn build_graph(segs: &[SegmentIn], signs: &[SignIn]) -> (RoadGraphSpec, Vec<
             let rel = *p - s.a;
             let u = rel.dot(dir);
             if u > 1.0 && u < len - 1.0 && rel.perp_dot(dir).abs() < 1.5 {
-                // Trim by the half width of the other streets there.
                 let other = segs.iter().enumerate().filter(|(j, _)| *j != i && end_node[*j].contains(&n)).map(|(_, o)| o.half_width).fold(0.0f32, f32::max);
-                stations.push((u, n, Some(other.max(2.0))));
+                out.push((u, n, other.max(2.0)));
             }
         }
-        stations.sort_by(|a, b| a.0.total_cmp(&b.0));
+        out.sort_by(|a, b| a.0.total_cmp(&b.0));
+        out
+    };
+    // Staggered junctions whose boxes overlap along a through street are
+    // one junction.
+    let mut root: Vec<usize> = (0..nodes.len()).collect();
+    fn find(root: &mut [usize], mut x: usize) -> usize {
+        while root[x] != x {
+            root[x] = root[root[x]];
+            x = root[x];
+        }
+        x
+    }
+    for i in 0..segs.len() {
+        if end_node[i].contains(&usize::MAX) {
+            continue;
+        }
+        let st = interior(i, &nodes, &end_node);
+        for w in st.windows(2) {
+            if w[1].0 - w[1].2 < w[0].0 + w[0].2 + 1.0 {
+                let (a, b) = (find(&mut root, w[0].1), find(&mut root, w[1].1));
+                root[b] = a;
+            }
+        }
+    }
+    let mut merged: Vec<(Vec2, usize)> = Vec::new();
+    let mut remap = vec![usize::MAX; nodes.len()];
+    for n in 0..nodes.len() {
+        let r = find(&mut root, n);
+        if remap[r] == usize::MAX {
+            remap[r] = merged.len();
+            merged.push((Vec2::ZERO, 0));
+        }
+        remap[n] = remap[r];
+        let m = &mut merged[remap[n]];
+        m.0 += nodes[n].0;
+        m.1 += 1;
+    }
+    let orig_nodes = nodes.clone();
+    let orig_end = end_node.clone();
+    let nodes: Vec<(Vec2, usize)> = merged.into_iter().map(|(p, c)| (p / c as f32, c)).collect();
+    for e in &mut end_node {
+        for n in e.iter_mut() {
+            if *n != usize::MAX {
+                *n = remap[*n];
+            }
+        }
+    }
+    // 4. Split segments at the junctions they pass through.
+    let mut spec = RoadGraphSpec { nodes: nodes.iter().map(|(p, _)| NodeSpec { pos: *p, signal_offset: 0.0 }).collect(), ..Default::default() };
+    for (i, s) in segs.iter().enumerate() {
+        if end_node[i].contains(&usize::MAX) {
+            continue;
+        }
+        let len = s.a.distance(s.b);
+        let dir = (s.b - s.a) / len;
+        // (box start, box end along the segment, node, original end?)
+        let mut stations: Vec<(f32, f32, usize, bool)> = vec![(0.0, 0.0, end_node[i][0], true), (len, len, end_node[i][1], true)];
+        // Boxes from the junctions as found, merged per joined junction.
+        for (u, n, t) in interior(i, &orig_nodes, &orig_end) {
+            let n = remap[n];
+            if end_node[i].contains(&n) {
+                continue;
+            }
+            match stations.iter_mut().find(|x| x.2 == n && !x.3) {
+                Some(x) => {
+                    x.0 = x.0.min(u - t);
+                    x.1 = x.1.max(u + t);
+                }
+                None => stations.push((u - t, u + t, n, false)),
+            }
+        }
+        stations.sort_by(|a, b| (a.0 + a.1).total_cmp(&(b.0 + b.1)));
         for w in stations.windows(2) {
-            let (u0, n0, t0) = w[0];
-            let (u1, n1, t1) = w[1];
-            let (s0, s1) = (u0 + t0.unwrap_or(0.0), u1 - t1.unwrap_or(0.0));
+            let (_, s0, n0, o0) = w[0];
+            let (s1, _, n1, o1) = w[1];
             if s1 - s0 < 3.0 || n0 == n1 {
                 continue;
             }
-            let original = [u0 == 0.0, u1 == len];
-            let end = |orig: bool| EndSpec { control: Control::None, crosswalk: if orig { s.crosswalk } else { None }, crosswalk_width: 4.0, stop_line: if orig { s.stop_line } else { 1.0 }, ahead_only: false };
+            let p0 = s.a + dir * s0;
+            let p1 = s.a + dir * s1;
+            let open = |n: usize| s.median_openings.iter().any(|o| o.distance(nodes[n].0) < 12.0);
+            let end = |orig: bool, n: usize| EndSpec {
+                control: Control::None,
+                crosswalk: if orig { s.crosswalk } else { None },
+                crosswalk_width: 4.0,
+                stop_line: if orig { s.stop_line } else { 1.0 },
+                ahead_only: false,
+                median_open: open(n),
+            };
             spec.streets.push(StreetSpec {
                 nodes: [n0, n1],
-                points: vec![s.a + dir * s0, s.a + dir * s1],
+                points: vec![p0, p1],
                 road_half: s.road_half,
                 sidewalk: s.sidewalk,
                 median_half: s.median_half,
                 lanes: s.lanes.clone(),
                 parking: s.parking.clone(),
                 speed_limit: s.speed_limit,
-                ends: [end(original[0]), end(original[1])],
+                ends: [end(o0, n0), end(o1, n1)],
             });
         }
     }
-    let _ = node_half;
-    // 4. Signs.
+    // 5. Signs.
     let uses = signs.iter().map(|sg| apply_sign(&mut spec, sg)).collect();
     (spec, uses)
 }
@@ -298,7 +365,8 @@ fn apply_sign(spec: &mut RoadGraphSpec, sg: &SignIn) -> SignUse {
 }
 
 /// Sets every approach with a signal head to [`Control::Signal`], then the
-/// whole junction: drivers never mix lights and signs at one node.
+/// other unsigned approaches of the junction (a STOP or give-way plate at a
+/// signalled junction stays: that driver gives way to the green traffic).
 /// `heads` are `(position, plate normal)`.
 pub fn apply_signal_heads(spec: &mut RoadGraphSpec, heads: &[(Vec2, Vec2)]) -> Vec<Option<(usize, usize)>> {
     let bound: Vec<Option<(usize, usize)>> = heads.iter().map(|(p, f)| end_for(spec, *p, *f, 16.0)).collect();
@@ -310,7 +378,7 @@ pub fn apply_signal_heads(spec: &mut RoadGraphSpec, heads: &[(Vec2, Vec2)]) -> V
     }
     for s in &mut spec.streets {
         for e in 0..2 {
-            if signal_nodes[s.nodes[e]] && arriving(s, e) {
+            if signal_nodes[s.nodes[e]] && arriving(s, e) && s.ends[e].control == Control::None {
                 s.ends[e].control = Control::Signal;
             }
         }
@@ -335,6 +403,7 @@ mod tests {
             speed_limit: 50.0 * KMH,
             crosswalk: Some(3.0),
             stop_line: 6.0,
+            median_openings: vec![],
         }
     }
 
