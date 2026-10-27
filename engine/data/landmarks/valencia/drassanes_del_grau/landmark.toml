@@ -1769,4 +1769,6 @@ name = "front_nave5"
 photo = "photos/catastro_9415316YJ2791E.jpg"
 eye_height = 1.6
 match = [{ px = [119, 988], world = [18.98, 0, 38.73] }, { px = [150, 556], world = [18.98, 5.3, 38.73] }, { px = [794, 115], world = [20.292, 10.5, 30.592] }, { px = [1375, 381], world = [21.41, 7.1, 23.66] }, { px = [1375, 1054], world = [21.41, 0, 23.66] }]
+fov_y = 40
+fix = ["fov"]
 
