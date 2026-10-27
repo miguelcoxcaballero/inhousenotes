@@ -130,6 +130,17 @@ fn spawn_bike(app: &mut App, iso: Iso, reg: &HandlingRegistry) {
     };
     let rest = Arc::new(rs.model(model).world_matrices());
     let physics = app.world.res_mut::<PhysicsWorld>();
+    // Parked: on the ground at its ride height, already leaning onto its
+    // kickstand (dropped from a height, a parked bike bounces and falls).
+    let iso = match physics.raycast(&forja_math::Ray::new(iso.pos + Vec3::Y * 1.5, Vec3::NEG_Y), 4.0, Default::default()) {
+        Some(hit) => {
+            let w = config.wheels.last().expect("bike wheels");
+            let ride = -(w.position.y - w.suspension_length * 0.8 - w.radius);
+            let lean = config.bike.as_ref().map_or(0.0, |b| b.kickstand_lean_deg.to_radians());
+            Iso::new(Vec3::new(iso.pos.x, hit.point.y + ride * lean.cos(), iso.pos.z), iso.rot * Quat::from_rotation_z(-lean))
+        }
+        None => iso,
+    };
     let vehicle = Vehicle::spawn(physics, config, iso);
     app.world.res_mut::<Vehicles>().0.push(vehicle);
     app.world.res_mut::<VehicleVisuals>().0.push(VehicleVisual {
