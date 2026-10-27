@@ -4476,23 +4476,7 @@
                     return;
                 }
 
-                const appended = appendPenSamples(e);
-                if (currentStroke && currentStroke.tool !== 'highlighter') {
-                    let predicted = null;
-                    try { predicted = e.getPredictedEvents?.(); } catch (_) { }
-                    const geometry = drawGeometry || refreshDrawGeometry();
-                    const next = [];
-                    // A short horizon: enough to cover one frame of latency
-                    // without visibly overshooting at the end of a letter.
-                    for (let i = 0; predicted && i < Math.min(predicted.length, 3); i++) {
-                        const x = (predicted[i].clientX - geometry.rectLeft) * geometry.scaleX;
-                        const y = (predicted[i].clientY - geometry.rectTop) * geometry.scaleY;
-                        if (Number.isFinite(x) && Number.isFinite(y)) next.push({ x, y });
-                    }
-                    const changed = next.length || currentStroke.predictedPoints?.length;
-                    currentStroke.predictedPoints = next;
-                    if (appended || changed) schedulePenPaint();
-                } else if (appended) schedulePenPaint();
+                if (appendPenSamples(e)) schedulePenPaint();
             };
             canvas.addEventListener('pointermove', moveDrawing);
             canvas.addEventListener('pointerrawupdate', moveDrawing);
@@ -4763,9 +4747,9 @@
             stroke.liveCurveIndex = to;
         }
 
-        // The uncommitted tip: the newest segment, continued through the
-        // browser's predicted pen positions so ink reaches the pen instead of
-        // trailing a frame behind it. Redrawn on the overlay every frame.
+        // The uncommitted tip: the newest segment, from the last committed
+        // sample to the latest measured one. No predicted positions: ink only
+        // goes where the pen has actually been. Redrawn on the overlay each frame.
         function drawLivePenTip(previewCanvas, pageIndex, stroke, metrics = null) {
             const points = stroke?.points;
             if (!previewCanvas || !points || points.length < 2) return;
@@ -4779,8 +4763,7 @@
             const last = points.length - 1;
             const from = Number.isInteger(stroke.liveCurveIndex) ? stroke.liveCurveIndex : 0;
             if (from >= last) { liveCursorPreviewBounds.delete(previewCanvas); return; }
-            const predicted = Array.isArray(stroke.predictedPoints) ? stroke.predictedPoints : [];
-            const chain = points.slice(Math.max(0, from - 1)).concat(predicted);
+            const chain = points.slice(Math.max(0, from - 1));
             const offset = from > 0 ? 1 : 0;
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
             for (const point of chain) {
@@ -4893,7 +4876,6 @@
             }
             const size = getPageDimensions(pageIndex);
             ctx.setTransform(canvas.width / size.width, 0, 0, canvas.height / size.height, 0, 0);
-            stroke.predictedPoints = null;
             drawStrokeTailSegment(ctx, stroke, true);
         }
 
