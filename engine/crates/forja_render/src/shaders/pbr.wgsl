@@ -100,7 +100,9 @@ fn vs_skinned(v: VertexIn, s: SkinIn) -> VertexOut {
 // `face` is the geometric normal from screen derivatives, taken by the
 // caller in uniform control flow.
 fn impostor_hidden(in: VertexOut, front: bool, face: vec3<f32>) -> bool {
-    if (in.uv.y <= material.foliage.y) { return false; }
+    // Only foliage materials have impostor texels: other materials tile
+    // their textures, so their v can take any value.
+    if (material.foliage.z < 0.5 || in.uv.y <= material.foliage.y) { return false; }
     if (!front) { return true; }
     let c = abs(dot(normalize(face), normalize(frame.camera_pos.xyz - in.world_pos)));
     let p = vec2<u32>(in.clip.xy);
