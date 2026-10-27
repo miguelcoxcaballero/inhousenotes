@@ -19,6 +19,24 @@ catastro_built = { value = 1857, source = "https://www1.sedecatastro.gob.es/CYCB
 catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6031101&rc2=YJ2763A" }
 catastro_floor_area = { value = 5486.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6031101&rc2=YJ2763A", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 7, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 7 parts" }
+osm_outline_area = { value = 1343, unit = "m2", source = "https://www.openstreetmap.org/relation/7286126", note = "outline incl. the annexes; courtyard inner ring 96 m2" }
+main_facade_length = { value = 22.72, unit = "m", source = "OSM relation 7286126 edge 3 (W corner to node -3.80,15.18)", note = "bundle adjustment puts the right tower end at u = 22.5 +- 0.5 m" }
+tower_width = { value = 6.4, unit = "m", source = "PNOA 2024 orthophoto (IGN WMS pnoa-ma, CC BY 4.0): left tower roof 6.25 m; bundle adjustment u1 = 6.38 +- 0.17", note = "both towers; centre 9.7 m" }
+tower_depth = { value = 6.3, unit = "m", source = "bundle adjustment photos 04 and 23 (back end of the right tower west face)", note = "+- 0.5 m" }
+tower_string_height = { value = 12.2, unit = "m", source = "bundle adjustment photos 03/04/23/Catastro (scratchpad pmc/ba)", note = "top of the rusticated lower body" }
+tower_cornice_height = { value = 15.0, unit = "m", source = "bundle adjustment photos 03/04/23/Catastro" }
+tower_attic_height = { value = 16.7, unit = "m", source = "bundle adjustment photos 03/04/23/Catastro", note = "balustrade coping" }
+tower_finial_height = { value = 18.7, unit = "m", source = "bundle adjustment photos 03/04/23/Catastro", note = "urn/flame finials inset 0.9 m from the corners" }
+centre_entablature_height = { value = 12.4, unit = "m", source = "bundle adjustment photos 04/Catastro" }
+centre_balustrade_height = { value = 13.8, unit = "m", source = "bundle adjustment photos 04/Catastro" }
+centre_pediment_crown = { value = 13.7, unit = "m", source = "bundle adjustment photos 04/Catastro/21" }
+centre_crest_height = { value = 16.3, unit = "m", source = "bundle adjustment photos 04/23/Catastro" }
+principal_balcony_height = { value = 5.6, unit = "m", source = "bundle adjustment (Catastro photo) and overlays of photos 02/06/27" }
+carriage_doors = { value = "2.4 x 4.5", unit = "m", source = "photos 27 and 01 (height/width 1.8-1.9), photo C (centres 2.65 m from the axis)" }
+wing_eave_height = { value = 15.2, unit = "m", source = "bundle adjustment: W facade far end on photo 03", note = "+- 0.8 m; Catastro gives 6 floors for the W/N wings" }
+stair_dome = { value = "apex 22.3 m, lantern 23.6 m, r 3.6 m", source = "bundle adjustment photos 04/23 (lantern base 22.5 +- 1.1 m); PNOA ring r ~4.7 m incl. drum", note = "position uncertain by ~2 m" }
+history = { value = "17th c. house of the counts of Olocau; bought 1840 by José Campo; facade remade, works by Manuel Ferrando 1857; museum 1989 (Manuel Portaceli)", source = "https://ca.wikipedia.org/wiki/Palau_del_Marqu%C3%A9s_de_Campo" }
+serre = { value = "glazed gap between the palace and the adjoining houses (the Serre)", source = "https://ca.wikipedia.org/wiki/Palau_del_Marqu%C3%A9s_de_Campo", note = "museum occupies the whole block after the 1990s extension" }
 
 [[photo]]
 file = "photos/01_Palacio_Marques_de_Campo1.jpg"
@@ -29,8 +47,8 @@ license = "CC BY-SA 3.0"
 width = 960
 height = 1280
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/02_Palau_del_marques_de_Campo_de_Valencia_torre_de_l_esquerra.jpg"
@@ -42,8 +60,8 @@ width = 1280
 height = 1698
 camera = [-13.46, 27.42]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/03_Palacio_del_Marques_de_Campo_panoramio.jpg"
@@ -55,8 +73,8 @@ width = 1280
 height = 960
 camera = [-24.18, 20.06]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s,w"
 
 [[photo]]
 file = "photos/04_222_Palau_del_Marques_de_Campo_Valencia_pl_de_l_Arquebisbe.jpg"
@@ -67,8 +85,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/05_293_Placa_de_l_Arquebisbe_Valencia_al_fons_el_Palau_del_Marq.jpg"
@@ -79,8 +97,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/06_Palau_del_marques_de_Campo_Valencia_vista_lateral.jpg"
@@ -91,8 +109,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/07_Puerta_museo_de_la_ciudad_Valencia.jpg"
@@ -104,8 +122,8 @@ width = 1280
 height = 1707
 camera = [-17.33, 15.64]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/08_Palau_del_Marques_de_Campo_de_Valencia_05.jpg"
@@ -116,8 +134,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/09_Palacio_del_Marques_de_Campo.jpg"
@@ -128,8 +146,8 @@ license = "Public domain"
 width = 500
 height = 386
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "aerial (s)"
 
 [[photo]]
 file = "photos/10_231_Palau_del_Marques_de_Campo_Museu_de_la_Ciutat_Valencia_e.jpg"
@@ -201,8 +219,8 @@ width = 1280
 height = 956
 camera = [-13.46, 27.42]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/16_Palau_del_Marques_de_Campo_de_Valencia_escala_02.jpg"
@@ -273,8 +291,44 @@ license = "Catastro open data (attribution required)"
 width = 1600
 height = 1200
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
+
+[[photo]]
+file = "photos/21_Palau_del_marques_de_Campo_Valencia.jpg"
+title = "File:Palau del marqués de Campo, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palau_del_marqu%C3%A9s_de_Campo,_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 910
+exterior = true
+selected = true
+side = "s"
+
+[[photo]]
+file = "photos/23_Palau_del_marques_de_Campo_Valencia_Pais_Valencia.jpg"
+title = "File:Palau del marqués de Campo, València, País Valencià.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palau_del_marqu%C3%A9s_de_Campo,_Val%C3%A8ncia,_Pa%C3%ADs_Valenci%C3%A0.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1067
+exterior = true
+selected = true
+side = "s"
+
+[[photo]]
+file = "photos/27_Palau_del_Marques_de_Campo_de_Valencia_04.jpg"
+title = "File:Palau del Marqués de Campo de València 04.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_del_Marqu%C3%A9s_de_Campo_de_Val%C3%A8ncia_04.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1920
+exterior = true
+selected = true
+side = "s"
 
 [[plan]]
 file = "plans/01_1_02_PALACIO_DEL_MARQUES_DE_CAMPO_firmado.jpg"
@@ -293,6 +347,11 @@ author = "Dirección General del Catastro"
 license = "Catastro open data (attribution required)"
 kind = "catastro"
 notes = "Cadastral map, EPSG:25830 bbox [725840.02, 4372848.37, 725947.79, 4372949.28], 0.080 m/px, north up; roman numerals = floors above ground; parcels 6031101YJ2763A"
+
+[[reference]]
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+title = "PNOA orthophoto (IGN, CC BY 4.0)"
+notes = "plan check of towers, courtyard, dome and annexes (bbox anchor +-40 m, 0.05 m/px)"
 
 [[reference]]
 url = "https://www.wikidata.org/wiki/Q5644720"
