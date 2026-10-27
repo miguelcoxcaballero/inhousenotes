@@ -2,11 +2,15 @@
 //!
 //! Modular rigid body physics for open-world games.
 //!
-//! Pipeline per step: broadphase (dynamic AABB tree) → narrowphase
-//! (SAT/clipping and closest points, speculative contacts) → soft-step
-//! solver with substeps → sleeping islands. Gameplay controllers
+//! Pipeline per step: focus freezing → broadphase (dynamic AABB tree, fat
+//! boxes stretched along the motion) → narrowphase (SAT/clipping and closest
+//! points, speculative contacts, triangle-soup contact reduction) →
+//! soft-step solver with substeps (deterministic order) → continuous
+//! collision for fast bodies → sleeping islands. Gameplay controllers
 //! ([`vehicle`], [`character`]) sit on top and only use the public API, so
-//! they work with any world built from [`ColliderDesc`]s.
+//! they work with any world built from [`ColliderDesc`]s. Render with
+//! [`RigidBody::interpolated_iso`]. Design notes and measurements:
+//! `docs/physics_research.md`.
 //!
 //! ```
 //! use forja_physics::*;
@@ -38,7 +42,7 @@ pub use character::{CharacterConfig, CharacterController, CharacterState};
 pub use narrowphase::{ContactPoint, Manifold};
 pub use shape::{ConvexHull, HeightField, MassProperties, Shape, TriMesh};
 pub use vehicle::{Vehicle, VehicleConfig, VehicleControls, WheelConfig};
-pub use world::{CollisionEvent, PhysicsConfig, PhysicsWorld, QueryFilter, RayHit, StepStats};
+pub use world::{CollisionEvent, PhysicsConfig, PhysicsWorld, QueryFilter, RayHit, ShapeHit, StepStats};
 
 use forja_core::{App, Plugin, Stage, World};
 

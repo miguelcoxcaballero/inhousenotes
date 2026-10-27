@@ -36,9 +36,12 @@ function harness() {
     pageDirty: new Set(),
     collabPageOrderMutationInProgress: false,
     collabPageStoreRewritePending: false,
+    remoteMergeCheckpointPending: null,
     STROKE_OP_FLUSH_BATCH_SIZE: 12,
+    DOCUMENT_SAVE_IDLE_MS: 180,
     hasPendingLegacyPageMigration: () => false,
     hasSmoothInteraction: () => false,
+    waitForHotInteractionToSettle: async () => true,
     isDriveSyncPending: () => false,
     recordSaveDebug() {},
     showPendingSaveStatus() {},
@@ -57,8 +60,10 @@ function harness() {
     yieldToMainThread: async () => {},
     flushStrokeOpsQueue() {}
   });
-  context.captureDocumentPersistenceContext = () => ({ session: context.session, sessionToken: context.session });
-  context.isDocumentPersistenceContextCurrent = captured => captured.session === context.session;
+  context.captureDocumentPersistenceContext = () => ({ sessionToken: context.session, fileId: String(context.state.driveFileId || '') });
+  context.isDocumentPersistenceContextCurrent = captured => !!captured
+    && captured.sessionToken === context.session
+    && captured.fileId === String(context.state.driveFileId || '');
   context.getDocumentSessionToken = () => context.session;
   context.isDocumentSessionTokenValid = token => token === context.session;
   context.markPageDirty = index => context.pageDirty.add(index);
@@ -84,12 +89,28 @@ test('Drive success cannot clear a local checkpoint failure or replace its times
   assert.equal(timers.size, 0);
 });
 
+test('an unfinished remote checkpoint stays locally pending across unrelated receipts and is session-scoped', () => {
+  const { context } = harness();
+  context.state.driveFileId = 'shared-document';
+  context.remoteMergeCheckpointPending = context.captureDocumentPersistenceContext();
+  context.state.lastSavedAt = 5000;
+  context.confirmLocalSave(200, 'operations');
+  assert.equal(context.getLocalSaveStatus().pending, true);
+  context.state.driveFileId = 'another-document';
+  assert.equal(context.getLocalSaveStatus().pending, false);
+  context.state.driveFileId = 'shared-document';
+  context.session += 1;
+  assert.equal(context.getLocalSaveStatus().pending, false);
+});
+
 test('an operation removed from the queue stays pending until IndexedDB commits', async () => {
   const { context } = harness();
-  let commit;
-  context.appendStrokeOpsToIndexedDb = () => new Promise(resolve => { commit = resolve; });
+  let commit, started;
+  const transactionStarted = new Promise(resolve => { started = resolve; });
+  context.appendStrokeOpsToIndexedDb = () => new Promise(resolve => { commit = resolve; started(); });
   context.strokeOpsQueue.push({ pageIndex: 0, savedAt: 200 });
   const flushing = context.runStrokeOpsQueueFlush();
+  await transactionStarted;
   assert.equal(context.strokeOpsQueue.length, 0);
   assert.equal(context.getLocalSaveStatus().pending, true);
   assert.equal(context.getLocalSaveStatus().savedAt, null);
@@ -204,4 +225,21 @@ test('superseded checkpoints stay pending without reporting a storage error', as
   await context.queueSave();
   assert.equal(context.getLocalSaveStatus().pending,false);
   assert.equal(context.getLocalSaveStatus().savedAt,500);
+});
+
+
+test('the journal stays pending in memory until the editing gate opens', async () => {
+  const { context } = harness();
+  let resume, writes = 0;
+  context.waitForHotInteractionToSettle = () => new Promise(resolve => { resume = resolve; });
+  context.appendStrokeOpsToIndexedDb = async () => { writes++; return true; };
+  context.strokeOpsQueue.push({ pageIndex: 0, savedAt: 400 });
+  const flushing = context.runStrokeOpsQueueFlush();
+  assert.equal(context.strokeOpsQueue.length, 1);
+  assert.equal(context.getLocalSaveStatus().pending, true);
+  assert.equal(writes, 0);
+  resume(true);
+  await flushing;
+  assert.equal(writes, 1);
+  assert.equal(context.getLocalSaveStatus().savedAt, 400);
 });

@@ -47,27 +47,67 @@ test('an open document is never reloaded under the user', async ({ page }) => {
   expect(navigations).toBe(1);
 });
 
-test('with the offline service worker in control, a reload loads the newly published page', async ({ page, context }) => {
+async function openControlledShell(page) {
   await page.goto('/?e2e=1');
   await page.evaluate(() => window.__IHN_TEST_API__.ready());
   await page.evaluate(() => navigator.serviceWorker.ready);
   await page.waitForFunction(() => !!navigator.serviceWorker.controller);
   const running = await page.evaluate(() => document.getElementById('inhouse-app-version').textContent.match(/'(\d+\.\d+\.\d+)'/)[1]);
-  // Publish a "next" release of the page; its versioned assets come from the same server.
-  await context.route(/\/(index\.html)?(\?.*)?$/, async (route) => {
-    // The page request reaches the network from the service worker, as a fetch.
-    const request = route.request();
-    if (request.resourceType() !== 'document' && !request.serviceWorker()) return route.continue();
-    const response = await route.fetch();
-    const body = (await response.text()).replaceAll(running, '99.0.0');
-    await route.fulfill({ response, body });
+  const html = await (await page.request.get('/index.html')).text();
+  return { running, html };
+}
+
+const visibleVersion = page => page.evaluate(() => document.getElementById('inhouse-app-version')?.textContent || '');
+const shellRoute = /\/(index\.html)?(\?.*)?$/;
+
+test('the complete cached shell opens before network revalidation and rejects a mismatched offline copy', async ({ page, context }) => {
+  const { running, html } = await openControlledShell(page);
+  await publish(page, running);
+  let releaseNetwork;
+  const networkGate = new Promise(resolve => { releaseNetwork = resolve; });
+  let started = 0, finished = 0;
+  await context.route(shellRoute, async route => {
+    // Gate the actual worker-owned fetch, not navigation. The cached page
+    // must become usable while that network response is still outstanding.
+    if (!route.request().serviceWorker()) return route.continue();
+    started += 1;
+    await networkGate;
+    await route.fulfill({ status: 200, contentType: 'text/html', body: html.replaceAll(running, '99.0.0') });
+    finished += 1;
   });
-  await page.route('**/service-worker.js?release-check=*', (route) => route.fulfill({ status: 200, contentType: 'text/javascript', body: `const VERSION='${running}';` }));
-  await page.reload();
-  await expect.poll(() => page.evaluate(() => document.getElementById('inhouse-app-version').textContent)).toContain("'99.0.0'");
-  // Offline, the worker still serves its own cached release.
-  await context.unroute(/\/(index\.html)?(\?.*)?$/);
+  try {
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 5000 });
+    await expect.poll(() => started).toBeGreaterThan(0);
+    await expect.poll(() => visibleVersion(page)).toContain(`'${running}'`);
+    expect(finished).toBe(0);
+    await page.evaluate(() => window.__IHN_TEST_API__.ready());
+  } finally {
+    releaseNetwork();
+  }
+  await expect.poll(() => finished).toBeGreaterThan(0);
+  await context.unroute(shellRoute);
   await context.setOffline(true);
   await page.reload();
-  await expect.poll(() => page.evaluate(() => document.getElementById('inhouse-app-version').textContent)).toContain(`'${running}'`);
+  await expect.poll(() => visibleVersion(page)).toContain(`'${running}'`);
+  await page.evaluate(() => window.__IHN_TEST_API__.ready());
+});
+
+test('a published version check escapes an old service worker shell exactly once', async ({ page, context }) => {
+  const { running, html } = await openControlledShell(page);
+  await context.route(shellRoute, async route => {
+    const request = route.request();
+    if (request.resourceType() !== 'document' && !request.serviceWorker()) return route.continue();
+    await route.fulfill({ status: 200, contentType: 'text/html', body: html.replaceAll(running, '99.0.0') });
+  });
+  await publish(page, '99.0.0');
+  let navigations = 0;
+  page.on('framenavigated', frame => { if (frame === page.mainFrame()) navigations += 1; });
+  // The first navigation may use the complete old shell. The published
+  // version check must evict that old HTML and reload into the new release.
+  await page.reload();
+  await expect.poll(() => visibleVersion(page), { timeout: 10000 }).toContain("'99.0.0'");
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem('ihn-release-reload'))).toBe('99.0.0');
+  await page.evaluate(() => window.__IHN_TEST_API__.ready());
+  await page.waitForTimeout(2500);
+  expect(navigations).toBe(2);
 });

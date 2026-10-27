@@ -157,3 +157,20 @@ test('Rust checkpoint codec preserves every bit and rejects truncated streams',(
     assert.throws(()=>scope.InhouseRust.checkpointCodec(new Uint8Array([9]),8),/Invalid/);
     assert.throws(()=>scope.InhouseRust.checkpointCodec(new Uint8Array(7)),/Invalid/);
 });
+
+test('Rust PDF ink preserves every point, width and color with bounded raster fallback',()=>{
+    const stroke={tool:'pen',color:'#142dd2',width:2.5,points:[{x:30,y:40},{x:30,y:40},{x:31.125,y:40.875}]};
+    const bounds={x:20,y:30,width:100,height:100};
+    const text=new TextDecoder().decode(scope.InhouseRust.pdfInk([stroke],bounds));
+    assert.match(text,/-20\.000000 130\.000000 cm/);
+    assert.match(text,/2\.500000 w\n0\.078431 0\.176471 0\.823529 RG/);
+    assert.match(text,/30\.000000 40\.000000 m\n30\.000000 40\.000000 l\n31\.125000 40\.875000 l/);
+    for(const tool of ['eraser-area','highlighter'])assert.equal(scope.InhouseRust.pdfInk([{...stroke,tool}],bounds),null);
+    assert.equal(scope.InhouseRust.pdfInk([{...stroke,points:Array(5000).fill({x:1,y:2})}],bounds),null);
+    assert.equal(scope.InhouseRust.pdfInk([stroke],{...bounds,width:5,height:5}),null);
+    assert.equal(scope.InhouseRust.pdfInk([{...stroke,width:NaN}],bounds),null);
+    assert.equal(scope.InhouseRust.pdfInk([{...stroke,points:[{x:NaN,y:1},{x:2,y:3}]}],bounds),null);
+    assert.equal(scope.InhouseRust.pdfInk([{...stroke,color:'invalid'}],bounds),null);
+    assert.equal(scope.InhouseRust.pdfInk([stroke],{...bounds,x:Infinity}),null);
+    assert.ok(scope.InhouseRust.pdfInk([stroke],bounds),'invalid data does not poison later exports');
+});

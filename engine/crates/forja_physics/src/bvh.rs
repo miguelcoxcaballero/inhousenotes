@@ -354,16 +354,21 @@ struct FlatNode {
 impl StaticBvh {
     pub const LEAF: usize = 4;
 
+    /// Top-down build with binned SAH splits (Wald 2007, "On fast
+    /// construction of SAH-based bounding volume hierarchies"): 12 bins on
+    /// the widest centroid axis, a split only where it is cheaper than a
+    /// leaf. Falls back to a median split for degenerate centroid bounds.
     pub fn build(aabbs: &[Aabb]) -> Self {
-        let mut bvh = StaticBvh { nodes: Vec::with_capacity(aabbs.len() * 2), prims: (0..aabbs.len() as u32).collect() };
+        let mut bvh = StaticBvh { nodes: Vec::with_capacity(aabbs.len() / 2 + 1), prims: (0..aabbs.len() as u32).collect() };
         if !aabbs.is_empty() {
             let centers: Vec<Vec3> = aabbs.iter().map(|a| a.center()).collect();
-            bvh.build_node(aabbs, &centers, 0, aabbs.len());
+            bvh.build_node(aabbs, &centers, 0, aabbs.len(), 0);
         }
+        bvh.nodes.shrink_to_fit();
         bvh
     }
 
-    fn build_node(&mut self, aabbs: &[Aabb], centers: &[Vec3], start: usize, end: usize) -> usize {
+    fn build_node(&mut self, aabbs: &[Aabb], centers: &[Vec3], start: usize, end: usize, depth: u32) -> usize {
         let mut bounds = Aabb::EMPTY;
         let mut cbounds = Aabb::EMPTY;
         for &p in &self.prims[start..end] {
@@ -372,7 +377,8 @@ impl StaticBvh {
         }
         let idx = self.nodes.len();
         self.nodes.push(FlatNode { aabb: bounds, start: start as u32, count: (end - start) as u32 });
-        if end - start <= Self::LEAF {
+        let n = end - start;
+        if n <= Self::LEAF {
             return idx;
         }
         let ext = cbounds.max - cbounds.min;
@@ -383,15 +389,80 @@ impl StaticBvh {
         } else {
             2
         };
-        let mid = (start + end) / 2;
-        self.prims[start..end].select_nth_unstable_by(mid - start, |a, b| {
-            centers[*a as usize][axis].total_cmp(&centers[*b as usize][axis])
-        });
-        self.build_node(aabbs, centers, start, mid);
-        let right = self.build_node(aabbs, centers, mid, end);
+        const BINS: usize = 12;
+        let lo = cbounds.min[axis];
+        let width = ext[axis];
+        let mut mid = (start + end) / 2;
+        let mut split_done = false;
+        // Deep branches fall back to median splits so traversal stacks stay
+        // bounded (depth <= 40 + log2(n)).
+        if width > 1e-6 && depth < 40 {
+            let scale = BINS as f32 / width;
+            let bin_of = |c: f32| (((c - lo) * scale) as usize).min(BINS - 1);
+            let mut counts = [0usize; BINS];
+            let mut boxes = [Aabb::EMPTY; BINS];
+            for &p in &self.prims[start..end] {
+                let b = bin_of(centers[p as usize][axis]);
+                counts[b] += 1;
+                boxes[b] = boxes[b].union(&aabbs[p as usize]);
+            }
+            // Sweep: cost of splitting after bin i.
+            let mut right_area = [0.0f32; BINS];
+            let mut right_count = [0usize; BINS];
+            let (mut acc, mut cnt) = (Aabb::EMPTY, 0usize);
+            for i in (1..BINS).rev() {
+                acc = acc.union(&boxes[i]);
+                cnt += counts[i];
+                right_area[i] = if cnt > 0 { acc.half_area() } else { 0.0 };
+                right_count[i] = cnt;
+            }
+            let (mut acc, mut cnt) = (Aabb::EMPTY, 0usize);
+            let mut best = (f32::MAX, 0usize);
+            for i in 0..BINS - 1 {
+                acc = acc.union(&boxes[i]);
+                cnt += counts[i];
+                if cnt == 0 || right_count[i + 1] == 0 {
+                    continue;
+                }
+                let cost = acc.half_area() * cnt as f32 + right_area[i + 1] * right_count[i + 1] as f32;
+                if cost < best.0 {
+                    best = (cost, i);
+                }
+            }
+            // Traversal cost ~ one primitive test; keep small leaves.
+            let leaf_cost = bounds.half_area() * n as f32;
+            if best.0 < f32::MAX && (best.0 + bounds.half_area() < leaf_cost || n > 2 * Self::LEAF) {
+                let split = best.1;
+                let (mut i, mut j) = (start, end);
+                while i < j {
+                    if bin_of(centers[self.prims[i] as usize][axis]) <= split {
+                        i += 1;
+                    } else {
+                        j -= 1;
+                        self.prims.swap(i, j);
+                    }
+                }
+                if i > start && i < end {
+                    mid = i;
+                    split_done = true;
+                }
+            } else if best.0 < f32::MAX && n <= 2 * Self::LEAF {
+                return idx; // a leaf is cheaper
+            }
+        }
+        if !split_done {
+            self.prims[start..end].select_nth_unstable_by(mid - start, |a, b| centers[*a as usize][axis].total_cmp(&centers[*b as usize][axis]));
+        }
+        self.build_node(aabbs, centers, start, mid, depth + 1);
+        let right = self.build_node(aabbs, centers, mid, end, depth + 1);
         self.nodes[idx].start = right as u32;
         self.nodes[idx].count = 0;
         idx
+    }
+
+    /// Heap bytes of the nodes and primitive indices.
+    pub fn memory_bytes(&self) -> usize {
+        self.nodes.capacity() * std::mem::size_of::<FlatNode>() + self.prims.capacity() * 4
     }
 
     pub fn bounds(&self) -> Aabb {
@@ -402,7 +473,7 @@ impl StaticBvh {
         if self.nodes.is_empty() {
             return;
         }
-        let mut stack = [0u32; 64];
+        let mut stack = [0u32; 128];
         let mut sp = 1;
         while sp > 0 {
             sp -= 1;
@@ -428,7 +499,7 @@ impl StaticBvh {
         if self.nodes.is_empty() {
             return max_t;
         }
-        let mut stack = [0u32; 64];
+        let mut stack = [0u32; 128];
         let mut sp = 1;
         while sp > 0 {
             sp -= 1;

@@ -355,3 +355,185 @@ fn character_pushes_crates() {
     }
     assert!(w.body(crate_b).unwrap().position().z > 2.5, "crate not pushed: {}", w.body(crate_b).unwrap().position());
 }
+
+// ---------------------------------------------------------------------------
+// Regression tests for the physics upgrade (see docs/physics_research.md).
+
+fn quad(v: &mut Vec<Vec3>, t: &mut Vec<[u32; 3]>, a: Vec3, b: Vec3, c: Vec3, d: Vec3) {
+    let i = v.len() as u32;
+    v.extend([a, b, c, d]);
+    t.extend([[i, i + 1, i + 2], [i, i + 2, i + 3]]);
+}
+
+/// Road, 15 cm kerb, pavement, then ten 17 cm stairs, as one mesh along +X.
+fn stairs_mesh() -> TriMesh {
+    let (mut v, mut t) = (Vec::new(), Vec::new());
+    let (z0, z1) = (-10.0, 10.0);
+    let mut x = -10.0;
+    let mut y = 0.0;
+    let top = |v: &mut Vec<Vec3>, t: &mut Vec<[u32; 3]>, x0: f32, x1: f32, y: f32| quad(v, t, vec3(x0, y, z0), vec3(x0, y, z1), vec3(x1, y, z1), vec3(x1, y, z0));
+    top(&mut v, &mut t, x, 0.0, y);
+    x = 0.0;
+    for (rise, run) in std::iter::once((0.15, 3.0)).chain(std::iter::repeat_n((0.17, 0.3), 10)) {
+        quad(&mut v, &mut t, vec3(x, y, z0), vec3(x, y + rise, z0), vec3(x, y + rise, z1), vec3(x, y, z1));
+        y += rise;
+        top(&mut v, &mut t, x, x + run, y);
+        x += run;
+    }
+    top(&mut v, &mut t, x, x + 10.0, y);
+    TriMesh::new(v, t)
+}
+
+#[test]
+fn fast_bodies_do_not_tunnel_thin_meshes_or_spin_through_walls() {
+    for spin in [0.0, 20.0] {
+        for shape in [Shape::sphere(0.1), Shape::cuboid(Vec3::splat(0.1)), Shape::capsule(0.2, 0.1)] {
+            let mut w = PhysicsWorld::default();
+            w.config.gravity = Vec3::ZERO;
+            let (mut v, mut t) = (Vec::new(), Vec::new());
+            quad(&mut v, &mut t, vec3(10.0, -5.0, -5.0), vec3(10.0, 5.0, -5.0), vec3(10.0, 5.0, 5.0), vec3(10.0, -5.0, 5.0));
+            w.add_collider(ColliderDesc::new(Shape::TriMesh(Arc::new(TriMesh::new(v, t)))), None);
+            w.add_collider(ColliderDesc::new(Shape::cuboid(vec3(0.025, 5.0, 5.0))).translation(vec3(-10.0, 0.0, 0.0)), None);
+            let (a, _) = w.add_dynamic(RigidBodyDesc::dynamic().linvel(vec3(50.0, 0.0, 0.0)).angvel(vec3(0.0, 0.0, spin)), ColliderDesc::new(shape.clone()));
+            let (b, _) = w.add_dynamic(RigidBodyDesc::dynamic().linvel(vec3(-50.0, 0.0, 0.0)).angvel(vec3(0.0, 0.0, spin)), ColliderDesc::new(shape.clone()));
+            run(&mut w, 1.0);
+            assert!(w.body(a).unwrap().position().x < 10.0, "{shape:?} spin {spin} went through the mesh");
+            assert!(w.body(b).unwrap().position().x > -10.0, "{shape:?} spin {spin} went through the 5 cm wall");
+        }
+    }
+}
+
+#[test]
+fn simulation_is_deterministic() {
+    let build = || {
+        let mut w = ground_world();
+        let bodies: Vec<BodyHandle> = (0..30)
+            .map(|i| {
+                let p = vec3((i % 5) as f32 * 0.9 - 2.0, 0.5 + (i / 5) as f32 * 1.05, (i % 3) as f32 * 0.1);
+                w.add_dynamic(RigidBodyDesc::dynamic().position(p).rotation(Quat::from_rotation_y(i as f32 * 0.3)), ColliderDesc::new(Shape::cuboid(Vec3::splat(0.45)))).0
+            })
+            .collect();
+        run(&mut w, 3.0);
+        bodies.iter().map(|b| w.body(*b).unwrap().position()).collect::<Vec<_>>()
+    };
+    assert_eq!(build(), build());
+}
+
+#[test]
+fn character_climbs_kerbs_and_stairs_smoothly_and_stays_grounded_going_down() {
+    let mut w = PhysicsWorld::default();
+    w.add_collider(ColliderDesc::new(Shape::TriMesh(Arc::new(stairs_mesh()))), None);
+    let cfg = CharacterConfig::default();
+    let mut ch = CharacterController::new(&mut w, cfg, vec3(-3.0, 1.2, 0.0));
+    for _ in 0..30 {
+        ch.update(&mut w, Vec3::ZERO, false, DT);
+    }
+    let mut last = ch.smoothed_feet().y;
+    let mut max_jump = 0.0f32;
+    for _ in 0..240 {
+        ch.update(&mut w, vec3(4.0, 0.0, 0.0), false, DT);
+        assert!(ch.state.grounded, "lost the ground going up at x {}", ch.position.x);
+        let y = ch.smoothed_feet().y;
+        max_jump = max_jump.max((y - last).abs());
+        last = y;
+    }
+    assert!(ch.feet().y > 1.8, "did not reach the top: {}", ch.feet().y);
+    assert!(max_jump < 0.1, "visible step pops: {max_jump}");
+    for _ in 0..240 {
+        ch.update(&mut w, vec3(-4.0, 0.0, 0.0), false, DT);
+        assert!(ch.state.grounded, "hopped going down at x {}", ch.position.x);
+    }
+    assert!(ch.feet().y < 0.05);
+}
+
+#[test]
+fn character_respects_slope_limit_and_rides_platforms() {
+    // A 60° ramp is a wall; a 30° one is walkable.
+    for (deg, climbs) in [(30.0f32, true), (60.0, false)] {
+        let mut w = ground_world();
+        let rot = Quat::from_rotation_z(deg.to_radians());
+        w.add_collider(ColliderDesc::new(Shape::cuboid(vec3(10.0, 0.5, 5.0))).local(Iso::new(vec3(10.0, 0.0, 0.0), rot)), None);
+        let mut ch = CharacterController::new(&mut w, CharacterConfig::default(), vec3(-2.0, 1.0, 0.0));
+        for _ in 0..240 {
+            ch.update(&mut w, vec3(4.0, 0.0, 0.0), false, DT);
+            w.step(DT);
+        }
+        assert_eq!(ch.feet().y > 1.5, climbs, "{deg}° slope: feet {}", ch.feet().y);
+    }
+    // Standing on a moving kinematic platform carries the character.
+    let mut w = ground_world();
+    let plat = w.add_body(RigidBodyDesc::kinematic().position(vec3(0.0, 0.5, 0.0)).linvel(vec3(2.0, 0.0, 0.0)));
+    w.add_collider(ColliderDesc::new(Shape::cuboid(vec3(3.0, 0.25, 3.0))), Some(plat));
+    let mut ch = CharacterController::new(&mut w, CharacterConfig::default(), vec3(0.0, 1.8, 0.0));
+    for _ in 0..120 {
+        ch.update(&mut w, Vec3::ZERO, false, DT);
+        w.step(DT);
+    }
+    let px = w.body(plat).unwrap().position().x;
+    assert!((ch.position.x - px).abs() < 0.3 && px > 3.0, "left behind: char {} platform {}", ch.position.x, px);
+}
+
+#[test]
+fn parked_bike_rests_on_its_kickstand_and_ridden_bike_never_falls() {
+    let mut w = flat_track();
+    let mut bike = Vehicle::spawn(&mut w, VehicleConfig::motorcycle(), Iso::from_pos(vec3(0.0, 0.8, 0.0)));
+    bike.rider = false;
+    for _ in 0..600 {
+        bike.update(&mut w, DT);
+        w.step(DT);
+    }
+    let lean = bike.lean(&w).to_degrees();
+    assert!((-25.0..-5.0).contains(&lean), "parked lean {lean} (should rest on the left stand)");
+    assert!(w.body(bike.body).unwrap().is_sleeping(), "parked bike should sleep");
+    // Ride a slalom.
+    bike.rider = true;
+    let mut max_lean = 0.0f32;
+    for i in 0..1200 {
+        let t = i as f32 * DT;
+        bike.controls = VehicleControls { throttle: 0.6, steer: if t > 3.0 { (t * 0.8).sin() } else { 0.0 }, brake: 0.0, handbrake: false };
+        bike.update(&mut w, DT);
+        w.step(DT);
+        max_lean = max_lean.max(bike.lean(&w).abs());
+    }
+    assert!(max_lean.to_degrees() > 20.0, "never leaned: {}", max_lean.to_degrees());
+    assert!(max_lean.to_degrees() < 70.0, "fell while ridden: {}", max_lean.to_degrees());
+    assert!(bike.speed(&w) > 8.0);
+}
+
+#[test]
+fn parked_car_holds_on_a_hill_and_sleeps() {
+    let mut w = PhysicsWorld::default();
+    let rot = Quat::from_rotation_x(-12f32.to_radians());
+    w.add_collider(ColliderDesc::new(Shape::cuboid(vec3(50.0, 0.5, 100.0))).local(Iso::new(Vec3::ZERO, rot)).friction(0.9), None);
+    let mut car = Vehicle::spawn(&mut w, VehicleConfig::sedan(), Iso::new(rot * vec3(0.0, 1.4, 0.0), rot));
+    car.controls.handbrake = true;
+    for _ in 0..240 {
+        car.update(&mut w, DT);
+        w.step(DT);
+    }
+    let p0 = w.body(car.body).unwrap().position();
+    for _ in 0..240 {
+        car.update(&mut w, DT);
+        w.step(DT);
+    }
+    let creep = (w.body(car.body).unwrap().position() - p0).length();
+    assert!(creep < 0.02, "creeps {creep} m in 4 s");
+    assert!(w.body(car.body).unwrap().is_sleeping(), "parked car should sleep");
+}
+
+#[test]
+fn far_bodies_freeze_and_render_poses_interpolate() {
+    let mut w = ground_world();
+    w.config.active_radius = 50.0;
+    w.set_focus(Some(Vec3::ZERO));
+    let (near, _) = w.add_dynamic(RigidBodyDesc::dynamic().position(vec3(0.0, 5.0, 0.0)), ColliderDesc::new(Shape::sphere(0.5)));
+    let (far, _) = w.add_dynamic(RigidBodyDesc::dynamic().position(vec3(80.0, 5.0, 0.0)), ColliderDesc::new(Shape::sphere(0.5)));
+    w.step(DT);
+    w.step(DT);
+    assert!(w.body(far).unwrap().is_sleeping());
+    assert_eq!(w.body(far).unwrap().position().y, 5.0);
+    let b = w.body(near).unwrap();
+    assert!(b.position().y < 5.0);
+    let mid = b.interpolated_iso(0.5).pos.y;
+    assert!(mid < b.prev_iso().pos.y && mid > b.position().y);
+}
