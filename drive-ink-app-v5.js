@@ -153,9 +153,13 @@
         if(!journal?.docId||!page?.pageId)return;
         // Serialize just the finished stroke. No page scan or PDF export runs
         // here, so another pen contact need not hold up network delivery.
-        const frozen=cloneStroke(item),version=driveContentVersion;
-        void journal.enqueue({v:1,kind:'stroke',pageId:page.pageId,stroke:frozen},version)
-            .then(()=>{if(current(journal)&&baselineReady){const known=baseline.get(page.pageId);known?.set(item.id,stamp(frozen));}})
+        // enqueue freezes the operation synchronously as JSON. Capture the
+        // identity/stamp now, without copying every point a second time.
+        const itemId=item.id,capturedStamp=stamp(item),version=driveContentVersion;
+        const wireStroke={id:itemId,tool:item.tool,color:item.color,width:item.width,points:item.points,
+            ...(item.syncStamp?{syncStamp:item.syncStamp}:{})};
+        void journal.enqueue({v:1,kind:'stroke',pageId:page.pageId,stroke:wireStroke},version)
+            .then(()=>{if(current(journal)&&baselineReady){const known=baseline.get(page.pageId);known?.set(itemId,capturedStamp);}})
             .catch(error=>{if(current(journal)){pages.add(index);schedule();console.warn('Ink stroke checkpoint:',error.message);}});
     }
     function page(index){if(applying)return;if(!start()?.docId)return;pages.add(index);schedule();}

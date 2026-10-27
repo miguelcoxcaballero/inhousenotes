@@ -98,7 +98,10 @@
                 this.exists=true;this.sentFrame=frame;this.retryAt=0;
                 this.notifyPeers(this.docId,this.fileId,true);
             }catch(error){
-                if(error.status===404){this.exists=false;this.fileId='';this.folder=null;}
+                if(error.status===404){
+                    this.exists=false;this.fileId='';this.folder=null;
+                    try{await this.patch('ink-journal-folder',()=>null);}catch(_){}
+                }
                 this.retryAt=Date.now()+(error.status===429?5000:1000);
                 this.host.warning?.(error);
             }finally{this.writing=false;this.scheduleFrame();}
