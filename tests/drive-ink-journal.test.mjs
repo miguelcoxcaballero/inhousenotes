@@ -6,8 +6,8 @@ function replica(api,actor,store=memoryInkStore(),docId='doc'){
  const j=new Journal({store,account:'a',actor,docId,fetch:api.fetch,apply:async ops=>applied.push(...ops),receipt:r=>receipts.push(r)});
  j.wake=()=>{};return {j,store,applied,receipts};
 }
-async function flush(j){j.lastWrite=0;for(const record of await j.store.list('settings',j.account))if(record.retryAt)await j.patch(record.id,old=>({...old,retryAt:0}));await j.flush();}
-async function poll(j){for(const s of j.sources.values())s.next=0;await j.poll();}
+async function flush(j){j.lastWrite=0;j.nextOutboxCheck=0;for(const record of await j.store.list('settings',j.account))if(record.retryAt)await j.patch(record.id,old=>({...old,retryAt:0}));await j.flush();}
+async function poll(j){for(const s of j.sources.values()){s.next=0;s.retryAt=0;}await j.poll();}
 test('direct IDs carry consecutive strokes during search-index lag and search failure',async()=>{
  const api=fakeInkDrive(),a=replica(api,'a'),b=replica(api,'b');
  await a.j.enqueue({stroke:'one'},1);await flush(a.j);
@@ -263,4 +263,71 @@ test('preview creation invalidates a deleted folder cache and recovers on retry'
  const live=new LivePreview({store,account:'a',docId:'doc',actor:'writer',fetch});live.scheduleFrame=()=>{};live.schedulePoll=()=>{};
  live.frame=1;await live.flushFrame();assert.equal(live.exists,false);assert.equal(await store.read('settings','a','ink-journal-folder'),null);
  await live.flushFrame();assert.equal(live.exists,true);assert.notEqual(live.folder,'deleted');live.stop();
+});
+
+test('a backing-off outbox avoids lease and status churn until its next useful check',async()=>{
+ const api=fakeInkDrive(),a=replica(api,'writer');let leases=0,changes=0;
+ const lease=a.store.withLease;a.store.withLease=(...args)=>{leases++;return lease(...args);};a.j.host.changed=()=>changes++;
+ await a.j.enqueue({stroke:'pending'},1);
+ const retryAt=Date.now()+10000;await a.j.patch(a.j.key(a.j.current),old=>({...old,retryAt}));
+ await a.j.flush();const next=a.j.nextOutboxCheck;
+ for(let i=0;i<20;i++)await a.j.flush();
+ assert.equal(leases,1);assert.equal(changes,1);assert.equal(a.receipts.length,0);
+ assert.ok(next>Date.now()+1500&&next<=Date.now()+2000);
+ // An earlier retry deadline remains eligible; the storage throttle must
+ // never stretch a short network backoff to the full two-second idle delay.
+ const sooner=Date.now()+600;await a.j.patch(a.j.key(a.j.current),old=>({...old,retryAt:sooner}));
+ a.j.nextOutboxCheck=0;await a.j.flush();assert.equal(a.j.nextOutboxCheck,sooner);a.j.stop();
+});
+
+test('a fresh persisted edit arriving during an empty outbox scan cannot be put back to sleep',async()=>{
+ const api=fakeInkDrive(),a=replica(api,'writer');a.j.outboxReady=true;
+ // Keep wake's generation/deadline behavior, but explicitly drive the ticks.
+ a.j.wake=function(){Journal.prototype.wake.call(this);clearTimeout(this.timer);this.timer=null;};
+ const read=a.j.read;let release,entered=false,held=false;
+ const gate=new Promise(r=>release=r);
+ a.j.read=async function(key){const result=await read.call(this,key);if(key==='ink-journal-outbox'&&!held){held=true;entered=true;await gate;}return result;};
+ const scanning=a.j.flush();while(!entered)await new Promise(r=>setTimeout(r,0));
+ await a.j.enqueue({stroke:'arrived-during-scan'},1);release();await scanning;
+ assert.equal(a.j.nextOutboxCheck,0);
+ await a.j.flush();assert.equal(a.j.status().pending,0);assert.equal(a.receipts[0].version,1);a.j.stop();
+});
+
+test('ordinary presence hints cannot bypass a failed source read backoff, but explicit retry can',async()=>{
+ const api=fakeInkDrive(),writer=replica(api,'writer'),reader=replica(api,'reader');
+ await writer.j.enqueue({stroke:'remote'},1);await flush(writer.j);
+ const id=writer.j.current.fileId;reader.j.nextDiscovery=Infinity;reader.j.hint(id);
+ const fetch=reader.j.host.fetch;let reads=0,fail=true;
+ reader.j.host.fetch=async(url,options)=>{if(url.includes(`/${id}?alt=media`)){reads++;if(fail)return new Response('{}',{status:503});}return fetch(url,options);};
+ await reader.j.poll();const source=reader.j.sources.get(id),retryAt=source.retryAt;
+ assert.ok(retryAt>Date.now());assert.equal(reads,1);
+ for(let i=0;i<10;i++){reader.j.hint(id);await reader.j.poll();}
+ assert.equal(source.next,retryAt);assert.equal(reads,1);
+ // A predecessor hint can force next=0, but must not override transport backoff.
+ source.next=0;await reader.j.poll();assert.equal(reads,1);
+ reader.j.hint('sealed');reader.j.sources.get('sealed').next=Infinity;
+ fail=false;await reader.j.retry();assert.equal(source.retryAt,0);assert.equal(reader.j.sources.get('sealed').next,Infinity);
+ await reader.j.poll();assert.equal(reads,2);assert.deepEqual(reader.applied,[{stroke:'remote'}]);
+ writer.j.stop();reader.j.stop();
+});
+
+test('an expired source backoff clears on successful read without clearing an unrelated write error',async()=>{
+ const api=fakeInkDrive(),writer=replica(api,'writer'),reader=replica(api,'reader');
+ await writer.j.enqueue({stroke:'remote'},1);await flush(writer.j);reader.j.nextDiscovery=Infinity;reader.j.hint(writer.j.current.fileId);
+ const source=reader.j.sources.get(writer.j.current.fileId);source.retryAt=Date.now()-1;source.next=0;
+ reader.j.lastError='Upload still needs retry';await reader.j.poll();
+ assert.equal(source.retryAt,0);assert.equal(reader.j.lastError,'Upload still needs retry');assert.equal(reader.applied.length,1);
+ writer.j.stop();reader.j.stop();
+});
+
+test('new samples wake the scan without bypassing a failed file write backoff',async()=>{
+ const api=fakeInkDrive(),a=replica(api,'writer');
+ a.j.wake=function(){Journal.prototype.wake.call(this);clearTimeout(this.timer);this.timer=null;};
+ await a.j.enqueue({stroke:'first'},1);
+ const retryAt=Date.now()+10000;await a.j.patch(a.j.key(a.j.current),old=>({...old,retryAt}));
+ await a.j.flush();assert.ok(a.j.nextOutboxCheck>Date.now());
+ await a.j.enqueue({stroke:'second'},2);assert.equal(a.j.nextOutboxCheck,0);
+ await a.j.flush();assert.equal(a.receipts.length,0);assert.equal(api.calls.length,0);
+ const stored=await a.j.read(a.j.key(a.j.current));assert.equal(stored.rev,2);assert.equal(stored.retryAt,retryAt);
+ await a.j.retry();await a.j.flush();assert.equal(a.receipts.at(-1).version,2);assert.equal(a.j.status().pending,0);a.j.stop();
 });
