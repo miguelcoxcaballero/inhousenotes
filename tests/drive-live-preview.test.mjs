@@ -93,3 +93,39 @@ test('only the exact confirmed final stroke is retired from live payloads',async
  const wire=JSON.parse(api.files.get(a.live.fileId).raw);
  assert.deepEqual(wire.packets.map(p=>p.strokeId),['drawing']);assert.equal(a.receipts.length,0);a.live.stop();
 });
+
+test('a stalled preview source does not freeze successive frames from another device',async()=>{
+ const api=fakeInkDrive(),a=replica(api,'writer'),reader=replica(api,'reader');
+ a.live.push(packet(1,0,[1,2]));await a.live.flushFrame();
+ let release,slowCalls=0;const blocked=new Promise(r=>release=r),fetch=reader.live.host.fetch;
+ reader.live.host.fetch=async(url,options)=>{
+  if(url.includes('/slow?alt=media')){slowCalls++;await blocked;return new Response('{}');}
+  return fetch(url,options);
+ };
+ reader.live.hint('slow');reader.live.hint(a.live.fileId);
+ const first=reader.live.pollFrames();
+ try{
+  const deadline=Date.now()+1000;
+  while(!reader.frames.length&&Date.now()<deadline)await new Promise(r=>setTimeout(r,2));
+  assert.equal(reader.frames.length,1);
+  a.live.push(packet(2,1,[2,3,4]));await a.live.flushFrame();
+  reader.live.previewSources.get(a.live.fileId).next=0;
+  await reader.live.pollFrames();
+  assert.equal(reader.frames.length,2);assert.deepEqual(reader.frames[1].points.map(p=>p.x),[1,2,3,4]);
+  assert.equal(slowCalls,1);
+ }finally{reader.live.stop();a.live.stop();release();await first;}
+});
+
+test('preview polling bounds concurrency and ignores late responses after leaving',async()=>{
+ const api=fakeInkDrive(),reader=replica(api,'reader');let release,active=0,maximum=0,calls=0;
+ const gate=new Promise(r=>release=r);reader.live.nextList=Infinity;
+ reader.live.host.fetch=async()=>{
+  calls++;maximum=Math.max(maximum,++active);await gate;active--;
+  return new Response(JSON.stringify({v:1,docId:'doc',actor:'writer',frame:1,at:Date.now(),packets:[packet(1,0,[1,2])]}));
+ };
+ for(let i=0;i<10;i++)reader.live.hint('remote-'+i);
+ const first=reader.live.pollFrames();await reader.live.pollFrames();
+ assert.equal(calls,4);assert.equal(maximum,4);
+ reader.live.stop();release();await first;
+ assert.equal(reader.frames.length,0);
+});

@@ -119,37 +119,42 @@
             if(this.stopped||!this.docId||this.pollTimer)return;
             this.pollTimer=setTimeout(()=>{this.pollTimer=null;void this.pollFrames();},delay);
         }
-        async pollFrames(){
-            if(this.stopped||this.reading)return;
-            this.reading=true;
+        async readPreview(id,source){
+            const now=Date.now();source.inFlight=true;source.next=now+2000;
             try{
-                const now=Date.now();
-                if(now>=this.nextList&&!this.discovery){
-                    this.nextList=now+5000;
-                    this.discovery=this.discoverPreviews().catch(()=>{}).finally(()=>{this.discovery=null;});
+                const response=await this.request(`${API}/${id}?alt=media`,{headers:{'Cache-Control':'no-cache'},bufferResponse:true});
+                const raw=await response.text();if(this.stopped||raw.length>MAX_BYTES)return;
+                const value=JSON.parse(raw),receivedAt=Date.now();
+                if(value.v!==1||value.docId!==this.docId||value.actor===this.actor||!Number.isSafeInteger(value.frame)
+                    ||!Array.isArray(value.packets)||value.packets.length>24||!Number.isFinite(value.at))return;
+                if(receivedAt-value.at>20000||value.at>receivedAt+30000){source.activeUntil=0;source.next=receivedAt+15000;return;}
+                if(value.frame>source.frame){
+                    for(const packet of value.packets){
+                        if(packet?.fileId!==this.docId||packet.type!=='live-stroke'||!Array.isArray(packet.points)||packet.points.length>24000)continue;
+                        this.host.preview?.(packet);
+                    }
+                    source.frame=value.frame;source.activeUntil=receivedAt+5000;
                 }
-                const due=[...this.previewSources].filter(([id,s])=>id!==this.fileId&&s.next<=now)
-                    .sort((a,b)=>b[1].activeUntil-a[1].activeUntil||a[1].next-b[1].next).slice(0,4);
-                await Promise.allSettled(due.map(async([id,source])=>{
-                    source.next=now+2000;
-                    try{
-                        const response=await this.request(`${API}/${id}?alt=media`,{headers:{'Cache-Control':'no-cache'},bufferResponse:true});
-                        const raw=await response.text();if(this.stopped||raw.length>MAX_BYTES)return;
-                        const value=JSON.parse(raw);
-                        if(value.v!==1||value.docId!==this.docId||value.actor===this.actor||!Number.isSafeInteger(value.frame)
-                            ||!Array.isArray(value.packets)||value.packets.length>24||!Number.isFinite(value.at))return;
-                        if(now-value.at>20000||value.at>now+30000){source.activeUntil=0;source.next=now+15000;return;}
-                        if(value.frame>source.frame){
-                            for(const packet of value.packets){
-                                if(packet?.fileId!==this.docId||packet.type!=='live-stroke'||!Array.isArray(packet.points)||packet.points.length>24000)continue;
-                                this.host.preview?.(packet);
-                            }
-                            source.frame=value.frame;source.activeUntil=Date.now()+5000;
-                        }
-                        source.next=Date.now()+(source.activeUntil>Date.now()?FRAME_MS:2000);
-                    }catch(_){source.next=Date.now()+3000;}
-                }));
-            }finally{this.reading=false;this.schedulePoll();}
+                source.next=receivedAt+(source.activeUntil>receivedAt?FRAME_MS:2000);
+            }catch(_){source.next=Date.now()+3000;}
+            finally{source.inFlight=false;}
+        }
+        async pollFrames(){
+            if(this.stopped)return;
+            const now=Date.now();
+            if(now>=this.nextList&&!this.discovery){
+                this.nextList=now+5000;
+                this.discovery=this.discoverPreviews().catch(()=>{}).finally(()=>{this.discovery=null;});
+            }
+            const sources=[...this.previewSources];
+            const available=Math.max(0,4-sources.filter(([,source])=>source.inFlight).length);
+            const due=sources.filter(([id,source])=>id!==this.fileId&&!source.inFlight&&source.next<=now)
+                .sort((a,b)=>b[1].activeUntil-a[1].activeUntil||a[1].next-b[1].next).slice(0,available);
+            const reads=due.map(([id,source])=>this.readPreview(id,source));
+            // Run the next scheduling pass independently. One stalled device
+            // consumes one slot, never the next frames of every healthy peer.
+            this.schedulePoll();
+            await Promise.allSettled(reads);
         }
         start(){if(this.host.canPublish!==false){this.frame++;this.scheduleFrame();}this.schedulePoll(0);return this;}
         stop(){super.stop();clearTimeout(this.frameTimer);clearTimeout(this.pollTimer);this.paths.clear();this.previewSources.clear();}
