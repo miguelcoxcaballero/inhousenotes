@@ -22,6 +22,34 @@ catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatast
 catastro_floor_area = { value = 9461.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5923101&rc2=YJ2752D", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 5, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 10 parts" }
 
+# ---- measured dimensions used by landmark.toml (added by the modeler; scratchpad cor/gen.py)
+plan_source = { value = "OSM way 513696236 + 9 building:parts, Catastro 5923101YJ2752D light wells", source = "https://www.openstreetmap.org/way/513696236", note = "checked on the IGN PNOA orthophoto (WMS pnoa-ma, CC BY 4.0, 0.1 m/px): plaza facade line, pylons, round corners, turret drums, oval hall and tower within ~0.4 m (roof lean negligible)" }
+plaza_front_length = { value = 51.1, unit = "m", source = "OSM way 513696236 edges 11-23", note = "between the outer faces of the two plaza pavilions (s -2.6 .. 48.4 along the facade, azimuth 254.7); round corner bays beyond them" }
+plaza_wings = { value = [14.93, 15.67], unit = "m", source = "OSM edges 21 / 13", note = "north / south wing; 4 bays at 3.8 m (photo C solve: bay centres s 1.9 / 5.8 / 9.5 / 13.3)" }
+frontispiece_plan = { value = "pylons 2.7 m wide, 1.2 m proud; arch bay 9.7 m", source = "OSM part 3 and outline edges 14-20" }
+north_front_length = { value = 37.06, unit = "m", source = "OSM edge 32", note = "9 bays assumed at 3.9 m like the plaza wings (no frontal photo of this side on Commons)" }
+south_front_length = { value = 16.7, unit = "m", source = "OSM edges 0-3", note = "11.5 m range (3 bays) + 5 m stepped end; party walls to the east" }
+pavilions = { value = "2.5-2.6 m wide, 0.8 m proud, top 18.9 m", source = "OSM edges 23, 11, 30, 5; height photo C solve (joint camera)" }
+round_corners = { value = 5.2, unit = "m", source = "OSM outline arcs (edges 25-28, 7-9) about the turret drum centres", note = "radius of the round corner bays" }
+turret_drums = { value = 3.6, unit = "m", source = "OSM parts 4 / 5 (roof:shape dome), PNOA", note = "radius; centres (-20.8, -21.8) and (-6.3, 29.2)" }
+oval_hall = { value = "19.1 x 23.1 m", source = "OSM part 2 / Catastro part 7", note = "glazed roof over the Maumejean stained-glass skylight, 16 sectors and a central ring r 3 m on the PNOA orthophoto" }
+stained_glass = { value = "370 panes, shields of the 48 provinces", source = "https://officialpress.es/los-secretos-del-edificio-de-correos/" }
+tower_plan = { value = "stone pedestal 6.6 m square; iron shaft octagon ~4.0 m across, gallery ~5.4 m", source = "OSM parts 7 / 8 + photo C and 08 widths" }
+tower_published_height = { value = 30, unit = "m", source = "https://officialpress.es/los-secretos-del-edificio-de-correos/", note = "replica tower with spiral stair (2002-2004); the model: roof terrace 15.7 m -> armillary sphere 47.1 m = 31 m" }
+ground_floor_top = { value = 6.1, unit = "m", source = "photo C camera solve (first-floor balcony base 6.1-6.5 m)" }
+first_floor_top = { value = 10.8, unit = "m", source = "photo C camera solve (second-floor balcony base 10.8-11.2 m)" }
+wing_windows = { value = "ground 2.1 x 3.9 m round-arched (sill 1.05 m); first 1.9 x 2.75 m (6.7 m); second 1.5 x 2.0 m (11.75 m)", source = "photo C camera solve" }
+wing_cornice = { value = 15.7, unit = "m", source = "photo C camera solve (cornice 14.9-15.7 m, crest to 16.9 m)", note = "joint solve with photo 20 gives 15.0 m, the C-only solve 16.05 m" }
+frontispiece_cornice = { value = [18.05, 19.25], unit = "m", source = "joint camera solve (photos C, 11, 13, 01; 18.0-18.3 m for the underside)" }
+great_arch = { value = "glazed lunette 8.7 m wide, springing 10.9 m, crown 15.1 m", source = "photo C camera solve" }
+entrance_doors = { value = "3 round-arched doors 2.2 m wide, 4.6 m high, 3.3 m apart", source = "photos C / 05" }
+clock_centre = { value = 21.15, unit = "m", source = "joint camera solve (21.15-21.35 m)", note = "attic 19.25-21.9 m" }
+sculpture_groups = { value = "21.95 -> 26.3 m", source = "joint camera solve (tops 25.8-26.3 m)", note = "angels with the globe and telegraph, ship and locomotive (es.wikipedia)" }
+turret_domes = { value = "drum 15.7-20.2 m, dome to 24.9 m, lantern ring 26.5 m, finial 30.0 m", source = "photo C solve (dome crown 24.9 m); joint solves (ring 26.0-27.0 m, finial 29.2-30.9 m)" }
+tower_heights = { value = "pedestal cornice 27.2 m, balustrade 28.1 m, gallery 38.0 m, cap 42.2-44.7 m, armillary sphere top 47.1 m", source = "joint camera solve (gallery 37.2-38.1 m, sphere 46.5-47.7 m) + photo 08 proportions (balustrade -> gallery 9.9 m)" }
+osm_heights_note = { value = "OSM building:levels x 3.2 m underestimate this building (storeys 4-5 m)", source = "measured above", note = "check() 'model too high' warnings are expected" }
+camera_solver = { value = "constrained bundle adjustment, eye height prior 1.6 m, EXIF focal where known, ground point (photo C) and horizon (photo 11) as vertical datum", source = "scratchpad cor/ba.py", note = "photos 01, 05, 13 are perspective-corrected (not pinhole): 13 kept as an approximate view, 01/05 as references only" }
+
 [[photo]]
 file = "photos/01_Edificio_de_Correos_y_Telegrafos_Valencia_Espana_2014_06_30_.jpg"
 title = "File:Edificio de Correos y Telégrafos, Valencia, España, 2014-06-30, DD 129.JPG"
@@ -31,8 +59,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 979
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/02_Edificio_de_correos_Valencia.jpg"
@@ -45,7 +73,7 @@ height = 1920
 camera = [-125.61, -93.6]
 exterior = true
 selected = false
-side = ""
+side = "nw"
 
 [[photo]]
 file = "photos/03_Correos_e_Telegrafos_Valencia_02.jpg"
@@ -57,8 +85,8 @@ width = 1280
 height = 853
 camera = [-18.18, -0.08]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/04_Edifici_de_Correus_i_Telegrafs_de_Valencia.jpg"
@@ -69,8 +97,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/05_Palacio_de_correos_y_telegrafos_de_Valencia.jpg"
@@ -81,8 +109,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/06_Torre_Palacio_de_Correos_de_Valencia.jpg"
@@ -93,8 +121,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "roof"
 
 [[photo]]
 file = "photos/07_Palacio_de_Correos_Valencia.jpg"
@@ -106,7 +134,7 @@ width = 1280
 height = 1707
 exterior = true
 selected = false
-side = ""
+side = "nw"
 
 [[photo]]
 file = "photos/08_Torre_de_Correos_Valencia_Espana.jpg"
@@ -117,8 +145,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/09_Valencia_Valencia_08.jpg"
@@ -130,7 +158,7 @@ width = 1280
 height = 853
 exterior = true
 selected = false
-side = ""
+side = "w"
 
 [[photo]]
 file = "photos/10_009_Placa_de_l_Ajuntament_Valencia_amb_l_edifici_de_Correus_.jpg"
@@ -141,8 +169,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/11_Mascleta_Correos.jpg"
@@ -154,8 +182,8 @@ width = 1280
 height = 960
 camera = [-94.93, -9.95]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/12_Municipio_di_Valencia.jpg"
@@ -166,8 +194,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/13_Edifici_Principal_Correos_Valencia.jpg"
@@ -178,8 +206,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 832
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/14_Historic_Facade_Valencia_Spain_14211442009.jpg"
@@ -190,8 +218,8 @@ license = "CC BY-SA 2.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/15_Placa_d_Emilio_Castelar_actualment_placa_de_l_ajuntament_AFC.jpg"
@@ -214,8 +242,229 @@ license = "Catastro open data (attribution required)"
 width = 1600
 height = 1200
 exterior = true
+selected = true
+side = "w"
+
+[[photo]]
+file = "photos/17_Edificio_de_Correos_Valencia.jpg"
+title = "File:Edificio de Correos Valencia.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_de_Correos_Valencia.jpg"
+author = "Chosovi"
+license = "CC BY-SA 2.5"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "w"
+notes = "plaza at dusk, EXIF 38 mm-eq; camera Canon PowerShot A80 250/32 mm"
+
+[[photo]]
+file = "photos/18_Edifici_de_Correus_i_Telegrafs_de_la_ciutat_de_Valencia.jpg"
+title = "File:Edifici de Correus i Telègrafs de la ciutat de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Edifici_de_Correus_i_Telègrafs_de_la_ciutat_de_València.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "nw"
+notes = "north corner dome from below; camera DC E1020 570/100 mm"
+
+[[photo]]
+file = "photos/19_Oficina_Central_de_Correos_de_Valencia.jpg"
+title = "File:Oficina Central de Correos de Valencia.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Oficina_Central_de_Correos_de_Valencia.JPG"
+author = "Karman85"
+license = "CC BY-SA 3.0 es"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = "nw"
+notes = "north-west corner; camera NIKON D3100 180/10 mm"
+
+[[photo]]
+file = "photos/20_Main_Post_Office___panoramio__1_.jpg"
+title = "File:Main Post Office - panoramio (1).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Main_Post_Office_-_panoramio_(1).jpg"
+author = "Mister No"
+license = "CC BY 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "nw"
+notes = "north-west corner, EXIF 25 mm-eq; camera Canon PowerShot SX260 HS 4500/1000 mm"
+
+[[photo]]
+file = "photos/21_Main_Post_Office___panoramio__2_.jpg"
+title = "File:Main Post Office - panoramio (2).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Main_Post_Office_-_panoramio_(2).jpg"
+author = "Mister No"
+license = "CC BY 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = "w"
+notes = "; camera Canon PowerShot SX260 HS 4500/1000 mm"
+
+[[photo]]
+file = "photos/22_Edifici_de_Correus__Valencia__2262044707_.jpg"
+title = "File:Edifici de Correus, València (2262044707).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edifici_de_Correus,_València_(2262044707).jpg"
+author = "Dan from Brussels, Europe"
+license = "CC BY-SA 2.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "nw"
+notes = "north-west corner before the tower replica (balustrade crest); camera C720UZ           718/100 mm"
+
+[[photo]]
+file = "photos/23_V_A_L_E_N_C_I_A__182712509_.jpg"
+title = "File:V A L E N C I A (182712509).jpeg"
+url = "https://commons.wikimedia.org/wiki/File:V_A_L_E_N_C_I_A_(182712509).jpeg"
+author = "Luca Florio"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 854
+exterior = true
+selected = false
+side = "nw"
+notes = "north-west at night; camera NIKON D750 240/10 mm"
+
+[[photo]]
+file = "photos/24_Correos_e_Telegrafos_Valencia.jpg"
+title = "File:Correos e Telégrafos Valencia.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Correos_e_Telégrafos_Valencia.jpg"
+author = "Bene Riobó"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1920
+exterior = true
+selected = false
+side = "w"
+notes = "; camera Canon EOS 80D 18/1 mm"
+
+[[photo]]
+file = "photos/25_Correos_e_Telegrafos_Valencia_03.jpg"
+title = "File:Correos e Telégrafos Valencia 03.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Correos_e_Telégrafos_Valencia_03.jpg"
+author = "Bene Riobó"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = "w"
+notes = "sculpture group detail; camera Canon EOS 80D 119/1 mm"
+
+[[photo]]
+file = "photos/26_Edificio_de_Correos_y_Telegrafos__Valencia__04_2025.jpg"
+title = "File:Edificio de Correos y Telégrafos, Valencia, 04 2025.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_de_Correos_y_Telégrafos,_Valencia,_04_2025.jpg"
+author = "Artvill"
+license = "CC BY 4.0"
+width = 1280
+height = 961
+exterior = true
+selected = false
+side = "w"
+notes = "; camera Pixel 8a 5430/1000 mm"
+
+[[photo]]
+file = "photos/27_011_Edifici_de_Correus_i_Telegrafs__pl__de_l_Ajuntament_24__.jpg"
+title = "File:011 Edifici de Correus i Telègrafs, pl. de l'Ajuntament 24 (València).jpg"
+url = "https://commons.wikimedia.org/wiki/File:011_Edifici_de_Correus_i_Telègrafs,_pl._de_l'Ajuntament_24_(València).jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "nw"
+notes = "north-west corner; camera OPPO A53s 3462/1000 mm"
+
+[[photo]]
+file = "photos/28_Valencia_Ciutat_Vella__oficina_de_correos_IMG_2608_2026_08_2.jpg"
+title = "File:Valencia-Ciutat Vella, oficina de correos IMG 2608 2026-08-22 17.20.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia-Ciutat_Vella,_oficina_de_correos_IMG_2608_2026-08-22_17.20.jpg"
+author = "Michielverbeek"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 702
+exterior = true
+selected = false
+side = "w"
+notes = "; camera Canon PowerShot G3 X 11229/1000 mm"
+
+[[photo]]
+file = "photos/29_Valencia__poste_centrali__del_1923___buche_delle_lettere_con.jpg"
+title = "File:Valencia, poste centrali (del 1923), buche delle lettere con teste di leone in carrer de correus 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia,_poste_centrali_(del_1923),_buche_delle_lettere_con_teste_di_leone_in_carrer_de_correus_01.jpg"
+author = "Francesco Bini"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1488
+exterior = true
 selected = false
 side = ""
+notes = "lion-head letterboxes in Carrer de Correus; camera Canon EOS 6D 24/1 mm"
+
+[[photo]]
+file = "photos/30_Valencia___Valencia_09.jpg"
+title = "File:València - Valencia 09.jpg"
+url = "https://commons.wikimedia.org/wiki/File:València_-_Valencia_09.jpg"
+author = "FrDr"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1920
+exterior = true
+selected = false
+side = "w"
+notes = "sculpture group detail; camera Canon EOS 70D 131/1 mm"
+
+[[photo]]
+file = "photos/31_Valencia___Valencia_11.jpg"
+title = "File:València - Valencia 11.jpg"
+url = "https://commons.wikimedia.org/wiki/File:València_-_Valencia_11.jpg"
+author = "FrDr"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = "w"
+notes = "; camera Canon EOS 70D 18/1 mm"
+
+[[photo]]
+file = "photos/32_Valencia_trip91.jpg"
+title = "File:Valencia trip91.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_trip91.jpg"
+author = "Tibor Kovacs"
+license = "CC BY 2.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "w"
+notes = "frontispiece, EXIF 18 mm APS-C; camera Canon EOS 60D 18/1 mm"
+
+[[photo]]
+file = "photos/33_Sant_Francesc__Valencia__Valencia__Spain___panoramio__2_.jpg"
+title = "File:Sant Francesc, València, Valencia, Spain - panoramio (2).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Sant_Francesc,_València,_Valencia,_Spain_-_panoramio_(2).jpg"
+author = "Frank Baulo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1920
+exterior = true
+selected = false
+side = "w"
+notes = "; camera Canon EOS 1000D 37/1 mm"
 
 [[plan]]
 file = "plans/catastro_wms.png"
@@ -260,3 +509,13 @@ notes = "built=1922; use=4_3_publicServices; area=9461; area_in_outline=2358.6"
 url = "https://eduwp.edu.gva.es/patrimonio-cultural/ficha-inmueble.php?id=17312&lang=ca"
 title = "Described at"
 notes = "Wikidata P973"
+
+[[reference]]
+url = "https://officialpress.es/los-secretos-del-edificio-de-correos/"
+title = "Los secretos del edificio de Correos (officialpress.es)"
+notes = "tower replica 30 m with spiral stair, two zinc-clad domes, 370 stained-glass panes"
+
+[[reference]]
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+title = "IGN PNOA orthophoto (WMS, CC BY 4.0)"
+notes = "plan check at 0.1 m/px, bbox EPSG:25830 725740.3,4372122.8,725820.3,4372212.8"
