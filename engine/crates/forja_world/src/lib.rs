@@ -92,6 +92,9 @@ pub struct WorldDescription {
     /// Lanes, signs and traffic lights for traffic AI (procedural cities);
     /// signal placements index `placements`.
     pub traffic: Option<forja_city::traffic::TrafficInfo>,
+    /// City tiles with a far-distance stand-in: `placements` ranges of
+    /// detail and the index of their HLOD placement (procedural cities).
+    pub hlod_tiles: Vec<forja_city::hlod::HlodTile>,
 }
 
 impl WorldDescription {
