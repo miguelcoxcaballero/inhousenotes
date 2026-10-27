@@ -12,6 +12,16 @@ commons_category = "Hotel Meliá Valencia (Torre Hilton)"
 wikipedia = { es = "https://es.wikipedia.org/wiki/Torre_Hilton", ca = "https://ca.wikipedia.org/wiki/Torre_Hilton_Val%C3%A8ncia", en = "https://en.wikipedia.org/wiki/Hilton_Valencia" }
 
 [facts]
+plan_frame = { value = "square tower 23.4 x 23.4 m, axis bearing 59.3 deg", source = "Catastro INSPIRE building parts 3551701YJ2735B (= OSM parts 1272876181/182/177/179), checked on the IGN PNOA orthophoto (WMS pnoa-ma, CC BY 4.0) and the PNOA-LiDAR roof cells", note = "tower u -7.4..16, v 0..23.4 in the building frame (origin NW-SW tower corner, u along bearing 59.3, v along 149.3); block u 31.6..55 v 0..23.3 (same 23.4 m module); slab u 15.8..27.8 v 7.4..15.9" }
+tower_roof = { value = 105.2, unit = "m", source = "IGN PNOA-LiDAR building-height WMS (wms-mapa-lidar.idee.es, EL.GridCoverage GetFeatureInfo, 2.5 m cells): 13 cells over the tower core, 103.9-106.7 m, median 105.2", note = "cells were registered with no offset: with the suggested 2.7 m southward shift the NW/SE roof edges fall 2.5-3 m outside the Catastro faces, with 0 m they coincide" }
+tower_sw_terrace = { value = 94.8, unit = "m", source = "PNOA-LiDAR: 4 cells over the SW 3.6 m of the tower, 93.9-95.3 m", note = "floor of the open crown frames (photos 03, 13, 16 show the frames flush with the 105 m roof); terrace not modelled, the frames are deep dark voids" }
+slab_top = { value = 117.6, unit = "m", source = "PNOA-LiDAR 117.4-117.6 m (3 cells, NW half of the slab); OSM way 23761819 height=117", note = "SE half lower, 91.5-96.8 m (modelled at 95 m)" }
+block_roof = { value = 52.0, unit = "m", source = "PNOA-LiDAR: 15 cells over the block, 48.9-52.9 m, median 52.0", note = "Catastro 15-16 floors" }
+podium = { value = 9.3, unit = "m", source = "PNOA-LiDAR: 12 cells over the lobby (8.6-9.7 m, median 9.3) and the NE conference podium (9.2-9.8 m; part 9 13.1 m, pergola 13.8 m)" }
+floor_rhythm = { value = 3.1, unit = "m", source = "bay rows counted on photos 05, 13 and 16 (29 glazed floors between the louvre band at 15.1 m and the 105 m roof) and camera solves", note = "bays stacked in four segments of 9, 9, 7 and 4 floors; chords 14.4, 13.6, 12.8, 8.6 m (Catastro arcs give 14.4 m chord and 2.0 m projection for the lowest segment); block bays 9 + 3 floors from 12.4 m" }
+tower_base = { value = [12.0, 15.1], unit = "m", source = "camera solves of the Catastro photo (EXIF Canon IXUS 130, 6.38 mm = 35.7 mm equiv.) and photo 11: louvre band bottom 12.0-12.4 m, bays from 15.1-15.6 m", note = "ground floor + 2 floors of grey panels, then a dark louvred plant floor" }
+crown_frames = { value = [92.6, 104.6], unit = "m", source = "photos 03, 13, 16 (4 rows of open frames in the SW corner strips), photo 05/C (NE strips closed)" }
+camera_catastro = { value = "eye (-138.7, 1.7, -67.7), fov 51.7 deg", source = "match solve of the Catastro facade photo with its EXIF focal length, 5 points, RMS 8.5 px on 2592 px" }
 floors = { value = 35, source = "https://www.wikidata.org/wiki/Q3062297#P1101" }
 built = { value = 2006, source = "https://www.wikidata.org/wiki/Q3062297#P571" }
 architect = { value = "Norman Foster", source = "https://www.wikidata.org/wiki/Q3062297#P84" }
@@ -30,8 +40,8 @@ license = "Public domain"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/02_Hotel_Hilton_Valencia.jpg"
@@ -42,8 +52,8 @@ license = "Public domain"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/03_Valencia_Hotel_Melia_Valencia_Torre_Hilton_02.jpg"
@@ -54,8 +64,8 @@ license = "CC0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/04_L_hotel_Hilton_de_Valencia_2006.jpg"
@@ -67,7 +77,7 @@ width = 960
 height = 1280
 exterior = true
 selected = false
-side = ""
+side = "se"
 
 [[photo]]
 file = "photos/05_Valencia_Hotel_Melia_Valencia_Torre_Hilton_06.jpg"
@@ -78,8 +88,8 @@ license = "CC0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/06_Valencia_Hotel_Melia_Valencia_Torre_Hilton_07.jpg"
@@ -91,7 +101,7 @@ width = 1280
 height = 1707
 exterior = true
 selected = false
-side = ""
+side = "nw"
 
 [[photo]]
 file = "photos/07_Hilton_Melia_Valencia.jpg"
@@ -103,7 +113,7 @@ width = 330
 height = 440
 exterior = true
 selected = false
-side = ""
+side = "se"
 
 [[photo]]
 file = "photos/08_Valencia_Hotel_Melia_Valencia_Torre_Hilton_10.jpg"
@@ -114,8 +124,8 @@ license = "CC0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
 
 [[photo]]
 file = "photos/09_Valencia_Hotel_Melia_Valencia_Torre_Hilton_09.jpg"
@@ -126,8 +136,8 @@ license = "CC0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/10_Valencia_Hotel_Melia_Valencia_Torre_Hilton_11.jpg"
@@ -139,7 +149,7 @@ width = 1280
 height = 1707
 exterior = true
 selected = false
-side = ""
+side = "s"
 
 [[photo]]
 file = "photos/11_Valencia_Hotel_Melia_Valencia_Torre_Hilton_12.jpg"
@@ -150,8 +160,8 @@ license = "CC0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/12_Valencia_Hotel_Melia_Valencia_Torre_Hilton_05.jpg"
@@ -162,8 +172,8 @@ license = "CC0"
 width = 1280
 height = 1625
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/13_Valencia_Hotel_Melia_Valencia_Torre_Hilton_03.jpg"
@@ -174,8 +184,8 @@ license = "CC0"
 width = 1280
 height = 1475
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/14_Valencia_Hotel_Melia_Valencia_Torre_Hilton_08.jpg"
@@ -186,8 +196,8 @@ license = "CC0"
 width = 1280
 height = 1849
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/15_Valencia_Hotel_Melia_Valencia_Torre_Hilton_04.jpg"
@@ -198,8 +208,8 @@ license = "CC0"
 width = 1280
 height = 772
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/16_Valencia_Hotel_Melia_Valencia_Torre_Hilton_01.jpg"
@@ -210,8 +220,8 @@ license = "CC0"
 width = 960
 height = 1641
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/catastro_3551701YJ2735B.jpg"
@@ -222,8 +232,18 @@ license = "Catastro open data (attribution required)"
 width = 1944
 height = 2592
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
+
+[[reference]]
+url = "https://wms-mapa-lidar.idee.es/lidar"
+title = "IGN PNOA-LiDAR building heights (WMS EL.GridCoverage, GetFeatureInfo)"
+notes = "106 cells sampled over the complex (2.5 m grid); CC BY 4.0 scne.es"
+
+[[reference]]
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+title = "IGN PNOA orthophoto (WMS pnoa-ma), bbox E 723414.5-723564.5, N 4374812.7-4374962.7"
+notes = "CC BY 4.0 scne.es; used to check the plan (strong relief lean of the tower)"
 
 [[plan]]
 file = "plans/catastro_wms.png"

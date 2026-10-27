@@ -22,6 +22,24 @@ catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatast
 catastro_floor_area = { value = 1238.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6031601&rc2=YJ2763A", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 2, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 3 parts" }
 
+plan_outline = { value = "OSM way 279478350 (IoU 0.955 with the model, Catastro 0.89); nave axis azimuth 97 deg along the north wall from the NW corner (-19.53, -16.47)", source = "https://www.openstreetmap.org/way/279478350 + IGN PNOA-MA orthophoto WMS https://www.ign.es/wms-inspire/pnoa-ma (CC BY 4.0)" }
+plan_type = { value = "single nave of six bays with chapels between the buttresses, no transept, five-sided polygonal head", source = "https://ca.wikipedia.org/wiki/Esgl%C3%A9sia_de_Sant_Esteve_(Val%C3%A8ncia)" }
+buttress_bays = { value = 5.03, unit = "m", source = "IGN PNOA-MA orthophoto WMS https://www.ign.es/wms-inspire/pnoa-ma (CC BY 4.0)", note = "seven north buttress shadows at u = 4.8 + 5.03 k (k 0..6) along the north wall; south buttress ticks at the same spacing" }
+nave_walls = { value = [2.6, 18.0], unit = "m", source = "IGN PNOA-MA orthophoto WMS https://www.ign.es/wms-inspire/pnoa-ma (CC BY 4.0)", note = "north clerestory wall 2.6 m inside the north front (its shadow on the chapel roofs), south eave line about 18 m; nave ridge line at 9.5-10 m" }
+lidar_bias = { value = 2.0, unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0)", note = "street cells read 2.0-2.6 m and the Catastro-photo solve gives the north elevation ~2-3 m lower than the raw LiDAR; LiDAR heights of the body reduced by 2 m (Carme: LiDAR 1.5 m above its photo fit). Cells assumed ~2.7 m south of the features (brief)" }
+nave_ridge = { value = 20.3, unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0)", note = "raw 22.2-22.3 along the ridge, 20.3-21.7 near both eaves (very low pitch, confirmed by the even PNOA brightness of both slopes)" }
+nave_eave_north = { value = 18.0, unit = "m", source = "Catastro photo 6031601YJ2763A (Canon SX270 HS, 4.5 mm = 25 mm eq., f = 1167 px at 1600 px) constrained solve, eye prior 1.6 m", note = "photo solve 17.5 m (rms 9 px); raw LiDAR implies ~20.3; adopted 18.0" }
+north_chapel_cornice = { value = 12.3, unit = "m", source = "Catastro photo 6031601YJ2763A (Canon SX270 HS, 4.5 mm = 25 mm eq., f = 1167 px at 1600 px) constrained solve, eye prior 1.6 m", note = "solves 11.3-12.6 m; LiDAR chapel strip 14.7-17.1 raw (mixed with buttress tops)" }
+north_buttress_tops = { value = 15.2, unit = "m", source = "Catastro photo 6031601YJ2763A (Canon SX270 HS, 4.5 mm = 25 mm eq., f = 1167 px at 1600 px) constrained solve, eye prior 1.6 m", note = "solves 14.1-15.8 m, ratio to the clerestory cornice 0.85; gargoyles project 0.5-0.9 m" }
+north_portal = { value = "lateral portal (c. 1608, Doric pilasters, round arch; upper body with the relief of Saint Stephen c. 1900): door 2.6 x 4.6 m, entablature 5.3-6.2 m, pediment and cross to 9.3 m, centred 12.6 m east of the NW corner; tile panel 1.6 x 2.4 m 8 m further east", source = "Catastro photo 6031601YJ2763A (Canon SX270 HS, 4.5 mm = 25 mm eq., f = 1167 px at 1600 px) constrained solve, eye prior 1.6 m; photos 08, 25; ca.wikipedia" }
+west_front = { value = 18.6, unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0) (20.4-24.5 raw next to the tower) and photos 06, 12, 20", note = "Facana dels peus with the round-headed Gothic window and the twin portals of the notaries (1682-1696); raked cornice towards the tower" }
+tower_position = { value = "square 6.0 m centred (-19.1, 1.0), turned with the nave, projecting about 2 m west of the west front", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0); photo 12; photo 20", note = "LiDAR tower cells at x -22.4..-19.9, z 2.4-4.9 (33.6-36.6 m); photo 20 shows its west face almost flush with the front. Uncertain +-1.5 m in x" }
+tower_levels = { value = [[22.5, "shaft top / belfry base"], [30.1, "belfry cornice"], [33.7, "upper body (1755)"], [36.1, "lantern"], [37.3, "glazed cupolino"], [38.7, "cross"]], unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0) (max 36.6 m at the cupolino) with stage ratios from photos 02, 03, 04, 15", note = "the tower is kept at the raw LiDAR height because photo 12 shows it relatively taller than the 18.6 m west front; +-2 m" }
+communion_chapel = { value = "body 10.5 m with entrance front (door 2.0 x 3.9 m, window) facing the Placa de la Comunio, dome r 3.9 m with lantern centred (-6.7, 10.3), top ~18.7 m; lower plastered front with oculus 7.2 m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0) (11.3-13.3 raw body, 18.5 raw near the dome); IGN PNOA-MA orthophoto WMS https://www.ign.es/wms-inspire/pnoa-ma (CC BY 4.0) (dome ring and lantern ring); photos 07, 16, 21", note = "finished 1696 (ca.wikipedia)" }
+feet_annex = { value = 9.6, unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0) (10.8-12.8 raw); Catastro part 2 of 6031601YJ2763A; brown tiles on PNOA" }
+sacristy_block = { value = 14.5, unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0) (16-19 raw); Catastro part 1" }
+head_eave = { value = 16.0, unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0) (hip roof falling from 22 to 18 raw)" }
+
 [[photo]]
 file = "photos/01_Remat_del_campanar_de_l_esglesia_de_sant_Esteve_Valencia.jpg"
 title = "File:Remat del campanar de l'església de sant Esteve, València.JPG"
@@ -32,8 +50,8 @@ width = 1280
 height = 1807
 camera = [-2.35, -1.8]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "tower top"
 
 [[photo]]
 file = "photos/02_Campanar_de_l_esglesia_de_sant_Esteve_Valencia.jpg"
@@ -45,8 +63,8 @@ width = 1280
 height = 1831
 camera = [-2.35, -1.8]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "tower n"
 
 [[photo]]
 file = "photos/03_Campanar_Sant_Esteve_panoramio.jpg"
@@ -58,8 +76,8 @@ width = 1280
 height = 1707
 camera = [-19.86, -5.95]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "tower w"
 
 [[photo]]
 file = "photos/04_096_Campanar_de_Sant_Esteve_Valencia.jpg"
@@ -71,8 +89,8 @@ width = 1280
 height = 1707
 camera = [-2.35, -1.8]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "tower top"
 
 [[photo]]
 file = "photos/05_Cubiertas_San_Esteban.jpg"
@@ -95,8 +113,8 @@ license = "CC BY-SA 3.0 es"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/07_Esglesia_de_Sant_Esteve_P1140109.jpg"
@@ -107,8 +125,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/08_Esglesia_de_Sant_Esteve_Valencia_02.jpg"
@@ -119,8 +137,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1920
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/09_Gargoles_de_l_esglesia_de_Sant_Esteve_Valencia_02.jpg"
@@ -155,8 +173,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "tower se"
 
 [[photo]]
 file = "photos/12_207_Sant_Esteve_des_de_la_pl_Sant_Lluis_Bertran_Valencia.jpg"
@@ -167,8 +185,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/13_210_Esglesia_de_Sant_Esteve_Valencia_gargola_de_la_facana_no.jpg"
@@ -191,8 +209,8 @@ license = "Public domain"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "tower"
 
 [[photo]]
 file = "photos/15_Campanar_de_l_esglesia_de_Sant_Esteve_Valencia_01.jpg"
@@ -203,8 +221,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1920
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "tower s"
 
 [[photo]]
 file = "photos/16_San_Esteban_de_ValenciaDSCF4574.jpg"
@@ -215,8 +233,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/catastro_6031601YJ2763A.jpg"
@@ -227,8 +245,80 @@ license = "Catastro open data (attribution required)"
 width = 1600
 height = 1200
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
+
+[[photo]]
+file = "photos/20_Facana_dels_peus.jpg"
+title = "File:Façana dels peus de l'església de sant Esteve, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_dels_peus_de_l%27esgl%C3%A9sia_de_sant_Esteve%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "w"
+
+[[photo]]
+file = "photos/21_Portada_posterior.jpg"
+title = "File:Portada posterior de l'església de sant Esteve de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Portada_posterior_de_l%27esgl%C3%A9sia_de_sant_Esteve_de_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1668
+exterior = true
+selected = true
+side = "s"
+
+[[photo]]
+file = "photos/22_Facana_i_campanar_2.jpg"
+title = "File:Església de Sant Esteve (València) - Façana i campanar - 2.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_de_Sant_Esteve_%28Val%C3%A8ncia%29_-_Fa%C3%A7ana_i_campanar_-_2.jpg"
+author = "Albertvillanovadelmoral"
+license = "CC BY-SA 3.0 es"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "n"
+
+[[photo]]
+file = "photos/23_Facana.jpg"
+title = "File:Església de Sant Esteve (València) - Façana.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_de_Sant_Esteve_%28Val%C3%A8ncia%29_-_Fa%C3%A7ana.jpg"
+author = "Albertvillanovadelmoral"
+license = "CC BY-SA 3.0 es"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "n"
+
+[[photo]]
+file = "photos/24_Valencia_01.jpg"
+title = "File:Església de Sant Esteve, València 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_de_Sant_Esteve%2C_Val%C3%A8ncia_01.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "n"
+
+[[photo]]
+file = "photos/25_Valencia_03.jpg"
+title = "File:Església de Sant Esteve, València 03.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_de_Sant_Esteve%2C_Val%C3%A8ncia_03.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "n"
 
 [[plan]]
 file = "plans/catastro_wms.png"
@@ -278,3 +368,13 @@ notes = "built=1700; use=4_3_publicServices; area=1238; area_in_outline=1102.6"
 url = "https://eduwp.edu.gva.es/patrimonio-cultural/ficha-inmueble.php?id=1392"
 title = "Described at"
 notes = "Wikidata P973"
+
+[[reference]]
+url = "https://wms-mapa-lidar.idee.es/lidar"
+title = "IGN PNOA-LiDAR building heights (WMS GetFeatureInfo, CC BY 4.0)"
+notes = "147 cells of 2.5 m sampled over the church and tower"
+
+[[reference]]
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+title = "IGN PNOA-MA orthophoto (CC BY 4.0)"
+notes = "plan, buttress bays, ridge line, dome ring, tower top"
