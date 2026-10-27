@@ -16,6 +16,9 @@ struct ExposureState {
 };
 @group(0) @binding(7) var<storage, read> exposure_state: ExposureState;
 
+// Split-sum DFG LUT (r: A, g: B) for image-based specular (brdf.rs).
+@group(0) @binding(9) var dfg_tex: texture_2d<f32>;
+
 const CLUSTER_STRIDE: u32 = 49u;
 
 // Interleaved gradient noise (Jimenez 2014), animated per frame so TAA
@@ -151,6 +154,80 @@ fn env_brdf(f0: vec3<f32>, rough: f32, nv: f32) -> vec3<f32> {
     return f0 * ab.x + vec3<f32>(ab.y);
 }
 
+// Split-sum directional albedo (A, B) of the specular BRDF, from the
+// precomputed LUT (`brdf.rs`): E(v) = F0 * A + B.
+fn dfg_terms(rough: f32, nv: f32) -> vec2<f32> {
+    let uv = vec2<f32>(clamp(nv, 0.0, 1.0), clamp(rough, 0.0, 1.0)) * (31.0 / 32.0) + vec2<f32>(0.5 / 32.0);
+    return textureSampleLevel(dfg_tex, env_samp, uv, 0.0).rg;
+}
+
+// Image-based specular with multiple-scattering energy compensation
+// (Fdez-Aguera 2019, "A Multiple-Scattering Microfacet Model for Real-Time
+// Image-based Lighting", JCGT 8(1)). Returns the weights of the prefiltered
+// radiance (x3, single scattering with roughness-dependent Fresnel) and of
+// the cosine-weighted irradiance (multiple scattering), plus the diffuse
+// weight 1 - (FssEss + FmsEms) that keeps the sum energy conserving.
+// `k` scales the dielectric Fresnel (material specular factor).
+struct IblWeights {
+    spec: vec3<f32>,
+    multi: vec3<f32>,
+    diffuse: vec3<f32>,
+};
+
+fn legacy(bit: u32) -> bool {
+    return (u32(frame.env_params.w + 0.5) & bit) != 0u;
+}
+
+fn ibl_weights(f0: vec3<f32>, k: f32, rough: f32, nv: f32) -> IblWeights {
+    var w: IblWeights;
+    if (legacy(2u)) {
+        w.spec = env_brdf(f0, rough, nv) * k;
+        w.multi = vec3<f32>(0.0);
+        w.diffuse = vec3<f32>(1.0);
+        return w;
+    }
+    let ab = dfg_terms(rough, nv);
+    let fr = max(vec3<f32>(1.0 - rough), f0) - f0;
+    let ks = f0 + fr * pow(1.0 - nv, 5.0);
+    let fss_ess = ks * ab.x + vec3<f32>(ab.y);
+    let ess = ab.x + ab.y;
+    let ems = 1.0 - ess;
+    let f_avg = f0 + (vec3<f32>(1.0) - f0) / 21.0;
+    let fms_ems = ems * fss_ess * f_avg / (vec3<f32>(1.0) - ems * f_avg);
+    w.spec = fss_ess * k;
+    w.multi = fms_ems * k;
+    w.diffuse = max(vec3<f32>(1.0) - (fss_ess + fms_ems) * k, vec3<f32>(0.0));
+    return w;
+}
+
+// Energy lost by single-scattering GGX restored for analytic lights
+// (Kulla & Conty 2017, as approximated in Filament): 1 + F0 (1 / Ess - 1).
+fn spec_energy(f0: vec3<f32>, rough: f32, nv: f32) -> vec3<f32> {
+    if (legacy(2u)) { return vec3<f32>(1.0); }
+    let ab = dfg_terms(rough, nv);
+    return vec3<f32>(1.0) + f0 * (1.0 / max(ab.x + ab.y, 0.05) - 1.0);
+}
+
+// Geometric specular anti-aliasing (Kaplanyan et al. 2016; Tokuyoshi &
+// Kaplanyan 2019, "Improved Geometric Specular Antialiasing"): widen the
+// GGX lobe by the variance of the shading normal across the pixel
+// footprint so curved and bumpy surfaces do not alias into sparkles, plus
+// the normal-map variance left in a filtered (shortened) mip normal
+// (Toksvig 2005 / vMF fit of Han et al. 2007). Takes and returns alpha^2.
+// `n` must be computed in uniform control flow (screen derivatives).
+fn specular_aa(n: vec3<f32>, a2: f32, nm_len: f32, nm_scale: f32) -> f32 {
+    let dndu = dpdx(n);
+    let dndv = dpdy(n);
+    let variance = 0.15915494 * (dot(dndu, dndu) + dot(dndv, dndv));
+    let kernel = min(2.0 * variance, 0.18);
+    if (legacy(4u)) { return a2; }
+    // vMF: kappa = (3L - L^3) / (1 - L^2), alpha^2 ~ 2 / kappa; a small dead
+    // zone ignores 8-bit quantization of unfiltered normal maps.
+    let l = clamp(nm_len, 0.0, 1.0);
+    let toksvig = 2.0 * max(1.0 - l * l - 0.004, 0.0) / max(3.0 * l - l * l * l, 1e-3) * nm_scale * nm_scale;
+    return clamp(a2 + kernel + min(toksvig, 0.25), 0.0, 1.0);
+}
+
 fn ambient_sky(n: vec3<f32>) -> vec3<f32> {
     if (frame.env_params.x > 0.5) {
         return sh_irradiance(n) + ambient_fill();
@@ -163,9 +240,12 @@ fn ambient_sky(n: vec3<f32>) -> vec3<f32> {
 // Blurry environment reflection from the analytic sky colors.
 fn env_reflection(r: vec3<f32>, rough: f32) -> vec3<f32> {
     if (frame.env_params.x > 0.5) {
-        // Mip 0 holds the sun; start reflections at mip 1 to avoid double
-        // counting the analytic sun highlight.
-        let lod = 1.0 + rough * (frame.env_params.y - 1.0);
+        // Mip 0 holds the sun; reflections start at mip 1 (the sun is the
+        // analytic highlight). Mips 1.. are GGX-prefiltered (split-sum) for
+        // roughness r = 1 - sqrt(1 - x), x = (lod - 1) / (max - 1)
+        // (`env::mip_roughness`).
+        var lod = 1.0 + rough * (2.0 - rough) * (frame.env_params.y - 1.0);
+        if (legacy(1u)) { lod = 1.0 + rough * (frame.env_params.y - 1.0); }
         return textureSampleLevel(env_tex, env_samp, equirect_uv(r), lod).rgb;
     }
     let sharp = mix(frame.sky_horizon.rgb, frame.sky_zenith.rgb, pow(clamp(r.y, 0.0, 1.0), 0.5));
@@ -203,7 +283,7 @@ fn height_fog(color: vec3<f32>, world_pos: vec3<f32>, view_dir: vec3<f32>) -> ve
         integral *= (1.0 - exp(-falloff * dy)) / (falloff * dy);
     }
     if (frame.params.w < 0.5) {
-        // Night look (Environment::look = Look::Night): the grey height fog
+        // Night camera (Environment::camera = CameraModel::Night): the grey height fog
         // the night presets were tuned with; their lamps glow in it through
         // `local_inscatter`.
         let fog = 1.0 - exp(-density * integral);

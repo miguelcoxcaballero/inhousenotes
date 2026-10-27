@@ -4,7 +4,8 @@
 //! `RAIN=1`, `WET=1` pick the other presets, `LEGACY=1` the previous
 //! 64-light path). At night the street also gets two small neon signs,
 //! shop light spilling onto the pavement and a low `along` shot down the
-//! road. `STREET_SHOTS=wide,along` renders only those shots.
+//! road. `STREET_SHOTS=wide,along` renders only those shots;
+//! `STREET_CLOSE=1` adds facade close-ups.
 
 use std::path::PathBuf;
 
@@ -126,7 +127,7 @@ fn main() {
         println!("night at {:.1} h: {} lights", kit.night.hour, frame.local_lights.len());
     } else if night {
         frame.env.use_ibl = false;
-        frame.env.look = Look::Night;
+        frame.env.camera = CameraModel::Night;
         frame.env.sun_dir = Vec3::new(-0.35, 0.72, -0.55).normalize();
         frame.env.sun_illuminance = 0.025;
         frame.env.set_linear_exposure(0.55 + 3.0 * kit.night.dark);
@@ -136,6 +137,12 @@ fn main() {
     let mut shots: Vec<(String, Vec3, Vec3)> = vec![("wide".into(), Vec3::new(-30.0, 1.7, 22.0), Vec3::new(10.0, 9.0, 0.0))];
     for (id, cx, h) in centers.iter().step_by(2) {
         shots.push((id.clone(), Vec3::new(cx + 6.0, 1.7, 13.0), Vec3::new(*cx + 2.0, h * 0.55, 0.0)));
+        // STREET_CLOSE=1: material close-ups, 4 m from the facade and
+        // grazing along it (where a plastic sheen shows first).
+        if std::env::var("STREET_CLOSE").is_ok() {
+            shots.push((format!("{id}_close"), Vec3::new(cx + 4.0, 1.7, 4.0), Vec3::new(*cx - 1.0, 4.5, 0.0)));
+            shots.push((format!("{id}_graze"), Vec3::new(cx + 9.0, 1.8, 1.6), Vec3::new(*cx - 5.0, 6.5, 0.0)));
+        }
     }
     if night {
         // Low along the road, like a photo of a wet street at night.

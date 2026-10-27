@@ -232,7 +232,7 @@ fn fs_tonemap(in: FsIn) -> @location(0) vec4<f32> {
         // Display-linear out; the sRGB target encodes it.
         c = tonemap(c);
     } else {
-        // Night look: eye adaptation (or a manual linear exposure), AgX and
+        // Night camera: eye adaptation (or a manual linear exposure), AgX and
         // the cinematic night grade, unchanged from the night renderer.
         let bloom = textureSample(bloom_tex, samp, in.uv).rgb;
         var exposure = post.params.x;

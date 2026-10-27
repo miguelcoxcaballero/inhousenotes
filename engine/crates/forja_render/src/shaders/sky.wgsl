@@ -30,7 +30,7 @@ fn fs_main(in: SkyOut) -> @location(0) vec4<f32> {
         if (w > 0.0) {
             // Below the horizon blend the horizon sky into the fogged ground.
             let dh = normalize(vec3<f32>(d.x, max(d.y, 0.0), d.z));
-            var a = sky_radiance(dh, frame.sun_dir.xyz, h * 0.001) * frame.env_params.w;
+            var a = sky_radiance(dh, frame.sun_dir.xyz, h * 0.001) * frame.params.x;
             let dist = min(h / max(-d.y, 1e-4), 3e4);
             // Land beyond the city seen from above (towns, orchards, dry
             // fields) reflects ~10%, darker than the 17% paving of the
