@@ -6,9 +6,6 @@
 //! ```
 //! Maps: `kit` (Kenney city), `osm` (Miami Beach), `track`, `terrain`.
 
-mod game;
-mod ui;
-
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -17,7 +14,8 @@ use forja_core::App;
 use forja_input::{ActionMap, Input};
 use forja_math::{Vec2, Vec3};
 use forja_render::{DrawInstance, FrameDesc, ModelHandle, Renderer};
-use game::{Hud, Intent, MapKind, Paths, RenderScene};
+use sandbox::game::{self, Hud, Intent, MapKind, Paths, RenderScene};
+use sandbox::ui;
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
@@ -77,6 +75,31 @@ fn parse_args() -> Args {
 fn paths() -> Paths {
     let root = forja_assets::manifest::find_engine_root().unwrap_or_else(|| PathBuf::from("."));
     Paths { data: root.join("data"), downloaded: root.join("assets/downloaded") }
+}
+
+/// First launch of a release: when assets of the play set are missing and
+/// `forja_fetch` sits next to the executable, run it (progress goes to this
+/// console) before building the world. `FORJA_NO_FETCH=1` skips it.
+fn fetch_missing_assets() {
+    if std::env::var_os("FORJA_NO_FETCH").is_some() {
+        return;
+    }
+    let Some(root) = forja_assets::manifest::find_engine_root() else { return };
+    let missing = forja_assets::manifest::missing_play_assets(&root);
+    if missing.is_empty() {
+        return;
+    }
+    let fetcher = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join(format!("forja_fetch{}", std::env::consts::EXE_SUFFIX))));
+    let Some(fetcher) = fetcher.filter(|f| f.is_file()) else {
+        log::warn!("{} assets missing ({}...); run `forja_fetch fetch --play --missing`", missing.len(), missing[0]);
+        return;
+    };
+    println!("Forja: descargando {} paquetes de contenido (solo la primera vez, ~1 GB)...", missing.len());
+    match std::process::Command::new(&fetcher).args(["fetch", "--play", "--missing", "--root"]).arg(&root).status() {
+        Ok(s) if s.success() => println!("Forja: contenido listo."),
+        Ok(_) => println!("Forja: algunos paquetes fallaron; el juego usara sustitutos y se reintentaran en el proximo arranque."),
+        Err(e) => log::warn!("{}: {e}", fetcher.display()),
+    }
 }
 
 /// Uploads new models and converts the scene into a render frame.
@@ -517,6 +540,9 @@ impl ApplicationHandler for Sandbox {
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,wgpu_core=warn,wgpu_hal=warn,naga=warn")).init();
     let args = parse_args();
+    if args.screenshot.is_none() {
+        fetch_missing_assets();
+    }
     if args.screenshot.is_some() {
         run_headless(&args);
         return;

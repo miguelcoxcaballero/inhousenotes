@@ -103,11 +103,30 @@ fn fs_tonemap(in: FsIn) -> @location(0) vec4<f32> {
     return vec4<f32>(c, sqrt(luma(c)));
 }
 
+// With TAA (params.x = 0): contrast-adaptive sharpening (AMD CAS style,
+// 5 taps) to restore the detail the temporal filter softens, limited to the
+// local min/max so it never rings. Strength in params.y.
+fn sharpen(uv: vec2<f32>, t: vec2<f32>) -> vec4<f32> {
+    let c = textureSampleLevel(src, samp, uv, 0.0).rgb;
+    let n = textureSampleLevel(src, samp, uv + vec2<f32>(0.0, -t.y), 0.0).rgb;
+    let s = textureSampleLevel(src, samp, uv + vec2<f32>(0.0, t.y), 0.0).rgb;
+    let e = textureSampleLevel(src, samp, uv + vec2<f32>(t.x, 0.0), 0.0).rgb;
+    let w = textureSampleLevel(src, samp, uv + vec2<f32>(-t.x, 0.0), 0.0).rgb;
+    let mn = min(c, min(min(n, s), min(e, w)));
+    let mx = max(c, max(max(n, s), max(e, w)));
+    // Less sharpening where local contrast is already high.
+    let amp = sqrt(clamp(min(mn, vec3<f32>(1.0) - mx) / max(mx, vec3<f32>(1e-4)), vec3<f32>(0.0), vec3<f32>(1.0)));
+    let k = -amp * post.params.y * 0.2;
+    let r = (c + (n + s + e + w) * k) / (vec3<f32>(1.0) + 4.0 * k);
+    return vec4<f32>(clamp(r, mn, mx), 1.0);
+}
+
 // FXAA 3.11 quality preset (simplified), reads the tonemapped linear image.
 @fragment
 fn fs_fxaa(in: FsIn) -> @location(0) vec4<f32> {
     let t = post.texel.xy;
     let uv = in.uv;
+    if (post.params.x < 0.5) { return sharpen(uv, t); }
     let cm = textureSampleLevel(src, samp, uv, 0.0);
     let lm = cm.a;
     let ln = textureSampleLevel(src, samp, uv + vec2<f32>(0.0, -t.y), 0.0).a;

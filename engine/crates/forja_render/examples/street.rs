@@ -7,6 +7,9 @@
 //! - `curve`: a lane curving at R = 30 m with houses on both sides;
 //! - `corner`: a rounded Ensanche chaflán and a 60° corner bevelled to a
 //!   2.5 m tip, with their neighbours.
+//!
+//! `NIGHT=1` (or `HOUR=<h>`) renders any of them at night, lit by their own
+//! lanterns, windows and shops.
 
 use std::path::PathBuf;
 
@@ -171,7 +174,7 @@ fn corner() -> Scene {
     lots.push((lot(vec![q3, q2, r2, r3], vec![Street, Party, Courtyard, Party], 0.15, mad, dist), "madrid_popular"));
     // Ground: asphalt with sidewalks along every street front.
     let mut ground: Parts<Mat> = Parts::new();
-    ground.get(Mat::Asphalt).polygon(&[v(-60.0, -60.0), v(140.0, -60.0), v(140.0, 80.0), v(-60.0, 80.0)], 0.0, true, 5.0);
+    ground.get(Mat::Asphalt).polygon(&[v(-60.0, -60.0), v(140.0, -60.0), v(140.0, 80.0), v(-60.0, 80.0)], 0.0, true, Mat::Asphalt.scale());
     for (l, _) in &lots {
         let n = l.ring.len();
         for i in 0..n {
@@ -221,7 +224,7 @@ fn street(styles: &StyleLibrary, only: Option<&str>) -> Scene {
     let (x0, x1) = (x_start - 40.0, x + 40.0);
     p.get(Mat::SidewalkHex).polygon(&[v(x0, 0.0), v(x1, 0.0), v(x1, 4.5), v(x0, 4.5)], 0.15, true, Mat::SidewalkHex.scale());
     p.get(Mat::Curb).aabox(Vec3::new(x0, 0.0, 4.5), Vec3::new(x1, 0.15, 4.75), 1.0);
-    p.get(Mat::Asphalt).polygon(&[v(x0, 4.75), v(x1, 4.75), v(x1, 40.0), v(x0, 40.0)], 0.0, true, 5.0);
+    p.get(Mat::Asphalt).polygon(&[v(x0, 4.75), v(x1, 4.75), v(x1, 40.0), v(x0, 40.0)], 0.0, true, Mat::Asphalt.scale());
     let mut k = x0;
     while k < x1 {
         p.get(Mat::Paint([235, 235, 230])).aabox(Vec3::new(k, 0.0, 9.9), Vec3::new(k + 3.5, 0.006, 10.05), 1.0);
@@ -236,7 +239,12 @@ fn main() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let dl = root.join("assets/downloaded");
     let t0 = std::time::Instant::now();
-    let kit = Kit::load(Some(&dl));
+    let mut kit = Kit::load(Some(&dl));
+    let hour = std::env::var("HOUR").ok().and_then(|v| v.parse::<f32>().ok()).or_else(|| std::env::var("NIGHT").ok().filter(|v| v != "0").map(|_| 22.5));
+    if let Some(h) = hour {
+        kit.set_hour(h);
+    }
+    let night = kit.night.is_night();
     let styles = StyleLibrary::load(Some(&root.join("data/city/styles.toml")));
     let scene = match arg.as_deref() {
         Some("alley") => alley(),
@@ -273,9 +281,26 @@ fn main() {
         frame.instances.push(DrawInstance::new(handles[*s], flip * *m));
     }
     frame.env.shadow_distance = 80.0;
+    if night {
+        frame.env.use_ibl = false;
+        frame.env.sun_dir = Vec3::new(-0.35, 0.72, -0.55).normalize();
+        frame.env.sun_illuminance = 0.025;
+        frame.env.exposure = 0.55 + 3.0 * kit.night.dark;
+        frame.env.bloom = 0.08;
+        println!("night at {:.1} h: {} city lights", kit.night.hour, out.city_lights.len());
+    }
     for (name, eye, at) in scene.shots {
         frame.camera = Camera::look_at(flip.transform_point3(eye), flip.transform_point3(at));
         frame.camera.fov_y = 62f32.to_radians();
+        if night {
+            frame.lights = forja_city::nightlight::select(&out.city_lights, eye, at - eye, MAX_LIGHTS)
+                .into_iter()
+                .map(|i| {
+                    let (position, color, intensity, radius) = out.city_lights[i].as_point();
+                    PointLight { position: flip.transform_point3(position), radius, color, intensity }
+                })
+                .collect();
+        }
         let img = r.render_to_image(&frame, 1280, 720);
         let path = format!("{prefix}_{name}.png");
         img.save(&path).unwrap();

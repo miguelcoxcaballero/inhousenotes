@@ -664,6 +664,110 @@ pub fn shop_interiors() -> TextureData {
     c.to_texture("shop_interiors", true)
 }
 
+/// Window glass imperfections over one window (UV 0..1 across both
+/// leaves): a slight pillow bulge per leaf and horizontal ripples (old
+/// drawn glass) in the normal map, and smudges, water spots and a dusty
+/// lower edge in the roughness, so reflections wobble and soften a little
+/// differently on every pane instead of being a perfect mirror. The normal
+/// map is stored 4x exaggerated; use `normal_scale` 0.25.
+pub fn glass() -> GenSet {
+    use crate::noise::{fbm, fbm_aniso, smoothstep};
+    let n = 256u32;
+    let mut height = vec![0.0f32; (n * n) as usize];
+    let mut rough = vec![0.0f32; (n * n) as usize];
+    let mut rng = Rng::new(0x61a55);
+    let spots: Vec<(Vec2, f32)> = (0..40).map(|_| (Vec2::new(rng.f(), rng.f()), rng.range(0.004, 0.012))).collect();
+    for y in 0..n {
+        let v = (y as f32 + 0.5) / n as f32;
+        for x in 0..n {
+            let u = (x as f32 + 0.5) / n as f32;
+            let i = (y * n + x) as usize;
+            // Pillow: each leaf bulges a little at its centre.
+            let s = (u * 2.0).fract();
+            let pillow = (std::f32::consts::PI * s).sin() * (std::f32::consts::PI * v).sin();
+            let ripple = fbm_aniso(u, v, 2, 12, 3, 7) - 0.5;
+            height[i] = 0.6 * pillow + 0.5 * ripple;
+            // Roughness: clean glass 0.03, wiped smudges, dust at the bottom.
+            let smudge = smoothstep(0.55, 0.75, fbm(u, v, 5, 4, 11)) * 0.07;
+            let dust = smoothstep(0.75, 1.0, v) * (0.06 + 0.06 * fbm(u, v, 12, 3, 13));
+            let mut r = 0.03 + smudge + dust + 0.01 * fbm(u, v, 32, 2, 17);
+            for (c, rad) in &spots {
+                let d = (Vec2::new(u, v) - *c).length();
+                r += 0.08 * smoothstep(*rad, rad * 0.4, d);
+            }
+            rough[i] = r;
+        }
+    }
+    // Normal amplitude: steepest slope about 0.1 (4x the real ~0.025).
+    let mut max_g = 1e-6f32;
+    for y in 0..n as i64 {
+        for x in 0..n as i64 {
+            let at = |x: i64, y: i64| height[(y.rem_euclid(n as i64) * n as i64 + x.rem_euclid(n as i64)) as usize];
+            let g = (at(x + 1, y) - at(x - 1, y)).abs().max((at(x, y + 1) - at(x, y - 1)).abs());
+            max_g = max_g.max(g);
+        }
+    }
+    let normal = normal_from_height(&height, n, n, 0.1 / max_g);
+    let orm = orm_from(&rough, n, n);
+    let color = Canvas::new(4, 4, [1.0; 4]).to_texture("glass_color", true);
+    GenSet { color, normal: Some(TextureData { name: "glass_normal".into(), ..normal }), orm: Some(TextureData { name: "glass_orm".into(), ..orm }) }
+}
+
+/// Worn road paint, one repeat per metre of world XZ (markings are planar
+/// mapped at scale 1): tyres and weather erode it in patches and pits so
+/// the asphalt shows through (alpha, for a 0.5 mask), the rest is greyed by
+/// dirt and tyre rubber, and roughness rises where it is dirty.
+pub fn road_paint() -> GenSet {
+    use crate::noise::{fbm, fbm_aniso, hashf, smoothstep};
+    let n = 512u32;
+    let mut c = Canvas::new(n, n, [1.0; 4]);
+    let mut rough = vec![0.0f32; (n * n) as usize];
+    for y in 0..n {
+        let v = (y as f32 + 0.5) / n as f32;
+        for x in 0..n {
+            let u = (x as f32 + 0.5) / n as f32;
+            let i = (y * n + x) as usize;
+            // Erosion: only small chips and pits go through to the asphalt
+            // (a line must stay a line); large-scale wear just greys it.
+            let patch = fbm(u, v, 4, 5, 31);
+            let pits = fbm(u, v, 96, 2, 37);
+            let worn = smoothstep(0.7, 0.76, pits) * (0.6 + 0.8 * smoothstep(0.5, 0.7, patch)) + 0.5 * smoothstep(0.6, 0.75, patch) * hashf(x as i32, y as i32, 41);
+            let alpha = if worn > 0.5 { 0.0 } else { 1.0 };
+            // Dirt: tyre rubber streaks (anisotropic) and general grime.
+            let streak = fbm_aniso(u, v, 2, 24, 3, 43);
+            let grime = fbm(u, v, 8, 4, 47);
+            let k = (1.0 - 0.22 * smoothstep(0.35, 0.8, grime) - 0.15 * smoothstep(0.5, 0.75, streak) - 0.12 * smoothstep(0.45, 0.65, patch)).clamp(0.4, 1.0);
+            let g = k * (0.97 + 0.06 * hashf(x as i32, y as i32, 53));
+            c.px[i] = [g, g, g * 0.985, alpha];
+            rough[i] = 0.5 + 0.3 * (1.0 - k);
+        }
+    }
+    GenSet { color: c.to_texture("road_paint", true), normal: None, orm: Some(TextureData { name: "road_paint_orm".into(), ..orm_from(&rough, n, n) }) }
+}
+
+/// Uniform linear texture (e.g. an occlusion term for fake interiors).
+pub fn solid(name: &str, value: f32) -> TextureData {
+    let b = (value.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+    TextureData { name: name.into(), width: 4, height: 4, rgba8: Arc::from(vec![b, b, b, 255].repeat(16)), srgb: false }
+}
+
+/// Emission of [`shop_interiors`]: only the ceiling fittings glow, with a
+/// faint pool of light on the wall under them, so a shop reads as a dim
+/// room with lamps rather than a self-lit picture.
+pub fn shop_interior_lights() -> TextureData {
+    let (w, h) = (512u32, 512u32);
+    let mut c = Canvas::new(w, h, [0.0, 0.0, 0.0, 1.0]);
+    for k in 0..4 {
+        let x0 = k as f32 * 128.0;
+        for lx in [x0 + 32.0, x0 + 96.0] {
+            let at = Vec2::new(lx, 40.0);
+            c.fill(Vec2::new(lx - 50.0, 16.0), Vec2::new(lx + 50.0, 200.0), [0.5, 0.45, 0.36, 0.25], |p| ((p - at) / Vec2::new(45.0, 140.0)).length() - 1.0);
+            c.rect(Vec2::new(lx - 14.0, 8.0), Vec2::new(lx + 14.0, 16.0), [1.0, 1.0, 0.96, 1.0]);
+        }
+    }
+    c.to_texture("shop_interior_lights", true)
+}
+
 /// Street name plate, Madrid ceramic style: blue frame, white field.
 pub fn street_plate(name: &str) -> TextureData {
     let mut c = Canvas::new(512, 192, rgb(0xf4f1e6));
@@ -682,9 +786,118 @@ pub fn street_plate(name: &str) -> TextureData {
     c.to_texture("street_plate", true)
 }
 
+// ------------------------------------------------------------------- night
+
+/// Night emission of [`window_interiors`]: the same rooms lit by a ceiling
+/// lamp (bright near the fitting and on the ceiling, falling off toward
+/// the floor and the corners), stored as sRGB color to be scaled by the
+/// room tone. The sheer curtains glow where the lamp lights them.
+pub fn window_interiors_lit(base: &TextureData) -> TextureData {
+    let (w, h) = (base.width as usize, base.height as usize);
+    let cols = 4usize;
+    let cw = w / cols;
+    let mut rng = Rng::new(78);
+    let lamps: Vec<Vec2> = (0..cols).map(|_| Vec2::new(rng.range(0.35, 0.65), rng.range(0.08, 0.16))).collect();
+    let lin = |c: u8| crate::noise::srgb_to_linear(c as f32 / 255.0);
+    let s = |f: f32| (crate::noise::linear_to_srgb(f.clamp(0.0, 1.0)) * 255.0 + 0.5) as u8;
+    let mut out = Vec::with_capacity(w * h * 4);
+    for y in 0..h {
+        for x in 0..w {
+            let k = (x / cw).min(cols - 1);
+            let p = Vec2::new((x - k * cw) as f32 / cw as f32, y as f32 / h as f32);
+            let i = (y * w + x) * 4;
+            let c = Vec3::new(lin(base.rgba8[i]), lin(base.rgba8[i + 1]), lin(base.rgba8[i + 2]));
+            // Lamp pool: inverse-square-ish from the fitting, plus a soft
+            // fill so the room never goes black.
+            let d = (p - lamps[k]) * Vec2::new(1.6, 1.0);
+            let pool = 1.0 / (1.0 + 9.0 * d.length_squared());
+            let ceiling = if p.y < 0.06 { 0.8 } else { 0.0 };
+            let light = 0.25 + 1.6 * pool + ceiling;
+            // Wall albedo ~0.05 in the atlas: lift it to read as a lit room.
+            let mut v = (c * light * 5.5).min(Vec3::ONE);
+            // The fitting itself.
+            if ((p - lamps[k]) * Vec2::new(5.0, 9.0)).length() < 0.25 {
+                v = Vec3::ONE;
+            }
+            out.extend([s(v.x), s(v.y), s(v.z), 255]);
+        }
+    }
+    TextureData { name: "interiors_lit".into(), width: w as u32, height: h as u32, rgba8: Arc::from(out), srgb: true }
+}
+
+/// Drawn curtains and blinds glowing with the room light behind them: four
+/// fabrics (cream sheer, ochre, white blind with slats, rust) in the
+/// interior atlas layout, brightest where the lamp is.
+pub fn curtains_lit() -> TextureData {
+    let (w, h) = (512u32, 512u32);
+    let mut c = Canvas::new(w, h, [0.0, 0.0, 0.0, 1.0]);
+    let fabrics = [[0.95, 0.86, 0.70], [0.92, 0.66, 0.36], [0.96, 0.95, 0.92], [0.80, 0.42, 0.30]];
+    for (k, f) in fabrics.iter().enumerate() {
+        let x0 = k as u32 * 128;
+        for y in 0..h {
+            for x in 0..128u32 {
+                let p = Vec2::new(x as f32 / 128.0, y as f32 / h as f32);
+                let pool = 1.0 / (1.0 + 6.0 * ((p - Vec2::new(0.5, 0.25)) * Vec2::new(1.2, 1.0)).length_squared());
+                let pattern = if k == 2 {
+                    // Venetian blind: bright slats, dark gaps.
+                    if (p.y * 64.0).fract() < 0.18 { 0.35 } else { 1.0 }
+                } else {
+                    // Vertical folds.
+                    0.75 + 0.25 * (p.x * 38.0 + (p.x * 7.0).sin()).sin()
+                };
+                let v = 0.6 * (0.35 + 0.65 * pool) * pattern;
+                c.px[(y * w + x0 + x) as usize] = [f[0] * v, f[1] * v, f[2] * v, 1.0];
+            }
+        }
+    }
+    c.to_texture("curtains_lit", true)
+}
+
+/// Night emission of [`shop_sign_atlas`]: the letters and borders glow at
+/// full strength, the panel behind them only faintly (channel letters);
+/// dark letters on a light panel make the panel the lightbox instead.
+pub fn shop_sign_atlas_lit() -> TextureData {
+    let mut c = Canvas::new(1024, 1024, [0.0, 0.0, 0.0, 1.0]);
+    let lum = |c: [f32; 4]| 0.3 * c[0] + 0.6 * c[1] + 0.1 * c[2];
+    for (i, (name, bg, fg)) in SHOPS.iter().enumerate() {
+        let y0 = i as f32 * 64.0;
+        let b = rgb(*bg);
+        let mut f = rgb(*fg);
+        let panel = if lum(f) < lum(b) {
+            f = [f[0] * 0.15, f[1] * 0.15, f[2] * 0.15, 1.0];
+            0.85
+        } else {
+            0.12
+        };
+        c.rect(Vec2::new(0.0, y0), Vec2::new(1024.0, y0 + 64.0), [b[0] * panel, b[1] * panel, b[2] * panel, 1.0]);
+        c.rect(Vec2::new(6.0, y0 + 5.0), Vec2::new(1018.0, y0 + 7.0), f);
+        c.rect(Vec2::new(6.0, y0 + 57.0), Vec2::new(1018.0, y0 + 59.0), f);
+        let size = 30.0f32.min(900.0 / (name.chars().count() as f32 * 5.5 / 6.0));
+        c.text_centered(name, Vec2::new(512.0, y0 + 30.0), size, 1.1, f);
+        if *name == "FARMACIA" {
+            for x in [70.0, 954.0] {
+                c.rect(Vec2::new(x - 18.0, y0 + 26.0), Vec2::new(x + 18.0, y0 + 38.0), rgb(0x39ff6a));
+                c.rect(Vec2::new(x - 6.0, y0 + 14.0), Vec2::new(x + 6.0, y0 + 50.0), rgb(0x39ff6a));
+            }
+        }
+    }
+    c.to_texture("shop_signs_lit", true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn road_paint_is_worn_but_mostly_intact() {
+        let g = road_paint();
+        let px: Vec<&[u8]> = g.color.rgba8.chunks_exact(4).collect();
+        let holes = px.iter().filter(|p| p[3] < 128).count() as f32 / px.len() as f32;
+        assert!(holes > 0.01 && holes < 0.12, "worn fraction {holes}");
+        // Dirt greys it: never pure white on average.
+        let mean = px.iter().map(|p| p[0] as f32).sum::<f32>() / px.len() as f32;
+        assert!(mean < 245.0 && mean > 180.0, "mean {mean}");
+    }
 
     #[test]
     fn stop_sign_is_red_with_white_letters() {
