@@ -143,7 +143,7 @@
             if(local&&local!==this.current&&local.ack>=local.rev)this.records.delete(key);
             await this.patch(OUTBOX,old=>{const pending={...old.pending};if((pending[key]||0)<=record.rev)delete pending[key];return {...old,pending};});
             this.hint(id);if(this.sources.has(id))this.sources.get(id).next=Infinity;
-            this.lastError='';this.host.receipt?.({...receipt,docId:record.docId,version:record.version,actor:record.actor,part:record.part});
+            this.lastError='';this.host.receipt?.({...receipt,docId:record.docId,version:record.version,actor:record.actor,part:record.part,operations:record.ops.slice(record.ack||0)});
             this.notifyPeers(record.docId,id);
         }
         notifyPeers(docId,id,preview=false){

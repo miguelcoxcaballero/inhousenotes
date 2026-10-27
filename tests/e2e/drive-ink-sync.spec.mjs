@@ -104,5 +104,21 @@ test('Drive previews show a growing stroke before pen-up without P2P or durable 
   await b.evaluate(async()=>{for(const s of liveTest.previewSources.values())s.next=0;await liveTest.pollFrames();});
   await expect.poll(()=>b.evaluate(()=>[...remoteLiveStrokePreviews.values()].find(p=>p.strokeId==='unfinished')?.points.length)).toBe(3);
   expect(await a.evaluate(()=>isPenWriting)).toBe(true);
+  // Pen-up may refine the path; the final preview must replace all old
+  // coordinates, not append a shortened path onto the stale prefix.
+  await a.evaluate(async()=>{
+   testLiveStroke.points=[{x:12,y:14,p:.5},{x:32,y:38,p:.7}];stampCollaborativeItems([testLiveStroke]);
+   publishLiveStrokePreview('page-one',testLiveStroke,{final:true});await liveTest.flushFrame();
+  });
+  await b.evaluate(async()=>{for(const s of liveTest.previewSources.values())s.next=0;await liveTest.pollFrames();});
+  await expect.poll(()=>b.evaluate(()=>[...remoteLiveStrokePreviews.values()].find(p=>p.strokeId==='unfinished')?.points.map(p=>p.x))).toEqual([12,32]);
+  await a.evaluate(async()=>{
+   isPenWriting=false;wakeDocumentBackgroundWork();state.pages[0].strokes.push(testLiveStroke);enqueueStrokeOp(0,testLiveStroke);
+   await inkTestJournal.persistChain;inkTestJournal.lastWrite=0;await inkTestJournal.flush();
+  });
+  expect(await a.evaluate(()=>liveTest.paths.size)).toBe(0);
+  await pull(b);
+  await expect.poll(()=>b.evaluate(()=>state.pages[0].strokes.some(s=>s.id==='unfinished'))).toBe(true);
+  expect(await b.evaluate(()=>remoteLiveStrokePreviews.size)).toBe(0);
  }finally{await ca.close();await cb.close();}
 });

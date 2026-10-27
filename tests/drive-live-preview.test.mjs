@@ -72,3 +72,24 @@ test('a slow discovery hint cannot freeze unfinished stroke updates',async()=>{
  assert.equal(a.live.sentFrame,2);assert.equal(JSON.parse(api.files.get(a.live.fileId).raw).packets[0].points.length,3);
  a.live.stop();release();
 });
+
+test('final geometry replaces the preview prefix and does not retain a stale tail',async()=>{
+ const api=fakeInkDrive(),a=replica(api,'writer'),b=replica(api,'reader');
+ a.live.push(packet(1,0,[1,2,3,4,5]));await a.live.flushFrame();
+ a.live.push(packet(2,0,[10,20],{finalBatch:true,totalPoints:3}));
+ a.live.push(packet(3,2,[30],{finalBatch:true,totalPoints:3,final:true}));await a.live.flushFrame();
+ b.live.hint(a.live.fileId);await b.live.pollFrames();
+ assert.deepEqual(b.frames[0].points.map(p=>p.x),[10,20,30]);a.live.stop();b.live.stop();
+});
+
+test('only the exact confirmed final stroke is retired from live payloads',async()=>{
+ const api=fakeInkDrive(),a=replica(api,'writer');const stamp={clock:2,actor:'writer'};
+ a.live.push(packet(1,0,[1,2],{strokeId:'finished',final:true,finalBatch:true,totalPoints:2,syncStamp:stamp}));
+ a.live.push(packet(1,0,[3,4],{strokeId:'drawing',syncStamp:stamp}));
+ const confirm=(id,syncStamp)=>JSON.stringify({kind:'stroke',stroke:{id,syncStamp}});
+ a.live.retireConfirmed([confirm('finished',{clock:1,actor:'writer'}),confirm('drawing',stamp)]);
+ assert.equal(a.live.paths.size,2);
+ a.live.retireConfirmed([confirm('finished',stamp)]);await a.live.flushFrame();
+ const wire=JSON.parse(api.files.get(a.live.fileId).raw);
+ assert.deepEqual(wire.packets.map(p=>p.strokeId),['drawing']);assert.equal(a.receipts.length,0);a.live.stop();
+});

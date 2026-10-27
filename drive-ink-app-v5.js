@@ -75,7 +75,7 @@
                 if(!response.ok)throw new Error(`Ink discovery hint failed (${response.status})`);
                 announced.set(announcementKey,id);
             },
-            receipt:receipt=>{if(current(journal)&&receipt.docId===docId&&receipt.actor===journal.actor){ackVersion=Math.max(ackVersion,receipt.version);refreshSaveIndicatorState();}},
+            receipt:receipt=>{if(current(journal)&&receipt.docId===docId&&receipt.actor===journal.actor){live?.retireConfirmed(receipt.operations);ackVersion=Math.max(ackVersion,receipt.version);refreshSaveIndicatorState();}},
             error:error=>{if(current(journal))console.warn('Drive ink sync:',error.message);},
             changed:()=>{if(current(journal))refreshSaveIndicatorState();}
         };
@@ -166,8 +166,11 @@
                 }
                 const old=remoteLiveStrokePreviews.get(`${packet.actorId}:${packet.strokeId}`);
                 if(old&&old.sequence>=packet.sequence)continue;
-                const offset=Math.max(0,Math.min(packet.points.length,old?.points.length||0)-1);
-                applyRemoteLiveStrokePreview({...packet,offset,points:packet.points.slice(offset),finalBatch:false,final:false,totalPoints:0});
+                const replacement=!!packet.finalBatch;
+                if(replacement&&old)clearRemoteLiveStrokePreview(packet.actorId,packet.strokeId);
+                const offset=replacement?0:Math.max(0,Math.min(packet.points.length,old?.points.length||0)-1);
+                applyRemoteLiveStrokePreview({...packet,offset,points:packet.points.slice(offset),
+                    finalBatch:replacement,final:false,totalPoints:replacement?packet.points.length:0});
             }
         });
     }
