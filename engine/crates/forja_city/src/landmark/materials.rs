@@ -421,6 +421,9 @@ fn glazed_tiles(pattern: &str, colors: &[[f32; 3]], weights: &[f32], seed: u32) 
                 (pick(band.rem_euclid(np) as usize, col, band), fx.min(1.0 - fx).min(fy.min(1.0 - fy)), 0.0)
             }
             "stripes" => (pick(col.rem_euclid(np) as usize, col, 0), fx.min(1.0 - fx).min(fy.min(1.0 - fy)), 0.0),
+            // Horizontal bands: one colour per tile row (v runs down walls
+            // and towards the eaves on roofs), no uv_rotate needed.
+            "stripes_h" | "hstripes" | "bands" => (pick(row.rem_euclid(np) as usize, 0, row), fx.min(1.0 - fx).min(fy.min(1.0 - fy)), 0.0),
             "checker" => (pick((row + col).rem_euclid(np) as usize, col, row), fx.min(1.0 - fx).min(fy.min(1.0 - fy)), 0.0),
             "diamond" => {
                 let dd = (fx - 0.5).abs() + (fy - 0.5).abs();

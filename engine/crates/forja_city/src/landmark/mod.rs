@@ -282,13 +282,52 @@ fn weld(p: &mut crate::geom::Prim) {
     *p = np;
 }
 
-/// Distance LODs by edge collapse with locked borders: material borders
-/// and hard edges never move, so levels do not crack or merge windows;
-/// stops when the mesh resists simplification (no sloppy fallback).
+/// Crease angle (degrees) above which a vertex is a feature of the
+/// facade (reveal, balcony slab, pilaster arris, cornice step) and is
+/// locked in every LOD.
+const LOD_CREASE: f32 = 30.0;
+
+/// Absolute geometric error (metres) allowed at each LOD level.
+const LOD_ERRORS: [f32; 4] = [0.02, 0.05, 0.12, 0.3];
+
+/// Vertices where faces meet at a crease sharper than `crease_deg`: every
+/// corner of an opening's reveal, of a balcony, a pilaster or a moulding.
+/// Positions are matched to the millimetre (vertices are split there by
+/// their normals).
+fn crease_locks(positions: &[Vec3], normals: &[Vec3], crease_deg: f32) -> Vec<bool> {
+    use std::collections::HashMap;
+    let q = |v: f32| (v * 1e3).round() as i32;
+    let mut groups: HashMap<[i32; 3], Vec<u32>> = HashMap::with_capacity(positions.len());
+    for (i, p) in positions.iter().enumerate() {
+        groups.entry([q(p.x), q(p.y), q(p.z)]).or_default().push(i as u32);
+    }
+    let cos = crease_deg.to_radians().cos();
+    let mut lock = vec![false; positions.len()];
+    for g in groups.values() {
+        if g.len() < 2 {
+            continue;
+        }
+        let sharp = g.iter().enumerate().any(|(k, &a)| g[k + 1..].iter().any(|&b| normals[a as usize].dot(normals[b as usize]) < cos));
+        if sharp {
+            for &v in g {
+                lock[v as usize] = true;
+            }
+        }
+    }
+    lock
+}
+
+/// Distance LODs by edge collapse. Borders, material borders and every
+/// crease vertex are locked, so openings, balconies, pilasters and
+/// mouldings keep the facade's rhythm at any distance; only smooth or
+/// gently faceted surfaces (domes, drums, shells, vaults) are simplified,
+/// within an absolute error of a few centimetres per level. Stops when
+/// the mesh resists simplification (no sloppy fallback).
 fn lods(mesh: &mut MeshData, max_levels: usize) {
     mesh.lods.clear();
     let bytes: &[u8] = unsafe { std::slice::from_raw_parts(mesh.positions.as_ptr().cast::<u8>(), std::mem::size_of_val(&mesh.positions[..])) };
     let Ok(adapter) = meshopt::VertexDataAdapter::new(bytes, 12, 0) else { return };
+    let locks = crease_locks(&mesh.positions, &mesh.normals, LOD_CREASE);
     let mut prev = mesh.indices.clone();
     for level in 1..=max_levels {
         let target = (prev.len() / 2) / 3 * 3;
@@ -296,7 +335,8 @@ fn lods(mesh: &mut MeshData, max_levels: usize) {
             break;
         }
         let mut err = 0.0;
-        let lod = meshopt::simplify(&prev, &adapter, target, 0.005 * level as f32, meshopt::SimplifyOptions::LockBorder, Some(&mut err));
+        let opts = meshopt::SimplifyOptions::LockBorder | meshopt::SimplifyOptions::ErrorAbsolute;
+        let lod = meshopt::simplify_with_locks(&prev, &adapter, &locks, target, LOD_ERRORS[(level - 1).min(LOD_ERRORS.len() - 1)], opts, Some(&mut err));
         if lod.is_empty() || lod.len() as f32 > prev.len() as f32 * 0.9 {
             break;
         }
@@ -319,6 +359,9 @@ pub struct Landmark {
     pub collider: Collider,
     /// Landmark-local bounds of the geometry.
     pub bounds: (Vec3, Vec3),
+    /// Holes in the street level (landmark frame): leave the terrain open
+    /// there (moats, sunken plazas).
+    pub ground_cuts: Vec<poly::Shape>,
     pub warnings: Vec<String>,
 }
 
@@ -341,6 +384,7 @@ pub fn load_with(dir: &Path, lib: &Library, opts: AssembleOptions) -> Result<Lan
         anchor: source.anchor(),
         dir: dir.to_path_buf(),
         bounds: mesh::bounds(&model.geo).unwrap_or((Vec3::ZERO, Vec3::ZERO)),
+        ground_cuts: model.ground_cuts,
         warnings: model.warnings,
         slug,
         scene,

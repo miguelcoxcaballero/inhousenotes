@@ -20,6 +20,9 @@ use super::{details, domes, generic, masses, roofs, supports};
 pub struct Out {
     pub geo: Geo,
     pub col: Vec<[Vec3; 3]>,
+    /// Collision triangles of open (non-solid) surfaces: in the collider,
+    /// not in the plan slices of `check`.
+    pub open: Vec<[Vec3; 3]>,
 }
 
 impl Out {
@@ -28,10 +31,12 @@ impl Out {
         // Mirrors and negative scales flip winding: re-wind so the
         // collider stays outward (as `Prim::append` does for the mesh).
         let flip = m.determinant() < 0.0;
-        self.col.extend(other.col.iter().map(|t| {
+        let place = |t: &[Vec3; 3]| {
             let (a, b, c) = (m.transform_point3(t[0]), m.transform_point3(t[1]), m.transform_point3(t[2]));
             if flip { [a, c, b] } else { [a, b, c] }
-        }));
+        };
+        self.col.extend(other.col.iter().map(place));
+        self.open.extend(other.open.iter().map(place));
     }
 
     pub fn tris(&self) -> usize {
@@ -94,6 +99,9 @@ pub struct Builder<'a> {
     pub col_groups: Vec<(usize, usize)>,
     /// Triangles already built by finished top-level elements.
     pub built_tris: usize,
+    /// Holes in the street level (landmark frame): `sunken` elements and
+    /// `[ground] cut`.
+    pub ground_cuts: Vec<Shape>,
     depth: u32,
     line: Option<usize>,
 }
@@ -153,6 +161,7 @@ fn default_collide(e: &Element) -> bool {
             | Element::Loft(_)
             | Element::Shell(_)
             | Element::Mesh(_)
+            | Element::Sunken(_)
             | Element::Parapet(_)
             | Element::Group(_)
             | Element::Array(_)
@@ -177,6 +186,7 @@ impl<'a> Builder<'a> {
             default_mat,
             col_groups: Vec::new(),
             built_tris: 0,
+            ground_cuts: Vec::new(),
             depth: 0,
             line: None,
         })
@@ -392,11 +402,16 @@ impl<'a> Builder<'a> {
         let mirrors_n = c.mirror.map(mirror_matrices).map(|m| m.len()).unwrap_or(0);
         self.budget(o.tris().saturating_mul(1 + mirrors_n), &format!("{} ({})", c.name.unwrap_or("element"), e.type_name()))?;
         if c.collide.unwrap_or_else(|| default_collide(e)) {
-            if o.col.is_empty() && !matches!(e, Element::Group(_) | Element::Array(_) | Element::Instance(_)) {
+            if o.col.is_empty() && o.open.is_empty() && !matches!(e, Element::Group(_) | Element::Array(_) | Element::Instance(_)) {
                 o.collide_all();
+            }
+            if c.solid == Some(false) {
+                let col = std::mem::take(&mut o.col);
+                o.open.extend(col);
             }
         } else {
             o.col.clear();
+            o.open.clear();
         }
         // Statistics in the landmark frame.
         let mirrors = c.mirror.map(mirror_matrices).unwrap_or_default();
@@ -496,6 +511,8 @@ impl<'a> Builder<'a> {
             Element::Loft(l) => generic::loft(self, l, sc, o),
             Element::Shell(s) => generic::shell(self, s, sc, o),
             Element::Mesh(m) => generic::mesh_el(self, m, sc, o),
+            Element::Relief(r) => supports::relief(self, r, sc, o),
+            Element::Sunken(s) => masses::sunken(self, s, sc, o),
             Element::Group(g) => {
                 self.build_children(&g.children, sc, Mat4::IDENTITY, None, o)?;
                 if let Some(c) = &g.component {
@@ -723,6 +740,11 @@ pub struct Model {
     pub palette: Palette,
     pub stats: Vec<ElemStat>,
     pub warnings: Vec<String>,
+    /// Holes in the street level (landmark frame): the world and the
+    /// render ground leave these open (moats, sunken plazas).
+    pub ground_cuts: Vec<Shape>,
+    /// `[reference_heights]` of the spec, for `check`.
+    pub reference_heights: Vec<(String, RefHeight)>,
 }
 
 impl Model {
@@ -738,6 +760,11 @@ pub fn build(spec: &Spec, fp: Option<&Footprint>, text: &str, origin: &str) -> R
     b.prepass(&spec.element);
     let mut out = Out::default();
     b.build_list(&spec.element, text, origin, &mut out)?;
+    let root = b.root_scope();
+    for (k, c) in spec.ground.cut.iter().enumerate() {
+        let shapes = b.poly(c, &root).map_err(|e| e.context(&format!("[ground] cut[{k}]")))?;
+        b.ground_cuts.extend(shapes);
+    }
     let mut dropped = 0;
     for p in out.geo.prims.values_mut() {
         dropped += mesh::sanitize(p);
@@ -749,5 +776,8 @@ pub fn build(spec: &Spec, fp: Option<&Footprint>, text: &str, origin: &str) -> R
     if let Some(fp) = fp {
         warnings.extend(fp.warnings.iter().cloned());
     }
-    Ok(Model { geo: out.geo, collider: out.col, col_groups: b.col_groups, palette: b.pal, stats: b.stats, warnings })
+    let mut collider = out.col;
+    collider.extend(out.open);
+    let reference_heights = spec.reference_heights.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    Ok(Model { geo: out.geo, collider, col_groups: b.col_groups, palette: b.pal, stats: b.stats, warnings, ground_cuts: b.ground_cuts, reference_heights })
 }

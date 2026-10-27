@@ -162,7 +162,7 @@ impl Palette {
             if let Some(p) = &m.pattern {
                 let k = m.kind.trim().to_ascii_lowercase();
                 let names: &[&str] = match k.as_str() {
-                    "glazed_tiles" => &["scales", "chevron", "zigzag", "stripes", "checker", "diamond", "plain"],
+                    "glazed_tiles" => &["scales", "chevron", "zigzag", "stripes", "stripes_h", "hstripes", "bands", "checker", "diamond", "plain"],
                     "azulejo" => &["checker_blue", "checker_green", "diamond_blue", "diamond", "frieze", "white"],
                     _ => return Err(format!("[material.{name}]: `pattern` only applies to glazed_tiles and azulejo")),
                 };

@@ -1118,9 +1118,18 @@ pub fn on_runs(b: &mut Builder, list: &[&Openings], runs: &[Run], shape: &poly::
         let mut lens: Vec<f32> = Vec::new();
         let mut placed = 0;
         for (ri, run) in runs.iter().enumerate() {
+            // A facade with its own wall material (`edge_materials`) gets
+            // matching reveals and trim.
+            let own;
+            let cr = if run.facade.mat != cx.wall && cx.trim == cx.wall {
+                own = OpCtx { wall: run.facade.mat, trim: b.mat(op.material.as_deref(), run.facade.mat)?, through: cx.through, solid: cx.solid };
+                &own
+            } else {
+                &c
+            };
             for (iv, ring) in intervals(run, &sel, op.per_edge) {
                 lens.push(iv.1 - iv.0);
-                placed += place(b, op, run, iv, ring, sc, &c, &mut outs[ri]).map_err(|err| err.context(&format!("openings[{k}]")))?;
+                placed += place(b, op, run, iv, ring, sc, cr, &mut outs[ri]).map_err(|err| err.context(&format!("openings[{k}]")))?;
             }
         }
         let e = effective(op);

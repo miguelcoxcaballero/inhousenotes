@@ -11,6 +11,8 @@
 //! `--clay` renders untextured (no texture generation, a few seconds);
 //! `--edges-only` skips the GPU and draws the model's edges over each
 //! photo (about a second): the quick loop for aligning a `[[view]]`.
+//! `--view` also takes a standard view (`ne`, `se`, `sw`, `nw`, `street`,
+//! `plan`) to render only that one.
 //! Build: `cargo build --release -p forja_render --example landmark`.
 
 use std::collections::BTreeMap;
@@ -20,7 +22,7 @@ use std::time::Instant;
 use forja_assets::SceneData;
 use forja_city::kit::Kit;
 use forja_city::landmark::camera::{self as lcam, Cam};
-use forja_city::landmark::spec::ViewSpec;
+use forja_city::landmark::spec::{CtxRef, Focal, ShiftSpec, ViewSpec};
 use forja_city::landmark::{self, AssembleOptions, Library, Model, Source, footprint::FpPoly, mesh, palette::Palette, poly, raster, spec::EdgeSel};
 use forja_city::texgen::Canvas;
 use forja_math::{Mat4, Quat, Vec2, Vec3};
@@ -147,20 +149,44 @@ fn check(args: &Args, root: &Path) -> Result<(), String> {
     let mut v = landmark::metrics::compute(&model, src.footprint.as_ref(), &src.slug(), ms);
     v["name"] = serde_json::json!(src.spec.landmark.name);
     v["views"] = serde_json::json!(src.spec.view.len());
-    // Cameras solved from point matches, ready to paste.
-    let solved: Vec<serde_json::Value> = src
-        .spec
-        .view
-        .iter()
-        .enumerate()
-        .filter(|(_, v)| !v.matches.is_empty())
-        .map(|(k, vs)| match view_camera(&src, vs, k) {
-            Some(vc) => serde_json::json!({ "view": k, "rms_px": vc.rms, "eye": vc.cam.eye.to_array(), "target": vc.cam.target.to_array(), "fov_y": vc.cam.fov_y, "roll": vc.cam.roll }),
-            None => serde_json::json!({ "view": k, "error": "needs at least 4 matches and the photo size" }),
-        })
-        .collect();
+    // Cameras solved from point matches, ready to paste, and problems
+    // with the view cameras.
+    let (hidden, hide_warn) = hidden_context(&src);
+    let mut extra = hide_warn;
+    let mut solved: Vec<serde_json::Value> = Vec::new();
+    for (k, vs) in src.spec.view.iter().enumerate() {
+        let vc = view_camera(&src, vs, k);
+        let label = format!("view {k} ({})", view_name(vs, k));
+        if let Some(vc) = &vc {
+            if let Some((ci, h)) = camera_in_context(&src, &hidden, vc.cam.eye)
+                && vs.context.unwrap_or(true)
+            {
+                extra.push(inside_context_warning(&label, ci, h));
+            }
+            for n in &vc.notes {
+                extra.push(format!("{label}: {n}"));
+            }
+            if let Some(s) = &vc.solved {
+                for w in &s.warnings {
+                    extra.push(format!("{label}: {w}"));
+                }
+            }
+        }
+        if vs.matches.is_empty() {
+            continue;
+        }
+        solved.push(match &vc {
+            Some(vc) if vc.rms.is_some() => solved_json(&src, k, vc),
+            _ => serde_json::json!({ "view": k, "error": "needs at least 4 matches and the photo size" }),
+        });
+    }
     if !solved.is_empty() {
         v["solved_views"] = serde_json::json!(solved);
+    }
+    if !extra.is_empty()
+        && let Some(w) = v["warnings"].as_array_mut()
+    {
+        w.extend(extra.into_iter().map(serde_json::Value::String));
     }
     v["check_ms"] = serde_json::json!((t0.elapsed().as_secs_f32() * 1000.0).round());
     println!("{}", serde_json::to_string_pretty(&v).unwrap());
@@ -214,19 +240,65 @@ fn quick_scene(look: Look, name: &str, parts: &[(&str, forja_city::geom::Prim)])
         let id = pal.id(m).unwrap();
         geo.get(id).append(p, &Mat4::IDENTITY);
     }
-    let model = Model { geo, collider: Vec::new(), col_groups: Vec::new(), palette: pal, stats: Vec::new(), warnings: Vec::new() };
+    let model = Model { geo, collider: Vec::new(), col_groups: Vec::new(), palette: pal, stats: Vec::new(), warnings: Vec::new(), ground_cuts: Vec::new(), reference_heights: Vec::new() };
     assemble_with(look, &model, name, false)
 }
 
+/// Height of a context building's massing (floors x 3.2 m).
+fn context_height(c: &FpPoly) -> f32 {
+    c.floors_above.unwrap_or(4.0).max(1.0) * 3.2 + 0.6
+}
+
+/// Which context buildings `[render] hide_context` hides, and problems
+/// with the list.
+fn hidden_context(src: &Source) -> (Vec<bool>, Vec<String>) {
+    let Some(fp) = &src.footprint else { return (Vec::new(), Vec::new()) };
+    let mut hide = vec![false; fp.context.len()];
+    let mut warn = Vec::new();
+    for r in &src.spec.render.hide_context {
+        match r {
+            CtxRef::Index(i) if *i < hide.len() => hide[*i] = true,
+            CtxRef::Index(i) => warn.push(format!("[render] hide_context: there is no context:{i} (the footprint has {} context buildings)", hide.len())),
+            CtxRef::Ref(t) => {
+                let arg = t.trim().strip_prefix("context:").unwrap_or(t.trim());
+                match fp.resolve(&format!("context:{arg}")) {
+                    Ok(list) => {
+                        for p in list {
+                            if let Some(k) = fp.context.iter().position(|c| std::ptr::eq(c, p)) {
+                                hide[k] = true;
+                            }
+                        }
+                    }
+                    Err(e) => warn.push(format!("[render] hide_context: {e}")),
+                }
+            }
+        }
+    }
+    (hide, warn)
+}
+
+/// The visible context building (index, height) a camera stands inside.
+fn camera_in_context(src: &Source, hidden: &[bool], eye: Vec3) -> Option<(usize, f32)> {
+    let fp = src.footprint.as_ref()?;
+    fp.context.iter().enumerate().filter(|(k, _)| !hidden.get(*k).copied().unwrap_or(false)).find(|(_, c)| eye.y < context_height(c) && c.shape.contains(Vec2::new(eye.x, eye.z))).map(|(k, c)| (k, context_height(c)))
+}
+
+fn inside_context_warning(what: &str, k: usize, h: f32) -> String {
+    format!("{what}: the camera is inside context building context:{k} ({h:.1} m high): hide it with [render] hide_context = [{k}] or move the eye")
+}
+
 /// Neighbouring buildings as light massing (floors x 3.2 m).
-fn context_scene(look: Look, ctx: &[FpPoly], shift: Vec2) -> Option<SceneData> {
-    if ctx.is_empty() {
+fn context_scene(look: Look, ctx: &[FpPoly], hidden: &[bool], shift: Vec2) -> Option<SceneData> {
+    if ctx.iter().enumerate().all(|(k, _)| hidden.get(k).copied().unwrap_or(false)) {
         return None;
     }
     let mut walls = forja_city::geom::Prim::default();
     let mut roofs = forja_city::geom::Prim::default();
-    for c in ctx {
-        let h = c.floors_above.unwrap_or(4.0).max(1.0) * 3.2 + 0.6;
+    for (k, c) in ctx.iter().enumerate() {
+        if hidden.get(k).copied().unwrap_or(false) {
+            continue;
+        }
+        let h = context_height(c);
         let s = c.shape.map(|p| p + shift);
         mesh::shape_walls(&mut walls, &s, 0.0, h);
         mesh::horizontal_shape(&mut roofs, &s, h, true);
@@ -234,12 +306,19 @@ fn context_scene(look: Look, ctx: &[FpPoly], shift: Vec2) -> Option<SceneData> {
     Some(quick_scene(look, "context", &[("context", walls), ("concrete", roofs)]))
 }
 
-/// Paving around the building and asphalt beyond.
-fn ground_scene(look: Look, center: Vec2, radius: f32) -> SceneData {
+/// Paving around the building and asphalt beyond, open over the
+/// model's ground cuts (moats, sunken plazas).
+fn ground_scene(look: Look, center: Vec2, radius: f32, cuts: &[poly::Shape]) -> SceneData {
     let mut pave = forja_city::geom::Prim::default();
     let r = radius.max(20.0);
     let sq = poly::Shape::new(poly::rect(center, Vec2::splat(r * 2.0), 0.0));
-    mesh::horizontal_shape(&mut pave, &sq, 0.0, true);
+    if cuts.is_empty() {
+        mesh::horizontal_shape(&mut pave, &sq, 0.0, true);
+    } else {
+        for piece in poly::boolean(std::slice::from_ref(&sq), cuts, poly::BoolOp::Difference) {
+            mesh::horizontal_shape(&mut pave, &piece, 0.0, true);
+        }
+    }
     let mut asphalt = forja_city::geom::Prim::default();
     let big = poly::Shape { outer: poly::rect(center, Vec2::splat((r * 8.0).max(4000.0)), 0.0), holes: vec![poly::rect(center, Vec2::splat(r * 2.0), 0.0).into_iter().rev().collect()] };
     mesh::horizontal_shape(&mut asphalt, &big, -0.02, true);
@@ -334,6 +413,8 @@ struct Shot {
     plan: bool,
     light: Light,
     exposure: Option<f32>,
+    /// Lens shift (fractions of the image; see `Cam::shift`).
+    shift: Vec2,
 }
 
 fn camera(s: &Shot, world: &Mat4) -> Camera {
@@ -353,6 +434,21 @@ fn camera(s: &Shot, world: &Mat4) -> Camera {
 }
 
 fn render_shot(st: &mut Studio, handles: &[(ModelHandle, Mat4)], s: &Shot) -> (RgbaImage, Mat4) {
+    if s.shift != Vec2::ZERO {
+        // Lens shift: render a larger centred frame and crop the shifted
+        // window out of it.
+        let (fx, fy) = (1.0 + 2.0 * s.shift.x.abs(), 1.0 + 2.0 * s.shift.y.abs());
+        let (bw, bh) = (((s.w as f32 * fx).round() as u32).clamp(s.w, 8192), ((s.h as f32 * fy).round() as u32).clamp(s.h, 8192));
+        let fov_big = 2.0 * ((s.fov_y.to_radians() * 0.5).tan() * bh as f32 / s.h as f32).atan().to_degrees();
+        let big = Shot { w: bw, h: bh, fov_y: fov_big, shift: Vec2::ZERO, ..s.clone() };
+        let (img, vp_big) = render_shot(st, handles, &big);
+        let x0 = (bw as f32 * 0.5 + s.shift.x * s.w as f32 - s.w as f32 * 0.5).round().clamp(0.0, (bw - s.w) as f32) as u32;
+        let y0 = (bh as f32 * 0.5 - s.shift.y * s.h as f32 - s.h as f32 * 0.5).round().clamp(0.0, (bh - s.h) as f32) as u32;
+        let crop = image::imageops::crop_imm(&img, x0, y0, s.w, s.h).to_image();
+        let (w, h) = (s.w as f32, s.h as f32);
+        let to_crop = Mat4::from_translation(Vec3::new((bw as f32 - 2.0 * x0 as f32 - w) / w, 1.0 - bh as f32 / h + 2.0 * y0 as f32 / h, 0.0)) * Mat4::from_scale(Vec3::new(bw as f32 / w, bh as f32 / h, 1.0));
+        return (crop, to_crop * vp_big);
+    }
     let world = match s.light {
         Light::Hdri if st.env.is_some() => st.sun(s.sun.0, s.sun.1),
         _ => Mat4::IDENTITY,
@@ -402,6 +498,12 @@ struct ViewCam {
     size: (u32, u32),
     /// RMS reprojection error when solved from matches.
     rms: Option<f32>,
+    /// Solver diagnostics (per-point errors, warnings).
+    solved: Option<lcam::Solved>,
+    /// Parameters held fixed while solving.
+    fixed: Vec<&'static str>,
+    /// Problems with the view's camera settings.
+    notes: Vec<String>,
 }
 
 /// Photo size from the image file or sources.toml.
@@ -414,8 +516,18 @@ fn photo_size(src: &Source, v: &ViewSpec) -> Option<(u32, u32)> {
     Some((m.width?, m.height?))
 }
 
+/// 35 mm focal length from the photo's EXIF.
+fn photo_exif_focal(src: &Source, v: &ViewSpec) -> Option<f32> {
+    let p = v.photo.as_ref()?;
+    let mut f = std::fs::File::open(src.photo_path(p)).ok()?;
+    let mut buf = Vec::new();
+    std::io::Read::read_to_end(&mut std::io::Read::take(&mut f, 512 * 1024), &mut buf).ok()?;
+    lcam::exif_focal_35mm(&buf)
+}
+
 fn view_camera(src: &Source, v: &ViewSpec, k: usize) -> Option<ViewCam> {
     let size = photo_size(src, v).unwrap_or((4, 3));
+    let mut notes = Vec::new();
     let aspect = size.0 as f32 / size.1.max(1) as f32;
     let cam_src = v.photo.as_ref().and_then(|p| src.sources.as_ref().and_then(|s| s.photo(p))).and_then(|m| m.camera.map(|c| (c, m.heading)));
     let eye = match (v.eye, cam_src) {
@@ -431,22 +543,122 @@ fn view_camera(src: &Source, v: &ViewSpec, k: usize) -> Option<ViewCam> {
         }
         _ => None,
     };
-    let fov_y = match (v.fov_y, v.focal_35mm) {
-        (Some(f), _) => f,
-        (None, Some(f)) => lcam::fov_from_focal(f, aspect),
-        _ => 55.0,
+    let exif = match v.focal_35mm {
+        Some(Focal::Exif) => {
+            let f = photo_exif_focal(src, v);
+            if f.is_none() {
+                notes.push("focal_35mm = \"exif\": the photo has no 35 mm focal length in its EXIF; the field of view is solved / defaulted".to_string());
+            }
+            f
+        }
+        _ => None,
     };
-    let written = eye.map(|e| Cam { eye: e, target: target.unwrap_or(Vec3::new(0.0, 8.0, 0.0)), fov_y, roll: v.roll });
-    if v.matches.len() >= 4 && size != (4, 3) {
+    let given_fov = match (v.fov_y, v.focal_35mm, exif) {
+        (Some(f), _, _) => Some(f),
+        (None, Some(Focal::Mm(f)), _) => Some(lcam::fov_from_focal(f, aspect)),
+        (None, Some(Focal::Exif), Some(f)) => Some(lcam::fov_from_focal(f, aspect)),
+        _ => None,
+    };
+    let fov_y = given_fov.unwrap_or(55.0);
+    // Constraints for `match` (also imposed on a written camera).
+    let has = |n: &str| v.fix.iter().any(|f| f == n);
+    let mut k_ = lcam::Constraints::default();
+    let mut fixed: Vec<&'static str> = Vec::new();
+    if has("fov") || exif.is_some() {
+        match given_fov {
+            Some(f) => {
+                k_.fov = Some(f);
+                fixed.push("fov");
+            }
+            None if has("fov") => notes.push("fix = [\"fov\"] needs fov_y or focal_35mm".into()),
+            None => {}
+        }
+    }
+    if has("eye") {
+        match eye {
+            Some(e) => {
+                k_.eye = Some(e);
+                fixed.push("eye");
+            }
+            None => notes.push("fix = [\"eye\"] needs `eye` (or a camera in sources.toml)".into()),
+        }
+    }
+    if has("height") && k_.eye.is_none() {
+        k_.eye_y = Some(v.eye_height.or(eye.map(|e| e.y)).unwrap_or(1.6));
+        fixed.push("height");
+    } else if let Some(hh) = v.eye_height {
+        k_.eye_height = Some((hh, v.eye_height_sigma.unwrap_or(0.3)));
+    }
+    if v.level || v.upright || has("roll") {
+        k_.roll = Some(if v.level || v.upright { 0.0 } else { v.roll });
+        fixed.push("roll");
+    }
+    if v.upright || has("pitch") {
+        let written_pitch = match (eye, target) {
+            (Some(e), Some(t)) => Cam::new(e, t, fov_y, 0.0).pitch(),
+            _ => 0.0,
+        };
+        k_.pitch = Some(if v.upright { 0.0 } else { written_pitch });
+        fixed.push("pitch");
+    }
+    match v.shift {
+        Some(ShiftSpec::Fixed(sh)) => k_.shift = Vec2::from_array(sh),
+        Some(ShiftSpec::Solve) => k_.solve_shift = [true, true],
+        None if v.upright => k_.solve_shift = [false, true],
+        None => {}
+    }
+    let written = eye.map(|e| k_.apply(Cam::new(e, target.unwrap_or(Vec3::new(0.0, 8.0, 0.0)), fov_y, v.roll)));
+    let min_pts = if k_ == lcam::Constraints::default() { 4 } else { 2 };
+    if v.matches.len() >= min_pts && size != (4, 3) {
         let m: Vec<(Vec2, Vec3)> = v.matches.iter().map(|p| (Vec2::from_array(p.px), Vec3::from_array(p.world))).collect();
         let hints: Vec<Cam> = written.into_iter().collect();
-        if let Some((cam, rms)) = lcam::solve(&m, size.0 as f32, size.1 as f32, &hints) {
-            return Some(ViewCam { cam, size, rms: Some(rms) });
+        if let Some(sol) = lcam::solve_with(&m, size.0 as f32, size.1 as f32, &hints, &k_) {
+            return Some(ViewCam { cam: sol.cam, size, rms: Some(sol.rms), solved: Some(sol), fixed, notes });
         }
+        notes.push(format!("`match` has too few points ({}) for the free camera parameters; using eye/target", v.matches.len()));
     } else if !v.matches.is_empty() {
         eprintln!("view {k}: `match` needs at least 4 points (and the photo size); using eye/target");
     }
-    written.map(|cam| ViewCam { cam, size, rms: None })
+    written.map(|cam| ViewCam { cam, size, rms: None, solved: None, fixed, notes })
+}
+
+/// JSON of a solved view: the camera ready to paste plus diagnostics.
+fn solved_json(src: &Source, k: usize, vc: &ViewCam) -> serde_json::Value {
+    let v = &src.spec.view[k];
+    let c = vc.cam;
+    let mut j = serde_json::json!({ "view": k, "rms_px": vc.rms, "eye": c.eye.to_array(), "target": c.target.to_array(), "fov_y": c.fov_y, "roll": c.roll });
+    if c.shift != Vec2::ZERO {
+        j["shift"] = serde_json::json!(c.shift.to_array());
+    }
+    if !vc.fixed.is_empty() {
+        j["fixed"] = serde_json::json!(vc.fixed);
+    }
+    if let Some(s) = &vc.solved {
+        j["planarity"] = serde_json::json!((s.planarity * 1000.0).round() / 1000.0);
+        let pts: Vec<serde_json::Value> = v
+            .matches
+            .iter()
+            .enumerate()
+            .map(|(i, m)| {
+                let mut p = serde_json::json!({ "i": i, "px": m.px, "world": m.world, "error_px": (s.errors[i] * 10.0).round() / 10.0 });
+                if let Some(q) = s.reprojected[i] {
+                    p["reprojected"] = serde_json::json!([(q.x * 10.0).round() / 10.0, (q.y * 10.0).round() / 10.0]);
+                }
+                if let Some(n) = &m.note {
+                    p["note"] = serde_json::json!(n);
+                }
+                p
+            })
+            .collect();
+        j["points"] = serde_json::json!(pts);
+        if !s.warnings.is_empty() {
+            j["warnings"] = serde_json::json!(s.warnings);
+        }
+    }
+    if !vc.notes.is_empty() {
+        j["notes"] = serde_json::json!(vc.notes);
+    }
+    j
 }
 
 fn view_name(v: &ViewSpec, k: usize) -> String {
@@ -476,13 +688,13 @@ fn edges_image(e: &[f32], w: u32, h: u32) -> RgbaImage {
 /// Street-level camera for the main facade: far enough to frame the
 /// facade, never inside or behind the buildings across the street; in a
 /// narrow street a view along it, as people photograph alleys.
-fn street_shot(src: &Source, face: &landmark::runs::Bend, height: f32, w: u32, h: u32) -> (Vec3, Vec3, f32, String) {
+fn street_shot(src: &Source, face: &landmark::runs::Bend, height: f32, w: u32, h: u32, hidden: &[bool]) -> (Vec3, Vec3, f32, String) {
     let r = &src.spec.render;
     if let (Some(e), Some(t)) = (r.street_eye, r.street_target) {
         return (Vec3::from_array(e), Vec3::from_array(t), r.street_fov.unwrap_or(62.0), "street_eye / street_target".into());
     }
     let fp = src.footprint.as_ref();
-    let obstacles: Vec<&poly::Shape> = fp.map(|f| f.context.iter().chain(f.outlines.iter()).map(|c| &c.shape).collect()).unwrap_or_default();
+    let obstacles: Vec<&poly::Shape> = fp.map(|f| f.context.iter().enumerate().filter(|(k, _)| !hidden.get(*k).copied().unwrap_or(false)).map(|(_, c)| c).chain(f.outlines.iter()).map(|c| &c.shape).collect()).unwrap_or_default();
     let free_along = |o: Vec2, d: Vec2| -> f32 { obstacles.iter().filter_map(|s| landmark::runs::ray_hit(s, o, d, 0.05).map(|hh| hh.0)).fold(250.0, f32::min) };
     let inside = |p: Vec2| obstacles.iter().any(|s| s.contains(p));
     let len = face.len();
@@ -766,6 +978,19 @@ fn contact_sheet(images: &[(String, RgbaImage)], cols: u32, tile_w: u32) -> Rgba
     out
 }
 
+/// A standard view name for `--view` (`ne`, `view_ne`, `street`, `plan`).
+fn std_view_name(v: &str) -> Option<&'static str> {
+    match v.trim().to_ascii_lowercase().as_str() {
+        "ne" | "view_ne" => Some("view_ne"),
+        "se" | "view_se" => Some("view_se"),
+        "sw" | "view_sw" => Some("view_sw"),
+        "nw" | "view_nw" => Some("view_nw"),
+        "street" => Some("street"),
+        "plan" => Some("plan"),
+        _ => None,
+    }
+}
+
 /// Index of the view chosen with `--view` (name or index).
 fn pick_view(src: &Source, sel: &str) -> Result<usize, String> {
     if let Ok(k) = sel.parse::<usize>() {
@@ -776,7 +1001,7 @@ fn pick_view(src: &Source, sel: &str) -> Result<usize, String> {
     let names: Vec<String> = src.spec.view.iter().enumerate().map(|(k, v)| view_name(v, k)).collect();
     names.iter().position(|n| n == sel).ok_or_else(|| {
         let refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
-        format!("no [[view]] `{sel}`{}; views: {}", landmark::parse::did_you_mean(sel, &refs), names.join(", "))
+        format!("no [[view]] `{sel}`{}; views: {} (or a standard view: ne, se, sw, nw, street, plan)", landmark::parse::did_you_mean(sel, &refs), names.join(", "))
     })
 }
 
@@ -812,16 +1037,29 @@ fn render(args: &Args, root: &Path) -> Result<(), String> {
     for w in metrics["warnings"].as_array().into_iter().flatten() {
         eprintln!("  warning: {}", w.as_str().unwrap_or(""));
     }
-    let only = args.view.as_deref().map(|v| pick_view(&src, v)).transpose()?;
-    let views: Vec<usize> = match only {
-        Some(k) => vec![k],
-        None => (0..src.spec.view.len()).collect(),
+    // `--view` names a photo view, else a standard one (render only it).
+    let std_only: Option<&'static str> = match args.view.as_deref() {
+        Some(v) if pick_view(&src, v).is_err() => std_view_name(v),
+        _ => None,
     };
+    if std_only.is_some() && args.edges_only {
+        return Err("--edges-only draws photo views; a standard view needs a GPU render (drop --edges-only)".into());
+    }
+    let only = if std_only.is_some() { None } else { args.view.as_deref().map(|v| pick_view(&src, v)).transpose()? };
+    let views: Vec<usize> = match (only, std_only) {
+        (_, Some(_)) => Vec::new(),
+        (Some(k), _) => vec![k],
+        (None, None) => (0..src.spec.view.len()).collect(),
+    };
+    let (hidden, hide_warn) = hidden_context(&src);
+    for w in &hide_warn {
+        eprintln!("  warning: {w}");
+    }
     let w = args.width;
     let tris = model_tris(&model);
     // Cameras first: solved ones are printed ready to paste.
     let mut cams: Vec<(usize, ViewCam)> = Vec::new();
-    if args.views != "std" {
+    if args.views != "std" || std_only.is_some() {
         for &k in &views {
             let v = &src.spec.view[k];
             match view_camera(&src, v, k) {
@@ -841,6 +1079,27 @@ fn render(args: &Args, root: &Path) -> Result<(), String> {
                             c.fov_y,
                             c.roll
                         );
+                        if c.shift != Vec2::ZERO {
+                            eprintln!("  shift = [{:.4}, {:.4}]", c.shift.x, c.shift.y);
+                        }
+                        if !vc.fixed.is_empty() {
+                            eprintln!("  (held fixed: {})", vc.fixed.join(", "));
+                        }
+                        if let Some(sol) = &vc.solved {
+                            let errs: Vec<String> = sol.errors.iter().enumerate().map(|(i, e)| format!("{i}: {e:.1}")).collect();
+                            eprintln!("  per-point error (px) {}", errs.join(", "));
+                            for w in &sol.warnings {
+                                eprintln!("  warning: {w}");
+                            }
+                        }
+                    }
+                    for n in &vc.notes {
+                        eprintln!("  warning: {n}");
+                    }
+                    if let Some((ci, h)) = camera_in_context(&src, &hidden, vc.cam.eye)
+                        && v.context.unwrap_or(true)
+                    {
+                        eprintln!("  warning: {}", inside_context_warning(&format!("view {k} ({})", view_name(v, k)), ci, h));
                     }
                     cams.push((k, vc));
                 }
@@ -883,8 +1142,8 @@ fn render(args: &Args, root: &Path) -> Result<(), String> {
     let radius = ((mx - mn) * 0.5).length().max(5.0);
     let mut handles: Vec<(ModelHandle, Mat4)> = vec![(st.r.upload_scene(&scene), Mat4::IDENTITY)];
     let pav = src.spec.render.paving.unwrap_or(radius * 1.6 + 25.0);
-    handles.push((st.r.upload_scene(&ground_scene(look, Vec2::new(center.x, center.z), pav)), Mat4::IDENTITY));
-    let context = if args.context { src.footprint.as_ref().and_then(|f| context_scene(look, &f.context, Vec2::ZERO)) } else { None };
+    handles.push((st.r.upload_scene(&ground_scene(look, Vec2::new(center.x, center.z), pav, &model.ground_cuts)), Mat4::IDENTITY));
+    let context = if args.context { src.footprint.as_ref().and_then(|f| context_scene(look, &f.context, &hidden, Vec2::ZERO)) } else { None };
     let ctx_handle = context.as_ref().map(|c| st.r.upload_scene(c));
     eprintln!("uploaded in {:.2}s", t0.elapsed().as_secs_f32());
     let face = main_facade(&src, mn, mx);
@@ -896,9 +1155,10 @@ fn render(args: &Args, root: &Path) -> Result<(), String> {
     };
     let default_sun = src.spec.render.sun.map(|s| (s[0], Some(s[1]))).unwrap_or((poly::azimuth(fnrm) - 35.0, sun_el0));
     let hh = (w as f32 * 9.0 / 16.0) as u32;
-    let shot = |name: &str, eye: Vec3, target: Vec3, fov_y: f32, w: u32, h: u32, sun: (f32, Option<f32>), plan: bool| Shot { name: name.into(), eye, target, fov_y, roll: 0.0, w, h, sun, plan, light: light0, exposure: exposure0 };
+    let shot = |name: &str, eye: Vec3, target: Vec3, fov_y: f32, w: u32, h: u32, sun: (f32, Option<f32>), plan: bool| Shot { name: name.into(), eye, target, fov_y, roll: 0.0, w, h, sun, plan, light: light0, exposure: exposure0, shift: Vec2::ZERO };
     let mut sheet: Vec<(String, RgbaImage)> = Vec::new();
-    if args.views != "photo" {
+    let want = |name: &str| std_only.is_none_or(|o| o == name);
+    if args.views != "photo" || std_only.is_some() {
         // Obliques frame the landmark alone (context hides it); the street,
         // plan and photo views show the neighbours.
         let fov = 36.0f32;
@@ -907,6 +1167,9 @@ fn render(args: &Args, root: &Path) -> Result<(), String> {
         let mut target = pts.iter().copied().sum::<Vec3>() / pts.len().max(1) as f32;
         target.y = (mx.y * 0.35).max(1.0);
         for (name, az) in [("view_ne", 45.0f32), ("view_se", 135.0), ("view_sw", 225.0), ("view_nw", 315.0)] {
+            if !want(name) {
+                continue;
+            }
             let d = poly::from_azimuth(az);
             let el = 26f32.to_radians();
             let dir = Vec3::new(d.x * el.cos(), el.sin(), d.y * el.cos());
@@ -918,17 +1181,27 @@ fn render(args: &Args, root: &Path) -> Result<(), String> {
             eprintln!("{name} in {:.2}s", t0.elapsed().as_secs_f32());
         }
         // Street-level view of the main facade.
-        let (eye, tgt, fov, why) = street_shot(&src, &face, mx.y, w, hh);
-        eprintln!("street: {why}");
-        let s = shot("street", eye, tgt, fov, w, hh, default_sun, false);
-        let mut hs = handles.clone();
-        if let Some(c) = ctx_handle {
-            hs.push((c, Mat4::IDENTITY));
+        if want("street") {
+            let (eye, tgt, fov, why) = street_shot(&src, &face, mx.y, w, hh, &hidden);
+            eprintln!("street: {why}");
+            if let Some((ci, h)) = camera_in_context(&src, &hidden, eye) {
+                eprintln!("  warning: {}", inside_context_warning("street view", ci, h));
+            }
+            let s = shot("street", eye, tgt, fov, w, hh, default_sun, false);
+            let mut hs = handles.clone();
+            if let Some(c) = ctx_handle {
+                hs.push((c, Mat4::IDENTITY));
+            }
+            let (img, _) = render_shot(&mut st, &hs, &s);
+            save_png(&img, &out_dir.join("street.png"))?;
+            sheet.push(("street".into(), img));
         }
-        let (img, _) = render_shot(&mut st, &hs, &s);
-        save_png(&img, &out_dir.join("street.png"))?;
-        sheet.push(("street".into(), img));
         // Top-down plan, near orthographic.
+        if !want("plan") {
+            eprintln!("{} done in {:.2}s", std_only.unwrap_or(""), t0.elapsed().as_secs_f32());
+            println!("{}", out_dir.display());
+            return Ok(());
+        }
         let mut pmin = Vec2::new(mn.x, mn.z);
         let mut pmax = Vec2::new(mx.x, mx.z);
         if let Some((a, b)) = src.footprint.as_ref().and_then(|f| f.bounds()) {
@@ -952,6 +1225,11 @@ fn render(args: &Args, root: &Path) -> Result<(), String> {
         save_png(&img, &out_dir.join("plan.png"))?;
         let sq = image::imageops::resize(&img, w, hh, image::imageops::FilterType::Triangle);
         sheet.push(("plan".into(), sq));
+        if std_only.is_some() {
+            eprintln!("plan done in {:.2}s", t0.elapsed().as_secs_f32());
+            println!("{}", out_dir.display());
+            return Ok(());
+        }
         let sheet_img = contact_sheet(&sheet, 3, 640);
         save_jpg(&sheet_img, &out_dir.join("sheet.jpg"))?;
         eprintln!("standard views done in {:.2}s", t0.elapsed().as_secs_f32());
@@ -969,7 +1247,7 @@ fn render(args: &Args, root: &Path) -> Result<(), String> {
                 (None, Some((el, _))) => (default_sun.0, Some(el)),
                 _ => default_sun,
             };
-            let mut s = Shot { name: name.clone(), eye: vc.cam.eye, target: vc.cam.target, fov_y: vc.cam.fov_y, roll: vc.cam.roll, w, h: rh, sun, plan: false, light: light0, exposure: exposure0 };
+            let mut s = Shot { name: name.clone(), eye: vc.cam.eye, target: vc.cam.target, fov_y: vc.cam.fov_y, roll: vc.cam.roll, w, h: rh, sun, plan: false, light: light0, exposure: exposure0, shift: vc.cam.shift };
             // The sky follows a low sun (dusk photos) or an explicit time.
             if vt.is_some() || sun.1.is_some_and(|e| e < 12.0) {
                 s.light = Light::Atmosphere;
@@ -1037,6 +1315,7 @@ fn gallery(args: &Args, root: &Path) -> Result<(), String> {
     let mut top = 10.0f32;
     let mut n = 0;
     let mut each: Vec<(String, Vec3, f32)> = Vec::new();
+    let mut cuts: Vec<poly::Shape> = Vec::new();
     for d in &dirs {
         match landmark::load_with(d, &lib, AssembleOptions { lods: true }) {
             Ok(l) => {
@@ -1048,6 +1327,7 @@ fn gallery(args: &Args, root: &Path) -> Result<(), String> {
                 top = top.max(b.y);
                 let c3 = (a + b) * 0.5 + Vec3::new(l.anchor.x, 0.0, l.anchor.y);
                 each.push((l.slug.clone(), c3, ((b - a) * 0.5).length()));
+                cuts.extend(l.ground_cuts.iter().map(|g| g.map(|p| p + l.anchor)));
                 handles.push((h, m));
                 n += 1;
                 eprintln!("{}: {} triangles at [{:.1}, {:.1}]", l.slug, l.scene.triangle_count(), l.anchor.x, l.anchor.y);
@@ -1060,7 +1340,7 @@ fn gallery(args: &Args, root: &Path) -> Result<(), String> {
     }
     let c = (lo + hi) * 0.5;
     let ext = (hi - lo).max(Vec2::splat(60.0));
-    handles.push((st.r.upload_scene(&ground_scene(Look::Lib(&lib), c, ext.max_element() * 0.8 + 60.0)), Mat4::IDENTITY));
+    handles.push((st.r.upload_scene(&ground_scene(Look::Lib(&lib), c, ext.max_element() * 0.8 + 60.0, &cuts)), Mat4::IDENTITY));
     let out_dir = args.out.clone().unwrap_or_else(|| root.join("screenshots/landmarks/_gallery"));
     std::fs::create_dir_all(&out_dir).map_err(|e| e.to_string())?;
     let w = args.width;
@@ -1073,7 +1353,7 @@ fn gallery(args: &Args, root: &Path) -> Result<(), String> {
         ("aerial_nw", ctr + Vec3::new(-r * 1.1, r * 0.8, -r * 1.1), 45.0),
         ("top", ctr + Vec3::new(0.0, r * 2.6, r * 0.01), 45.0),
     ];
-    let mk = |name: &str, eye: Vec3, target: Vec3, fov_y: f32| Shot { name: name.into(), eye, target, fov_y, roll: 0.0, w, h, sun: (200.0, Some(50.0)), plan: false, light: Light::Hdri, exposure: None };
+    let mk = |name: &str, eye: Vec3, target: Vec3, fov_y: f32| Shot { name: name.into(), eye, target, fov_y, roll: 0.0, w, h, sun: (200.0, Some(50.0)), plan: false, light: Light::Hdri, exposure: None, shift: Vec2::ZERO };
     let mut sheet = Vec::new();
     for (name, eye, fov) in shots {
         let (img, _) = render_shot(&mut st, &handles, &mk(name, eye, ctr, fov));
