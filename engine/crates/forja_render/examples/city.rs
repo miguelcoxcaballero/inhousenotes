@@ -86,6 +86,12 @@ fn main() {
         None if night => "_night_old".to_string(),
         None => String::new(),
     };
+    // `CITY_STATIC=1`: the city goes into the renderer's static culling
+    // grid once (as the game does) instead of being resubmitted per frame.
+    if std::env::var_os("CITY_STATIC").is_some() && !(night && legacy) {
+        r.set_static_instances(&frame.instances);
+        frame.instances.clear();
+    }
     let base_instances = frame.instances.clone();
     let e = city.extent;
     // Eye-level shots along real streets of each district.
@@ -135,6 +141,9 @@ fn main() {
             let glow = forja_city::nightlight::glow_parts(&out.city_lights, eye, 45.0, 2.0 * (frame.camera.fov_y * 0.5).tan() / 720.0, 1.6);
             let h = r.upload_scene(&forja_city::kit::assemble(&kit, "glow", glow, None));
             frame.instances.push(DrawInstance { cast_shadows: false, ..DrawInstance::new(h, Mat4::IDENTITY) });
+        }
+        if let Some(n) = std::env::var("CITY_BENCH").ok().and_then(|v| v.parse::<u32>().ok()) {
+            bench_frames(&mut r, &frame, name, n);
         }
         let img = r.render_to_image(&frame, 1280, 720);
         let path = format!("{prefix}_{name}{suffix}.png");
@@ -192,4 +201,59 @@ fn night_lights(all: &[forja_city::CityLight], eye: Vec3, fwd: Vec3) -> Vec<Poin
             PointLight { position, radius, color, intensity }
         })
         .collect()
+}
+
+/// `CITY_BENCH=N`: N real-time frames at 1280x720 into an offscreen target;
+/// prints the renderer's CPU time (scopes) and the wall time with the GPU
+/// (lavapipe here, so only the CPU side is meaningful).
+fn bench_frames(r: &mut Renderer, frame: &FrameDesc, name: &str, n: u32) {
+    use forja_render::wgpu;
+    r.resize(1280, 720);
+    r.reset_history();
+    let tex = r.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("bench"),
+        size: wgpu::Extent3d { width: 1280, height: 720, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: r.output_format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let view = tex.create_view(&Default::default());
+    r.render(frame, &view);
+    let _ = r.device.poll(wgpu::PollType::wait_indefinitely());
+    let (mut cpu, mut wall) = (0.0f32, 0.0f32);
+    let mut scopes: Vec<(&'static str, f32)> = Vec::new();
+    for i in 0..n {
+        let mut f = frame.clone();
+        f.time = (i + 1) as f32 / 60.0;
+        let t = std::time::Instant::now();
+        r.render(&f, &view);
+        cpu += t.elapsed().as_secs_f32() * 1000.0;
+        let _ = r.device.poll(wgpu::PollType::wait_indefinitely());
+        wall += t.elapsed().as_secs_f32() * 1000.0;
+        for (k, ms) in &r.cpu.scopes {
+            match scopes.iter_mut().find(|e| e.0 == *k) {
+                Some(e) => e.1 += ms,
+                None => scopes.push((k, *ms)),
+            }
+        }
+    }
+    let n = n.max(1) as f32;
+    let list: Vec<String> = scopes.iter().map(|(k, ms)| format!("{k} {:.2}", ms / n)).collect();
+    let st = &r.stats;
+    println!(
+        "bench {name}: render cpu {:.2} ms, wall {:.1} ms | {} | draws {} shadow {} | inst {} shadow {} | tris {:.2} M shadow {:.2} M | lights {}",
+        cpu / n,
+        wall / n,
+        list.join(", "),
+        st.draw_calls,
+        st.shadow_draws,
+        st.instances_drawn,
+        st.shadow_instances,
+        st.triangles as f64 / 1e6,
+        st.shadow_triangles as f64 / 1e6,
+        st.lights
+    );
 }

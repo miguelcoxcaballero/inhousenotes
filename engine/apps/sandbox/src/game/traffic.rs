@@ -126,7 +126,7 @@ impl Plugin for TrafficPlugin {
             let gw = app.world.res::<GameWorld>();
             (gw.scene_base, gw.static_base)
         };
-        let heads = info.signals.iter().zip(bound).filter(|(_, b)| b.approach.is_some()).map(|(p, b)| (static_base + p.placement, p.variants.map(|v| v.map(|s| scene_base + s)), b)).collect();
+        let heads: Vec<(usize, [[usize; 2]; 3], HeadBinding)> = info.signals.iter().zip(bound).filter(|(_, b)| b.approach.is_some()).map(|(p, b)| (static_base + p.placement, p.variants.map(|v| v.map(|s| scene_base + s)), b)).collect();
         // Room for the drivable cars parked by the vehicles plugin.
         {
             let physics = app.world.res::<PhysicsWorld>();
@@ -138,6 +138,11 @@ impl Plugin for TrafficPlugin {
         let feet = app.world.res::<Player>().controller.feet();
         sim.focus = Vec2::new(feet.x, feet.z);
         let rs = app.world.res_mut::<RenderScene>();
+        // The heads swap their model with the aspect: keep them out of the
+        // static culling grid.
+        rs.volatile_statics.extend(heads.iter().map(|h| h.0));
+        rs.volatile_statics.sort_unstable();
+        rs.volatile_statics.dedup();
         let load = |rs: &mut RenderScene, files: &[&str]| files.iter().filter_map(|f| car_model(rs, &paths, &format!("kenney_car_kit/{f}.glb"))).collect::<Vec<_>>();
         let cars = [load(rs, &["hatchback-sports", "sedan-sports", "taxi"]), load(rs, &["sedan", "taxi", "suv", "police", "suv-luxury", "sedan"]), load(rs, &["van", "delivery", "truck"])];
         log::info!("traffic: {} car models", cars.iter().map(Vec::len).sum::<usize>());

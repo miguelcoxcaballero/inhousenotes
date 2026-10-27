@@ -97,9 +97,15 @@ pub fn cascade_matrix(camera: &Camera, near: f32, far: f32, sun_dir: Vec3, resol
 /// size of a shadow texel = 2 radius / resolution; light-space depth range =
 /// 2 radius + caster reach).
 pub fn cascade_fit(camera: &Camera, near: f32, far: f32, sun_dir: Vec3, resolution: u32, caster_reach: f32) -> (Mat4, f32) {
+    cascade_fit_padded(camera, near, far, sun_dir, resolution, caster_reach, 1.0)
+}
+
+/// [`cascade_fit`] with the bounding sphere enlarged by `pad` (> 1 for a
+/// cascade that is reused for a few frames while the camera moves).
+pub fn cascade_fit_padded(camera: &Camera, near: f32, far: f32, sun_dir: Vec3, resolution: u32, caster_reach: f32, pad: f32) -> (Mat4, f32) {
     let corners = camera.slice_corners(near, far);
     let center = corners.iter().copied().sum::<Vec3>() / 8.0;
-    let radius = corners.iter().map(|c| (*c - center).length()).fold(0.0, f32::max);
+    let radius = corners.iter().map(|c| (*c - center).length()).fold(0.0, f32::max) * pad;
     let radius = (radius * 16.0).ceil() / 16.0;
     let up = if sun_dir.y.abs() > 0.99 { Vec3::Z } else { Vec3::Y };
     let light_view = Mat4::look_at_rh(Vec3::ZERO, -sun_dir, up);
