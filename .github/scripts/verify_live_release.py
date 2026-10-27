@@ -12,7 +12,7 @@ version = re.search(r"const APP_VERSION = '([^']+)'", (root / 'index.html').read
 revision = os.environ['GITHUB_SHA']
 expected = {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
             for name in ('app-v5.js', 'runtime-core-v5.js', 'peer-transport-v5.js', 'document-processing-v5.js', 'document-processing-worker-v5.js', 'timeline-core-v5.js', 'live-collaboration-v5.js', 'service-worker.js', 'updates/A.json', 'updates/B.json',
-                         'offline-store-v5.js', 'offline-library-v5.js', 'offline-app-v5.js', 'offline-media-v5.js',
+                         'drive-ink-journal-v5.js', 'drive-ink-app-v5.js', 'drive-live-preview-v5.js', 'offline-store-v5.js', 'offline-library-v5.js', 'offline-app-v5.js', 'offline-media-v5.js',
                          'offline-assets.js', 'vendor/fonts/ui.css', 'boot-v5.js', 'native-assets.json',
                          'rust-core-v5.js', 'wasm/inhouse_notes_core.wasm', 'ink-palette.js',
                          'scanner/processing/ink-vectorizer.js',

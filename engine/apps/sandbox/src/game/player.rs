@@ -137,6 +137,15 @@ fn player_move(w: &mut forja_core::World) {
     let driving = w.res::<Driving>().0;
     let pos = w.res::<Player>().position();
     let dead = w.res::<Player>().health.is_dead();
+    // Bikes balance only while ridden (parked ones stand on the kickstand),
+    // and physics simulates the area around the player.
+    {
+        let focus = driving.and_then(|i| w.res::<Vehicles>().0.get(i).and_then(|v| w.res::<PhysicsWorld>().body(v.body)).map(|b| b.position())).unwrap_or(pos);
+        for (i, v) in w.res_mut::<Vehicles>().0.iter_mut().enumerate() {
+            v.rider = driving == Some(i);
+        }
+        w.res_mut::<PhysicsWorld>().set_focus(Some(focus));
+    }
 
     // Hint for the HUD.
     let near = nearest_vehicle(w, pos);
@@ -178,7 +187,7 @@ fn player_move(w: &mut forja_core::World) {
             let p = w.res::<PhysicsWorld>().body(body).map(|b| b.iso()).expect("vehicle body");
             let seat = w.res::<VehicleVisuals>().0[i].seat;
             let player = w.res_mut::<Player>();
-            player.controller.position = p.transform_point(seat);
+            player.controller.carry_to(p.transform_point(seat));
             let fwd = p.rot * Vec3::Z;
             player.facing = fwd.x.atan2(fwd.z);
             let ch = player.controller.body;
@@ -248,6 +257,7 @@ fn player_move(w: &mut forja_core::World) {
 
 fn player_animate(w: &mut forja_core::World) {
     let dt = w.res::<Time>().delta;
+    let alpha = w.res::<Time>().alpha;
     let aim = w.res::<Intent>().aim;
     let armed = w.res::<super::combat::Combat>().equipped.is_some();
     let driving = w.res::<Driving>().0.is_some();
@@ -263,7 +273,7 @@ fn player_animate(w: &mut forja_core::World) {
         let v = player.controller.velocity;
         let speed = if driving || player.health.is_dead() { 0.0 } else { Vec3::new(v.x, 0.0, v.z).length() };
         person.anim.set("jump", (!player.controller.state.grounded && v.y > 1.0) as u32 as f32);
-        let transform = Mat4::from_rotation_translation(Quat::from_rotation_y(player.facing), player.controller.feet());
+        let transform = Mat4::from_rotation_translation(Quat::from_rotation_y(player.facing), player.controller.interpolated_feet(alpha));
         person.update(dt, speed, &transform, glance);
         return;
     }
@@ -287,9 +297,17 @@ fn player_render(w: &mut forja_core::World) {
     let aim_dir = w.res::<RenderScene>().camera.forward();
     let aiming = w.res::<Intent>().aim && driving.is_none() && w.res::<super::combat::Combat>().equipped.is_some();
     let bike = driving.is_some_and(|i| w.res::<VehicleVisuals>().0[i].bike);
-    let vehicle_rot = driving.and_then(|i| w.res::<PhysicsWorld>().body(w.res::<Vehicles>().0[i].body).map(|b| b.rotation()));
+    let alpha = w.res::<Time>().alpha;
+    // Interpolated poses (fixed 60 Hz physics); in a vehicle, the seat of
+    // the vehicle's interpolated pose.
+    let vehicle_iso = driving.and_then(|i| w.res::<PhysicsWorld>().interpolated_iso(w.res::<Vehicles>().0[i].body, alpha));
+    let seat = driving.map(|i| w.res::<VehicleVisuals>().0[i].seat);
+    let vehicle_rot = vehicle_iso.map(|v| v.rot);
     let player = w.res_mut::<Player>();
-    let feet = player.controller.feet();
+    let feet = match (vehicle_iso, seat) {
+        (Some(v), Some(seat)) => v.transform_point(seat) - Vec3::Y * (player.controller.config.half_height + player.controller.config.radius),
+        _ => player.controller.interpolated_feet(alpha),
+    };
     let rot = vehicle_rot.unwrap_or_else(|| Quat::from_rotation_y(player.facing));
     let transform = Mat4::from_rotation_translation(rot, feet) * Mat4::from_scale(Vec3::splat(player.avatar.scale));
     if let Some(person) = &mut player.avatar.person {

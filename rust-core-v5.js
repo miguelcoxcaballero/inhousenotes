@@ -367,6 +367,109 @@
         if (offset !== bytes.length) throw new Error('Trailing ink checkpoint bytes');
         return output;
     }
-    root.InhouseRust = Object.freeze({ ready, checkpointCodec, unpackCheckpoint, warp, splitRgba, scanColors, balancePaper, separateInk, surfaceFit, inkAxes, inkRepair,
+    // Bounded, generation-scoped coordinates avoid re-packing long strokes on
+    // every eraser sample. A document edit invalidates all cached geometry.
+    const hitCache = new Map();
+    let hitCacheBytes = 0, hitGeneration = null;
+    function clearHitCache() {
+        for (const entry of hitCache.values()) core.free(entry.pointer, entry.bytes);
+        hitCache.clear(); hitCacheBytes = 0;
+    }
+    function strokeHitTest(points, x, y, radius, generation) {
+        if (!core?.editor_stroke_hit || !Array.isArray(points) || points.length < 256
+            || points.length > 262144 || ![x,y,radius].every(Number.isFinite)
+            || radius < 0 || Math.max(Math.abs(x),Math.abs(y),radius) > 1e9) return null;
+        if (generation !== hitGeneration) { clearHitCache(); hitGeneration = generation; }
+        const bytes = points.length * 16;
+        let entry = hitCache.get(points);
+        if (entry && entry.bytes !== bytes) {
+            core.free(entry.pointer,entry.bytes); hitCacheBytes -= entry.bytes;
+            hitCache.delete(points); entry = null;
+        }
+        if (!entry) {
+            while (hitCache.size >= 64 || hitCacheBytes + bytes > 4 * 1024 * 1024) {
+                const [key, oldest] = hitCache.entries().next().value;
+                core.free(oldest.pointer,oldest.bytes); hitCacheBytes -= oldest.bytes; hitCache.delete(key);
+            }
+            let pointer = 0;
+            try {
+                pointer = allocation(bytes).pointer;
+                const coords = new Float64Array(core.memory.buffer, pointer, points.length * 2);
+                for (let i=0;i<points.length;i++) {
+                    const point=points[i];
+                    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)
+                        || Math.max(Math.abs(point.x),Math.abs(point.y)) > 1e9) { core.free(pointer,bytes); return null; }
+                    coords[i*2]=point.x; coords[i*2+1]=point.y;
+                }
+                entry={pointer,bytes}; hitCacheBytes += bytes;
+            } catch (_) { if(pointer)core.free(pointer,bytes); return null; }
+        } else hitCache.delete(points);
+        hitCache.set(points,entry);
+        const result = core.editor_stroke_hit(entry.pointer,points.length,x,y,radius);
+        return result < 0 ? null : !!result;
+    }
+    function documentWorkQueue() {
+        if (core?.document_work_version?.() !== 1) return null;
+        let handle = core.document_work_new(), output = null;
+        if (!handle) return null;
+        try { output = allocation(17 * 8); }
+        catch (_) { core.document_work_drop(handle); return null; }
+        return {
+            add(id, session, quietMs) {
+                return !!handle && Number.isInteger(id) && id > 0 && id <= 0xffffffff
+                    && core.document_work_add(handle, id, session, quietMs) === 1;
+            },
+            cancel(id) { if (handle) core.document_work_cancel(handle, id); },
+            poll(state) {
+                if (!handle) throw new Error('Document work queue disposed');
+                const count = core.document_work_poll(handle, state.now, state.lastActivity,
+                    state.session, (state.busy ? 1 : 0) | (state.bypass ? 2 : 0), output.pointer);
+                if (count < 0) throw new Error('Invalid document work state');
+                // Recreate after every call: other kernels can grow WASM memory.
+                const values = new Float64Array(core.memory.buffer, output.pointer, 17);
+                const ready = [];
+                for (let i = 0; i < count; i++) ready.push([values[1+i*2], values[2+i*2] === 1]);
+                return {ready, delay:values[0]};
+            },
+            dispose() {
+                if (!handle) return;
+                core.document_work_drop(handle); handle = 0; release(output); output = null;
+            }
+        };
+    }
+    function pdfInk(strokes, bounds, rasterScale = 1) {
+        if (!core?.pdf_ink_path || !Array.isArray(strokes) || !bounds) return null;
+        let length = 0;
+        for (const stroke of strokes) {
+            if (stroke.tool === 'eraser-stroke') continue;
+            if (stroke.tool !== 'pen' || !/^#[0-9a-f]{6}$/i.test(stroke.color)
+                || !Array.isArray(stroke.points)) return null;
+            if (stroke.points.length >= 2) length += 5 + stroke.points.length * 2;
+        }
+        // Dense/repeated ink is cheaper as a cached lossless raster. Keep the
+        // vector fast path for ordinary sparse pen pages without dropping points.
+        if (!length || length > 8192) return null;
+        // A narrow line of tightly packed samples costs less to rasterize than
+        // to encode as thousands of PDF operators. Compare actual crop pixels.
+        const rasterPixels = bounds.width * bounds.height * rasterScale * rasterScale;
+        if (!Number.isFinite(rasterPixels) || rasterPixels < length * 32) return null;
+        let input, output;
+        try {
+            input = allocation(length * 8); output = allocation(length * 24 + 256);
+            const values = new Float64Array(core.memory.buffer, input.pointer, length);
+            let at = 0;
+            for (const stroke of strokes) {
+                if (stroke.tool === 'eraser-stroke' || stroke.points.length < 2) continue;
+                values[at++] = stroke.width;
+                for (let i=1;i<7;i+=2) values[at++] = parseInt(stroke.color.slice(i,i+2),16)/255;
+                values[at++] = stroke.points.length;
+                for (const point of stroke.points) { values[at++] = point.x; values[at++] = point.y; }
+            }
+            const used = core.pdf_ink_path(input.pointer, length, bounds.x, bounds.y + bounds.height, output.pointer, output.bytes);
+            return used ? view(output).slice(0,used) : null;
+        } catch (_) { return null; }
+        finally { release(input); release(output); }
+    }
+    root.InhouseRust = Object.freeze({ ready, pdfInk, documentWorkQueue, strokeHitTest, checkpointCodec, unpackCheckpoint, warp, splitRgba, scanColors, balancePaper, separateInk, surfaceFit, inkAxes, inkRepair,
         folderMotion, folderFade, folderRows, available: () => !!core });
 })(globalThis);

@@ -245,7 +245,7 @@
         captureTimer=setTimeout(()=>{
             if (host.busy()) {scheduleCapture();return;}
             capture().then(()=>kick()).catch(error=>host.error(error));
-        },600);
+        },180);
     }
     async function prepared(id,blob,version,session) {
         if (!account || isWorker) return;
@@ -314,10 +314,37 @@
         })().finally(()=>{cataloguePromise=null;});
         return cataloguePromise;
     }
+    let nativePausedForEditing = false;
     async function scheduleBackground() {
-        if (!account) return;
+        if (!account || (nativePausedForEditing && root.hasHotUserInteraction?.(root.getDocumentSaveIdleWindow?.() ?? 180))) return;
+        nativePausedForEditing = false;
         try {root.InhouseBackground?.schedule?.();}catch(_){}
         try {const registration=await navigator.serviceWorker?.getRegistration();await registration?.sync?.register('inhouse-outbox');}catch(_){}
+    }
+    let nativeEditingResumeTimer = null;
+    function pauseForEditing() {
+        clearTimeout(nativeEditingResumeTimer); nativeEditingResumeTimer = null;
+        // The hidden editor must yield with its foreground owner as well.
+        try { syncFrame?.contentWindow?.interruptDocumentBackgroundWork?.(); } catch (_) { }
+        // Android also has an independent headless sync WebView. Stop its
+        // WorkManager job once per writing burst, then restore scheduling.
+        if (!nativePausedForEditing && root.InhouseBackground?.cancel) {
+            nativePausedForEditing = true;
+            try { root.InhouseBackground.cancel(); } catch (_) { }
+        }
+    }
+    function resumeAfterEditing() {
+        if (!nativePausedForEditing) return;
+        if (root.hasHotUserInteraction?.(root.getDocumentSaveIdleWindow?.() ?? 180)) {
+            if (!nativeEditingResumeTimer) nativeEditingResumeTimer = setTimeout(() => {
+                nativeEditingResumeTimer = null;
+                resumeAfterEditing();
+            }, root.getDocumentSaveIdleWindow?.() ?? 180);
+            return;
+        }
+        clearTimeout(nativeEditingResumeTimer); nativeEditingResumeTimer = null;
+        nativePausedForEditing = false;
+        void scheduleBackground();
     }
     async function kick() {
         if (isWorker || !initialized || !resumed || !account || offline() || syncFrame || kicking || host.busy()) return;
@@ -332,7 +359,7 @@
                 await host.syncActive?.();
                 queue=await S.list('outbox',account);
             }
-            if (!queue.some(op=>op.kind==='folder'||!host.activeDocument?.()||op.id!==host.currentId()) || syncFrame || offline()) return;
+            if (!queue.some(op=>op.kind==='folder'||!host.activeDocument?.()||op.id!==host.currentId()) || syncFrame || offline() || host.busy()) return;
             const frame=document.createElement('iframe');frame.hidden=true;frame.title='Background document sync';
             frame.src=`/?offline-worker=1&v=${encodeURIComponent(host.version)}`;
             syncFrame=frame;
@@ -410,6 +437,6 @@
     }
     function disable() {initialized=false;resumed=false;}
     function logout() {setSyncProgress({phase:'idle',pending:0,id:null,errors:[]});account='';loaded=false;savedViews={};entries=[];documents.clear();indexCatalogue();if(syncFrame){syncFrame.remove();syncFrame=null;}try{root.InhouseBackground?.cancel?.();}catch(_){} }
-    root.InhouseOfflineLibrary=Object.freeze({init,resume,disable,account:()=>account,offline,networkAvailable,ready:()=>initialized&&loaded&&!!account,folder,combine,home,recentItems,syncErrorText,observed,cache,capture,scheduleCapture,prepared,
+    root.InhouseOfflineLibrary=Object.freeze({pauseForEditing,resumeAfterEditing,init,resume,disable,account:()=>account,offline,networkAvailable,ready:()=>initialized&&loaded&&!!account,folder,combine,home,recentItems,syncErrorText,observed,cache,capture,scheduleCapture,prepared,
         openRecord,pin,createFolder,catalogue,kick,setSyncProgress,syncFinished,syncStatus:()=>({...syncState}),scheduleBackground,decorate,reload,useAccount,logout,settings:showSettings,record,isWorker});
 })(window);

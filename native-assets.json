@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "assets": {
     "/app-v5.js": {
-      "sha256": "96e33653c01b8faa6dae729da0a7b63370f0a935b185f22a285ff31161e941e0",
-      "size": 1923669,
+      "sha256": "6625d84b509a02490ce52e15724455dfc3f9e1dd9a7ba0980ff8e7365f399dc9",
+      "size": 1947361,
       "mime": "application/javascript"
     },
     "/boot-v5.js": {
@@ -22,13 +22,28 @@
       "mime": "application/javascript"
     },
     "/document-processing-v5.js": {
-      "sha256": "fb5a5f50f17a077383fe1780b2eb16fbd1050b758f5c9ce34b4a23bec2076953",
-      "size": 4403,
+      "sha256": "65d829330a34d5677dc454c59fd912f1d3bc11e8230c3b4ba07279b76a9693f4",
+      "size": 5593,
       "mime": "application/javascript"
     },
     "/document-processing-worker-v5.js": {
-      "sha256": "008cdb9caf4c70ea02ceb856d20054affc2cc7238455c64d958e98cb5bcf904a",
-      "size": 16340,
+      "sha256": "0177cf9d84211976b1be330373fbe6a5582efbd0e1d7c057d03868c5b4916448",
+      "size": 17675,
+      "mime": "application/javascript"
+    },
+    "/drive-ink-app-v5.js": {
+      "sha256": "ee9cac1bfe51fbca173f2b26df8a9fbe05d78aed450d4b6ac02030bee27de0e4",
+      "size": 21575,
+      "mime": "application/javascript"
+    },
+    "/drive-ink-journal-v5.js": {
+      "sha256": "3c7068a77b01f4f82c8e08fbcf01137f43dc3a9b6063d28c192ffecd1ef36a5f",
+      "size": 27685,
+      "mime": "application/javascript"
+    },
+    "/drive-live-preview-v5.js": {
+      "sha256": "dbb4a41dcbe4857e5b6929b8756480e961bcb2e74c229b802e1906eb479ce995",
+      "size": 15963,
       "mime": "application/javascript"
     },
     "/icons/welcome-pages.svg": {
@@ -42,18 +57,18 @@
       "mime": "application/javascript"
     },
     "/live-collaboration-v5.js": {
-      "sha256": "fa146a4f5b626dfc46cb49e4386bd4d7fa9491d638c7d8fd8fb9ac05293c50f6",
-      "size": 176942,
+      "sha256": "fd92ca4363da59792c4abea8c989b5936edbc48e67f0e77575b739a48c01ee0e",
+      "size": 179110,
       "mime": "application/javascript"
     },
     "/offline-app-v5.js": {
-      "sha256": "0b9829b290bab623569f43d8f6b3384aeef00dfa390fb0e1a4a938b698c1b370",
-      "size": 24897,
+      "sha256": "ce8fd89f22330e877024381055e1de23a94dd71064b57d3e6a34640f55e12e16",
+      "size": 28180,
       "mime": "application/javascript"
     },
     "/offline-library-v5.js": {
-      "sha256": "5e77d306bcf77fb098618a0ec4404adc926c60ec02fa1cce980d2f20f82f222c",
-      "size": 27570,
+      "sha256": "7e7b2ac5d7f7a6733b24486538fbcdb92b05742052de36f083e09c67cbd15ef8",
+      "size": 29071,
       "mime": "application/javascript"
     },
     "/offline-media-v5.js": {
@@ -62,13 +77,13 @@
       "mime": "application/javascript"
     },
     "/offline-store-v5.js": {
-      "sha256": "cf351998c63858f9a2466423cb4cd9440fdd4d1e1145b1e38b9bec818168fccb",
-      "size": 10618,
+      "sha256": "98c0996013c2f368acbde4d860d5009b2466d8a3858f721b480abbcfb368856a",
+      "size": 12178,
       "mime": "application/javascript"
     },
     "/offline-sync-v5.js": {
-      "sha256": "881c8adb988c38777c5884b3f52036f18b49443cc4d808d08a4d04d3a0677b98",
-      "size": 15329,
+      "sha256": "38f6fca9c986ad85279e263ce4d0c4e1c8878ec3466758c4f2844ccd3c074bad",
+      "size": 16261,
       "mime": "application/javascript"
     },
     "/offline-v5.css": {
@@ -82,13 +97,13 @@
       "mime": "application/javascript"
     },
     "/runtime-core-v5.js": {
-      "sha256": "245882d9f86f296784e07df1e8527b8b9ea1d7bc652f6901e590d97876d77dad",
-      "size": 9545,
+      "sha256": "ecd0fcdcdcc203096ccb8a131828197563d951a82bcd66b6108f033fc74ae22b",
+      "size": 15038,
       "mime": "application/javascript"
     },
     "/rust-core-v5.js": {
-      "sha256": "def88ff0f037231f432fbf3e36bac39170f3d58d01a9cc3e4b62a4563f87f502",
-      "size": 24023,
+      "sha256": "b66a947f64d3028bfd1398ebced7e58ee2ee3aa888f1ba3de377f177024b6bcb",
+      "size": 29966,
       "mime": "application/javascript"
     },
     "/scanner/configLoader.js": {
@@ -1197,8 +1212,8 @@
       "mime": "font/ttf"
     },
     "/wasm/inhouse_notes_core.wasm": {
-      "sha256": "bb14072769366455f44b7ad91d412d37597684fbe61be46e9c64081bc7ee0847",
-      "size": 119114,
+      "sha256": "2cddd99269306979d68029fd9612ca398a0d9ab0eebbd1db3d2239519112d27c",
+      "size": 126798,
       "mime": "application/wasm"
     }
   }

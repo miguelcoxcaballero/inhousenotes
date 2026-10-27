@@ -46,17 +46,20 @@ fn camera_system(w: &mut forja_core::World) {
     let dt = w.res::<Time>().delta.max(1e-4);
     let intent = w.res::<Intent>().clone();
     let driving = w.res::<Driving>().0;
+    // Render-interpolated poses: physics runs at a fixed 60 Hz.
+    let alpha = w.res::<Time>().alpha;
     let (target, exclude, chase_heading, speed, bike) = {
         let physics = w.res::<PhysicsWorld>();
         let player = w.res::<Player>();
         match driving.and_then(|i| w.res::<Vehicles>().0.get(i).map(|v| (i, v))) {
             Some((i, v)) => {
                 let b = physics.body(v.body).expect("vehicle body");
-                let fwd = b.rotation() * Vec3::Z;
+                let iso = b.interpolated_iso(alpha);
+                let fwd = iso.rot * Vec3::Z;
                 let bike = w.res::<VehicleVisuals>().0[i].bike;
-                (b.position() + Vec3::Y * if bike { 1.0 } else { 1.4 }, v.body, Some(fwd.x.atan2(fwd.z) + std::f32::consts::PI), b.linvel.length(), bike)
+                (iso.pos + Vec3::Y * if bike { 1.0 } else { 1.4 }, v.body, Some(fwd.x.atan2(fwd.z) + std::f32::consts::PI), b.linvel.length(), bike)
             }
-            None => (player.position() + Vec3::Y * 0.55, player.controller.body, None, 0.0, false),
+            None => (player.controller.interpolated_position(alpha) + Vec3::Y * 0.55, player.controller.body, None, 0.0, false),
         }
     };
     let rig = w.res_mut::<CameraRig>();

@@ -10,12 +10,13 @@ permissions:
 
 concurrency:
   group: production-checks-${{ github.ref }}
-  cancel-in-progress: true
+  # Let the running full suite finish while frequent releases queue the newest head.
+  cancel-in-progress: false
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - name: Check out source
         uses: actions/checkout@v4
