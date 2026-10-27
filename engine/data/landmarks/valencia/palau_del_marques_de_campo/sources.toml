@@ -46,7 +46,32 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_293_Placa_de_l_Arquebisbe_Valencia_al_fons_el_Palau_del_Marq.jpg"
+file = "photos/03_Palacio_del_Marques_de_Campo_panoramio.jpg"
+title = "File:Palacio del Marqués de Campo - panoramio.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palacio_del_Marqu%C3%A9s_de_Campo_-_panoramio.jpg"
+author = "Mister No"
+license = "CC BY 3.0"
+width = 1280
+height = 960
+camera = [-24.18, 20.06]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/04_222_Palau_del_Marques_de_Campo_Valencia_pl_de_l_Arquebisbe.jpg"
+title = "File:222 Palau del Marquès de Campo (València), pl. de l'Arquebisbe.jpg"
+url = "https://commons.wikimedia.org/wiki/File:222_Palau_del_Marqu%C3%A8s_de_Campo_%28Val%C3%A8ncia%29%2C_pl._de_l%27Arquebisbe.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_293_Placa_de_l_Arquebisbe_Valencia_al_fons_el_Palau_del_Marq.jpg"
 title = "File:293 Plaça de l'Arquebisbe (València), al fons el Palau del Marquès de Campo.jpg"
 url = "https://commons.wikimedia.org/wiki/File:293_Pla%C3%A7a_de_l%27Arquebisbe_%28Val%C3%A8ncia%29%2C_al_fons_el_Palau_del_Marqu%C3%A8s_de_Campo.jpg"
 author = "Enric"
@@ -58,7 +83,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Palau_del_marques_de_Campo_Valencia_vista_lateral.jpg"
+file = "photos/06_Palau_del_marques_de_Campo_Valencia_vista_lateral.jpg"
 title = "File:Palau del marqués de Campo, València, vista lateral.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Palau_del_marqu%C3%A9s_de_Campo%2C_Val%C3%A8ncia%2C_vista_lateral.JPG"
 author = "Joanbanjo"
@@ -70,80 +95,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Palau_del_Marques_de_Campo_de_Valencia_pati_des_de_l_escala.jpg"
-title = "File:Palau del Marqués de Campo de València, pati des de l'escala.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_del_Marqu%C3%A9s_de_Campo_de_Val%C3%A8ncia%2C_pati_des_de_l%27escala.jpg"
-author = "Dorieo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/06_Palacio_del_Marques_de_Campo_panoramio.jpg"
-title = "File:Palacio del Marqués de Campo - panoramio.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palacio_del_Marqu%C3%A9s_de_Campo_-_panoramio.jpg"
-author = "Mister No"
-license = "CC BY 3.0"
-width = 1280
-height = 960
-camera = [-24.18, 20.06]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/07_222_Palau_del_Marques_de_Campo_Valencia_pl_de_l_Arquebisbe.jpg"
-title = "File:222 Palau del Marquès de Campo (València), pl. de l'Arquebisbe.jpg"
-url = "https://commons.wikimedia.org/wiki/File:222_Palau_del_Marqu%C3%A8s_de_Campo_%28Val%C3%A8ncia%29%2C_pl._de_l%27Arquebisbe.jpg"
-author = "Enric"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Arcs_del_pati_del_palau_del_marques_de_Campo_Valencia.jpg"
-title = "File:Arcs del pati del palau del marqués de Campo, València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Arcs_del_pati_del_palau_del_marqu%C3%A9s_de_Campo%2C_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Palau_del_Marques_de_Campo_de_Valencia_05.jpg"
-title = "File:Palau del Marqués de Campo de València 05.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_del_Marqu%C3%A9s_de_Campo_de_Val%C3%A8ncia_05.jpg"
-author = "Dorieo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Pati_del_palau_del_marques_de_Campo_de_Valencia.jpg"
-title = "File:Pati del palau del marqués de Campo de València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Pati_del_palau_del_marqu%C3%A9s_de_Campo_de_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Puerta_museo_de_la_ciudad_Valencia.jpg"
+file = "photos/07_Puerta_museo_de_la_ciudad_Valencia.jpg"
 title = "File:Puerta museo de la ciudad - Valencia.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Puerta_museo_de_la_ciudad_-_Valencia.jpg"
 author = "Frnevado"
@@ -156,55 +108,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_228_Palau_del_Marques_de_Campo_Museu_de_la_Ciutat_Valencia.jpg"
-title = "File:228 Palau del Marquès de Campo, Museu de la Ciutat (València).jpg"
-url = "https://commons.wikimedia.org/wiki/File:228_Palau_del_Marqu%C3%A8s_de_Campo%2C_Museu_de_la_Ciutat_%28Val%C3%A8ncia%29.jpg"
-author = "Enric"
+file = "photos/08_Palau_del_Marques_de_Campo_de_Valencia_05.jpg"
+title = "File:Palau del Marqués de Campo de València 05.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_del_Marqu%C3%A9s_de_Campo_de_Val%C3%A8ncia_05.jpg"
+author = "Dorieo"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Bust_de_dona_al_final_de_l_escala_del_palau_del_marques_de_C.jpg"
-title = "File:Bust de dona al final de l'escala del palau del marqués de Campo, València, PV.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Bust_de_dona_al_final_de_l%27escala_del_palau_del_marqu%C3%A9s_de_Campo%2C_Val%C3%A8ncia%2C_PV.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Palau_del_Marques_de_Campo_escala_vista_cap_a_baix.jpg"
-title = "File:Palau del Marqués de Campo - escala vista cap a baix.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_del_Marqu%C3%A9s_de_Campo_-_escala_vista_cap_a_baix.jpg"
-author = "Millars"
-license = "CC BY-SA 3.0 es"
-width = 1280
-height = 960
+height = 853
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Petxina_de_la_cupula_de_l_escala_palau_del_marques_de_Campo_.jpg"
-title = "File:Petxina de la cúpula de l'escala, palau del marqués de Campo de València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Petxina_de_la_c%C3%BApula_de_l%27escala%2C_palau_del_marqu%C3%A9s_de_Campo_de_Val%C3%A8ncia.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_Palacio_del_Marques_de_Campo.jpg"
+file = "photos/09_Palacio_del_Marques_de_Campo.jpg"
 title = "File:Palacio del Marqués de Campo.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Palacio_del_Marqu%C3%A9s_de_Campo.jpg"
 author = "Consellería de Cultura"
@@ -212,6 +128,139 @@ license = "Public domain"
 width = 500
 height = 386
 exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/10_231_Palau_del_Marques_de_Campo_Museu_de_la_Ciutat_Valencia_e.jpg"
+title = "File:231 Palau del Marquès de Campo, Museu de la Ciutat (València), escala i bust de Sorolla.jpg"
+url = "https://commons.wikimedia.org/wiki/File:231_Palau_del_Marqu%C3%A8s_de_Campo%2C_Museu_de_la_Ciutat_%28Val%C3%A8ncia%29%2C_escala_i_bust_de_Sorolla.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/11_Decoracio_de_l_escala_del_palau_del_marques_de_Campo_o_Berbe.jpg"
+title = "File:Decoració de l'escala del palau del marqués de Campo o Berbedel de València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Decoraci%C3%B3_de_l%27escala_del_palau_del_marqu%C3%A9s_de_Campo_o_Berbedel_de_Val%C3%A8ncia.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1820
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/12_Palau_del_Marques_de_Campo_de_Valencia_escala_01.jpg"
+title = "File:Palau del Marqués de Campo de València, escala 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_del_Marqu%C3%A9s_de_Campo_de_Val%C3%A8ncia%2C_escala_01.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/13_Escut_del_palau_del_marques_de_Campo_de_Valencia.jpg"
+title = "File:Escut del palau del marqués de Campo de València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Escut_del_palau_del_marqu%C3%A9s_de_Campo_de_Val%C3%A8ncia.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/14_232_Palau_del_Marques_de_Campo_Valencia_bust_de_J_Sorolla_de.jpg"
+title = "File:232 Palau del Marquès de Campo (València), bust de J. Sorolla, de M. Benlliure.jpg"
+url = "https://commons.wikimedia.org/wiki/File:232_Palau_del_Marqu%C3%A8s_de_Campo_%28Val%C3%A8ncia%29%2C_bust_de_J._Sorolla%2C_de_M._Benlliure.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/15_Capitells_de_les_pilastres_de_la_facana_palau_del_marques_de.jpg"
+title = "File:Capitells de les pilastres de la façana, palau del marqués de Campo, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Capitells_de_les_pilastres_de_la_fa%C3%A7ana%2C_palau_del_marqu%C3%A9s_de_Campo%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 956
+camera = [-13.46, 27.42]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/16_Palau_del_Marques_de_Campo_de_Valencia_escala_02.jpg"
+title = "File:Palau del Marqués de Campo de València, escala 02.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_del_Marqu%C3%A9s_de_Campo_de_Val%C3%A8ncia%2C_escala_02.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/17_233_Palau_del_Marques_de_Campo_Museu_de_la_Ciutat_Valencia_c.jpg"
+title = "File:233 Palau del Marquès de Campo, Museu de la Ciutat (València), caixa de l'escala.jpg"
+url = "https://commons.wikimedia.org/wiki/File:233_Palau_del_Marqu%C3%A8s_de_Campo%2C_Museu_de_la_Ciutat_%28Val%C3%A8ncia%29%2C_caixa_de_l%27escala.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/18_Decoracio_de_l_escala_del_palau_del_Marques_de_Campo_de_Vale.jpg"
+title = "File:Decoració de l'escala del palau del Marqués de Campo de València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Decoraci%C3%B3_de_l%27escala_del_palau_del_Marqu%C3%A9s_de_Campo_de_Val%C3%A8ncia.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 2058
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/19_Palau_del_Marques_de_Campo_de_Valencia_mirador.jpg"
+title = "File:Palau del Marqués de Campo de València, mirador.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_del_Marqu%C3%A9s_de_Campo_de_Val%C3%A8ncia%2C_mirador.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/20_Escut_del_palau_del_marques_de_Campo_Valencia.jpg"
+title = "File:Escut del palau del marqués de Campo, València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Escut_del_palau_del_marqu%C3%A9s_de_Campo%2C_Val%C3%A8ncia.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = "unknown"
 selected = false
 side = ""
 

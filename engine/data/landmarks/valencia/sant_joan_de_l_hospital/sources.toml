@@ -23,7 +23,19 @@ catastro_floor_area = { value = 1210.0, unit = "m2", source = "https://www1.sede
 catastro_floors_max = { value = 3, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 5 parts" }
 
 [[photo]]
-file = "photos/01_Esglesia_de_sant_Joan_de_l_Hospital_de_Valencia_campanar.jpg"
+file = "photos/01_Santjoanhospital_porta_nord.jpg"
+title = "File:Santjoanhospital porta nord.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Santjoanhospital_porta_nord.jpg"
+author = "Felivet"
+license = "Public domain"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/02_Esglesia_de_sant_Joan_de_l_Hospital_de_Valencia_campanar.jpg"
 title = "File:Església de sant Joan de l'Hospital de València, campanar.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_de_sant_Joan_de_l%27Hospital_de_Val%C3%A8ncia%2C_campanar.JPG"
 author = "Joanbanjo"
@@ -36,21 +48,34 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Edificio_de_San_Juan_del_Hospital_de_la_calle_de_El_Milagro_.jpg"
-title = "File:Edificio de San Juan del Hospital de la calle de El Milagro de Valencia.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Edificio_de_San_Juan_del_Hospital_de_la_calle_de_El_Milagro_de_Valencia.jpg"
-author = "19Tarrestnom65"
+file = "photos/03_Arcosolios_do_cemiterio_de_de_Sant_Joan_de_l_Hospital.jpg"
+title = "File:Arcosolios do cemiterio de de Sant Joan de l'Hospital.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Arcosolios_do_cemiterio_de_de_Sant_Joan_de_l%27Hospital.jpg"
+author = "Bene Riobó"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 960
-camera = [-38.56, -36.0]
-heading = 167.4
+height = 853
+camera = [-0.93, 32.66]
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Patio_norte_da_igrexa_de_Sant_Joan_de_l_Hospital.jpg"
+file = "photos/04_Lateral_del_edificio_de_la_Iglesia_de_San_Juan_del_Hospital.jpg"
+title = "File:Lateral del edificio de la Iglesia de San Juan del Hospital.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Lateral_del_edificio_de_la_Iglesia_de_San_Juan_del_Hospital.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+camera = [-38.56, -36.0]
+heading = 185.8
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_Patio_norte_da_igrexa_de_Sant_Joan_de_l_Hospital.jpg"
 title = "File:Patio norte da igrexa de Sant Joan de l'Hospital.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Patio_norte_da_igrexa_de_Sant_Joan_de_l%27Hospital.jpg"
 author = "Bene Riobó"
@@ -63,35 +88,35 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Santjoanhospital_porta_nord.jpg"
-title = "File:Santjoanhospital porta nord.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Santjoanhospital_porta_nord.jpg"
-author = "Felivet"
-license = "Public domain"
-width = 1280
-height = 960
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/05_Esglesies_de_Sant_Tomas_i_Sant_Felip_i_de_Sant_Joan_de_l_Hos.jpg"
-title = "File:Esglésies de Sant Tomàs i Sant Felip i de Sant Joan de l'Hospital des del Micalet, València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sies_de_Sant_Tom%C3%A0s_i_Sant_Felip_i_de_Sant_Joan_de_l%27Hospital_des_del_Micalet%2C_Val%C3%A8ncia.JPG"
+file = "photos/06_Merlets_i_capcalera_de_l_esglesia_de_sant_Joan_de_l_Hospital.jpg"
+title = "File:Merlets i capçalera de l'església de sant Joan de l'Hospital de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Merlets_i_cap%C3%A7alera_de_l%27esgl%C3%A9sia_de_sant_Joan_de_l%27Hospital_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
+height = 939
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_Sant_Joan_de_l_Hospital_P1140090.jpg"
+title = "File:Sant Joan de l'Hospital P1140090.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Sant_Joan_de_l%27Hospital_P1140090.JPG"
+author = "Pere López"
+license = "CC BY-SA 3.0"
+width = 1280
 height = 960
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Sant_Joan_de_l_Hospital_P1140094.jpg"
-title = "File:Sant Joan de l'Hospital P1140094.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Sant_Joan_de_l%27Hospital_P1140094.JPG"
-author = "Pere López"
-license = "CC BY-SA 3.0"
+file = "photos/08_Sant_Joan_de_l_Hospital_Valencia_05.jpg"
+title = "File:Sant Joan de l'Hospital (Valencia) 05.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Sant_Joan_de_l%27Hospital_%28Valencia%29_05.JPG"
+author = "Millars"
+license = "CC BY-SA 3.0 es"
 width = 1280
 height = 1707
 exterior = true
@@ -99,7 +124,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Pared_exterior_del_cementerio_medieval.jpg"
+file = "photos/09_Pared_exterior_del_cementerio_medieval.jpg"
 title = "File:Pared exterior del cementerio medieval.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Pared_exterior_del_cementerio_medieval.jpg"
 author = "19Tarrestnom65"
@@ -111,7 +136,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Exterior_de_la_iglesia_de_San_Juan_del_Hospital_Valencia_02.jpg"
+file = "photos/10_Exterior_de_la_iglesia_de_San_Juan_del_Hospital_Valencia_02.jpg"
 title = "File:Exterior de la iglesia de San Juan del Hospital, Valencia 02.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Exterior_de_la_iglesia_de_San_Juan_del_Hospital%2C_Valencia_02.jpg"
 author = "Dorieo"
@@ -124,68 +149,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_Merlets_i_capcalera_de_l_esglesia_de_sant_Joan_de_l_Hospital.jpg"
-title = "File:Merlets i capçalera de l'església de sant Joan de l'Hospital de València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Merlets_i_cap%C3%A7alera_de_l%27esgl%C3%A9sia_de_sant_Joan_de_l%27Hospital_de_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 939
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Exterior_de_San_Juan_del_Hospital_Valencia_02.jpg"
-title = "File:Exterior de San Juan del Hospital, Valencia 02.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Exterior_de_San_Juan_del_Hospital%2C_Valencia_02.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Arcosolios_do_cemiterio_de_de_Sant_Joan_de_l_Hospital.jpg"
-title = "File:Arcosolios do cemiterio de de Sant Joan de l'Hospital.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Arcosolios_do_cemiterio_de_de_Sant_Joan_de_l%27Hospital.jpg"
-author = "Bene Riobó"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-camera = [-0.93, 32.66]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_Santjoanhospital_testa_exterior.jpg"
-title = "File:Santjoanhospital testa exterior.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Santjoanhospital_testa_exterior.jpg"
-author = "Felivet"
-license = "Public domain"
-width = 1280
-height = 960
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Iglesia_San_Juan_del_Hospital_North_Patio_Entrance_Ciutat_Ve.jpg"
-title = "File:Iglesia San Juan del Hospital - North Patio Entrance - Ciutat Vella, Valencia, Spain.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Iglesia_San_Juan_del_Hospital_-_North_Patio_Entrance_-_Ciutat_Vella%2C_Valencia%2C_Spain.jpg"
-author = "MCAE Consulting"
-license = "CC0"
-width = 1280
-height = 1707
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Capcalera_de_l_esglesia_de_sant_Joan_de_l_Hospital_Valencia.jpg"
+file = "photos/11_Capcalera_de_l_esglesia_de_sant_Joan_de_l_Hospital_Valencia.jpg"
 title = "File:Capçalera de l'església de sant Joan de l'Hospital, València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Cap%C3%A7alera_de_l%27esgl%C3%A9sia_de_sant_Joan_de_l%27Hospital%2C_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -197,19 +161,43 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Sant_Joan_de_l_Hospital_Valencia_05.jpg"
-title = "File:Sant Joan de l'Hospital (Valencia) 05.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Sant_Joan_de_l%27Hospital_%28Valencia%29_05.JPG"
-author = "Millars"
-license = "CC BY-SA 3.0 es"
+file = "photos/12_Exterior_de_San_Juan_del_Hospital_Valencia_02.jpg"
+title = "File:Exterior de San Juan del Hospital, Valencia 02.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Exterior_de_San_Juan_del_Hospital%2C_Valencia_02.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
 width = 1280
-height = 1707
-exterior = "unknown"
+height = 960
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Exterior_de_la_iglesia_de_San_Juan_del_Hospital_Valencia_03.jpg"
+file = "photos/13_Santjoanhospital_testa_exterior.jpg"
+title = "File:Santjoanhospital testa exterior.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Santjoanhospital_testa_exterior.jpg"
+author = "Felivet"
+license = "Public domain"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/14_Iglesia_San_Juan_del_Hospital_North_Patio_Entrance_Ciutat_Ve.jpg"
+title = "File:Iglesia San Juan del Hospital - North Patio Entrance - Ciutat Vella, Valencia, Spain.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Iglesia_San_Juan_del_Hospital_-_North_Patio_Entrance_-_Ciutat_Vella%2C_Valencia%2C_Spain.jpg"
+author = "MCAE Consulting"
+license = "CC0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/15_Exterior_de_la_iglesia_de_San_Juan_del_Hospital_Valencia_03.jpg"
 title = "File:Exterior de la iglesia de San Juan del Hospital, Valencia 03.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Exterior_de_la_iglesia_de_San_Juan_del_Hospital%2C_Valencia_03.jpg"
 author = "Dorieo"

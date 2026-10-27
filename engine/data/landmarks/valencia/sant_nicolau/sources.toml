@@ -34,19 +34,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Chiesa_di_san_Nicola_e_san_pietro_martire_Valencia_3.jpg"
-title = "File:Chiesa di san Nicola e san pietro martire Valencia (3).jpg"
-url = "https://commons.wikimedia.org/wiki/File:Chiesa_di_san_Nicola_e_san_pietro_martire_Valencia_%283%29.jpg"
-author = "Elisa Marianini"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/03_Iglesia_de_San_Nicolas_de_Valencia_01.jpg"
+file = "photos/02_Iglesia_de_San_Nicolas_de_Valencia_01.jpg"
 title = "File:Iglesia de San Nicolás de Valencia 01.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Iglesia_de_San_Nicol%C3%A1s_de_Valencia_01.jpg"
 author = "Dorieo"
@@ -59,7 +47,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_At_Valencia_2025_508.jpg"
+file = "photos/03_At_Valencia_2025_508.jpg"
 title = "File:At Valencia 2025 508.jpg"
 url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_508.jpg"
 author = "Photograph by Mike Peel ( www.mikepeel.net )."
@@ -73,7 +61,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Exterior_de_la_iglesia_de_San_Nicolas_Bari_y_San_Pedro_Marti.jpg"
+file = "photos/04_Exterior_de_la_iglesia_de_San_Nicolas_Bari_y_San_Pedro_Marti.jpg"
 title = "File:Exterior de la iglesia de San Nicolás Bari y San Pedro Mártir de Valencia.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Exterior_de_la_iglesia_de_San_Nicol%C3%A1s_Bari_y_San_Pedro_M%C3%A1rtir_de_Valencia.jpg"
 author = "19Tarrestnom65"
@@ -87,7 +75,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Tanques_antimiccio_Esglesia_de_Sant_Nicolau_4725.jpg"
+file = "photos/05_Tanques_antimiccio_Esglesia_de_Sant_Nicolau_4725.jpg"
 title = "File:Tanques antimicció Església de Sant Nicolau 4725.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Tanques_antimicci%C3%B3_Esgl%C3%A9sia_de_Sant_Nicolau_4725.jpg"
 author = "B25es"
@@ -101,7 +89,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Facana_neogotica_de_l_esglesia_de_Sant_Nicolau_de_Valencia.jpg"
+file = "photos/06_Facana_neogotica_de_l_esglesia_de_Sant_Nicolau_de_Valencia.jpg"
 title = "File:Façana neogòtica de l'església de Sant Nicolau de València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_neog%C3%B2tica_de_l%27esgl%C3%A9sia_de_Sant_Nicolau_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -113,7 +101,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Campanario_de_la_Iglesia_de_San_Nicolas_Valencia_01.jpg"
+file = "photos/07_Campanario_de_la_Iglesia_de_San_Nicolas_Valencia_01.jpg"
 title = "File:Campanario de la Iglesia de San Nicolás, Valencia 01.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Campanario_de_la_Iglesia_de_San_Nicol%C3%A1s%2C_Valencia_01.jpg"
 author = "Dorieo"
@@ -125,9 +113,9 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_Exterior_of_Church_of_Sant_Nicolau_Valencia_03.jpg"
-title = "File:Exterior of Church of Sant Nicolau, València 03.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Exterior_of_Church_of_Sant_Nicolau%2C_Val%C3%A8ncia_03.jpg"
+file = "photos/08_Exterior_of_Church_of_Sant_Nicolau_Valencia_01.jpg"
+title = "File:Exterior of Church of Sant Nicolau, València 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Exterior_of_Church_of_Sant_Nicolau%2C_Val%C3%A8ncia_01.jpg"
 author = "19Tarrestnom65"
 license = "CC BY-SA 4.0"
 width = 1280
@@ -137,7 +125,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/10_Church_of_Sant_Nicolau_Valencia_2019_1.jpg"
+file = "photos/09_Church_of_Sant_Nicolau_Valencia_2019_1.jpg"
 title = "File:Church of Sant Nicolau Valencia 2019 1.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Church_of_Sant_Nicolau_Valencia_2019_1.jpg"
 author = "Steven Lek"
@@ -149,31 +137,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/11_Entrada_a_Sant_Nicolau_IMG_1574.jpg"
-title = "File:Entrada a Sant Nicolau IMG 1574.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Entrada_a_Sant_Nicolau_IMG_1574.jpg"
-author = "B25es"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_Valencia_03_30a.jpg"
-title = "File:Valencia 03-30a.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_03-30a.JPG"
-author = "Lameiro"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 852
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Igrexa_de_San_Nicolas_de_Bari_e_San_Pedro_Martir.jpg"
+file = "photos/10_Igrexa_de_San_Nicolas_de_Bari_e_San_Pedro_Martir.jpg"
 title = "File:Igrexa de San Nicolás de Bari e San Pedro Mártir.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Igrexa_de_San_Nicol%C3%A1s_de_Bari_e_San_Pedro_M%C3%A1rtir.jpg"
 author = "Bene Riobó"
@@ -186,7 +150,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_463_Esglesia_de_Sant_Nicolau_i_Sant_Pere_Martir_Valencia_fac.jpg"
+file = "photos/11_463_Esglesia_de_Sant_Nicolau_i_Sant_Pere_Martir_Valencia_fac.jpg"
 title = "File:463 Església de Sant Nicolau i Sant Pere Màrtir (València), façana sud i campanar.jpg"
 url = "https://commons.wikimedia.org/wiki/File:463_Esgl%C3%A9sia_de_Sant_Nicolau_i_Sant_Pere_M%C3%A0rtir_%28Val%C3%A8ncia%29%2C_fa%C3%A7ana_sud_i_campanar.jpg"
 author = "Enric"
@@ -198,7 +162,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Portades_de_l_esglesia_de_Sant_Nicolau_de_Valencia.jpg"
+file = "photos/12_Portades_de_l_esglesia_de_Sant_Nicolau_de_Valencia.jpg"
 title = "File:Portades de l'església de Sant Nicolau de València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Portades_de_l%27esgl%C3%A9sia_de_Sant_Nicolau_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -210,13 +174,49 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Esglesia_de_Sant_Nicolau_52043235255.jpg"
+file = "photos/13_Esglesia_de_Sant_Nicolau_52043235255.jpg"
 title = "File:Església de Sant Nicolau (52043235255).jpg"
 url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_de_Sant_Nicolau_%2852043235255%29.jpg"
 author = "Kent Wang from Barcelona, Spain"
 license = "CC BY-SA 2.0"
 width = 1280
 height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/14_Plaza_de_San_Nicolas_Valencia_04.jpg"
+title = "File:Plaza de San Nicolás, Valencia 04.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Plaza_de_San_Nicol%C3%A1s%2C_Valencia_04.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/15_Valencia_Iglesia_de_Sant_Nicolau_02.jpg"
+title = "File:Valencia - Iglesia de Sant Nicolau 02.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Iglesia_de_Sant_Nicolau_02.jpg"
+author = "Zarateman"
+license = "CC0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/16_464_Esglesia_de_Sant_Nicolau_i_Sant_Pere_Martir_Valencia_cam.jpg"
+title = "File:464 Església de Sant Nicolau i Sant Pere Màrtir (València), campanar.jpg"
+url = "https://commons.wikimedia.org/wiki/File:464_Esgl%C3%A9sia_de_Sant_Nicolau_i_Sant_Pere_M%C3%A0rtir_%28Val%C3%A8ncia%29%2C_campanar.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
 exterior = true
 selected = false
 side = ""

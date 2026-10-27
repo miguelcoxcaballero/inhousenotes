@@ -21,7 +21,46 @@ catastro_floor_area = { value = 149102.0, unit = "m2", source = "https://www1.se
 catastro_floors_max = { value = 5, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 2 parts" }
 
 [[photo]]
-file = "photos/01_Veles_e_Vents_2_5211923659.jpg"
+file = "photos/01_El_Grau_Valencia_Valencia_Spain_panoramio.jpg"
+title = "File:El Grau, València, Valencia, Spain - panoramio.jpg"
+url = "https://commons.wikimedia.org/wiki/File:El_Grau%2C_Val%C3%A8ncia%2C_Valencia%2C_Spain_-_panoramio.jpg"
+author = "Santi Garcia"
+license = "CC BY 3.0"
+width = 1280
+height = 960
+camera = [-23.44, -101.86]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/02_Edificio_en_Valencia_panoramio.jpg"
+title = "File:Edificio en Valencia - panoramio.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_en_Valencia_-_panoramio.jpg"
+author = "XDSergio"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+camera = [91.86, -18.3]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/03_33rd_America_s_Cup_inauguration_act_4339971114.jpg"
+title = "File:33rd America's Cup inauguration act (4339971114).jpg"
+url = "https://commons.wikimedia.org/wiki/File:33rd_America%27s_Cup_inauguration_act_%284339971114%29.jpg"
+author = "Yasuhiro Chatani from Tokyo, Japan"
+license = "CC BY 2.0"
+width = 1280
+height = 960
+camera = [-41.4, -22.11]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/04_Veles_e_Vents_2_5211923659.jpg"
 title = "File:Veles e Vents 2 (5211923659).jpg"
 url = "https://commons.wikimedia.org/wiki/File:Veles_e_Vents_2_%285211923659%29.jpg"
 author = "decar66 from Aix-en-Provence, France"
@@ -34,7 +73,56 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Valencia_Street_Circuit_GT_Open.jpg"
+file = "photos/05_Marina_Real_Juan_Carlos_I_17982763548.jpg"
+title = "File:Marina Real Juan Carlos I (17982763548).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Marina_Real_Juan_Carlos_I_%2817982763548%29.jpg"
+author = "Hernán Piñera from Marbella"
+license = "CC BY-SA 2.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Valencia_Valencia_190.jpg"
+title = "File:València - Valencia 190.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia_-_Valencia_190.jpg"
+author = "FrDr"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_Veles_e_Vents_Valencia.jpg"
+title = "File:Veles e Vents Valencia.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Veles_e_Vents_Valencia.jpg"
+author = "Choinowski"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 847
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/08_Veles_de_Vents_4340061500.jpg"
+title = "File:Veles de Vents (4340061500).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Veles_de_Vents_%284340061500%29.jpg"
+author = "Yasuhiro Chatani from Tokyo, Japan"
+license = "CC BY 2.0"
+width = 1280
+height = 960
+camera = [-41.4, -22.11]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/09_Valencia_Street_Circuit_GT_Open.jpg"
 title = "File:Valencia Street Circuit GT Open.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_Street_Circuit_GT_Open.jpg"
 author = "freshwater2006"
@@ -46,7 +134,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Veles_e_vents_5211921753.jpg"
+file = "photos/10_Veles_e_Vents_puerto_de_valencia.jpg"
+title = "File:Veles e Vents puerto de valencia.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Veles_e_Vents_puerto_de_valencia.jpg"
+author = "Toni Rodrigo"
+license = "CC BY 2.0"
+width = 1280
+height = 720
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/11_Veles_e_vents_5211921753.jpg"
 title = "File:Veles e vents (5211921753).jpg"
 url = "https://commons.wikimedia.org/wiki/File:Veles_e_vents_%285211921753%29.jpg"
 author = "decar66 from Aix-en-Provence, France"
@@ -59,59 +159,33 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Veles_e_vents_from_Alinghi_s_base_488076076.jpg"
-title = "File:Veles e vents from Alinghi's base (488076076).jpg"
-url = "https://commons.wikimedia.org/wiki/File:Veles_e_vents_from_Alinghi%27s_base_%28488076076%29.jpg"
+file = "photos/12_Sota_l_escala_507544338.jpg"
+title = "File:Sota l'escala (507544338).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Sota_l%27escala_%28507544338%29.jpg"
 author = "Visentico / Sento"
 license = "CC BY-SA 2.0"
 width = 1280
-height = 960
+height = 1707
 camera = [-602.73, 53.42]
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_El_Grau_Valencia_Valencia_Spain_panoramio.jpg"
-title = "File:El Grau, València, Valencia, Spain - panoramio.jpg"
-url = "https://commons.wikimedia.org/wiki/File:El_Grau%2C_Val%C3%A8ncia%2C_Valencia%2C_Spain_-_panoramio.jpg"
+file = "photos/13_El_Grau_Valencia_Valencia_Spain_panoramio_1.jpg"
+title = "File:El Grau, València, Valencia, Spain - panoramio (1).jpg"
+url = "https://commons.wikimedia.org/wiki/File:El_Grau%2C_Val%C3%A8ncia%2C_Valencia%2C_Spain_-_panoramio_%281%29.jpg"
 author = "Santi Garcia"
 license = "CC BY 3.0"
 width = 1280
 height = 960
 camera = [-23.44, -101.86]
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Edificio_en_Valencia_panoramio.jpg"
-title = "File:Edificio en Valencia - panoramio.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Edificio_en_Valencia_-_panoramio.jpg"
-author = "XDSergio"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-camera = [91.86, -18.3]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/07_Victory_Challenge_Base_4367155465.jpg"
-title = "File:Victory Challenge Base (4367155465).jpg"
-url = "https://commons.wikimedia.org/wiki/File:Victory_Challenge_Base_%284367155465%29.jpg"
-author = "Yasuhiro Chatani from Tokyo, Japan"
-license = "CC BY 2.0"
-width = 1280
-height = 960
-camera = [-41.4, -22.11]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Valencia_Street_Circuit_GT_Open2.jpg"
+file = "photos/14_Valencia_Street_Circuit_GT_Open2.jpg"
 title = "File:Valencia Street Circuit GT Open2.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_Street_Circuit_GT_Open2.jpg"
 author = "freshwater2006"
@@ -123,88 +197,15 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_Marina_Real_Juan_Carlos_I_17982763548.jpg"
-title = "File:Marina Real Juan Carlos I (17982763548).jpg"
-url = "https://commons.wikimedia.org/wiki/File:Marina_Real_Juan_Carlos_I_%2817982763548%29.jpg"
-author = "Hernán Piñera from Marbella"
+file = "photos/15_Veles_e_vents_from_Alinghi_s_base_488076076.jpg"
+title = "File:Veles e vents from Alinghi's base (488076076).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Veles_e_vents_from_Alinghi%27s_base_%28488076076%29.jpg"
+author = "Visentico / Sento"
 license = "CC BY-SA 2.0"
 width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Valencia_Valencia_190.jpg"
-title = "File:València - Valencia 190.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia_-_Valencia_190.jpg"
-author = "FrDr"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Veles_e_Vents_Valencia.jpg"
-title = "File:Veles e Vents Valencia.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Veles_e_Vents_Valencia.jpg"
-author = "Choinowski"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 847
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_33rd_America_s_Cup_inauguration_act_4339971114.jpg"
-title = "File:33rd America's Cup inauguration act (4339971114).jpg"
-url = "https://commons.wikimedia.org/wiki/File:33rd_America%27s_Cup_inauguration_act_%284339971114%29.jpg"
-author = "Yasuhiro Chatani from Tokyo, Japan"
-license = "CC BY 2.0"
-width = 1280
 height = 960
-camera = [-41.4, -22.11]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Urban_Design_23717408375.jpg"
-title = "File:Urban Design (23717408375).jpg"
-url = "https://commons.wikimedia.org/wiki/File:Urban_Design_%2823717408375%29.jpg"
-author = "Hernán Piñera from Marbella"
-license = "CC BY-SA 2.0"
-width = 1280
-height = 720
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Veles_e_Vents_puerto_de_valencia.jpg"
-title = "File:Veles e Vents puerto de valencia.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Veles_e_Vents_puerto_de_valencia.jpg"
-author = "Toni Rodrigo"
-license = "CC BY 2.0"
-width = 1280
-height = 720
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_El_Grau_Valencia_Valencia_Spain_panoramio_1.jpg"
-title = "File:El Grau, València, Valencia, Spain - panoramio (1).jpg"
-url = "https://commons.wikimedia.org/wiki/File:El_Grau%2C_Val%C3%A8ncia%2C_Valencia%2C_Spain_-_panoramio_%281%29.jpg"
-author = "Santi Garcia"
-license = "CC BY 3.0"
-width = 1280
-height = 960
-camera = [-23.44, -101.86]
-exterior = "unknown"
+camera = [-602.73, 53.42]
+exterior = true
 selected = false
 side = ""
 

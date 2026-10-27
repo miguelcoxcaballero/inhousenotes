@@ -23,31 +23,43 @@ catastro_floor_area = { value = 708.0, unit = "m2", source = "https://www1.sedec
 catastro_floors_max = { value = 4, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 2 parts" }
 
 [[photo]]
-file = "photos/01_Entrada_al_palauet_d_Aiora_Valencia.jpg"
-title = "File:Entrada al palauet d'Aiora, València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Entrada_al_palauet_d%27Aiora%2C_Val%C3%A8ncia.JPG"
+file = "photos/01_Valencia_palauet_d_Aiora.jpg"
+title = "File:València, palauet d'Aiora.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia%2C_palauet_d%27Aiora.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 2054
+height = 1962
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Palauet_d_Aiora_facana_lateral.jpg"
-title = "File:Palauet d'Aiora, façana lateral.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Palauet_d%27Aiora%2C_fa%C3%A7ana_lateral.JPG"
+file = "photos/02_Palauet_d_Aiora_cantonada.jpg"
+title = "File:Palauet d'Aiora, cantonada.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palauet_d%27Aiora%2C_cantonada.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 1862
+height = 1967
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Palauet_d_Ayora_1_png.jpg"
+file = "photos/03_Valencia_2024_09_15_Palauet_d_Aiora_02.jpg"
+title = "File:València 2024-09-15 - Palauet d'Aiora 02.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia_2024-09-15_-_Palauet_d%27Aiora_02.jpg"
+author = "Rafa Esteve"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/04_Palauet_d_Ayora_1_png.jpg"
 title = "File:Palauet d'Ayora (1).png"
 url = "https://commons.wikimedia.org/wiki/File:Palauet_d%27Ayora_%281%29.png"
 author = "Sea Olive"
@@ -59,7 +71,31 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Palauet_d_Ayora_2_png.jpg"
+file = "photos/05_Palauet_d_Aiora_terrasseta.jpg"
+title = "File:Palauet d'Aiora, terrasseta.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palauet_d%27Aiora%2C_terrasseta.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 939
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Valencia_2024_09_15_Palauet_d_Aiora_01.jpg"
+title = "File:València 2024-09-15 - Palauet d'Aiora 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia_2024-09-15_-_Palauet_d%27Aiora_01.jpg"
+author = "Rafa Esteve"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1920
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_Palauet_d_Ayora_2_png.jpg"
 title = "File:Palauet d'Ayora (2).png"
 url = "https://commons.wikimedia.org/wiki/File:Palauet_d%27Ayora_%282%29.png"
 author = "Sea Olive"
@@ -71,7 +107,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Palauet_d_Aiora.jpg"
+file = "photos/08_Palauet_d_Aiora.jpg"
 title = "File:Palauet d'Aiora.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Palauet_d%27Aiora.jpg"
 author = "Espencat"
@@ -83,67 +119,55 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Valencia_2024_09_15_Palauet_d_Aiora_02.jpg"
-title = "File:València 2024-09-15 - Palauet d'Aiora 02.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia_2024-09-15_-_Palauet_d%27Aiora_02.jpg"
-author = "Rafa Esteve"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/07_Balco_del_palauet_d_Aiora.jpg"
-title = "File:Balcó del palauet d'Aiora.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Balc%C3%B3_del_palauet_d%27Aiora.JPG"
+file = "photos/09_Palauet_d_Aiora_terrassa.jpg"
+title = "File:Palauet d'Aiora, terrassa.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palauet_d%27Aiora%2C_terrassa.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 853
-exterior = "unknown"
+height = 871
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Valencia_2024_09_15_Palauet_d_Aiora_01.jpg"
-title = "File:València 2024-09-15 - Palauet d'Aiora 01.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia_2024-09-15_-_Palauet_d%27Aiora_01.jpg"
-author = "Rafa Esteve"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1920
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Balustrada_del_palauet_d_Aiora.jpg"
-title = "File:Balustrada del palauet d'Aiora.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Balustrada_del_palauet_d%27Aiora.JPG"
+file = "photos/10_Cupuli_del_palauet_d_Aiora_Valencia.jpg"
+title = "File:Cupulí del palauet d'Aiora, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Cupul%C3%AD_del_palauet_d%27Aiora%2C_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 880
-exterior = "unknown"
+height = 1052
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/10_Valencia_palauet_d_Aiora.jpg"
-title = "File:València, palauet d'Aiora.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia%2C_palauet_d%27Aiora.JPG"
+file = "photos/11_Entrada_al_palauet_d_Aiora_Valencia.jpg"
+title = "File:Entrada al palauet d'Aiora, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Entrada_al_palauet_d%27Aiora%2C_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 1962
-exterior = "unknown"
+height = 2054
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/11_Palauet_d_Aiora_facana.jpg"
+file = "photos/12_Palauet_d_Aiora_facana_lateral.jpg"
+title = "File:Palauet d'Aiora, façana lateral.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palauet_d%27Aiora%2C_fa%C3%A7ana_lateral.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1862
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/13_Palauet_d_Aiora_facana.jpg"
 title = "File:Palauet d'Aiora façana.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Palauet_d%27Aiora_fa%C3%A7ana.jpg"
 author = "Espencat"
@@ -155,62 +179,14 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_Fronto_amb_data_del_palauet_d_Aiora.jpg"
-title = "File:Frontó amb data del palauet d'Aiora.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Front%C3%B3_amb_data_del_palauet_d%27Aiora.JPG"
+file = "photos/14_Palauet_d_Aiora_Valencia.jpg"
+title = "File:Palauet d'Aiora, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palauet_d%27Aiora%2C_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 794
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Rajoles_del_palauet_d_Aiora.jpg"
-title = "File:Rajoles del palauet d'Aiora.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Rajoles_del_palauet_d%27Aiora.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1994
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Palauet_d_Aiora_cantonada.jpg"
-title = "File:Palauet d'Aiora, cantonada.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Palauet_d%27Aiora%2C_cantonada.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1967
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Palauet_d_Aiora_cupula.jpg"
-title = "File:Palauet d'Aiora, cúpula.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Palauet_d%27Aiora%2C_c%C3%BApula.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1730
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_Palauet_d_Aiora_inicials.jpg"
-title = "File:Palauet d'Aiora, inicials.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Palauet_d%27Aiora%2C_inicials.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1780
-exterior = "unknown"
+height = 1885
+exterior = true
 selected = false
 side = ""
 
