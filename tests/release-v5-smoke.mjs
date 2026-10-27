@@ -27,7 +27,7 @@ const scannerLightweight = readText('../scanner/processing/lightweight.js');
 const scannerLive = readText('../scanner/live-camera.js');
 const scannerLiveDetection = readText('../scanner/processing/liveDetection.js');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = readText('../RELEASE_NOTES_v5.16.50.md');
+const notes = readText('../RELEASE_NOTES_v5.17.15.md');
 const oauthCallback = readText('../oauth-callback/index.html');
 const androidLoader = readText('../.github/android/app-loader.html');
 const androidBuilder = readText('../android app/html_to_apk_builder.py');
@@ -37,7 +37,7 @@ const androidManifestPublisher = readText('../.github/scripts/update_services_ma
 const androidWorkflow = readText('../.github/workflows/build-android.yml');
 const pagesWorkflow = readText('../.github/workflows/deploy-pages.yml');
 
-assert.match(indexHtml, /const APP_VERSION = '5.16.50';/);
+assert.match(indexHtml, /const APP_VERSION = '5.17.15';/);
 assert.match(app, /initialPages: 1/);
 assert.match(app, /renderAllPages\(\{ deferVisibleUpdate: true \}\)/);
 assert.match(app, /cleanOriginalRecoveryPromise/);
@@ -61,10 +61,10 @@ assert.doesNotMatch(
 );
 assert.match(app, /const APP_VERSION = appVersionMatch\[1\];/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.16.50/);
-assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.16.50/);
-assert.match(indexHtml, /app-v5\.js\?v=5.16.50/);
-assert.match(indexHtml, /timeline-core-v5\.js\?v=5.16.50/);
+assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.17.15/);
+assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.17.15/);
+assert.match(indexHtml, /app-v5\.js\?v=5.17.15/);
+assert.match(indexHtml, /timeline-core-v5\.js\?v=5.17.15/);
 assert.match(indexHtml, /Content-Security-Policy/);
 assert.match(indexHtml, /script-src-attr 'none'/);
 assert.match(indexHtml, /frame-src 'self'/);
@@ -90,7 +90,7 @@ assert.match(scanner, /postEmbeddedMessage\("ihn-scanner-pages"/);
 assert.match(scanner, /async function addScannedPagesToDocument\(/);
 assert.match(scanner, /await applyStencilToContext\(/);
 assert.doesNotMatch(scannerHtml, /opencv\.js|__cvReady|Loading Core/);
-assert.match(scannerHtml, /processing\/lightweight\.js\?v=5.16.50/);
+assert.match(scannerHtml, /processing\/lightweight\.js\?v=5.17.15/);
 assert.match(scannerLightweight, /function estimateCalibrationStrip\(/);
 assert.match(scannerLightweight, /function detectMarkerGuidedStencil\(/);
 assert.match(scannerLightweight, /function traceYellowFrame\(/);
@@ -926,16 +926,21 @@ assert.match(
 const storageSaveStart = html.indexOf('async function saveToStorage');
 const storageSaveEnd = html.indexOf('async function loadFromStorage', storageSaveStart);
 const storageSaveSource = html.slice(storageSaveStart, storageSaveEnd);
+const pendingPhotoCheckpointSource = html.slice(
+  html.indexOf('function hasUnresolvedRemotePhotoCheckpoint'),
+  html.indexOf('async function persistExitLocalCheckpoint')
+);
 const storageEvents = [];
 const storageSaveContext = vm.createContext({
   console,
   Date,
   state: { lastSavedAt: null },
   pageMutationGeneration: 0,
+  remoteMergeCheckpointPending: null,
   pageDirty: new Set(),
   hasPendingLegacyPageMigration: () => false,
   captureDocumentPersistenceContext: () => ({ session: 1 }),
-  isDocumentPersistenceContextCurrent: () => true,
+  isDocumentPersistenceContextCurrent: context => !!context,
   flushStrokeOpsQueue: async () => { storageEvents.push('ops'); return true; },
   flushDirtyPages: async () => { storageEvents.push('pages'); return true; },
   buildMetaPayload: () => { storageEvents.push('metadata'); return { pages: [] }; },
@@ -945,7 +950,7 @@ const storageSaveContext = vm.createContext({
   scheduleLocalStorageBackup: () => { storageEvents.push('backup'); return true; },
   updateSaveTimestamp: () => storageEvents.push('timestamp')
 });
-vm.runInContext(`${storageSaveSource}; this.saveToStorage = saveToStorage;`, storageSaveContext);
+vm.runInContext(`${pendingPhotoCheckpointSource}\n${storageSaveSource}; this.saveToStorage = saveToStorage;`, storageSaveContext);
 const storageSaveResult = await storageSaveContext.saveToStorage();
 assert.equal(storageSaveResult.ok, true);
 assert.ok(
@@ -1157,9 +1162,11 @@ assert.match(html, /if \(!cachedLegacyPage\) \{\s*index \+= 1;/);
 assert.match(html, /let legacyPageMigrationPromise = null;/);
 assert.match(html, /let legacyPageMigrationCheckpointPromise = null;/);
 assert.match(html, /if \(legacyPageMigrationCheckpointPromise\) \{\s*return legacyPageMigrationCheckpointPromise;/);
+const remoteMergeCheckpointStart = html.indexOf('// Publish metadata only after every merged page body is durable.');
+assert.ok(remoteMergeCheckpointStart >= 0, 'remote merge durable checkpoint must exist');
 const remoteMergeCheckpointSource = html.slice(
-  html.indexOf("if (changed) {\n                // Publish metadata only after every merged page body is durable."),
-  html.indexOf('if (!hasLocalMerges)', html.indexOf("if (changed) {\n                // Publish metadata only after every merged page body is durable."))
+  remoteMergeCheckpointStart,
+  html.indexOf('if (!hasLocalMerges)', remoteMergeCheckpointStart)
 );
 assert.ok(remoteMergeCheckpointSource.length > 0, 'remote merge durable checkpoint must exist');
 assert.ok(
@@ -1233,17 +1240,17 @@ assert.match(app, /card\.style\.setProperty\('--sheet-ratio', ratio\)/);
 assert.match(indexHtml, /--sheet-inset-block: max\(0%, \(141\.42% - 100% \/ var\(--sheet-ratio\)\) \/ 2\);/);
 assert.match(indexHtml, /width: min\(100%, 141\.42% \* var\(--sheet-ratio\)\);/);
 assert.match(indexHtml, /\.drive-folder-art \{\n\s+position: relative;\n\s+width: 100%;\n\s+aspect-ratio: 210 \/ 297;/);
-assert.match(indexHtml, /document-processing-v5\.js\?v=5.16.50/);
+assert.match(indexHtml, /document-processing-v5\.js\?v=5.17.15/);
 const interactionPause = app.slice(app.indexOf('function pauseSavesDuringInteraction'), app.indexOf('function clearPausedSaveWatchdog'));
 assert.doesNotMatch(interactionPause, /controller\.abort\(|activeDriveSaveController\.abort\(/);
-assert.match(app, /schedulePreparedDrivePdf\(delay = 180\)/);
+assert.match(app, /schedulePreparedDrivePdf\(delay = 40\)/);
 assert.match(oauthCallback, /miguelcoxcaballero\.github\.io/);
 assert.match(oauthCallback, /window\.opener\.postMessage/);
 assert.match(oauthCallback, /ihr-oauth-exchange/);
 assert.match(oauthCallback, /event\.source !== window\.opener/);
 assert.match(oauthCallback, /code_verifier: data\.verifier/);
 
-console.log('v5.16.50 smoke checks passed.');
+console.log('v5.17.15 smoke checks passed.');
 
 
 

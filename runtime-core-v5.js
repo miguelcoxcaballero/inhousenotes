@@ -200,7 +200,107 @@
         }
     }
 
-    const api = Object.freeze({ fetchWithDeadline, settleWithTimeout, runWithRetries, CoalescingQueue, WorkerRpcClient });
+    // One host alarm for every paused document task. Rust owns eligibility,
+    // deadlines, FIFO admission and session rejection; this bridge owns Promises
+    // and AbortSignals. Older/offline WASM versions use the equivalent fallback.
+    class DocumentWorkQueue {
+        constructor(readState, options = {}) {
+            this.readState = readState;
+            this.makePlanner = options.makePlanner || (() => root.InhouseRust?.documentWorkQueue?.());
+            this.setTimer = options.setTimer || ((fn, ms) => setTimeout(fn, ms));
+            this.clearTimer = options.clearTimer || (id => clearTimeout(id));
+            this.now = options.now || (() => performance.now());
+            this.waiters = new Map(); this.plainSignals = new Set();
+            this.planner = null; this.nextId = 0; this.timer = null; this.deadline = Infinity;
+            this.wakes = 0; this.maxBatch = 0;
+        }
+        wait(options = {}) {
+            const signal = options.abortSignal;
+            if (signal?.aborted) return Promise.resolve(false);
+            this.ensurePlanner();
+            do { this.nextId = (this.nextId + 1) >>> 0; } while (!this.nextId || this.waiters.has(this.nextId));
+            const id = this.nextId;
+            const session = Number.isFinite(options.sessionToken) ? options.sessionToken : -1;
+            const quietMs = Math.min(60000, Math.max(0, Number.isFinite(options.windowMs) ? options.windowMs : 1200));
+            const empty = !this.waiters.size;
+            const promise = new Promise(resolve => {
+                const waiter = {id, session, quietMs, signal, resolve};
+                this.waiters.set(id, waiter);
+                if (this.planner && !this.planner.add(id, session, quietMs)) this.dropPlanner();
+                if (signal?.addEventListener) {
+                    waiter.onAbort = () => this.settle(id, false);
+                    signal.addEventListener('abort', waiter.onAbort, {once:true});
+                } else if (signal) this.plainSignals.add(waiter);
+            });
+            if (empty) this.pump();
+            else this.wake();
+            return promise;
+        }
+        ensurePlanner() {
+            if (this.planner || this.waiters.size > 4096) return;
+            this.planner = this.makePlanner() || null;
+            if (!this.planner) return;
+            for (const waiter of this.waiters.values()) {
+                if (!this.planner.add(waiter.id, waiter.session, waiter.quietMs)) { this.dropPlanner(); break; }
+            }
+        }
+        dropPlanner() { this.planner?.dispose(); this.planner = null; }
+        settle(id, result) {
+            const waiter = this.waiters.get(id);
+            if (!waiter) return;
+            this.waiters.delete(id); this.plainSignals.delete(waiter);
+            this.planner?.cancel(id);
+            if (waiter.onAbort) waiter.signal.removeEventListener('abort', waiter.onAbort);
+            waiter.resolve(result);
+            if (!this.waiters.size && this.timer !== null) {
+                this.clearTimer(this.timer); this.timer = null; this.deadline = Infinity;
+            }
+        }
+        fallback(state) {
+            const ready = []; let delay = Infinity;
+            const elapsed = Math.max(0, state.now - state.lastActivity);
+            for (const waiter of this.waiters.values()) {
+                const stale = waiter.session >= 0 && waiter.session !== state.session;
+                const remaining = state.bypass ? 0 : Math.max(0, waiter.quietMs - elapsed);
+                const busy = state.busy && !state.bypass;
+                if ((stale || (!busy && !remaining)) && ready.length < 8) ready.push([waiter.id, !stale]);
+                else delay = Math.min(delay, stale ? 1 : busy ? 100 : Math.max(1, remaining));
+            }
+            return {ready, delay:Number.isFinite(delay) ? delay : -1};
+        }
+        pump() {
+            if (this.timer !== null) this.clearTimer(this.timer);
+            this.timer = null; this.deadline = Infinity;
+            if (!this.waiters.size) return;
+            this.wakes++;
+            this.ensurePlanner();
+            for (const waiter of this.plainSignals) if (waiter.signal.aborted) this.settle(waiter.id, false);
+            const state = this.readState();
+            let batch;
+            try { batch = this.planner?.poll(state); }
+            catch (_) { this.dropPlanner(); }
+            batch ||= this.fallback(state);
+            this.maxBatch = Math.max(this.maxBatch, batch.ready.length);
+            for (const [id, valid] of batch.ready) this.settle(id, valid);
+            if (this.waiters.size) this.schedule(Math.min(batch.delay < 0 ? 1 : batch.delay,
+                this.plainSignals.size ? 100 : Infinity));
+        }
+        schedule(delay) {
+            const deadline = this.now() + delay;
+            if (this.timer !== null && this.deadline <= deadline) return;
+            if (this.timer !== null) this.clearTimer(this.timer);
+            this.deadline = deadline;
+            this.timer = this.setTimer(() => { this.timer = null; this.deadline = Infinity; this.pump(); }, delay);
+        }
+        wake() { if (this.waiters.size) this.schedule(0); }
+        dispose() {
+            for (const id of this.waiters.keys()) this.settle(id, false);
+            this.dropPlanner();
+        }
+        get diagnostics() { return {backend:this.planner ? 'rust' : 'javascript', pending:this.waiters.size, wakes:this.wakes, maxBatch:this.maxBatch}; }
+    }
+
+    const api = Object.freeze({ fetchWithDeadline, settleWithTimeout, runWithRetries, CoalescingQueue, WorkerRpcClient, DocumentWorkQueue });
     root.InhouseRuntimeCore = api;
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window);

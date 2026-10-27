@@ -68,3 +68,50 @@ test('unreadable photo rejects export rather than silently saving a blank page',
  });
  expect(result).not.toBe('saved');expect(result).toMatch(/image|decode|load/i);
 });
+
+test('full-page photos retain high-resolution detail and bounded PNG originals are lossless',async({page})=>{
+ await page.goto('/?e2e=1');await page.evaluate(()=>__IHN_TEST_API__.ready());
+ const result=await page.evaluate(async()=>{
+  await __IHN_TEST_API__.resetLocalDocument(1,'Photo detail');
+  const canvas=document.createElement('canvas');canvas.width=2400;canvas.height=3200;
+  const ctx=canvas.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,2400,3200);
+  ctx.fillStyle='#17283f';for(let x=10;x<2400;x+=8)ctx.fillRect(x,0,2,3200);
+  const png=await new Promise(r=>canvas.toBlob(r,'image/png'));
+  const original=await dataUrlFromBlob(png);
+  const photo=await buildCoverImageAsset(png,'photo');
+  const inserted=await compressImageForDocument(png);
+  const jpeg=await new Promise(r=>canvas.toBlob(r,'image/jpeg',.98));
+  const asset=await buildCoverImageAsset(jpeg,'fit');
+  const decoded=await decodeImageSource(new Blob([Uint8Array.from(atob(asset.dataUrl.split(',')[1]),c=>c.charCodeAt(0))],{type:'image/jpeg'}));
+  const size={width:decoded.width,height:decoded.height};decoded.cleanup();
+  return {photoUnchanged:photo.dataUrl===original,insertedUnchanged:inserted===original,size,ratio:asset.pageWidth/asset.pageHeight};
+ });
+ expect(result.photoUnchanged).toBe(true);expect(result.insertedUnchanged).toBe(true);
+ expect(result.size.height).toBeGreaterThan(3000);expect(result.size.height).toBeLessThanOrEqual(3840);
+ expect(result.size.width/result.size.height).toBeCloseTo(result.ratio,2);
+});
+
+test('photo imports use one encode, preserve transparency and avoid upscaling small sources',async({page})=>{
+ await page.goto('/?e2e=1');await page.evaluate(()=>__IHN_TEST_API__.ready());
+ const result=await page.evaluate(async()=>{
+  await __IHN_TEST_API__.resetLocalDocument(1,'Bounded photo');
+  const canvas=document.createElement('canvas');canvas.width=4000;canvas.height=3000;
+  const ctx=canvas.getContext('2d');ctx.fillStyle='#209abc';ctx.fillRect(0,0,4000,3000);
+  const large=await new Promise(r=>canvas.toBlob(r,'image/jpeg',.96));
+  const originalEncoder=canvasToBlobSafe;let encodes=0;
+  canvasToBlobSafe=async(...args)=>{encodes++;return originalEncoder(...args);};
+  const url=await compressImageForDocument(large);
+  const decoded=await decodeImageSource(new Blob([Uint8Array.from(atob(url.split(',')[1]),c=>c.charCodeAt(0))],{type:'image/jpeg'}));
+  const largeSize=[decoded.width,decoded.height];decoded.cleanup();const largeEncodes=encodes;
+  canvas.width=80;canvas.height=100;ctx.fillStyle='red';ctx.fillRect(20,20,40,60);
+  const small=await new Promise(r=>canvas.toBlob(r,'image/png'));
+  const preserved=await compressImageForDocument(small);const original=await dataUrlFromBlob(small);
+  const smallJpeg=await new Promise(r=>canvas.toBlob(r,'image/jpeg',.95));
+  const asset=await buildCoverImageAsset(smallJpeg,'photo');
+  const image=await decodeImageSource(new Blob([Uint8Array.from(atob(asset.dataUrl.split(',')[1]),c=>c.charCodeAt(0))],{type:'image/jpeg'}));
+  const smallSize=[image.width,image.height];image.cleanup();canvasToBlobSafe=originalEncoder;
+  return {largeSize,largeEncodes,alphaUnchanged:preserved===original,smallSize};
+ });
+ expect(result.largeEncodes).toBe(1);expect(result.largeSize).toEqual([3200,2400]);
+ expect(result.alphaUnchanged).toBe(true);expect(result.smallSize[0]).toBeLessThanOrEqual(81);expect(result.smallSize[1]).toBeLessThanOrEqual(101);
+});

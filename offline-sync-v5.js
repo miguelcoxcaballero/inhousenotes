@@ -182,15 +182,29 @@
                     // Drive v3 does not guarantee an exposed ETag. v2 supplies it in
                     // JSON; tie it to the same revision before conditional writing.
                     if(current&&!current.etag) {
-                        const token=await (await request(`https://www.googleapis.com/drive/v2/files/${encodeURIComponent(id)}?fields=etag,version`,{headers:{'Cache-Control':'no-cache'}})).json();
+                        const token=await (await request(`https://www.googleapis.com/drive/v2/files/${encodeURIComponent(id)}?fields=etag,version,headRevisionId`,{headers:{'Cache-Control':'no-cache'}})).json();
                         if(!token.etag)throw failure('Drive did not provide a conditional-write token','needs-merge');
-                        if(!current.meta.version || String(token.version)!==String(current.meta.version))throw failure('Remote document changed before upload',412);
+                        if(current.meta.headRevisionId&&token.headRevisionId
+                            ? current.meta.headRevisionId!==token.headRevisionId
+                            : !current.meta.version||String(token.version)!==String(current.meta.version))
+                            throw failure('Remote document changed before upload',412);
                         current.etag=token.etag;current.tokenApi='v2';
                     }
                     if(await yieldToManualSave())return summary;
                     progress(op.id,'uploading');
-                    const saved=await multipart(id,blob,{...(current?{}:{id,name:entry?.name||'Untitled.pdf',mimeType:'application/pdf',parents:[parent]}),
+                    let saved;
+                    for(let attempt=0;;attempt++){
+                        try{
+                    saved=await multipart(id,blob,{...(current?{}:{id,name:entry?.name||'Untitled.pdf',mimeType:'application/pdf',parents:[parent]}),
                         appProperties:{...(current?.meta.appProperties||{}),ihnOfflineReceipt:receipt}},current?.etag,!current,current?.tokenApi);
+                            break;
+                        }catch(error){
+                            if(error.code!==412||!current?.meta.headRevisionId||attempt>=2)throw error;
+                            const token=await (await request(`https://www.googleapis.com/drive/v2/files/${encodeURIComponent(id)}?fields=etag,version,headRevisionId`,{headers:{'Cache-Control':'no-cache'}})).json();
+                            if(!token.etag||token.headRevisionId!==current.meta.headRevisionId)throw error;
+                            current.etag=token.etag;current.tokenApi='v2';
+                        }
+                    }
                     await S.acknowledge(account,op.id,generation,saved,blob);
                     summary.saved++;
                     await adapter.saved?.(op.id,saved,blob);
