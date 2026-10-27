@@ -4,6 +4,24 @@ FORJA - version jugable (Windows)
 Mundo abierto en una ciudad procedural de Madrid y Valencia: camina, corre,
 conduce coches y usa armas e inventario.
 
+NOVEDADES DE LA v0.1.3
+  - Portatiles y graficos integrados (Intel Arc / Iris Xe, AMD Radeon): perfil
+    propio que mantiene el aspecto de Medio, renderiza a ~1,2 MP internos y
+    reescala a la pantalla con FSR 1, con resolucion dinamica para sostener
+    60 FPS. La interfaz sigue a resolucion nativa.
+  - Ciudad lejana simplificada (HLOD) y carga por zonas en segundo plano;
+    sombras estables (las rejas y barandillas ya no parpadean) y mas baratas.
+  - Texturas comprimidas, cache en disco, pantalla de carga y cambio de dia a
+    noche (F3) sin congelar el juego.
+  - Graficos: oclusion especular con bent normals, desenfoque de movimiento,
+    niebla volumetrica con rayos de sol y halos de farolas (apagados en el
+    perfil de integrados; se activan en F9) y cielo precalculado.
+  - Fisicas nuevas: neumaticos Pacejka con ABS y control de traccion, moto que
+    se inclina y no se cae, colision continua a alta velocidad, personaje que
+    sube bien escaleras y bordillos, coches aparcados que no se deslizan.
+  - Mas de 60 edificios emblematicos de Valencia modelados con medidas reales.
+  - Si va lento: pulsa F11 y fijate en los ms de CPU y GPU; prueba Bajo en F9.
+
 NOVEDADES DE LA v0.1.2
   - Mapa nuevo por defecto: cascos antiguos ORGANICOS (el Madrid de los
     Austrias en una colina y el Barrio del Carmen de Valencia), con
