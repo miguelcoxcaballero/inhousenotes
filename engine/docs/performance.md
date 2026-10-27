@@ -333,7 +333,11 @@ runs (each figure is one run; the *before* column is the v0.1.2 binary).
 | F3 at dusk/dawn | full freeze: build + upload (~45-80 s here) | game keeps running; stall = upload (~6 s here) |
 
 Images: day and aerial views are unchanged apart from BC1 block noise
-(mean absolute difference 1.1-1.5 of 255 against v0.1.2).
+(mean absolute difference 1.1-1.5 of 255 against v0.1.2). Screenshots in
+`engine/screenshots/agents/perf2/`: plaza by day and night, the whole
+city by day and night (HLOD tiles with lit windows), detail vs HLOD from
+650 m, the aerial before/after the shadow proxies, a facade RGBA8 vs
+BC1, and the Carmen map after a dusk switch.
 
 What changed:
 
@@ -386,7 +390,16 @@ What changed:
    screen, and the clock, the camera and the player's position carry over.
    Peak RAM during that build is the running world plus one build (~1.5 +
    2.7 GB on a real GPU; on lavapipe the default map does not fit this
-   shared VM, `--night-switch` measures it on smaller maps).
+   shared VM, `--night-switch` measures it on smaller maps). The build
+   runs in a rayon pool of `cores - 2` threads so the game keeps cores.
+   Measured on the Carmen map (lavapipe, 640x360): the night city was
+   built in the background in 31 s while the day city kept running (on
+   lavapipe the 4-core VM shared the CPU between the build and the
+   software rasteriser, so only one frame finished meanwhile; with a GPU
+   the frame loop does not rasterise on the CPU); the main-thread stall
+   at the swap was the upload, 6.9 s here (BC chains from the cache), plus
+   the first frame. Before, the same crossing froze the game for the whole
+   build plus upload (45-80 s on the default map here).
 6. **BC textures.** Colour maps and packed ORM/occlusion maps are uploaded
    BC1 (BC3 when they have alpha) when the adapter has
    `TEXTURE_COMPRESSION_BC` (requested at device creation; DX12/Vulkan
@@ -435,7 +448,21 @@ Measurement: `sandbox --stability N` (8-frame means remove the TAA,
 GTAO and PCF noise; then N steps of the sun creeping 0.03° per step, and
 the camera walking 3 m away and back). Plaza spawn, High, 480x270:
 
-STABILITY_TABLE
+| 960x540, 4 steps | Noise floor (changed px) | Sun creep: mean / p99.9 / changed px | Walk 3 m away and back: changed px |
+|---|---|---|---|
+| Before (`-stableshadow`) | 0.14 % | 0.96 / 23 / 0.64 % | 0.16 % |
+| After | 0.14 % | 0.92 / 16 / 0.39 % | 0.15 % |
+| 480x270, 6 steps, before / after | 0.16 % | 0.43 % / 0.41 % changed | 0.07 % / 0.07 % |
+
+The sun-creep flicker (pixels that change by more than 8/255 between
+steps beyond the noise floor) drops by ~40 % at 960x540; at 480x270 the
+grille bars are sub-pixel and both builds read the same. Walking away
+and back already returned to the same image at this pose (texel-snapped
+cascades); the LOD fix matters where casters change level within a
+cascade while walking (street-level runs of facade modules). After these
+runs the shadow maps also follow the sun in 0.1° steps (`shadow_sun`):
+with a moving clock the maps stay identical for several frames instead of
+re-rasterising every frame (the lighting keeps the exact sun).
 
 ### HLOD per city tile
 
