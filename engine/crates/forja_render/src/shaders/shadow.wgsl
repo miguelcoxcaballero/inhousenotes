@@ -10,6 +10,8 @@ struct Material {
     emissive: vec4<f32>,
     params: vec4<f32>,     // z: alpha cutoff
     layers: vec4<f32>,
+    foliage: vec4<f32>,
+    extra: vec4<f32>,
 };
 @group(2) @binding(0) var<uniform> material: Material;
 @group(2) @binding(1) var base_tex: texture_2d<f32>;
