@@ -37,20 +37,46 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Vista_apartir_do_piso_3_do_Hotel_Reina_Victoria_panoramio.jpg"
-title = "File:Vista apartir do piso 3 do Hotel Reina Victoria - panoramio.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Vista_apartir_do_piso_3_do_Hotel_Reina_Victoria_-_panoramio.jpg"
+file = "photos/02_Teatro_Principal_panoramio.jpg"
+title = "File:Teatro Principal - panoramio.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Teatro_Principal_-_panoramio.jpg"
 author = "Carlos Cunha"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 960
-camera = [-87.51, 54.34]
+camera = [-20.33, 48.83]
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Teatre_Principal_de_Valencia_entrada.jpg"
+file = "photos/03_Teatro_Principal_de_Valencia.jpg"
+title = "File:Teatro Principal de Valencia.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Teatro_Principal_de_Valencia.jpg"
+author = "Julián Monrabal"
+license = "CC0"
+width = 1280
+height = 1032
+camera = [1.52, 33.41]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/04_Teatro_Principal_panoramio_1.jpg"
+title = "File:Teatro Principal - panoramio (1).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Teatro_Principal_-_panoramio_%281%29.jpg"
+author = "Mister No"
+license = "CC BY 3.0"
+width = 1280
+height = 960
+camera = [25.46, 48.16]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_Teatre_Principal_de_Valencia_entrada.jpg"
 title = "File:Teatre Principal de València, entrada.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Teatre_Principal_de_Val%C3%A8ncia%2C_entrada.jpg"
 author = "Joanbanjo"
@@ -62,7 +88,57 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Columnes_de_la_facana_del_teatre_Principal_de_Valencia.jpg"
+file = "photos/06_Part_posterior_del_teatre_Principal_de_Valencia.jpg"
+title = "File:Part posterior del teatre Principal de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Part_posterior_del_teatre_Principal_de_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1989
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_Teatre_Principal_Valencia.jpg"
+title = "File:Teatre Principal València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Teatre_Principal_Val%C3%A8ncia.jpg"
+author = "Corretger"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/08_Teatre_principal.jpg"
+title = "File:Teatre principal.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Teatre_principal.jpg"
+author = "Felivet"
+license = "Public domain"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/09_Teatre_Principal_Valencia_04_2025_1.jpg"
+title = "File:Teatre Principal (Valencia), 04 2025 1.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Teatre_Principal_%28Valencia%29%2C_04_2025_1.jpg"
+author = "Artvill"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1236
+camera = [3.63, 20.13]
+heading = 190.0
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/10_Columnes_de_la_facana_del_teatre_Principal_de_Valencia.jpg"
 title = "File:Columnes de la façana del teatre Principal de València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Columnes_de_la_fa%C3%A7ana_del_teatre_Principal_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -74,88 +150,14 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Facana_del_teatre_Principal_de_Valencia.jpg"
-title = "File:Façana del teatre Principal de València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_del_teatre_Principal_de_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1925
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/06_Teatro_Principal_panoramio_1.jpg"
-title = "File:Teatro Principal - panoramio (1).jpg"
-url = "https://commons.wikimedia.org/wiki/File:Teatro_Principal_-_panoramio_%281%29.jpg"
-author = "Mister No"
-license = "CC BY 3.0"
-width = 1280
-height = 960
-camera = [25.46, 48.16]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/07_Vista_del_teatre_Principal_des_de_l_Ateneu_Mercantil_Valenci.jpg"
-title = "File:Vista del teatre Principal des de l'Ateneu Mercantil, València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Vista_del_teatre_Principal_des_de_l%27Ateneu_Mercantil%2C_Val%C3%A8ncia.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 855
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Teatre_Principal_Valencia.jpg"
-title = "File:Teatre Principal València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Teatre_Principal_Val%C3%A8ncia.jpg"
-author = "Corretger"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Teatre_principal.jpg"
-title = "File:Teatre principal.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Teatre_principal.jpg"
-author = "Felivet"
-license = "Public domain"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Teatre_principal1.jpg"
+file = "photos/11_Teatre_principal1.jpg"
 title = "File:Teatre principal1.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Teatre_principal1.jpg"
 author = "Felivet"
 license = "Public domain"
 width = 1280
 height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Teatro_Principal_panoramio.jpg"
-title = "File:Teatro Principal - panoramio.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Teatro_Principal_-_panoramio.jpg"
-author = "Carlos Cunha"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-camera = [-20.33, 48.83]
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
@@ -167,12 +169,36 @@ author = "Zarateman"
 license = "CC0"
 width = 1280
 height = 1600
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Teatre_Principal_de_Valencia_columnes_de_la_facana.jpg"
+file = "photos/13_Facana_del_teatre_Principal_de_Valencia.jpg"
+title = "File:Façana del teatre Principal de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_del_teatre_Principal_de_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1925
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/14_Teatre_principal2.jpg"
+title = "File:Teatre principal2.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Teatre_principal2.jpg"
+author = "Felivet"
+license = "Public domain"
+width = 1280
+height = 1002
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/15_Teatre_Principal_de_Valencia_columnes_de_la_facana.jpg"
 title = "File:Teatre Principal de València, columnes de la façana.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Teatre_Principal_de_Val%C3%A8ncia%2C_columnes_de_la_fa%C3%A7ana.JPG"
 author = "Joanbanjo"
@@ -180,45 +206,6 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 868
 exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Teatro_Principal_de_Valencia.jpg"
-title = "File:Teatro Principal de Valencia.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Teatro_Principal_de_Valencia.jpg"
-author = "Julián Monrabal"
-license = "CC0"
-width = 1280
-height = 1032
-camera = [1.52, 33.41]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Fabio_Miano_Jazz_Pianist.jpg"
-title = "File:Fabio Miano Jazz Pianist.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Fabio_Miano_Jazz_Pianist.jpg"
-author = "Blu35"
-license = "Public domain"
-width = 500
-height = 366
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_Teatre_Principal_Valencia_04_2025_1.jpg"
-title = "File:Teatre Principal (Valencia), 04 2025 1.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Teatre_Principal_%28Valencia%29%2C_04_2025_1.jpg"
-author = "Artvill"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1236
-camera = [3.63, 20.13]
-heading = 190.0
-exterior = "unknown"
 selected = false
 side = ""
 

@@ -168,11 +168,11 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Monestir_de_la_Trinitat_ocul.jpg"
-title = "File:Monestir de la Trinitat òcul.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Monestir_de_la_Trinitat_%C3%B2cul.JPG"
+file = "photos/13_Monestir_de_la_Trinitat_capcalera_2.jpg"
+title = "File:Monestir de la Trinitat, capçalera.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Monestir_de_la_Trinitat%2C_cap%C3%A7alera.JPG"
 author = "Joanbanjo"
-license = "Public domain"
+license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
@@ -180,11 +180,11 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_Monestir_de_la_Trinitat_capcalera_2.jpg"
-title = "File:Monestir de la Trinitat, capçalera.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Monestir_de_la_Trinitat%2C_cap%C3%A7alera.JPG"
+file = "photos/14_Monestir_de_la_Trinitat_facana.jpg"
+title = "File:Monestir de la Trinitat façana.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Monestir_de_la_Trinitat_fa%C3%A7ana.JPG"
 author = "Joanbanjo"
-license = "CC BY-SA 3.0"
+license = "Public domain"
 width = 1280
 height = 960
 exterior = true

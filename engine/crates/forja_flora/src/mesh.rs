@@ -68,6 +68,7 @@ pub fn merge_lods(levels: &[MeshBuilder], material: usize) -> (MeshData, Vec<f32
     let all_idx: Vec<u32> = lists.iter().flatten().copied().collect();
     m.tangents = forja_assets::generate_tangents(&m.positions, &m.normals, &m.uvs, &all_idx);
     m.lods = lists[1..].to_vec();
+    m.lod_sync = true;
     m.finalize();
     m.aabb = forja_math::Aabb::from_points(m.positions.iter().copied());
     (m, all.wind)

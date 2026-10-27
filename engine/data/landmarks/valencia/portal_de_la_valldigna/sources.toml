@@ -207,18 +207,6 @@ exterior = true
 selected = false
 side = ""
 
-[[photo]]
-file = "photos/catastro_5532102YJ2753D.jpg"
-title = "Catastro fachada 5532102YJ2753D"
-url = "http://ovc.catastro.meh.es/OVCServWeb/OVCWcfLibres/OVCFotoFachada.svc/RecuperarFotoFachadaGet?ReferenciaCatastral=5532102YJ2753D"
-author = "Dirección General del Catastro"
-license = "Catastro open data (attribution required)"
-width = 3000
-height = 4000
-exterior = true
-selected = false
-side = ""
-
 [[plan]]
 file = "plans/catastro_wms.png"
 title = "Catastro WMS cadastral map"

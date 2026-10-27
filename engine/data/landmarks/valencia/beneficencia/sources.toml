@@ -46,19 +46,31 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Centre_Cultural_la_Beneficencia_i_asil_del_marques_de_Campo_.jpg"
-title = "File:Centre Cultural la Beneficència i asil del marqués de Campo, carrer Corona de València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Centre_Cultural_la_Benefic%C3%A8ncia_i_asil_del_marqu%C3%A9s_de_Campo%2C_carrer_Corona_de_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
+file = "photos/03_Centre_Cultural_la_Beneficencia_P1140259.jpg"
+title = "File:Centre Cultural la Beneficència P1140259.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Centre_Cultural_la_Benefic%C3%A8ncia_P1140259.JPG"
+author = "Pere prlpz ( talk )"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 1996
+height = 1707
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Beneficencia1.jpg"
+file = "photos/04_Valencia_Centre_Cultural_La_Beneficencia_y_Museo_de_Prehisto.jpg"
+title = "File:Valencia - Centre Cultural La Beneficencia y Museo de Prehistoria 1.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Centre_Cultural_La_Beneficencia_y_Museo_de_Prehistoria_1.jpg"
+author = "Zarateman"
+license = "CC0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_Beneficencia1.jpg"
 title = "File:Beneficencia1.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Beneficencia1.JPG"
 author = "Un valencià"
@@ -70,7 +82,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Benefiencia2.jpg"
+file = "photos/06_Benefiencia2.jpg"
 title = "File:Benefiencia2.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Benefiencia2.JPG"
 author = "Un valencià"
@@ -82,9 +94,9 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Centre_cultural_la_Beneficencia_P1400016.jpg"
-title = "File:Centre cultural la Beneficència P1400016.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Centre_cultural_la_Benefic%C3%A8ncia_P1400016.JPG"
+file = "photos/07_Centre_Cultural_la_Beneficencia_P1140258.jpg"
+title = "File:Centre Cultural la Beneficència P1140258.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Centre_Cultural_la_Benefic%C3%A8ncia_P1140258.JPG"
 author = "Pere prlpz ( talk )"
 license = "CC BY-SA 3.0"
 width = 1280
@@ -94,124 +106,112 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Valencia_Centre_Cultural_La_Beneficencia_y_Museo_de_Prehisto.jpg"
-title = "File:Valencia - Centre Cultural La Beneficencia y Museo de Prehistoria 1.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Centre_Cultural_La_Beneficencia_y_Museo_de_Prehistoria_1.jpg"
-author = "Zarateman"
-license = "CC0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Patrimoni_museus_i_clubs_de_futbol.jpg"
-title = "File:Patrimoni, museus i clubs de futbol.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Patrimoni%2C_museus_i_clubs_de_futbol.jpg"
-author = "Francesc Fort"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 961
-camera = [-31.15, -1.69]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Periplos_Irradiantes_a_L_Etno.jpg"
-title = "File:Periplos Irradiantes a L'Etno.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Periplos_Irradiantes_a_L%27Etno.jpg"
-author = "Francesc Fort"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 961
-camera = [18.78, 42.52]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Valencia_Centre_Cultural_La_Beneficencia_y_Museo_de_Prehisto_2.jpg"
+file = "photos/08_Valencia_Centre_Cultural_La_Beneficencia_y_Museo_de_Prehisto_2.jpg"
 title = "File:Valencia - Centre Cultural La Beneficencia y Museo de Prehistoria 3.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Centre_Cultural_La_Beneficencia_y_Museo_de_Prehistoria_3.jpg"
 author = "Zarateman"
 license = "CC0"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/11_Centre_Cultural_la_Beneficencia_P1140259.jpg"
-title = "File:Centre Cultural la Beneficència P1140259.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Centre_Cultural_la_Benefic%C3%A8ncia_P1140259.JPG"
-author = "Pere prlpz ( talk )"
+file = "photos/09_Centre_Cultural_la_Beneficencia_i_asil_del_marques_de_Campo_.jpg"
+title = "File:Centre Cultural la Beneficència i asil del marqués de Campo, carrer Corona de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Centre_Cultural_la_Benefic%C3%A8ncia_i_asil_del_marqu%C3%A9s_de_Campo%2C_carrer_Corona_de_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 1707
-exterior = "unknown"
+height = 1996
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_Valencia_Centre_Cultural_La_Beneficencia_y_Museo_de_Prehisto_3.jpg"
+file = "photos/10_Valencia_Centre_Cultural_La_Beneficencia_y_Museo_de_Prehisto_3.jpg"
 title = "File:Valencia - Centre Cultural La Beneficencia y Museo de Prehistoria 2.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Centre_Cultural_La_Beneficencia_y_Museo_de_Prehistoria_2.jpg"
 author = "Zarateman"
 license = "CC0"
 width = 1280
 height = 947
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Centre_Cultural_la_Beneficencia_02.jpg"
+file = "photos/11_Centre_Cultural_la_Beneficencia_02.jpg"
 title = "File:Centre Cultural la Beneficència 02.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Centre_Cultural_la_Benefic%C3%A8ncia_02.JPG"
 author = "Dorieo"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 853
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_Centre_Cultural_la_Beneficencia_01.jpg"
+file = "photos/12_Centre_Cultural_la_Beneficencia_01.jpg"
 title = "File:Centre Cultural la Beneficència 01.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Centre_Cultural_la_Benefic%C3%A8ncia_01.JPG"
 author = "Dorieo"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 853
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Centre_Cultural_la_Beneficencia_P1140258.jpg"
-title = "File:Centre Cultural la Beneficència P1140258.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Centre_Cultural_la_Benefic%C3%A8ncia_P1140258.JPG"
+file = "photos/13_Centre_Cultural_la_Beneficencia_P1140260.jpg"
+title = "File:Centre Cultural la Beneficència P1140260.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Centre_Cultural_la_Benefic%C3%A8ncia_P1140260.JPG"
 author = "Pere prlpz ( talk )"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Centre_Cultural_la_Beneficencia_03.jpg"
+file = "photos/14_Centre_Cultural_la_Beneficencia_03.jpg"
 title = "File:Centre Cultural la Beneficència 03.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Centre_Cultural_la_Benefic%C3%A8ncia_03.JPG"
 author = "Dorieo"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 853
-exterior = "unknown"
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/15_Centre_Cultural_la_Beneficencia_Valencia_Marcok_2023_09_2_f0.jpg"
+title = "File:Centre Cultural la Beneficència València Marcok 2023-09-2 f03.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Centre_Cultural_la_Benefic%C3%A8ncia_Val%C3%A8ncia_Marcok_2023-09-2_f03.jpg"
+author = "Marcok"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+camera = [-21.56, 58.91]
+heading = 24.0
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/16_Centre_cultural_la_Beneficencia_P1400016.jpg"
+title = "File:Centre cultural la Beneficència P1400016.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Centre_cultural_la_Benefic%C3%A8ncia_P1400016.JPG"
+author = "Pere prlpz ( talk )"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
 selected = false
 side = ""
 

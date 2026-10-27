@@ -37,21 +37,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Exterior_de_las_Escuelas_Pias_de_Valencia_03.jpg"
-title = "File:Exterior de las Escuelas Pías de València 03.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Exterior_de_las_Escuelas_P%C3%ADas_de_Val%C3%A8ncia_03.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-camera = [-49.73, -8.89]
-heading = 140.1
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/03_Exterior_de_las_Escuelas_Pias_de_Valencia_02.jpg"
+file = "photos/02_Exterior_de_las_Escuelas_Pias_de_Valencia_02.jpg"
 title = "File:Exterior de las Escuelas Pías de València 02.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Exterior_de_las_Escuelas_P%C3%ADas_de_Val%C3%A8ncia_02.jpg"
 author = "19Tarrestnom65"
@@ -60,6 +46,20 @@ width = 1280
 height = 960
 camera = [-23.92, 14.13]
 heading = 349.9
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/03_Exterior_de_las_Escuelas_Pias_de_Valencia_04.jpg"
+title = "File:Exterior de las Escuelas Pías de València 04.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Exterior_de_las_Escuelas_P%C3%ADas_de_Val%C3%A8ncia_04.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+camera = [-27.23, -58.32]
+heading = 169.6
 exterior = true
 selected = false
 side = ""
@@ -173,33 +173,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Exterior_de_las_Escuelas_Pias_de_Valencia_04.jpg"
-title = "File:Exterior de las Escuelas Pías de València 04.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Exterior_de_las_Escuelas_P%C3%ADas_de_Val%C3%A8ncia_04.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-camera = [-27.23, -58.32]
-heading = 169.6
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Q108139901.jpg"
-title = "File:Q108139901.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Q108139901.jpg"
-author = "B25es"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Vista_cap_les_escoles_Pies_Valencia.jpg"
+file = "photos/13_Vista_cap_les_escoles_Pies_Valencia.jpg"
 title = "File:Vista cap les escoles Pies, València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Vista_cap_les_escoles_Pies%2C_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -211,13 +185,39 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Valencia_Iglesia_de_San_Joaquin_Escuelas_Pias_5.jpg"
+file = "photos/14_Valencia_Iglesia_de_San_Joaquin_Escuelas_Pias_5.jpg"
 title = "File:Valencia - Iglesia de San Joaquín (Escuelas Pías) 5.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Iglesia_de_San_Joaqu%C3%ADn_%28Escuelas_P%C3%ADas%29_5.jpg"
 author = "Zarateman"
 license = "CC0"
 width = 1280
 height = 1670
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/15_Exterior_de_las_Escuelas_Pias_de_Valencia_01.jpg"
+title = "File:Exterior de las Escuelas Pías de València 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Exterior_de_las_Escuelas_P%C3%ADas_de_Val%C3%A8ncia_01.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+camera = [-24.18, 14.14]
+heading = 7.6
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/16_Campanar_de_l_esglesia_de_les_escoles_pies_des_de_baix_Valen.jpg"
+title = "File:Campanar de l'església de les escoles pies des de baix, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Campanar_de_l%27esgl%C3%A9sia_de_les_escoles_pies_des_de_baix%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 893
 exterior = true
 selected = false
 side = ""

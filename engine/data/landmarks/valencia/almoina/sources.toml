@@ -35,20 +35,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Centro_Arqueologico_de_la_Almoina_08.jpg"
-title = "File:Centro Arqueológico de la Almoina 08.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Centro_Arqueol%C3%B3gico_de_la_Almoina_08.jpg"
-author = "Simon Burchell"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-camera = [24.72, 10.68]
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/03_Plaza_de_la_Reina_Valencia_Valencia_Spain_panoramio_14.jpg"
+file = "photos/02_Plaza_de_la_Reina_Valencia_Valencia_Spain_panoramio_14.jpg"
 title = "File:Plaza de la Reina, València, Valencia, Spain - panoramio (14).jpg"
 url = "https://commons.wikimedia.org/wiki/File:Plaza_de_la_Reina%2C_Val%C3%A8ncia%2C_Valencia%2C_Spain_-_panoramio_%2814%29.jpg"
 author = "chisloup"
@@ -61,19 +48,44 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Tumba_colectiva_del_siglo_VI_de_epoca_visigoda_Centro_Arqueo.jpg"
-title = "File:Tumba colectiva del siglo VI de época visigoda. Centro Arqueológico de la Almoina.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Tumba_colectiva_del_siglo_VI_de_%C3%A9poca_visigoda._Centro_Arqueol%C3%B3gico_de_la_Almoina.jpg"
-author = "Dorieo"
+file = "photos/03_Museo_de_la_Almoina.jpg"
+title = "File:Museo de la Almoina.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Museo_de_la_Almoina.jpg"
+author = "V. Ripoll Hernández"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 905
+height = 576
+camera = [-34.98, 6.55]
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Exterior_del_centre_arqueologic_de_l_Almoina_de_Valencia.jpg"
+file = "photos/04_Centro_Arqueologico_de_la_Almoina_Valencia.jpg"
+title = "File:Centro Arqueológico de la Almoina, Valencia.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Centro_Arqueol%C3%B3gico_de_la_Almoina%2C_Valencia.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_At_Valencia_2025_096.jpg"
+title = "File:At Valencia 2025 096.jpg"
+url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_096.jpg"
+author = "Photograph by Mike Peel ( www.mikepeel.net )."
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Exterior_del_centre_arqueologic_de_l_Almoina_de_Valencia.jpg"
 title = "File:Exterior del centre arqueològic de l'Almoina de València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Exterior_del_centre_arqueol%C3%B2gic_de_l%27Almoina_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -86,74 +98,72 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Centre_Arqueologic_Almoina.jpg"
-title = "File:Centre Arqueològic Almoina.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Centre_Arqueol%C3%B2gic_Almoina.jpg"
-author = "Josu PV"
+file = "photos/07_334_Centre_arqueologic_de_l_Almoina_Valencia.jpg"
+title = "File:334 Centre arqueològic de l'Almoina (València).jpg"
+url = "https://commons.wikimedia.org/wiki/File:334_Centre_arqueol%C3%B2gic_de_l%27Almoina_%28Val%C3%A8ncia%29.jpg"
+author = "Enric"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 1707
-camera = [24.72, 10.68]
+height = 840
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Cathedrale_Saint_Apollinaire_et_Basilique_Nostra_Senora_de_l.jpg"
-title = "File:Cathédrale Saint-Apollinaire et Basilique Nostra Señora de los Desemparados (8276231733).jpg"
-url = "https://commons.wikimedia.org/wiki/File:Cath%C3%A9drale_Saint-Apollinaire_et_Basilique_Nostra_Se%C3%B1ora_de_los_Desemparados_%288276231733%29.jpg"
-author = "Nicolas Vollmer from Munich [Allemagne]"
-license = "CC BY 2.0"
+file = "photos/08_At_Valencia_2025_097.jpg"
+title = "File:At Valencia 2025 097.jpg"
+url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_097.jpg"
+author = "Photograph by Mike Peel ( www.mikepeel.net )."
+license = "CC BY-SA 4.0"
 width = 1280
-height = 1926
-camera = [-6.05, -32.85]
-exterior = "unknown"
+height = 853
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Muros_de_adobe_de_las_primeras_construcciones_de_Valentia_Ce.jpg"
-title = "File:Muros de adobe de las primeras construcciones de Valentia. Centro Arqueológico de la Almoina 01.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Muros_de_adobe_de_las_primeras_construcciones_de_Valentia._Centro_Arqueol%C3%B3gico_de_la_Almoina_01.jpg"
+file = "photos/09_Cazuela_vidriada_encontrada_en_la_calle_de_Sagunto_Valencia_.jpg"
+title = "File:Cazuela vidriada encontrada en la calle de Sagunto (Valencia). Centro Arqueológico de la Almoina.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Cazuela_vidriada_encontrada_en_la_calle_de_Sagunto_%28Valencia%29._Centro_Arqueol%C3%B3gico_de_la_Almoina.jpg"
 author = "Dorieo"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 853
+height = 978
 camera = [-14.78, -6.39]
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_Museo_de_la_Almoina.jpg"
-title = "File:Museo de la Almoina.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Museo_de_la_Almoina.jpg"
-author = "V. Ripoll Hernández"
+file = "photos/10_Centro_Arqueologico_de_la_Almoina_09.jpg"
+title = "File:Centro Arqueológico de la Almoina 09.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Centro_Arqueol%C3%B3gico_de_la_Almoina_09.jpg"
+author = "Simon Burchell"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 576
-camera = [-34.98, 6.55]
+height = 960
+camera = [24.72, 10.68]
 exterior = "unknown"
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/10_Llantia_romana.jpg"
-title = "File:Llàntia romana.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Ll%C3%A0ntia_romana.jpg"
-author = "Josu PV"
+file = "photos/11_Ara_funeraria_romana_Centro_Arqueologico_de_la_Almoina_01.jpg"
+title = "File:Ara funeraria romana. Centro Arqueológico de la Almoina 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Ara_funeraria_romana._Centro_Arqueol%C3%B3gico_de_la_Almoina_01.jpg"
+author = "Dorieo"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 1008
+height = 1867
 exterior = "unknown"
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/11_At_Valencia_2025_096.jpg"
-title = "File:At Valencia 2025 096.jpg"
-url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_096.jpg"
-author = "Photograph by Mike Peel ( www.mikepeel.net )."
+file = "photos/12_Aras_funerarias_romanas_Centro_Arqueologico_de_la_Almoina_01.jpg"
+title = "File:Aras funerarias romanas. Centro Arqueológico de la Almoina 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Aras_funerarias_romanas._Centro_Arqueol%C3%B3gico_de_la_Almoina_01.jpg"
+author = "Dorieo"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 853
@@ -162,10 +172,97 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_334_Centre_arqueologic_de_l_Almoina_Valencia.jpg"
-title = "File:334 Centre arqueològic de l'Almoina (València).jpg"
-url = "https://commons.wikimedia.org/wiki/File:334_Centre_arqueol%C3%B2gic_de_l%27Almoina_%28Val%C3%A8ncia%29.jpg"
-author = "Enric"
+file = "photos/13_Llantia_amb_un_carro_de_dos_cavalls_biga_centre_arqueologic_.jpg"
+title = "File:Llàntia amb un carro de dos cavalls (biga), centre arqueològic de l'Almoina, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Ll%C3%A0ntia_amb_un_carro_de_dos_cavalls_%28biga%29%2C_centre_arqueol%C3%B2gic_de_l%27Almoina%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1164
+camera = [-14.78, -6.39]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/14_Armas_romanas_Centro_Arqueologico_de_la_Almoina_02.jpg"
+title = "File:Armas romanas. Centro Arqueológico de la Almoina 02.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Armas_romanas._Centro_Arqueol%C3%B3gico_de_la_Almoina_02.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 777
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/15_Centro_Arqueologico_de_la_Almoina_12.jpg"
+title = "File:Centro Arqueológico de la Almoina 12.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Centro_Arqueol%C3%B3gico_de_la_Almoina_12.jpg"
+author = "Simon Burchell"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+camera = [24.72, 10.68]
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/16_Placa_de_marmol_decorada_con_motivos_vegetales_y_ave_Centro_.jpg"
+title = "File:Placa de mármol decorada con motivos vegetales y ave. Centro Arqueológico de l'Almoina.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Placa_de_m%C3%A1rmol_decorada_con_motivos_vegetales_y_ave._Centro_Arqueol%C3%B3gico_de_l%27Almoina.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/17_Restos_romanos_de_Valentia_Centro_Arqueologico_de_la_Almoina.jpg"
+title = "File:Restos romanos de Valentia. Centro Arqueológico de la Almoina 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Restos_romanos_de_Valentia._Centro_Arqueol%C3%B3gico_de_la_Almoina_01.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/18_Gerreta_amb_tresor_de_dirhams_centre_Arqueologic_de_l_Almoin.jpg"
+title = "File:Gerreta amb tresor de dirhams, centre Arqueològic de l'Almoina.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Gerreta_amb_tresor_de_dirhams%2C_centre_Arqueol%C3%B2gic_de_l%27Almoina.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1573
+camera = [-14.78, -6.39]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/19_Unguentario_y_diota_Centro_Arqueologico_de_la_Almoina_02.jpg"
+title = "File:Ungüentario y diota. Centro Arqueológico de la Almoina 02.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Ung%C3%BCentario_y_diota._Centro_Arqueol%C3%B3gico_de_la_Almoina_02.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1277
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/20_Vidrio_islamico_Bote_de_boca_de_seta_Centro_Arqueologico_de_.jpg"
+title = "File:Vidrio islámico. Bote de boca de seta. Centro Arqueológico de la Almoina.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Vidrio_isl%C3%A1mico._Bote_de_boca_de_seta._Centro_Arqueol%C3%B3gico_de_la_Almoina.jpg"
+author = "Dorieo"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 840
@@ -174,50 +271,27 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Centre_Arqueologic_de_l_Almoina_absis_d_epoca_visigotica.jpg"
-title = "File:Centre Arqueològic de l'Almoina, absis d'època visigòtica.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Centre_Arqueol%C3%B2gic_de_l%27Almoina%2C_absis_d%27%C3%A8poca_visig%C3%B2tica.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 722
-camera = [-6.83, 40.67]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Dama_de_la_Boatella_Centro_Arqueologico_de_la_Almoina.jpg"
-title = "File:Dama de la Boatella. Centro Arqueológico de la Almoina.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Dama_de_la_Boatella._Centro_Arqueol%C3%B3gico_de_la_Almoina.jpg"
-author = "Dorieo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Centro_Arqueologico_de_la_Almoina_Valencia.jpg"
-title = "File:Centro Arqueológico de la Almoina, Valencia.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Centro_Arqueol%C3%B3gico_de_la_Almoina%2C_Valencia.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
+file = "photos/21_Columnes_romanes_valencia.jpg"
+title = "File:Columnes romanes valencia.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Columnes_romanes_valencia.jpg"
+author = "Felivet"
+license = "Public domain"
 width = 1280
 height = 960
+camera = [-13.02, -8.02]
 exterior = "unknown"
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_At_Valencia_2025_097.jpg"
-title = "File:At Valencia 2025 097.jpg"
-url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_097.jpg"
-author = "Photograph by Mike Peel ( www.mikepeel.net )."
+file = "photos/22_Centro_Arqueologico_de_la_Almoina_13.jpg"
+title = "File:Centro Arqueológico de la Almoina 13.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Centro_Arqueol%C3%B3gico_de_la_Almoina_13.jpg"
+author = "Simon Burchell"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 853
+height = 1707
+camera = [24.72, 10.68]
 exterior = "unknown"
 selected = false
 side = ""

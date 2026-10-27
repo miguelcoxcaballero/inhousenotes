@@ -10,6 +10,8 @@ use super::{Hud, MapKind, Paths, RenderItem, RenderScene};
 
 pub struct WorldPlugin {
     pub map: MapKind,
+    /// Clock hour of the night content (`None`: daytime city).
+    pub hour: Option<f32>,
 }
 
 /// The loaded world description (spawns, lights, extent).
@@ -20,12 +22,14 @@ pub struct GameWorld {
     /// `desc.placements[0]` (to switch traffic light states).
     pub scene_base: usize,
     pub static_base: usize,
+    /// Built with the night content (lit windows and lamps).
+    pub night_content: bool,
 }
 
-fn load(map: MapKind, paths: &Paths) -> Result<WorldDescription, forja_world::WorldError> {
+fn load(map: MapKind, paths: &Paths, hour: Option<f32>) -> Result<WorldDescription, forja_world::WorldError> {
     let dl = &paths.downloaded;
     match map {
-        MapKind::Spain => SpanishCity::new(dl, paths.data.join("city/styles.toml")).build(),
+        MapKind::Spain => SpanishCity { hour, ..SpanishCity::new(dl, paths.data.join("city/styles.toml")) }.build(),
         MapKind::Track => TestTrack::default().build(),
         MapKind::Kit => KitCity::new(dl).build(),
         MapKind::Osm => OsmWorld::new(dl.join("map_miami_beach_osm/map.osm")).with_content(dl).build(),
@@ -44,7 +48,7 @@ impl Plugin for WorldPlugin {
 
     fn build(&self, app: &mut App) {
         let paths = app.world.res::<Paths>().clone();
-        let (desc, kind) = match load(self.map, &paths) {
+        let (desc, kind) = match load(self.map, &paths, self.hour) {
             Ok(d) => (d, self.map),
             Err(e) => {
                 log::warn!("{}: {e}; falling back to the test track", self.map.label());
@@ -69,6 +73,6 @@ impl Plugin for WorldPlugin {
         hud.map = kind.label().to_string();
         hud.attribution = desc.attribution.clone();
         log::info!("{}: {} placements, {} triangles", kind.label(), desc.placements.len(), desc.triangle_count());
-        app.insert_resource(GameWorld { desc, kind, scene_base, static_base });
+        app.insert_resource(GameWorld { desc, kind, scene_base, static_base, night_content: self.hour.is_some() });
     }
 }

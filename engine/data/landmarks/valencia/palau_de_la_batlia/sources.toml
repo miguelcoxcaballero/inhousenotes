@@ -35,7 +35,32 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Facana_del_palau_de_la_Batlia_de_Valencia.jpg"
+file = "photos/02_Palau_de_la_Batlia_Bandera_Ucrainesa.jpg"
+title = "File:Palau de la Batlia - Bandera Ucraïnesa.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_la_Batlia_-_Bandera_Ucra%C3%AFnesa.jpg"
+author = "Francesc Fort"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 961
+camera = [-35.52, 86.13]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/03_Palau_de_la_Batlia_o_Jaudenes_Valencia.jpg"
+title = "File:Palau de la Batlia o Jàudenes, València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_la_Batlia_o_J%C3%A0udenes%2C_Val%C3%A8ncia.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/04_Facana_del_palau_de_la_Batlia_de_Valencia.jpg"
 title = "File:Façana del palau de la Batlia de València.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_del_palau_de_la_Batlia_de_Val%C3%A8ncia.jpg"
 author = "Joanbanjo"
@@ -47,44 +72,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Palau_de_la_Batlia_Bandera_Ucrainesa.jpg"
-title = "File:Palau de la Batlia - Bandera Ucraïnesa.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_la_Batlia_-_Bandera_Ucra%C3%AFnesa.jpg"
-author = "Francesc Fort"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 961
-camera = [-35.52, 86.13]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/04_Palau_de_la_Batlia_o_Jaudenes_Valencia.jpg"
-title = "File:Palau de la Batlia o Jàudenes, València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_la_Batlia_o_J%C3%A0udenes%2C_Val%C3%A8ncia.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/05_Edifcio_de_la_ciudad.jpg"
-title = "File:Edifcio de la ciudad.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Edifcio_de_la_ciudad.JPG"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/06_At_Valencia_2025_179.jpg"
+file = "photos/05_At_Valencia_2025_179.jpg"
 title = "File:At Valencia 2025 179.jpg"
 url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_179.jpg"
 author = "Photograph by Mike Peel ( www.mikepeel.net )."
@@ -92,31 +80,43 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 camera = [-6.02, 39.69]
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_412_Palau_de_la_Batlia_pl_Manises_Valencia_seu_de_la_Diputac.jpg"
+file = "photos/06_412_Palau_de_la_Batlia_pl_Manises_Valencia_seu_de_la_Diputac.jpg"
 title = "File:412 Palau de la Batlia, pl. Manises (València), seu de la Diputació Provincial.jpg"
 url = "https://commons.wikimedia.org/wiki/File:412_Palau_de_la_Batlia%2C_pl._Manises_%28Val%C3%A8ncia%29%2C_seu_de_la_Diputaci%C3%B3_Provincial.jpg"
 author = "Enric"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Valencia_palau_de_la_Batlia.jpg"
+file = "photos/07_Valencia_palau_de_la_Batlia.jpg"
 title = "File:València, palau de la Batlia.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia%2C_palau_de_la_Batlia.jpg"
 author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 857
-exterior = "unknown"
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/08_Escut_del_palau_de_la_Batlia_Valencia.jpg"
+title = "File:Escut del palau de la Batlia, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Escut_del_palau_de_la_Batlia%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1073
+exterior = true
 selected = false
 side = ""
 
@@ -128,19 +128,7 @@ author = "Joanbanjo"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 877
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Escut_del_palau_de_la_Batlia_Valencia.jpg"
-title = "File:Escut del palau de la Batlia, València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Escut_del_palau_de_la_Batlia%2C_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1073
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 

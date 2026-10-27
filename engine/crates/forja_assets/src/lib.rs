@@ -55,6 +55,11 @@ pub struct MeshData {
     pub aabb: Aabb,
     /// Simplified index lists (LOD 1, 2, ...) over the same vertices.
     pub lods: Vec<Vec<u32>>,
+    /// Switch LODs together with the other `lod_sync` primitives of the same
+    /// mesh (a tree's trunk and crown): the renderer picks one level for all
+    /// of them from their summed triangle counts and joint bounds, so a
+    /// mid-detail trunk never stands under a billboard crown.
+    pub lod_sync: bool,
 }
 
 impl MeshData {
@@ -463,6 +468,7 @@ pub fn load_gltf(path: &Path) -> Result<SceneData, AssetError> {
                 }),
                 aabb: Aabb::EMPTY,
                 lods: Vec::new(),
+                lod_sync: false,
             };
             md.finalize();
             prims.push(md);

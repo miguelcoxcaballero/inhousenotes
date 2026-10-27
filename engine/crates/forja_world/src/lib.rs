@@ -27,6 +27,7 @@ pub use kit::KitCity;
 pub use library::ContentLibrary;
 pub use osm::OsmWorld;
 pub use spain::{CityTrees, SpanishCity};
+pub use forja_city::{CityLight, LightKind, NightState};
 pub use terrain::TerrainWorld;
 pub use track::TestTrack;
 
@@ -77,6 +78,10 @@ pub struct WorldDescription {
     pub spawns: Vec<SpawnPoint>,
     /// Street lights and other static lamps: `(position, color)`.
     pub lights: Vec<(forja_math::Vec3, forja_math::Vec3)>,
+    /// Night content lights of procedural cities (lamps, lit windows,
+    /// shops, signs, floodlights, signals) for the hour the world was built
+    /// at; empty by day (see [`SpanishCity::hour`]).
+    pub night_lights: Vec<CityLight>,
     /// Half size of the playable area (XZ).
     pub extent: Vec2,
     /// Credits required by the data licenses.
