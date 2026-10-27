@@ -84,7 +84,55 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Valencia_Iglesia_de_Sant_Valeri_i_Sant_Vicent_Martir_06.jpg"
+file = "photos/06_Esglesia_de_sant_Valeri_de_Russafa_cupula_a_la_capcalera.jpg"
+title = "File:Església de sant Valeri de Russafa, cúpula a la capçalera.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_de_sant_Valeri_de_Russafa%2C_c%C3%BApula_a_la_cap%C3%A7alera.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 938
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_Valencia_Iglesia_de_Sant_Valeri_i_Sant_Vicent_Martir_03.jpg"
+title = "File:Valencia - Iglesia de Sant Valeri i Sant Vicent Màrtir 03.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Iglesia_de_Sant_Valeri_i_Sant_Vicent_M%C3%A0rtir_03.jpg"
+author = "Zarateman"
+license = "CC0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/08_Russafa_Esglesia_Portada.jpg"
+title = "File:Russafa. Església. Portada.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Russafa._Esgl%C3%A9sia._Portada.jpg"
+author = "Enrique Íñiguez Rodríguez ( Qoan )"
+license = "CC BY-SA 3.0"
+width = 960
+height = 1280
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/09_Cupula_de_l_esglesia_de_sant_Valeri_i_sant_Vicent_Russafa.jpg"
+title = "File:Cúpula de l'església de sant Valeri i sant Vicent, Russafa.JPG"
+url = "https://commons.wikimedia.org/wiki/File:C%C3%BApula_de_l%27esgl%C3%A9sia_de_sant_Valeri_i_sant_Vicent%2C_Russafa.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 884
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/10_Valencia_Iglesia_de_Sant_Valeri_i_Sant_Vicent_Martir_06.jpg"
 title = "File:Valencia - Iglesia de Sant Valeri i Sant Vicent Màrtir 06.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Iglesia_de_Sant_Valeri_i_Sant_Vicent_M%C3%A0rtir_06.jpg"
 author = "Zarateman"
@@ -96,19 +144,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Russafa_Esglesia_Sants.jpg"
-title = "File:Russafa. Església. Sants.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Russafa._Esgl%C3%A9sia._Sants.jpg"
-author = "Enrique Íñiguez Rodríguez ( Qoan )"
-license = "CC BY-SA 3.0"
-width = 960
-height = 1280
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Campanar_i_facana_de_l_esglesia_de_sant_Valeri_des_de_baix_R.jpg"
+file = "photos/11_Campanar_i_facana_de_l_esglesia_de_sant_Valeri_des_de_baix_R.jpg"
 title = "File:Campanar i façana de l'església de sant Valeri des de baix, Russafa.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Campanar_i_fa%C3%A7ana_de_l%27esgl%C3%A9sia_de_sant_Valeri_des_de_baix%2C_Russafa.JPG"
 author = "Joanbanjo"
@@ -120,7 +156,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_Campanar_de_l_esglesia_de_sant_Valeri_Russafa.jpg"
+file = "photos/12_Valencia_Iglesia_de_Sant_Valeri_i_Sant_Vicent_Martir_07.jpg"
+title = "File:Valencia - Iglesia de Sant Valeri i Sant Vicent Màrtir 07.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Iglesia_de_Sant_Valeri_i_Sant_Vicent_M%C3%A0rtir_07.jpg"
+author = "Zarateman"
+license = "CC0"
+width = 1280
+height = 1712
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/13_Campanar_de_l_esglesia_de_sant_Valeri_Russafa.jpg"
 title = "File:Campanar de l'església de sant Valeri, Russafa.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Campanar_de_l%27esgl%C3%A9sia_de_sant_Valeri%2C_Russafa.JPG"
 author = "Joanbanjo"
@@ -132,86 +180,26 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/10_Valencia_Iglesia_de_Sant_Valeri_i_Sant_Vicent_Martir_03.jpg"
-title = "File:Valencia - Iglesia de Sant Valeri i Sant Vicent Màrtir 03.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Iglesia_de_Sant_Valeri_i_Sant_Vicent_M%C3%A0rtir_03.jpg"
-author = "Zarateman"
-license = "CC0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Campanar_i_mercat_Russafa.jpg"
-title = "File:Campanar i mercat, Russafa.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Campanar_i_mercat%2C_Russafa.JPG"
+file = "photos/14_Part_superior_del_campanar_de_l_esglesia_de_sant_Valeri_i_sa.jpg"
+title = "File:Part superior del campanar de l'església de sant Valeri i sant Vicent, Russafa.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Part_superior_del_campanar_de_l%27esgl%C3%A9sia_de_sant_Valeri_i_sant_Vicent%2C_Russafa.JPG"
 author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 945
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_Nadal_a_Russafa.jpg"
-title = "File:Nadal a Russafa.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Nadal_a_Russafa.jpg"
-author = "Vlcongaku"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Russafa_Esglesia_Placa_commemorant_l_annexio.jpg"
-title = "File:Russafa. Església. Placa commemorant l'annexió.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Russafa._Esgl%C3%A9sia._Placa_commemorant_l%27annexi%C3%B3.jpg"
-author = "Enrique Íñiguez Rodríguez ( Qoan )"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
+height = 2140
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_Esglesia_de_sant_Valeri_de_Russafa_cupula_a_la_capcalera.jpg"
-title = "File:Església de sant Valeri de Russafa, cúpula a la capçalera.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_de_sant_Valeri_de_Russafa%2C_c%C3%BApula_a_la_cap%C3%A7alera.JPG"
+file = "photos/15_Facana_de_l_esglesia_de_sant_Valer_de_Russafa_i_arbre_de_Nad.jpg"
+title = "File:Façana de l'església de sant Valer de Russafa i arbre de Nadal.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_de_l%27esgl%C3%A9sia_de_sant_Valer_de_Russafa_i_arbre_de_Nadal.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 938
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Cupula_de_l_esglesia_de_sant_Valeri_i_sant_Vicent_Russafa.jpg"
-title = "File:Cúpula de l'església de sant Valeri i sant Vicent, Russafa.JPG"
-url = "https://commons.wikimedia.org/wiki/File:C%C3%BApula_de_l%27esgl%C3%A9sia_de_sant_Valeri_i_sant_Vicent%2C_Russafa.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 884
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_Valencia_Iglesia_de_Sant_Valeri_i_Sant_Vicent_Martir_07.jpg"
-title = "File:Valencia - Iglesia de Sant Valeri i Sant Vicent Màrtir 07.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Iglesia_de_Sant_Valeri_i_Sant_Vicent_M%C3%A0rtir_07.jpg"
-author = "Zarateman"
-license = "CC0"
-width = 1280
-height = 1712
-exterior = "unknown"
+height = 1999
+exterior = true
 selected = false
 side = ""
 

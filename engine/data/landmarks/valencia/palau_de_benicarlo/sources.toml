@@ -34,7 +34,67 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Torre_del_palau_de_Benicarlo_Valencia.jpg"
+file = "photos/02_Palau_de_Benicarlo_galeria_d_arquets.jpg"
+title = "File:Palau de Benicarló, galeria d'arquets.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_Benicarl%C3%B3%2C_galeria_d%27arquets.JPG"
+author = "Joanbanjo"
+license = "Public domain"
+width = 1280
+height = 826
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/03_Galeria_d_arquets_del_palau_de_Benicarlo_Valencia.jpg"
+title = "File:Galeria d'arquets del palau de Benicarló, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Galeria_d%27arquets_del_palau_de_Benicarl%C3%B3%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/04_Valencia_palazzo_bogia_de_Benicarlo_01_m.jpg"
+title = "File:Valencia, palazzo bogia (de Benicarló) 01 m.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia%2C_palazzo_bogia_%28de_Benicarl%C3%B3%29_01_m.jpg"
+author = "Francesco Bini"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1561
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_Corts_val.jpg"
+title = "File:Corts val.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Corts_val.jpg"
+author = "Felivet"
+license = "Public domain"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Palau_de_Benicarlo_P1390972.jpg"
+title = "File:Palau de Benicarló P1390972.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_Benicarl%C3%B3_P1390972.JPG"
+author = "Pere prlpz ( talk )"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_Torre_del_palau_de_Benicarlo_Valencia.jpg"
 title = "File:Torre del palau de Benicarló, València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Torre_del_palau_de_Benicarl%C3%B3%2C_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -46,7 +106,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Les_Corts_del_Pais_Valencia_1.jpg"
+file = "photos/08_Les_Corts_del_Pais_Valencia_1.jpg"
 title = "File:Les Corts del País Valencià 1.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Les_Corts_del_Pa%C3%ADs_Valenci%C3%A0_1.jpg"
 author = "No machine-readable author provided. Martorell assumed (based on copyright claims)."
@@ -58,7 +118,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Facana_de_Les_Corts_del_Pais_Valencia.jpg"
+file = "photos/09_Facana_de_Les_Corts_del_Pais_Valencia.jpg"
 title = "File:Façana de Les Corts del País Valencià.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_de_Les_Corts_del_Pa%C3%ADs_Valenci%C3%A0.jpg"
 author = "No machine-readable author provided. Martorell assumed (based on copyright claims)."
@@ -70,19 +130,55 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Valencia_Micalet_des_del_Palau_de_les_Corts.jpg"
-title = "File:València. Micalet des del Palau de les Corts.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia._Micalet_des_del_Palau_de_les_Corts.JPG"
-author = "Enrique Íñiguez Rodríguez ( Qoan )"
-license = "CC BY-SA 3.0"
+file = "photos/10_25_12_2021_in_Valencia_20.jpg"
+title = "File:25.12.2021 in Valencia. 20.jpg"
+url = "https://commons.wikimedia.org/wiki/File:25.12.2021_in_Valencia._20.jpg"
+author = "Holger Uwe Schmitt"
+license = "CC BY-SA 4.0"
 width = 1280
-height = 1707
+height = 741
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Entrada_a_les_Corts_del_Pais_Valencia.jpg"
+file = "photos/11_Valencia_palazzo_bogia_de_Benicarlo_02_m.jpg"
+title = "File:Valencia, palazzo bogia (de Benicarló) 02 m.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia%2C_palazzo_bogia_%28de_Benicarl%C3%B3%29_02_m.jpg"
+author = "Francesco Bini"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1991
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/12_Palau_de_Benicarlo_P1390971.jpg"
+title = "File:Palau de Benicarló P1390971.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_Benicarl%C3%B3_P1390971.JPG"
+author = "Pere prlpz ( talk )"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/13_Valencia_Palau_de_les_Corts.jpg"
+title = "File:València. Palau de les Corts.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia._Palau_de_les_Corts.JPG"
+author = "Enrique Íñiguez Rodríguez ( Qoan )"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/14_Entrada_a_les_Corts_del_Pais_Valencia.jpg"
 title = "File:Entrada a les Corts del País Valencià.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Entrada_a_les_Corts_del_Pa%C3%ADs_Valenci%C3%A0.jpg"
 author = "No machine-readable author provided. Martorell assumed (based on copyright claims)."
@@ -94,7 +190,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_525_Palau_de_Benicarlo_pl_Sant_Llorenc_Valencia_seu_de_les_C.jpg"
+file = "photos/15_525_Palau_de_Benicarlo_pl_Sant_Llorenc_Valencia_seu_de_les_C.jpg"
 title = "File:525 Palau de Benicarló, pl. Sant Llorenç (València), seu de les Corts.jpg"
 url = "https://commons.wikimedia.org/wiki/File:525_Palau_de_Benicarl%C3%B3%2C_pl._Sant_Lloren%C3%A7_%28Val%C3%A8ncia%29%2C_seu_de_les_Corts.jpg"
 author = "Enric"
@@ -106,7 +202,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Facana_de_Les_Corts_del_Pais_Valencia_2.jpg"
+file = "photos/16_Facana_de_Les_Corts_del_Pais_Valencia_2.jpg"
 title = "File:Façana de Les Corts del País Valencià 2.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_de_Les_Corts_del_Pa%C3%ADs_Valenci%C3%A0_2.jpg"
 author = ""
@@ -114,102 +210,6 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Placa_commemorativa_al_Palau_de_Benicarlo_de_Valencia.jpg"
-title = "File:Placa commemorativa al Palau de Benicarló de València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Placa_commemorativa_al_Palau_de_Benicarl%C3%B3_de_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "Public domain"
-width = 1280
-height = 960
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Valencia_palazzo_bogia_de_Benicarlo_01_m.jpg"
-title = "File:Valencia, palazzo bogia (de Benicarló) 01 m.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia%2C_palazzo_bogia_%28de_Benicarl%C3%B3%29_01_m.jpg"
-author = "Francesco Bini"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1561
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Corts_val.jpg"
-title = "File:Corts val.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Corts_val.jpg"
-author = "Felivet"
-license = "Public domain"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_Palau_de_Benicarlo_P1390972.jpg"
-title = "File:Palau de Benicarló P1390972.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_Benicarl%C3%B3_P1390972.JPG"
-author = "Pere prlpz ( talk )"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Palau_de_Benicarlo_galeria_d_arquets.jpg"
-title = "File:Palau de Benicarló, galeria d'arquets.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_Benicarl%C3%B3%2C_galeria_d%27arquets.JPG"
-author = "Joanbanjo"
-license = "Public domain"
-width = 1280
-height = 826
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_25_12_2021_in_Valencia_20.jpg"
-title = "File:25.12.2021 in Valencia. 20.jpg"
-url = "https://commons.wikimedia.org/wiki/File:25.12.2021_in_Valencia._20.jpg"
-author = "Holger Uwe Schmitt"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 741
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Valencia_palazzo_bogia_de_Benicarlo_02_m.jpg"
-title = "File:Valencia, palazzo bogia (de Benicarló) 02 m.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia%2C_palazzo_bogia_%28de_Benicarl%C3%B3%29_02_m.jpg"
-author = "Francesco Bini"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1991
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_Palau_de_Benicarlo_P1390971.jpg"
-title = "File:Palau de Benicarló P1390971.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_Benicarl%C3%B3_P1390971.JPG"
-author = "Pere prlpz ( talk )"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-exterior = "unknown"
 selected = false
 side = ""
 

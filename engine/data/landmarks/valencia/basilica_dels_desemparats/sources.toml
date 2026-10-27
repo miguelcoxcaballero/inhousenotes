@@ -23,14 +23,14 @@ catastro_floor_area = { value = 1486.0, unit = "m2", source = "https://www1.sede
 catastro_floors_max = { value = 2, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 3 parts" }
 
 [[photo]]
-file = "photos/01_Cimborrio_octogonal_gotico_sobre_el_crucero_de_la_catedral_d.jpg"
-title = "File:Cimborrio octogonal gótico, sobre el crucero de la catedral de Valencia, España, Spain.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Cimborrio_octogonal_g%C3%B3tico%2C_sobre_el_crucero_de_la_catedral_de_Valencia%2C_Espa%C3%B1a%2C_Spain.JPG"
+file = "photos/01_Cupula_azulada_de_los_Desamparados_a_la_sombra_del_cimborrio.jpg"
+title = "File:Cúpula azulada de los Desamparados, a la sombra del cimborrio de la catedral de Valencia, España, Spain.JPG"
+url = "https://commons.wikimedia.org/wiki/File:C%C3%BApula_azulada_de_los_Desamparados%2C_a_la_sombra_del_cimborrio_de_la_catedral_de_Valencia%2C_Espa%C3%B1a%2C_Spain.JPG"
 author = "CARLOS TEIXIDOR CADENAS"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 960
-camera = [-46.11, 102.28]
+camera = [-50.17, 102.4]
 heading = 45.0
 exterior = true
 selected = false

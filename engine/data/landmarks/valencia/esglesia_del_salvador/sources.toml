@@ -21,13 +21,13 @@ catastro_floor_area = { value = 1028.0, unit = "m2", source = "https://www1.sede
 catastro_floors_max = { value = 3, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 3 parts" }
 
 [[photo]]
-file = "photos/01_Santissim_Crist_del_Salvador_P1130818.jpg"
-title = "File:Santíssim Crist del Salvador P1130818.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Sant%C3%ADssim_Crist_del_Salvador_P1130818.JPG"
+file = "photos/01_Santissim_Crist_del_Salvador_P1130817.jpg"
+title = "File:Santíssim Crist del Salvador P1130817.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Sant%C3%ADssim_Crist_del_Salvador_P1130817.JPG"
 author = "Pere López"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 1707
+height = 960
 exterior = true
 selected = false
 side = ""
@@ -69,7 +69,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Fachada_de_la_Iglesia_de_El_Salvador_Valencia.jpg"
+file = "photos/05_Esglesia_del_Salvador_Valencia_02.jpg"
+title = "File:Església del Salvador, València 02.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_del_Salvador%2C_Val%C3%A8ncia_02.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Fachada_de_la_Iglesia_de_El_Salvador_Valencia.jpg"
 title = "File:Fachada de la Iglesia de El Salvador, Valencia.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Fachada_de_la_Iglesia_de_El_Salvador%2C_Valencia.jpg"
 author = "19Tarrestnom65"
@@ -81,19 +93,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_173_Esglesia_del_Salvador_Valencia_campanar.jpg"
-title = "File:173 Església del Salvador (València), campanar.jpg"
-url = "https://commons.wikimedia.org/wiki/File:173_Esgl%C3%A9sia_del_Salvador_%28Val%C3%A8ncia%29%2C_campanar.jpg"
+file = "photos/07_172_Esglesia_del_Salvador_Valencia_campanar_i_absis.jpg"
+title = "File:172 Església del Salvador (València), campanar i absis.jpg"
+url = "https://commons.wikimedia.org/wiki/File:172_Esgl%C3%A9sia_del_Salvador_%28Val%C3%A8ncia%29%2C_campanar_i_absis.jpg"
 author = "Enric"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 1707
+height = 960
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Esglesia_salvador.jpg"
+file = "photos/08_Esglesia_salvador.jpg"
 title = "File:Església salvador.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_salvador.jpg"
 author = "Felivet"
@@ -105,7 +117,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Facana_i_portalada_lateral_restaurada_esglesia_del_Salvador_.jpg"
+file = "photos/09_Facana_i_portalada_lateral_restaurada_esglesia_del_Salvador_.jpg"
 title = "File:Façana i portalada lateral restaurada, església del Salvador de València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_i_portalada_lateral_restaurada%2C_esgl%C3%A9sia_del_Salvador_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -117,7 +129,31 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_Valencia_Iglesia_del_Santisimo_Cristo_del_Salvador.jpg"
+file = "photos/10_Santissim_Crist_del_Salvador_P1130818.jpg"
+title = "File:Santíssim Crist del Salvador P1130818.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Sant%C3%ADssim_Crist_del_Salvador_P1130818.JPG"
+author = "Pere López"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/11_Esglesia_del_Salvador_Valencia_01.jpg"
+title = "File:Església del Salvador, València 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_del_Salvador%2C_Val%C3%A8ncia_01.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/12_Valencia_Iglesia_del_Santisimo_Cristo_del_Salvador.jpg"
 title = "File:Valencia.Iglesia del Santísimo Cristo del Salvador.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia.Iglesia_del_Sant%C3%ADsimo_Cristo_del_Salvador.jpg"
 author = "Consellería de Cultura"
@@ -129,7 +165,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/10_Facana_dels_peus_de_l_esglesia_del_Salvador_Valencia.jpg"
+file = "photos/13_173_Esglesia_del_Salvador_Valencia_campanar.jpg"
+title = "File:173 Església del Salvador (València), campanar.jpg"
+url = "https://commons.wikimedia.org/wiki/File:173_Esgl%C3%A9sia_del_Salvador_%28Val%C3%A8ncia%29%2C_campanar.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/14_Facana_dels_peus_de_l_esglesia_del_Salvador_Valencia.jpg"
 title = "File:Façana dels peus de l'església del Salvador, València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_dels_peus_de_l%27esgl%C3%A9sia_del_Salvador%2C_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -141,7 +189,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/11_Esglesia_del_Salvador_de_Valencia_11.jpg"
+file = "photos/15_Esglesia_del_Salvador_de_Valencia_11.jpg"
 title = "File:Església del Salvador de València 11.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_del_Salvador_de_Val%C3%A8ncia_11.jpg"
 author = "19Tarrestnom65"
@@ -153,19 +201,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_Esglesia_del_Salvador_Valencia_02.jpg"
-title = "File:Església del Salvador, València 02.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_del_Salvador%2C_Val%C3%A8ncia_02.jpg"
-author = "Dorieo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Ninxol_de_la_facana_dels_peus_esglesia_del_Salvador_de_Valen.jpg"
+file = "photos/16_Ninxol_de_la_facana_dels_peus_esglesia_del_Salvador_de_Valen.jpg"
 title = "File:Nínxol de la façana dels peus, església del Salvador de València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:N%C3%ADnxol_de_la_fa%C3%A7ana_dels_peus%2C_esgl%C3%A9sia_del_Salvador_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -173,42 +209,6 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 864
 exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Santissim_Crist_del_Salvador_P1130817.jpg"
-title = "File:Santíssim Crist del Salvador P1130817.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Sant%C3%ADssim_Crist_del_Salvador_P1130817.JPG"
-author = "Pere López"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Esglesia_del_Salvador_Valencia_01.jpg"
-title = "File:Església del Salvador, València 01.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_del_Salvador%2C_Val%C3%A8ncia_01.jpg"
-author = "Dorieo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_172_Esglesia_del_Salvador_Valencia_campanar_i_absis.jpg"
-title = "File:172 Església del Salvador (València), campanar i absis.jpg"
-url = "https://commons.wikimedia.org/wiki/File:172_Esgl%C3%A9sia_del_Salvador_%28Val%C3%A8ncia%29%2C_campanar_i_absis.jpg"
-author = "Enric"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = "unknown"
 selected = false
 side = ""
 

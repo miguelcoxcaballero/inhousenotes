@@ -48,170 +48,38 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Vista_de_les_llotges_del_teatre_Olympia_Valencia.jpg"
-title = "File:Vista de les llotges del teatre Olympia, València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Vista_de_les_llotges_del_teatre_Olympia%2C_Val%C3%A8ncia.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/04_Teatre_Olympia_de_Valencia_butaques.jpg"
-title = "File:Teatre Olympia de València, butaques.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Teatre_Olympia_de_Val%C3%A8ncia%2C_butaques.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 874
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/05_Teatro_Olympia_Valencia.jpg"
-title = "File:Teatro Olympia Valencia.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Teatro_Olympia_Valencia.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/06_Tramolla_del_Teatro_Olimpia_de_Valencia_01.jpg"
-title = "File:Tramolla del Teatro Olimpia de Valencia 01.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Tramolla_del_Teatro_Olimpia_de_Valencia_01.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/07_095_Edifici_Olympia_c_Sant_Vicent_Martir_44_Valencia.jpg"
+file = "photos/03_095_Edifici_Olympia_c_Sant_Vicent_Martir_44_Valencia.jpg"
 title = "File:095 Edifici Olympia, c. Sant Vicent Màrtir 44 (València).jpg"
 url = "https://commons.wikimedia.org/wiki/File:095_Edifici_Olympia%2C_c._Sant_Vicent_M%C3%A0rtir_44_%28Val%C3%A8ncia%29.jpg"
 author = "Enric"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_096_Teatre_Olympia_c_Sant_Vicent_Martir_44_Valencia.jpg"
+file = "photos/04_096_Teatre_Olympia_c_Sant_Vicent_Martir_44_Valencia.jpg"
 title = "File:096 Teatre Olympia, c. Sant Vicent Màrtir 44 (València).jpg"
 url = "https://commons.wikimedia.org/wiki/File:096_Teatre_Olympia%2C_c._Sant_Vicent_M%C3%A0rtir_44_%28Val%C3%A8ncia%29.jpg"
 author = "Enric"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 1707
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_Relleu_de_dansants_al_vestibul_del_teatre_Olympia_Valencia.jpg"
-title = "File:Relleu de dansants al vestíbul del teatre Olympia, València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Relleu_de_dansants_al_vest%C3%ADbul_del_teatre_Olympia%2C_Val%C3%A8ncia.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Taquilla_del_teatre_Olympia_de_Valencia.jpg"
-title = "File:Taquilla del teatre Olympia de València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Taquilla_del_teatre_Olympia_de_Val%C3%A8ncia.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1920
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Tramolla_del_Teatro_Olimpia_de_Valencia_02.jpg"
-title = "File:Tramolla del Teatro Olimpia de Valencia 02.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Tramolla_del_Teatro_Olimpia_de_Valencia_02.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_Olympia.jpg"
+file = "photos/05_Olympia.jpg"
 title = "File:Olympia.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Olympia.JPG"
 author = "Suckfromthecan"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Butaques_del_teatre_Olympia_de_Valencia.jpg"
-title = "File:Butaques del teatre Olympia de València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Butaques_del_teatre_Olympia_de_Val%C3%A8ncia.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 868
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Seients_del_teatre_Olympia_de_Valencia.jpg"
-title = "File:Seients del teatre Olympia de València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Seients_del_teatre_Olympia_de_Val%C3%A8ncia.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Tramolla_del_Teatro_Olimpia_de_Valencia_03.jpg"
-title = "File:Tramolla del Teatro Olimpia de Valencia 03.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Tramolla_del_Teatro_Olimpia_de_Valencia_03.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_Llotges_del_teatre_Olympia_de_Valencia.jpg"
-title = "File:Llotges del teatre Olympia de València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Llotges_del_teatre_Olympia_de_Val%C3%A8ncia.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 

@@ -43,26 +43,98 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Entrada_al_CAHH_con_obra_de_Jame_Plensa.jpg"
-title = "File:Entrada al CAHH con obra de Jame Plensa.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Entrada_al_CAHH_con_obra_de_Jame_Plensa.jpg"
-author = "Jlafuentesanchez"
-license = "CC BY-SA 4.0"
+file = "photos/03_Galeria_d_arquets_del_palau_dels_Valeriola_Valencia.jpg"
+title = "File:Galeria d'arquets del palau dels Valeriola, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Galeria_d%27arquets_del_palau_dels_Valeriola%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
 width = 1280
-height = 1280
+height = 820
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Centro_de_arte_hortenisa_herrero.jpg"
-title = "File:Centro de arte hortenisa herrero.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Centro_de_arte_hortenisa_herrero.jpg"
-author = "Paul McCarron"
-license = "CC0"
+file = "photos/04_Palau_dels_Valeriola_amb_bastida.jpg"
+title = "File:Palau dels Valeriola amb bastida.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palau_dels_Valeriola_amb_bastida.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
 width = 1280
-height = 1475
-exterior = "unknown"
+height = 1913
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_116_Palau_dels_Valeriola_actual_Centre_d_Art_Hortensia_Herre.jpg"
+title = "File:116 Palau dels Valeriola, actual Centre d'Art Hortensia Herrero, c. Mar 31 (València).jpg"
+url = "https://commons.wikimedia.org/wiki/File:116_Palau_dels_Valeriola%2C_actual_Centre_d%27Art_Hortensia_Herrero%2C_c._Mar_31_%28Val%C3%A8ncia%29.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Portalada_del_palau_dels_Valeriola_Valencia.jpg"
+title = "File:Portalada del palau dels Valeriola, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Portalada_del_palau_dels_Valeriola%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 855
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_Palau_dels_Valeriola_de_Valencia_cornisa.jpg"
+title = "File:Palau dels Valeriola de València, cornisa.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palau_dels_Valeriola_de_Val%C3%A8ncia%2C_cornisa.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 864
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/08_Palau_dels_Valeriola_Valencia.jpg"
+title = "File:Palau dels Valeriola, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palau_dels_Valeriola%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1927
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/09_Facana_del_palau_dels_Valeriola_Valencia.jpg"
+title = "File:Façana del palau dels Valeriola, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_del_palau_dels_Valeriola%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 821
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/10_Palau_dels_Valeriola_de_Valencia.jpg"
+title = "File:Palau dels Valeriola de València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_dels_Valeriola_de_Val%C3%A8ncia.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
 selected = false
 side = ""
 

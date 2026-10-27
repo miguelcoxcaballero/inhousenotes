@@ -35,7 +35,20 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Finca_Roja_facana.jpg"
+file = "photos/02_Finca_Roja_Valencia_02.jpg"
+title = "File:Finca Roja, Valencia 02.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Finca_Roja%2C_Valencia_02.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+camera = [-152.34, -107.91]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/03_Finca_Roja_facana.jpg"
 title = "File:Finca Roja façana.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Finca_Roja_fa%C3%A7ana.JPG"
 author = "Joanbanjo"
@@ -47,27 +60,14 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Finca_Roja_exterior.jpg"
-title = "File:Finca Roja exterior.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Finca_Roja_exterior.JPG"
+file = "photos/04_Fica_Roja_verd_roig.jpg"
+title = "File:Fica Roja verd roig.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Fica_Roja_verd_roig.JPG"
 author = "Joanbanjo"
 license = "Public domain"
 width = 1280
-height = 960
+height = 1707
 exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/04_Finca_Roja_Valencia_02.jpg"
-title = "File:Finca Roja, Valencia 02.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Finca_Roja%2C_Valencia_02.jpg"
-author = "Dorieo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-camera = [-152.34, -107.91]
-exterior = "unknown"
 selected = false
 side = ""
 
@@ -79,7 +79,7 @@ author = "Rafa Esteve"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 862
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
@@ -91,7 +91,7 @@ author = "Rafa Esteve"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 720
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
@@ -103,19 +103,19 @@ author = "Visentico / Sento"
 license = "CC BY-SA 2.0"
 width = 1280
 height = 1707
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Fica_Roja_verd_roig.jpg"
-title = "File:Fica Roja verd roig.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Fica_Roja_verd_roig.JPG"
+file = "photos/08_Finca_Roja_Valencia_Pais_Valencia.jpg"
+title = "File:Finca Roja València País Valencià.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Finca_Roja_Val%C3%A8ncia_Pa%C3%ADs_Valenci%C3%A0.JPG"
 author = "Joanbanjo"
 license = "Public domain"
 width = 1280
-height = 1707
-exterior = "unknown"
+height = 960
+exterior = true
 selected = false
 side = ""
 
@@ -127,7 +127,7 @@ author = "Carlesmari"
 license = "CC BY 3.0"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
@@ -139,7 +139,7 @@ author = "Nerika"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
@@ -152,19 +152,19 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 camera = [-152.34, -107.91]
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_Finca_Roja_Valencia_Pais_Valencia.jpg"
-title = "File:Finca Roja València País Valencià.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Finca_Roja_Val%C3%A8ncia_Pa%C3%ADs_Valenci%C3%A0.JPG"
+file = "photos/12_Finca_Roja_torreta.jpg"
+title = "File:Finca Roja torreta.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Finca_Roja_torreta.JPG"
 author = "Joanbanjo"
 license = "Public domain"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
@@ -176,7 +176,7 @@ author = "HarkHarken"
 license = "CC BY-SA 3.0"
 width = 960
 height = 720
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
@@ -188,19 +188,19 @@ author = "Rafa Esteve"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 853
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Finca_Roja_torreta.jpg"
-title = "File:Finca Roja torreta.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Finca_Roja_torreta.JPG"
+file = "photos/15_Finca_Roja_exterior.jpg"
+title = "File:Finca Roja exterior.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Finca_Roja_exterior.JPG"
 author = "Joanbanjo"
 license = "Public domain"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
@@ -213,7 +213,7 @@ license = "CC BY-SA 2.0"
 width = 1280
 height = 1707
 camera = [-23.14, -53.78]
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 

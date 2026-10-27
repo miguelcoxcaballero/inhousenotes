@@ -32,7 +32,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Facana_est_del_palau_de_congressos_Valencia.jpg"
+file = "photos/02_Palau_de_Congressos_de_Valencia_Pais_Valencia.jpg"
+title = "File:Palau de Congressos de València, País Valencià.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_Congressos_de_Val%C3%A8ncia%2C_Pa%C3%ADs_Valenci%C3%A0.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 863
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/03_Facana_est_del_palau_de_congressos_Valencia.jpg"
 title = "File:Façana est del palau de congressos, València.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_est_del_palau_de_congressos%2C_Val%C3%A8ncia.jpg"
 author = "Joanbanjo"
@@ -44,7 +56,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Facana_lateral_del_palau_de_congressos_de_Valencia.jpg"
+file = "photos/04_Valencia_Palacio_de_Congresos.jpg"
+title = "File:Valencia - Palacio de Congresos.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Palacio_de_Congresos.jpg"
+author = "Nuriaroche"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_Facana_lateral_del_palau_de_congressos_de_Valencia.jpg"
 title = "File:Façana lateral del palau de congressos de València.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_lateral_del_palau_de_congressos_de_Val%C3%A8ncia.jpg"
 author = "Joanbanjo"
@@ -56,7 +80,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Palacio_congresos_valencia_panoramica.jpg"
+file = "photos/06_Palacio_congresos_valencia_panoramica.jpg"
 title = "File:Palacio-congresos-valencia-panoramica.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Palacio-congresos-valencia-panoramica.jpg"
 author = "Nuriaroche"
@@ -68,30 +92,6 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Valencia_Palacio_de_Congresos.jpg"
-title = "File:Valencia - Palacio de Congresos.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Palacio_de_Congresos.jpg"
-author = "Nuriaroche"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/06_Auditori_2_del_palau_de_congressos_de_Valencia.jpg"
-title = "File:Auditori 2 del palau de congressos de València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Auditori_2_del_palau_de_congressos_de_Val%C3%A8ncia.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 883
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
 file = "photos/07_Palacio_de_Congresos_de_Valencia.jpg"
 title = "File:Palacio de Congresos de València.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Palacio_de_Congresos_de_Val%C3%A8ncia.jpg"
@@ -99,103 +99,55 @@ author = "Palacio de Congresos València"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 720
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Palau_de_Congressos_de_Valencia_2006.jpg"
-title = "File:Palau de Congressos de València, 2006.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_Congressos_de_Val%C3%A8ncia%2C_2006.JPG"
-author = "Carlesmari"
-license = "CC BY 3.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Lateral_del_palau_de_congressos_Valencia.jpg"
+file = "photos/08_Lateral_del_palau_de_congressos_Valencia.jpg"
 title = "File:Lateral del palau de congressos, València.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Lateral_del_palau_de_congressos%2C_Val%C3%A8ncia.jpg"
 author = "Joanbanjo"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 876
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/10_Vestibul_del_palau_de_congressos_Valencia.jpg"
-title = "File:Vestíbul del palau de congressos, València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Vest%C3%ADbul_del_palau_de_congressos%2C_Val%C3%A8ncia.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
+file = "photos/09_Palau_de_Congressos_de_Valencia_2006.jpg"
+title = "File:Palau de Congressos de València, 2006.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_Congressos_de_Val%C3%A8ncia%2C_2006.JPG"
+author = "Carlesmari"
+license = "CC BY 3.0"
 width = 1280
-height = 880
-exterior = "unknown"
+height = 960
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/11_Palau_de_Congressos_de_Valencia_Pais_Valencia.jpg"
-title = "File:Palau de Congressos de València, País Valencià.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_Congressos_de_Val%C3%A8ncia%2C_Pa%C3%ADs_Valenci%C3%A0.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 863
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_Palau_de_congressos_de_Valencia_portes.jpg"
+file = "photos/10_Palau_de_congressos_de_Valencia_portes.jpg"
 title = "File:Palau de congressos de València, portes.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Palau_de_congressos_de_Val%C3%A8ncia%2C_portes.jpg"
 author = "Joanbanjo"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 872
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Palau_de_congressos_de_Valencia_coberta_i_pilars.jpg"
+file = "photos/11_Palau_de_congressos_de_Valencia_coberta_i_pilars.jpg"
 title = "File:Palau de congressos de València, coberta i pilars.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Palau_de_congressos_de_Val%C3%A8ncia%2C_coberta_i_pilars.jpg"
 author = "Joanbanjo"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 2006
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Palau_de_congressos_de_Valencia_vestibul.jpg"
-title = "File:Palau de congressos de València, vestíbul.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_congressos_de_Val%C3%A8ncia%2C_vest%C3%ADbul.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1950
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Palau_de_congressos_de_Valencia_auditori_2.jpg"
-title = "File:Palau de congressos de València, auditori 2.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_congressos_de_Val%C3%A8ncia%2C_auditori_2.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 861
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 

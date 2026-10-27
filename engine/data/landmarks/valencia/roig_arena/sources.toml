@@ -34,7 +34,47 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Roig_Arena_Basket_Court.jpg"
+file = "photos/02_Roig_Arena_1492.jpg"
+title = "File:Roig Arena 1492.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Roig_Arena_1492.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+camera = [-121.3, -7.95]
+heading = 92.0
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/03_Roig_Arena_y_alrededores_03.jpg"
+title = "File:Roig Arena y alrededores 03.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Roig_Arena_y_alrededores_03.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/04_Parke_roig_arena.jpg"
+title = "File:Parke roig arena.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Parke_roig_arena.jpg"
+author = "Paul McCarron"
+license = "CC0"
+width = 1280
+height = 960
+camera = [-192.5, -169.07]
+heading = 138.9
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_Roig_Arena_Basket_Court.jpg"
 title = "File:Roig Arena Basket Court.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Roig_Arena_Basket_Court.jpg"
 author = "M4THIelBromista"
@@ -48,176 +88,100 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Roig_Arena_1492.jpg"
-title = "File:Roig Arena 1492.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Roig_Arena_1492.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-camera = [-121.3, -7.95]
-heading = 92.0
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/04_Roig_Arena_y_alrededores_03.jpg"
-title = "File:Roig Arena y alrededores 03.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Roig_Arena_y_alrededores_03.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/05_Roig_Arena_WOW_29_Valencia_01.jpg"
-title = "File:Roig Arena WOW 29 Valencia 01.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Roig_Arena_WOW_29_Valencia_01.jpg"
-author = "Byxelized"
-license = "CC BY 4.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/06_Nuevo_parque_frente_Roig_Arena_87.jpg"
-title = "File:Nuevo parque frente Roig Arena 87.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Nuevo_parque_frente_Roig_Arena_87.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/07_Roig_Arena_WOW_29_Valencia_02.jpg"
-title = "File:Roig Arena WOW 29 Valencia 02.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Roig_Arena_WOW_29_Valencia_02.jpg"
-author = "Byxelized"
-license = "CC BY 4.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Parke_roig_arena.jpg"
-title = "File:Parke roig arena.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Parke_roig_arena.jpg"
-author = "Paul McCarron"
-license = "CC0"
-width = 1280
-height = 960
-camera = [-192.5, -169.07]
-heading = 138.9
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_L_Alqueria_del_Basket_Roig_Arena.jpg"
-title = "File:L’Alqueria del Basket Roig Arena.jpg"
-url = "https://commons.wikimedia.org/wiki/File:L%E2%80%99Alqueria_del_Basket_Roig_Arena.jpg"
-author = "Byxelized"
-license = "CC0"
-width = 960
-height = 718
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Roig_Arena_y_alrededores_02.jpg"
-title = "File:Roig Arena y alrededores 02.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Roig_Arena_y_alrededores_02.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Roig_Arena_Valencia_Museo_Tienda.jpg"
+file = "photos/06_Roig_Arena_Valencia_Museo_Tienda.jpg"
 title = "File:Roig Arena Valencia Museo & Tienda.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Roig_Arena_Valencia_Museo_%26_Tienda.jpg"
 author = "Byxelized"
 license = "CC0"
 width = 960
 height = 711
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_Roig_Arena_Valencia.jpg"
+file = "photos/07_Roig_Arena_Valencia.jpg"
 title = "File:Roig Arena Valencia.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Roig_Arena_Valencia.jpg"
 author = "Byxelized"
 license = "CC0"
 width = 960
 height = 708
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Roig_Arena_00.jpg"
-title = "File:Roig Arena 00.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Roig_Arena_00.jpg"
+file = "photos/08_Roig_Arena_y_alrededores_02.jpg"
+title = "File:Roig Arena y alrededores 02.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Roig_Arena_y_alrededores_02.jpg"
 author = "19Tarrestnom65"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 960
-camera = [182.73, 562.42]
-heading = 343.6
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_Roig_Arena_Valencia_ESP_2025.jpg"
+file = "photos/09_Roig_Arena_Valencia_ESP_2025.jpg"
 title = "File:Roig Arena (Valencia, ESP) 2025.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Roig_Arena_%28Valencia%2C_ESP%29_2025.jpg"
 author = "Byxelized"
 license = "CC0"
 width = 960
 height = 589
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Roig_Arena_y_alrededores_01.jpg"
+file = "photos/10_Roig_Arena01.jpg"
+title = "File:Roig Arena01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Roig_Arena01.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+camera = [193.62, 548.88]
+heading = 343.8
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/11_Roig_Arena_y_alrededores_01.jpg"
 title = "File:Roig Arena y alrededores 01.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Roig_Arena_y_alrededores_01.jpg"
 author = "19Tarrestnom65"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 1707
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Roig_Arena_WOW_29_Valencia_03.jpg"
-title = "File:Roig Arena WOW 29 Valencia 03.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Roig_Arena_WOW_29_Valencia_03.jpg"
-author = "Byxelized"
-license = "CC BY 4.0"
+file = "photos/12_Roig_Arena_y_alrededores_05.jpg"
+title = "File:Roig Arena y alrededores 05.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Roig_Arena_y_alrededores_05.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/13_Roig_Arena_y_alrededores_06.jpg"
+title = "File:Roig Arena y alrededores 06.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Roig_Arena_y_alrededores_06.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
 selected = false
 side = ""
 
