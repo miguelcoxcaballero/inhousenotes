@@ -45,7 +45,7 @@ pub fn cylinder(b: &mut Builder, c: &Cylinder, cone: bool, sc: &Scope, o: &mut O
         return Err(Error::msg("cylinder has zero length"));
     }
     let r1 = c.radius_top.unwrap_or(if cone { 0.0 } else { c.radius });
-    let seg = c.segments.map(|s| s as usize).unwrap_or_else(|| b.segs(c.radius.max(r1), 8, 64)).max(3);
+    let seg = b.user_segs(c.segments, b.segs(c.radius.max(r1), 8, 64), 3, 512, "segments")?;
     let p = o.geo.get(sc.mat);
     if c.faceted {
         let axis = (e - a).normalize();
@@ -78,14 +78,14 @@ pub fn sphere(b: &mut Builder, s: &Sphere, sc: &Scope, o: &mut Out) -> Result<()
     };
     let lat = s.lat.unwrap_or([-90.0, 90.0]);
     let lon = s.lon.unwrap_or([0.0, 360.0]);
-    let nu = s.segments.map(|v| v as usize).unwrap_or_else(|| b.segs(r.max_element(), 16, 96));
+    let nu = b.user_segs(s.segments, b.segs(r.max_element(), 16, 96), 4, 512, "segments")?;
     let nv = (nu / 2).max(4);
     mesh::ellipsoid(o.geo.get(sc.mat), Vec3::from_array(s.center), r, (lon[0].to_radians(), lon[1].to_radians()), (lat[0].to_radians(), lat[1].to_radians()), nu, nv);
     Ok(())
 }
 
 pub fn torus(b: &mut Builder, t: &Torus, sc: &Scope, o: &mut Out) -> Result<()> {
-    let nu = t.segments.map(|v| v as usize).unwrap_or_else(|| b.segs(t.radius, 16, 96));
+    let nu = b.user_segs(t.segments, b.segs(t.radius, 16, 96), 4, 512, "segments")?;
     let mut p = Prim::default();
     mesh::torus(&mut p, Vec3::from_array(t.center), Vec3::from_array(t.axis.unwrap_or([0.0, 1.0, 0.0])), t.radius, t.tube, nu, b.segs(t.tube, 8, 24));
     o.geo.get(sc.mat).append(&p, &Mat4::IDENTITY);
@@ -101,7 +101,7 @@ pub fn lathe(b: &mut Builder, l: &Lathe, sc: &Scope, o: &mut Out) -> Result<()> 
     }
     let prof: Vec<Vec2> = l.profile.iter().map(|p| Vec2::new(p[0], p[1])).collect();
     let rmax = prof.iter().map(|p| p.x).fold(0.0, f32::max);
-    let seg = l.segments.map(|s| s as usize).unwrap_or_else(|| b.segs(rmax, 12, 96));
+    let seg = b.user_segs(l.segments, b.segs(rmax, 12, 96), 3, 512, "segments")?;
     let [a0, a1] = l.angle.unwrap_or([0.0, 360.0]);
     mesh::lathe(o.geo.get(sc.mat), Vec3::from_array(l.at), &prof, seg, a0.to_radians(), a1.to_radians());
     Ok(())
@@ -119,7 +119,16 @@ pub fn extrude(b: &mut Builder, x: &Extrude, sc: &Scope, o: &mut Out) -> Result<
     let start = if x.center { o0 - n * (x.length * 0.5) } else { o0 };
     let plane = Plane { o: start, u, v, n };
     for s in &shapes {
-        mesh::extrude_shape(o.geo.get(sc.mat), s, &plane, x.length);
+        if x.smooth.0 > 0.0 {
+            // Curved profiles (roof arcs, shells in section): smooth sides,
+            // crisp caps.
+            let mut p = crate::geom::Prim::default();
+            mesh::extrude_shape(&mut p, s, &plane, x.length);
+            mesh::auto_normals(&mut p, x.smooth.0.clamp(1.0, 89.0));
+            o.geo.get(sc.mat).append(&p, &forja_math::Mat4::IDENTITY);
+        } else {
+            mesh::extrude_shape(o.geo.get(sc.mat), s, &plane, x.length);
+        }
     }
     Ok(())
 }
@@ -199,6 +208,9 @@ pub fn loft(_b: &mut Builder, l: &Loft, sc: &Scope, o: &mut Out) -> Result<()> {
     }
     let centers: Vec<Vec3> = l.stations.iter().map(|s| Vec3::from_array(s.at)).collect();
     let n = centers.len();
+    if l.samples > 256 || l.stations.len() > 4096 {
+        return Err(Error::msg(format!("loft has {} stations x {} samples (max 4096 x 256)", l.stations.len(), l.samples)));
+    }
     let per = l.samples.max(1) as usize;
     let spans = if l.closed { n } else { n - 1 };
     let get = |i: isize| -> usize {
@@ -361,9 +373,15 @@ fn clip_poly(poly: &[V], n: Vec3, d: f32) -> Vec<V> {
 }
 
 pub fn shell(b: &mut Builder, s: &Shell, sc: &Scope, o: &mut Out) -> Result<()> {
+    if matches!(s.surface, SurfaceKind::Cylinder | SurfaceKind::Hypar | SurfaceKind::Cone) && s.v_range.is_some() {
+        b.warn(sc, format!("`v_range` has no effect on a {} shell (README: shell surfaces)", s.surface.name()));
+    }
     let r = s.radii.map(|r| r[0].max(r[1]).max(r[2])).or(s.radius).unwrap_or(5.0);
     let [nu, nv] = s.segments.unwrap_or([b.segs(r, 24, 160) as u32, (b.segs(r, 24, 160) / 2).max(12) as u32]);
-    let (nu, nv) = (nu.max(2) as usize, nv.max(2) as usize);
+    if !(2..=1024).contains(&nu) || !(2..=1024).contains(&nv) || nu as u64 * nv as u64 > 250_000 {
+        return Err(Error::msg(format!("segments = [{nu}, {nv}] is out of range: each 2..=1024 and at most 250000 cells")));
+    }
+    let (nu, nv) = (nu as usize, nv as usize);
     let c = Vec3::from_array(s.center);
     let closed_u = matches!(s.surface, SurfaceKind::Torus | SurfaceKind::Ellipsoid | SurfaceKind::Superellipsoid | SurfaceKind::Paraboloid | SurfaceKind::Cone) && s.u_range.is_none_or(|u| (u[1] - u[0]).abs() >= 359.99);
     let w = nu + 1;

@@ -4,7 +4,8 @@
 
 use forja_math::{Vec2, Vec3};
 
-use crate::kit::{Mat, hex};
+use crate::kit::{Mat, Rgb, hex};
+use crate::nightlight::{CityLight, LightKind};
 use crate::modules::{self, P};
 use crate::texgen::{SignKind, SignShape};
 
@@ -88,6 +89,27 @@ fn vehicle_head(p: &mut P, at: Vec3, state: Aspect) {
     }
 }
 
+/// Night glow of the lit lenses of [`traffic_light`] (same arguments), in
+/// its local frame: small colored lights in front of each lit head.
+pub fn signal_lights(state: Aspect, ped_walk: bool, ped_yaw: f32, arm: f32) -> Vec<CityLight> {
+    let h = 3.4;
+    let (c, y) = match state {
+        Aspect::Red => (Vec3::new(1.0, 0.04, 0.01), 0.32),
+        Aspect::Amber => (Vec3::new(1.0, 0.35, 0.0), 0.0),
+        Aspect::Green => (Vec3::new(0.05, 1.0, 0.35), -0.32),
+    };
+    let mut heads = vec![if arm > 0.0 { v(arm - 0.2, h - 0.75, 0.12) } else { v(0.0, h - 0.7, 0.16) }];
+    if arm > 0.0 {
+        heads.push(v(0.0, 2.3, 0.16));
+    }
+    let mut out: Vec<CityLight> = heads.into_iter().map(|at| CityLight::spot(LightKind::Signal, at + v(0.0, y, 0.2), Vec3::Z, 60.0, c, 5.0, 6.0).with_size(0.2)).collect();
+    let pc = if ped_walk { Vec3::new(0.1, 1.0, 0.45) } else { Vec3::new(1.0, 0.06, 0.02) };
+    let py = 2.15 + if ped_walk { 0.04 + 0.125 } else { 0.33 + 0.125 };
+    let dir = forja_math::Quat::from_rotation_y(ped_yaw) * Vec3::Z;
+    out.push(CityLight::spot(LightKind::Signal, v(0.0, py, 0.0) + dir * 0.45, dir, 60.0, pc, 2.5, 4.0).with_size(0.2));
+    out
+}
+
 /// Road sign on a galvanized post, plate facing +Z.
 pub fn sign(kind: SignKind, height: f32) -> P {
     let mut p = P::new();
@@ -119,6 +141,16 @@ pub fn sign(kind: SignKind, height: f32) -> P {
 /// Cast-iron street lamp: Madrid "fernandina" (one lantern) or the
 /// Valencian candelabra (four lanterns on scrolled arms).
 pub fn street_lamp(candelabra: bool) -> P {
+    street_lamp_lit(candelabra, hex(0xffd9a0))
+}
+
+/// Height of the bulbs of [`street_lamp`] above its base.
+pub fn street_lamp_bulb(candelabra: bool) -> f32 {
+    if candelabra { 4.55 } else { 3.62 }
+}
+
+/// [`street_lamp`] whose lanterns glow with `glow` at night.
+pub fn street_lamp_lit(candelabra: bool, glow: Rgb) -> P {
     let mut p = P::new();
     let iron = Mat::Iron;
     let h = if candelabra { 4.2 } else { 3.3 };
@@ -131,17 +163,25 @@ pub fn street_lamp(candelabra: bool) -> P {
             let tip = d * 0.75 + v(0.0, h + 0.15, 0.0);
             p.get(iron).beam(v(0.0, h - 0.3, 0.0), tip, Vec3::Y.cross(d), 0.035, 0.035, 1.0);
             p.get(iron).beam(v(0.0, h + 0.1, 0.0), tip, Vec3::Y.cross(d), 0.025, 0.025, 1.0);
-            modules::lantern(&mut p, tip + v(0.0, 0.02, 0.0), 0.95, false);
+            modules::lantern_lit(&mut p, tip + v(0.0, 0.02, 0.0), 0.95, false, glow);
         }
         p.get(iron).lathe(v(0.0, h, 0.0), &[(0.07, 0.0), (0.05, 0.4), (0.09, 0.5), (0.0, 0.7)], 10);
     } else {
-        modules::lantern(&mut p, v(0.0, h, 0.0), 1.35, false);
+        modules::lantern_lit(&mut p, v(0.0, h, 0.0), 1.35, false, glow);
     }
     p
 }
 
 /// Tall modern road light for avenues (báculo) reaching over the road (+Z).
 pub fn road_light() -> P {
+    road_light_lit(hex(0xfff1dc))
+}
+
+/// Head of [`road_light`] relative to its base (the arm reaches +Z).
+pub const ROAD_LIGHT_HEAD: Vec3 = Vec3::new(0.0, 9.47, 1.8);
+
+/// [`road_light`] with its LED panel in `glow`.
+pub fn road_light_lit(glow: Rgb) -> P {
     let mut p = P::new();
     let g = Mat::Galvanized;
     p.get(g).cone(v(0.0, 0.0, 0.0), v(0.0, 9.0, 0.0), 0.11, 0.06, 12, true);
@@ -153,7 +193,7 @@ pub fn road_light() -> P {
         prev = q;
     }
     p.get(Mat::Plastic(hex(0x5a5e62))).aabox(prev + v(-0.18, -0.12, -0.1), prev + v(0.18, 0.02, 0.6), 1.0);
-    p.get(Mat::Lamp(hex(0xfff1dc))).aabox(prev + v(-0.14, -0.13, 0.0), prev + v(0.14, -0.12, 0.5), 1.0);
+    p.get(Mat::Lamp(glow)).aabox(prev + v(-0.14, -0.13, 0.0), prev + v(0.14, -0.12, 0.5), 1.0);
     p
 }
 
@@ -337,6 +377,11 @@ pub fn pharmacy_cross() -> P {
 /// Projecting blade sign (banderola) carrying the centre of a shop-sign
 /// atlas row, double-sided, perpendicular to the facade.
 pub fn blade_sign(row: u8) -> P {
+    blade_sign_lit(row, false)
+}
+
+/// [`blade_sign`] with its faces lit (night).
+pub fn blade_sign_lit(row: u8, lit: bool) -> P {
     let mut p = P::new();
     let g = Mat::Iron;
     p.get(g).beam(v(0.0, 0.36, 0.0), v(0.0, 0.36, 1.05), Vec3::Y, 0.03, 0.03, 1.0);
@@ -345,7 +390,7 @@ pub fn blade_sign(row: u8) -> P {
     p.get(Mat::Plastic(hex(0x1a1a1a))).aabox(v(-0.035, y0 - 0.02, z0 - 0.02), v(0.035, y1 + 0.02, z1 + 0.02), 1.0);
     let (r0, r1) = (row as f32 / 16.0, (row as f32 + 1.0) / 16.0);
     let (ua, ub) = (0.34, 0.66);
-    let face = p.get(Mat::ShopSign);
+    let face = p.get(if lit { Mat::ShopSignLit } else { Mat::ShopSign });
     face.quad_uv([v(0.04, y0, z1), v(0.04, y0, z0), v(0.04, y1, z0), v(0.04, y1, z1)], [Vec2::new(ua, r1), Vec2::new(ub, r1), Vec2::new(ub, r0), Vec2::new(ua, r0)]);
     face.quad_uv([v(-0.04, y0, z0), v(-0.04, y0, z1), v(-0.04, y1, z1), v(-0.04, y1, z0)], [Vec2::new(ua, r1), Vec2::new(ub, r1), Vec2::new(ub, r0), Vec2::new(ua, r0)]);
     p

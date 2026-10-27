@@ -21,6 +21,13 @@ catastro_refcat = { value = "5820501YJ2752B", source = "https://www1.sedecatastr
 catastro_built = { value = 1860, source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5820501&rc2=YJ2752B", note = "Catastro dateOfConstruction (often the last major works)" }
 catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5820501&rc2=YJ2752B" }
 catastro_floor_area = { value = 16100.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5820501&rc2=YJ2752B", note = "Catastro officialArea (gross floor area)" }
+height = { value = 18.3, unit = "m", source = "photo 19 (Czeva), frontal, scaled by the 3.2 m bay", note = "top of the crown balustrade; the cornice top is 17.4 m. es/en Wikipedia give 17.50 m" }
+outer_diameter = { value = 98.0, unit = "m", source = "OSM relation 12942182 outer ring (r 48.96 +/- 0.7) and PNOA orthophoto", note = "Wikipedia's 108 m is not supported by the plan data" }
+ruedo_diameter = { value = 47.8, unit = "m", source = "PNOA orthophoto (311 px x 0.154 m)", note = "es.wikipedia: 47.5 m today, 52 m originally" }
+sides = { value = 48, source = "https://es.wikipedia.org/wiki/Plaza_de_toros_de_Valencia" }
+arches = { value = 384, source = "https://en.wikipedia.org/wiki/Plaza_de_Toros_de_Valencia", note = "4 tiers x 96 bays, 2 bays per side" }
+tiers = { value = 4, source = "https://es.wikipedia.org/wiki/Plaza_de_toros_de_Valencia", note = "segmental arches on the ground floor, round arches on the three upper galleries, stone balustrade crown" }
+capacity = { value = 12884, source = "https://es.wikipedia.org/wiki/Plaza_de_toros_de_Valencia" }
 catastro_floors_max = { value = 4, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 28 parts" }
 
 [[photo]]
@@ -32,8 +39,9 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 898
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
+note = "exterior oblique of the north-west arc from the Xàtiva/Alacant corner; best close view of the four tiers, pilasters, consoles and crown"
 
 [[photo]]
 file = "photos/02_Valencia_l_Eixample_Placa_de_Bous_de_Valencia_RI_51_0004917_.jpg"
@@ -45,8 +53,9 @@ width = 1280
 height = 654
 camera = [-0.14, -95.85]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
+note = "main front on Carrer de Xàtiva, frontal"
 
 [[photo]]
 file = "photos/03_Valencia_l_Eixample_sculptuur_voor_Placa_de_Bous_IMG_2738_20.jpg"
@@ -59,7 +68,8 @@ height = 2010
 camera = [49.46, -35.57]
 exterior = true
 selected = false
-side = ""
+side = "ne"
+note = "statue in front of the north-east side; wall only at the edge"
 
 [[photo]]
 file = "photos/04_Plaza_de_toros_de_Valencia_5.jpg"
@@ -70,8 +80,9 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
+note = "main front from across Xàtiva, wide angle"
 
 [[photo]]
 file = "photos/05_Valencia_l_Eixample_sculptuur_voor_Placa_de_Bous_IMG_2752_20.jpg"
@@ -84,7 +95,8 @@ height = 2205
 camera = [49.46, -35.57]
 exterior = true
 selected = false
-side = ""
+side = "ne"
+note = "statue close-up"
 
 [[photo]]
 file = "photos/06_Plaza_de_Toros_panoramio_2.jpg"
@@ -96,8 +108,9 @@ width = 1280
 height = 960
 camera = [-57.92, -108.16]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
+note = "north-west arc from Xàtiva, fisheye"
 
 [[photo]]
 file = "photos/07_Carril_bici_al_carrer_Alacant_Valencia_01.jpg"
@@ -109,8 +122,9 @@ width = 1280
 height = 1707
 camera = [-43.47, 59.73]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
+note = "west/south-west arc from Carrer d'Alacant"
 
 [[photo]]
 file = "photos/08_2020_02_27_Anell_Ciclista_al_carrer_Xatica_de_Valencia_06.jpg"
@@ -123,7 +137,8 @@ height = 1707
 camera = [97.26, -36.92]
 exterior = true
 selected = false
-side = ""
+side = "ne"
+note = "ring small in the background"
 
 [[photo]]
 file = "photos/09_007_Monument_a_Manuel_Granero_davant_la_placa_de_bous_c_Xati.jpg"
@@ -135,8 +150,9 @@ width = 1280
 height = 1707
 camera = [-9.39, -3.04]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
+note = "close-up of the tiers by the main gate (Granero monument)"
 
 [[photo]]
 file = "photos/10_Recorte_Valencia_2008.jpg"
@@ -147,9 +163,10 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 camera = [0.26, -0.19]
-exterior = true
-selected = false
-side = ""
+exterior = false
+selected = true
+side = "interior"
+note = "ruedo and red barrera from the stands"
 
 [[photo]]
 file = "photos/11_Estacio_del_Nord_i_placa_de_bous_Valencia.jpg"
@@ -160,8 +177,9 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
+note = "west side on Carrer d'Alacant next to the Estació del Nord"
 
 [[photo]]
 file = "photos/12_Placa_de_Bous_3.jpg"
@@ -172,8 +190,9 @@ license = "CC BY-SA 3.0 es"
 width = 1280
 height = 1920
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
+note = "tier close-up, vertical"
 
 [[photo]]
 file = "photos/13_Placa_de_bous_de_Valencia_14.jpg"
@@ -186,6 +205,7 @@ height = 1707
 exterior = true
 selected = false
 side = ""
+note = "commemorative plaque"
 
 [[photo]]
 file = "photos/14_Dia_de_la_bandera.jpg"
@@ -197,7 +217,8 @@ width = 1280
 height = 960
 exterior = true
 selected = false
-side = ""
+side = "nw"
+note = "mostly the square"
 
 [[photo]]
 file = "photos/15_Acto_plaza_de_Toros_de_Valencia_PPCV.jpg"
@@ -207,9 +228,10 @@ author = "Partido Popular Comunitat Valenciana"
 license = "CC BY 2.0"
 width = 1280
 height = 712
-exterior = true
-selected = false
-side = ""
+exterior = false
+selected = true
+side = "interior"
+note = "tendidos and covered galleries full of people"
 
 [[photo]]
 file = "photos/16_Visentico_Sento_7187523918.jpg"
@@ -220,8 +242,9 @@ license = "CC BY 2.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
+note = "upper three tiers and crown balustrade, frontal"
 
 [[photo]]
 file = "photos/catastro_5820501YJ2752B.jpg"
@@ -232,8 +255,158 @@ license = "Catastro open data (attribution required)"
 width = 1600
 height = 1200
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
+note = "Catastro facade photo from Xàtiva"
+
+[[photo]]
+file = "photos/17_Plaza_toros_Valencia_Enrique_Dans.jpg"
+title = "File:Plaza toros Valencia.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Plaza_toros_Valencia.jpg"
+author = "Enrique Dans from Madrid, Spain"
+license = "CC BY 2.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "nw"
+note = "close oblique of the four tiers (archivolts, impost strips, lattices)"
+
+[[photo]]
+file = "photos/18_Valenciaarena1.jpg"
+title = "File:Valenciaarena1.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Valenciaarena1.JPG"
+author = "Ernmuhl at lb.wikipedia"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+camera = [-58.0, -45.0]
+exterior = true
+selected = true
+side = "w"
+note = "west arc on Carrer d'Alacant looking south, Estació del Nord on the right"
+
+[[photo]]
+file = "photos/19_Plaza_de_toros_de_Valencia_002.jpg"
+title = "File:Plaza de toros de Valencia 002.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Plaza_de_toros_de_Valencia_002.jpg"
+author = "Czeva"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 576
+camera = [22.0, -89.0]
+exterior = true
+selected = true
+side = "n"
+note = "frontal panorama from Xàtiva; used to measure tier heights (18.8 px/m)"
+
+[[photo]]
+file = "photos/20_Plaza_de_Toros_calle_Xativa_Prades.jpg"
+title = "File:Plaza de Toros, calle Xátiva, ciudad de Valencia, España.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Plaza_de_Toros,_calle_Xátiva,_ciudad_de_Valencia,_España.jpg"
+author = "Juan Emilio Prades Bel"
+license = "CC BY 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "n"
+note = "north front from the Xàtiva metro entrance"
+
+[[photo]]
+file = "photos/21_Columns_and_Arches.jpg"
+title = "File:Plaza de Toros de Valencia - Columns and Arches.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Plaza_de_Toros_de_Valencia_-_Columns_and_Arches.jpg"
+author = "MCAE Consulting"
+license = "CC0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "n"
+note = "close-up of arches, pilasters, consoles and crown from below"
+
+[[photo]]
+file = "photos/22_Valencia_trip53.jpg"
+title = "File:Valencia trip53.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_trip53.jpg"
+author = "Tibor Kovacs"
+license = "CC BY 2.0"
+width = 1280
+height = 796
+camera = [13.0, -78.0]
+exterior = true
+selected = true
+side = "n"
+note = "frontal from Xàtiva"
+
+[[photo]]
+file = "photos/23_006_Placa_de_Bous_Xativa_Alacant.jpg"
+title = "File:006 Plaça de Bous, c. Xàtiva - c. Alacant (València).jpg"
+url = "https://commons.wikimedia.org/wiki/File:006_Plaça_de_Bous,_c._Xàtiva_-_c._Alacant_(València).jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "nw"
+note = "north-west arc from the Xàtiva/Alacant corner"
+
+[[photo]]
+file = "photos/24_Plaza01_interior.jpg"
+title = "File:Plaza01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Plaza01.jpg"
+author = "Museo Taurino"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 722
+camera = [-10.7, 39.2]
+exterior = false
+selected = true
+side = "interior"
+note = "ruedo, barrera, callejón, tendidos with aisles and vomitories, covered galleries, from the top of the south tendido"
+
+[[photo]]
+file = "photos/25_Plaza_de_toros_de_Valencia_001_interior.jpg"
+title = "File:Plaza de toros de Valencia 001.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Plaza_de_toros_de_Valencia_001.jpg"
+author = "Czeva"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1707
+camera = [24.1, 4.6]
+exterior = false
+selected = true
+side = "interior"
+note = "barrera and burladeros, tendidos and the two covered galleries with cast-iron columns"
+
+[[photo]]
+file = "photos/27_Plaza_de_toros_de_Valencia_3.jpg"
+title = "File:Plaza de toros de Valencia 3.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Plaza_de_toros_de_Valencia_3.JPG"
+author = "Dorieo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "n"
+note = "north front from Xàtiva"
+
+[[photo]]
+file = "photos/26_PNOA_orthophoto.jpg"
+title = "PNOA máxima actualidad orthophoto (IGN WMS OI.OrthoimageCoverage)"
+url = "https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=OI.OrthoimageCoverage&SRS=EPSG:25830&BBOX=725640.99,4371769.49,725798.53,4371927.32&WIDTH=1024&HEIGHT=1026&FORMAT=image/jpeg"
+author = "PNOA cedido por © Instituto Geográfico Nacional de España"
+license = "CC BY 4.0 (scne.es)"
+width = 1024
+height = 1026
+camera = [0.0, 0.0]
+exterior = true
+selected = true
+side = "aerial"
+note = "Vertical aerial, 0.154 m/px, north up, same bbox as the Catastro WMS plan; gives the ruedo (47.8 m), roof ring (r 42-49), 24 aisles and 12 vomitories. A concert stage stands in the ruedo."
 
 [[plan]]
 file = "plans/01_2_02_PLAZA_DE_TOROS_firmado.jpg"
@@ -261,6 +434,11 @@ author = "Dirección General del Catastro"
 license = "Catastro open data (attribution required)"
 kind = "catastro"
 notes = "Cadastral map, EPSG:25830 bbox [725640.99, 4371769.49, 725798.53, 4371927.32], 0.080 m/px, north up; roman numerals = floors above ground; parcels 5820501YJ2752B"
+
+[[reference]]
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+title = "IGN PNOA orthophoto WMS"
+notes = "aerial used for the plan of the stands, ruedo and roof ring (photo 26)"
 
 [[reference]]
 url = "https://www.wikidata.org/wiki/Q526528"
