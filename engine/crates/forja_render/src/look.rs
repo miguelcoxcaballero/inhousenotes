@@ -471,12 +471,12 @@ impl CameraFx {
     }
 
     /// Depth of field: `resolved` (HDR) -> `out`.
-    pub fn dof_pass(&self, enc: &mut wgpu::CommandEncoder, out: &wgpu::TextureView, frame_bind: &wgpu::BindGroup, t: &CameraFxTargets) {
+    pub fn dof_pass(&self, enc: &mut wgpu::CommandEncoder, out: &wgpu::TextureView, frame_bind: &wgpu::BindGroup, t: &CameraFxTargets, timestamps: Option<wgpu::RenderPassTimestampWrites<'_>>) {
         let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("dof"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: out, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store } })],
             depth_stencil_attachment: None,
-            timestamp_writes: None,
+            timestamp_writes: timestamps,
             occlusion_query_set: None,
             multiview_mask: None,
         });
@@ -487,12 +487,12 @@ impl CameraFx {
     }
 
     /// Grade, grain, vignette and aberration: `ldr2` -> `target`.
-    pub fn camera_pass(&self, enc: &mut wgpu::CommandEncoder, target: &wgpu::TextureView, t: &CameraFxTargets) {
+    pub fn camera_pass(&self, enc: &mut wgpu::CommandEncoder, target: &wgpu::TextureView, t: &CameraFxTargets, timestamps: Option<wgpu::RenderPassTimestampWrites<'_>>) {
         let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("camera"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: target, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store } })],
             depth_stencil_attachment: None,
-            timestamp_writes: None,
+            timestamp_writes: timestamps,
             occlusion_query_set: None,
             multiview_mask: None,
         });

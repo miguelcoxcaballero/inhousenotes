@@ -5,6 +5,12 @@
 //! cargo run --release -p sandbox -- --map osm --screenshot shot.png --script drive
 //! ```
 //! Maps: `kit` (Kenney city), `osm` (Miami Beach), `track`, `terrain`.
+//!
+//! Performance: `--preset low|medium|high|ultra` (or `FORJA_PRESET`),
+//! `--bench N` renders N real-time frames headless after the warm-up and
+//! prints CPU/GPU timings (`--csv file.csv` logs every frame). In the game,
+//! F11 shows the frame profiler and F9 the graphics options
+//! (`data/graphics.toml`).
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -15,6 +21,7 @@ use forja_input::{ActionMap, Input};
 use forja_math::{Vec2, Vec3};
 use forja_render::{DrawInstance, FrameDesc, ModelHandle, Renderer};
 use sandbox::game::{self, Hud, Intent, MapKind, Paths, RenderScene};
+use sandbox::perf::{self, FrameSample, PerfState};
 use sandbox::ui;
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, ElementState, MouseButton, WindowEvent};
@@ -31,6 +38,9 @@ struct Args {
     height: u32,
     hours: Option<f32>,
     camera: Option<(Vec3, Vec3)>,
+    preset: Option<forja_render::Preset>,
+    bench: usize,
+    csv: Option<PathBuf>,
 }
 
 fn parse_vec3(s: &str) -> Option<Vec3> {
@@ -39,7 +49,7 @@ fn parse_vec3(s: &str) -> Option<Vec3> {
 }
 
 fn parse_args() -> Args {
-    let mut a = Args { map: MapKind::Spain, screenshot: None, script: "idle".into(), frames: 90, width: 1600, height: 900, hours: None, camera: None };
+    let mut a = Args { map: MapKind::Spain, screenshot: None, script: "idle".into(), frames: 90, width: 1600, height: 900, hours: None, camera: None, preset: None, bench: 0, csv: None };
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
     let mut eye = None;
@@ -59,6 +69,9 @@ fn parse_args() -> Args {
             "--time" => a.hours = v.parse().ok(),
             "--eye" => eye = parse_vec3(&v),
             "--look" => look = parse_vec3(&v),
+            "--preset" => a.preset = Some(perf::parse_preset(&v).unwrap_or_else(|| panic!("unknown preset {v}"))),
+            "--bench" => a.bench = v.parse().expect("bench frames"),
+            "--csv" => a.csv = Some(v.into()),
             _ => {
                 eprintln!("unknown argument {}", args[i]);
                 std::process::exit(2);
@@ -106,9 +119,18 @@ fn fetch_missing_assets() {
 struct Extract {
     handles: Vec<ModelHandle>,
     env_loaded: bool,
+    /// Static items handed to the renderer's culling grid.
+    statics_uploaded: Option<(usize, usize)>,
+    /// `FORJA_LEGACY_STATICS=1`: resubmit the whole world every frame as
+    /// before the static grid (for before/after measurements).
+    legacy: bool,
 }
 
 impl Extract {
+    fn new() -> Self {
+        Self { handles: Vec::new(), env_loaded: false, statics_uploaded: None, legacy: std::env::var_os("FORJA_LEGACY_STATICS").is_some() }
+    }
+
     fn frame(&mut self, renderer: &mut Renderer, app: &App) -> FrameDesc {
         let rs = app.world.res::<RenderScene>();
         if !self.env_loaded {
@@ -124,8 +146,38 @@ impl Extract {
             let m = &rs.models[self.handles.len()];
             self.handles.push(renderer.upload_scene(m));
         }
-        let mut frame = FrameDesc { camera: rs.camera, env: rs.env.clone(), lights: rs.lights.clone(), lines: rs.lines.clone(), time: app.world.res::<forja_core::Time>().elapsed as f32, ..Default::default() };
-        for item in rs.statics.iter().chain(rs.dynamic.iter()) {
+        // The world never moves: it is uploaded once into the renderer's
+        // static culling grid; only dynamic items are resubmitted per frame.
+        // Items listed in `volatile_statics` (signal heads) change at run
+        // time and are submitted per frame instead.
+        let key = (rs.statics.len(), rs.volatile_statics.len());
+        if !self.legacy && self.statics_uploaded != Some(key) {
+            let statics: Vec<DrawInstance> = rs
+                .statics
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| rs.volatile_statics.binary_search(i).is_err())
+                .map(|(_, item)| DrawInstance { model: self.handles[item.model], transform: item.transform, nodes: item.nodes.clone(), joints: None, tint: item.tint, cast_shadows: true })
+                .collect();
+            renderer.set_static_instances(&statics);
+            self.statics_uploaded = Some(key);
+        }
+        let mut frame = FrameDesc { camera: rs.camera, env: rs.env.clone(), lights: rs.lights.clone(), local_lights: rs.local_lights.clone(), lines: rs.lines.clone(), time: app.world.res::<forja_core::Time>().elapsed as f32, ..Default::default() };
+        if frame.env.camera == forja_render::CameraModel::Night {
+            // Gameplay lights (headlights, brake lights, signals, muzzle
+            // flashes) are tuned in the legacy units of the old fixed night
+            // exposure (5.5); under the night pipeline's camera they become
+            // clustered lights with the same brightness relative to it.
+            let k = 5.5 / frame.env.exposure.max(1e-3);
+            frame.local_lights.extend(frame.lights.drain(..).map(|p| {
+                let l = forja_render::Light::from(p);
+                forja_render::Light { intensity: l.intensity * k, ..l }
+            }));
+        }
+        let legacy_statics = if self.legacy { &rs.statics[..] } else { &[] };
+        let volatile = if self.legacy { &[][..] } else { &rs.volatile_statics[..] };
+        frame.instances.reserve(rs.dynamic.len() + legacy_statics.len() + volatile.len());
+        for item in legacy_statics.iter().chain(volatile.iter().filter_map(|&i| rs.statics.get(i))).chain(rs.dynamic.iter()) {
             frame.instances.push(DrawInstance { model: self.handles[item.model], transform: item.transform, nodes: item.nodes.clone(), joints: item.joints.clone(), tint: item.tint, cast_shadows: true });
         }
         frame
@@ -159,11 +211,115 @@ fn script_intent(script: &str, frame: usize, i: &mut Intent) {
     }
 }
 
+/// Real-time frames headless: simulation, extraction and rendering of each
+/// frame timed separately (the GPU is waited for, so `frame` includes it).
+fn bench(args: &Args, app: &mut App, renderer: &mut Renderer, extract: &mut Extract, perf_state: &mut PerfState) {
+    let (w, h) = (args.width, args.height);
+    renderer.resize(w, h);
+    let tex = renderer.device.create_texture(&forja_render::wgpu::TextureDescriptor {
+        label: Some("bench"),
+        size: forja_render::wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: forja_render::wgpu::TextureDimension::D2,
+        format: renderer.output_format,
+        usage: forja_render::wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let view = tex.create_view(&Default::default());
+    // Warm-up: static upload, pipelines, first readbacks.
+    let frame = extract.frame(renderer, app);
+    renderer.render(&frame, &view);
+    let _ = renderer.device.poll(forja_render::wgpu::PollType::wait_indefinitely());
+    let mut acc: Vec<FrameSample> = Vec::new();
+    for f in 0..args.bench {
+        let t = Instant::now();
+        script_intent(&args.script, args.frames + f, app.world.res_mut::<Intent>());
+        app.update_with_dt(1.0 / 60.0);
+        if let Some(cam) = args.camera {
+            app.world.res_mut::<game::camera::CameraRig>().fixed = Some(cam);
+        }
+        let sim_ms = t.elapsed().as_secs_f32() * 1000.0;
+        let te = Instant::now();
+        let frame = extract.frame(renderer, app);
+        let extract_ms = te.elapsed().as_secs_f32() * 1000.0;
+        let tr = Instant::now();
+        renderer.render(&frame, &view);
+        let render_cpu_ms = tr.elapsed().as_secs_f32() * 1000.0;
+        let _ = renderer.device.poll(forja_render::wgpu::PollType::wait_indefinitely());
+        let timings = app.world.res::<forja_core::SystemTimings>();
+        let sample = FrameSample {
+            frame_ms: t.elapsed().as_secs_f32() * 1000.0,
+            sim_ms,
+            extract_ms,
+            render_cpu_ms,
+            ui_ms: 0.0,
+            gpu_ms: renderer.profiler.total_ms,
+            systems: timings.last.clone(),
+            render_scopes: renderer.cpu.scopes.clone(),
+            gpu_passes: renderer.profiler.last.clone(),
+            fixed_steps: timings.fixed_steps,
+            stats: renderer.stats,
+            render_scale: 1.0,
+            heavy: Vec::new(),
+        };
+        acc.push(sample.clone());
+        perf_state.record(sample);
+    }
+    perf_state.stop_csv();
+    print_bench(&acc);
+    for shadow in [false, true] {
+        let list: Vec<String> = renderer.heaviest_meshes(10, shadow).iter().map(|(n, k, t)| format!("{n} x{k} {:.2}M", *t as f64 / 1e6)).collect();
+        println!("  heaviest {}: {}", if shadow { "shadow" } else { "camera" }, list.join(", "));
+    }
+}
+
+fn print_bench(acc: &[FrameSample]) {
+    let n = acc.len().max(1) as f32;
+    let mean = |f: &dyn Fn(&FrameSample) -> f32| acc.iter().map(f).sum::<f32>() / n;
+    let mut frames: Vec<f32> = acc.iter().map(|s| s.frame_ms).collect();
+    frames.sort_by(f32::total_cmp);
+    let p = |q: f32| frames.get(((frames.len() as f32 - 1.0) * q) as usize).copied().unwrap_or(0.0);
+    println!("bench {} frames: frame {:.2} ms (p50 {:.2}, p95 {:.2}) | sim {:.2} | extract {:.2} | render cpu {:.2} | gpu {:.2} ms", acc.len(), mean(&|s| s.frame_ms), p(0.5), p(0.95), mean(&|s| s.sim_ms), mean(&|s| s.extract_ms), mean(&|s| s.render_cpu_ms), mean(&|s| s.gpu_ms));
+    let avg_list = |get: &dyn Fn(&FrameSample) -> &Vec<(&'static str, f32)>| {
+        let mut names: Vec<&'static str> = Vec::new();
+        for s in acc {
+            for (k, _) in get(s) {
+                if !names.contains(k) {
+                    names.push(k);
+                }
+            }
+        }
+        names.iter().map(|k| (*k, acc.iter().map(|s| get(s).iter().find(|e| e.0 == *k).map_or(0.0, |e| e.1)).sum::<f32>() / n)).collect::<Vec<_>>()
+    };
+    let fmt = |v: Vec<(&'static str, f32)>| v.iter().filter(|e| e.1 >= 0.01).map(|(k, ms)| format!("{k} {ms:.2}")).collect::<Vec<_>>().join(", ");
+    println!("  systems: {}", fmt(avg_list(&|s| &s.systems)));
+    println!("  render cpu: {}", fmt(avg_list(&|s| &s.render_scopes)));
+    println!("  gpu passes: {}", fmt(avg_list(&|s| &s.gpu_passes)));
+    if let Some(s) = acc.last() {
+        let st = &s.stats;
+        println!(
+            "  last: draws {} shadow draws {} | instances {} shadow {} culled {} | tris {:.2} M shadow {:.2} M | lights {} | static {} in {} cells | vram ~{:.0} MB",
+            st.draw_calls,
+            st.shadow_draws,
+            st.instances_drawn,
+            st.shadow_instances,
+            st.instances_culled,
+            st.triangles as f64 / 1e6,
+            st.shadow_triangles as f64 / 1e6,
+            st.lights,
+            st.static_instances,
+            st.static_cells,
+            st.vram_mb
+        );
+    }
+}
+
 fn run_headless(args: &Args) {
     let instance = forja_render::create_instance();
     let mut renderer = Renderer::new(&instance, None).expect("GPU");
     let t_build = Instant::now();
-    let mut app = game::build(args.map, paths());
+    let mut app = game::build_at(args.map, paths(), args.hours);
     log::info!("world built in {:.2?}", t_build.elapsed());
     if let Some(h) = args.hours {
         let t = app.world.res_mut::<game::env::TimeOfDay>();
@@ -173,7 +329,25 @@ fn run_headless(args: &Args) {
     let ctx = egui::Context::default();
     let mut egui_renderer = egui_wgpu::Renderer::new(&renderer.device, renderer.output_format, Default::default());
     let mut ui_state = ui::UiState { adapter: renderer.adapter_info.name.clone(), fps: 60.0, ..Default::default() };
-    let mut extract = Extract { handles: Vec::new(), env_loaded: false };
+    let mut extract = Extract::new();
+    let mut perf_state = PerfState::load(&paths().data.join("graphics.toml"), &renderer);
+    if let Some(p) = args.preset {
+        perf_state.cfg.apply_preset(p);
+    }
+    if args.preset.is_some() || std::env::var_os("FORJA_PRESET").is_some() {
+        // Headless captures keep the High defaults unless a preset is asked.
+        renderer.apply_graphics(&perf_state.cfg);
+        // Explicit overrides still win over the preset.
+        if let Ok(fx) = std::env::var("FORJA_FX") {
+            renderer.settings.apply_fx(&fx);
+        }
+        if let Some(n) = std::env::var("FORJA_MAX_TEXTURE").ok().and_then(|v| v.parse().ok()) {
+            renderer.settings.max_texture_size = n;
+        }
+    }
+    if let Some(c) = &args.csv {
+        perf_state.start_csv(c);
+    }
     let t0 = Instant::now();
     for f in 0..args.frames {
         script_intent(&args.script, f, app.world.res_mut::<Intent>());
@@ -185,6 +359,9 @@ fn run_headless(args: &Args) {
     let sim_ms = t0.elapsed().as_secs_f32() * 1000.0 / args.frames as f32;
     // One more frame so a fixed camera takes effect.
     app.update_with_dt(1.0 / 60.0);
+    if args.bench > 0 {
+        bench(args, &mut app, &mut renderer, &mut extract, &mut perf_state);
+    }
     let t_up = Instant::now();
     let frame = extract.frame(&mut renderer, &app);
     log::info!("GPU upload in {:.2?}", t_up.elapsed());
@@ -249,6 +426,7 @@ struct Gpu {
     renderer: Renderer,
     egui_state: egui_winit::State,
     egui_renderer: egui_wgpu::Renderer,
+    present_modes: Vec<forja_render::wgpu::PresentMode>,
 }
 
 struct Sandbox {
@@ -263,6 +441,7 @@ struct Sandbox {
     last: Instant,
     fps_acc: (f32, u32),
     want_screenshot: bool,
+    perf: Option<PerfState>,
 }
 
 impl Sandbox {
@@ -271,11 +450,11 @@ impl Sandbox {
         let map_text = std::fs::read_to_string(paths.data.join("input.toml")).unwrap_or_default();
         let input = Input::new(ActionMap::from_toml(&map_text).unwrap_or_default());
         let map = args.map;
-        let mut app = game::build(map, paths);
+        let mut app = game::build_at(map, paths, args.hours);
         if let Some(h) = args.hours {
             app.world.res_mut::<game::env::TimeOfDay>().hours = h;
         }
-        Self { args, gpu: None, app, map, input, extract: Extract { handles: Vec::new(), env_loaded: false }, ui: ui::UiState::default(), captured: false, last: Instant::now(), fps_acc: (0.0, 0), want_screenshot: false }
+        Self { args, gpu: None, app, map, input, extract: Extract::new(), ui: ui::UiState::default(), captured: false, last: Instant::now(), fps_acc: (0.0, 0), want_screenshot: false, perf: None }
     }
 
     fn capture(&mut self, on: bool) {
@@ -291,13 +470,23 @@ impl Sandbox {
 
     fn switch_map(&mut self, map: MapKind) {
         self.map = map;
-        self.app = game::build(map, paths());
-        self.extract = Extract { handles: Vec::new(), env_loaded: false };
+        // Keep the clock (and build the city's night content for it).
+        let (hours, photo, speed) = {
+            let t = self.app.world.res::<game::env::TimeOfDay>();
+            (t.hours, t.photo_sky, t.speed)
+        };
+        self.app = game::build_at(map, paths(), (!photo).then_some(hours));
+        self.app.world.res_mut::<game::env::TimeOfDay>().speed = speed;
+        self.extract = Extract::new();
         if let Some(gpu) = &mut self.gpu {
             // Fresh GPU resources for the new map.
             let renderer = Renderer::with_device(gpu.renderer.device.clone(), gpu.renderer.queue.clone(), gpu.renderer.adapter_info.clone(), gpu.renderer.output_format);
             gpu.renderer = renderer;
             gpu.renderer.resize(gpu.config.width, gpu.config.height);
+            if let Some(p) = &mut self.perf {
+                // New renderer: apply the graphics options (texture cap too).
+                p.dirty = true;
+            }
         }
     }
 
@@ -363,6 +552,17 @@ impl Sandbox {
                 t.hours = (t.hours + 3.0) % 24.0;
             }
         }
+        // The procedural city bakes lit windows and lamps for the hour it was
+        // built at: crossing dusk or dawn rebuilds it for the new time.
+        if self.map == MapKind::Spain {
+            let want = self.app.world.res::<game::env::TimeOfDay>().night_content();
+            let built = self.app.world.res::<game::world::GameWorld>().night_content;
+            if want != built {
+                log::info!("time of day crossed {}: rebuilding the city", if want { "dusk" } else { "dawn" });
+                self.switch_map(self.map);
+                self.app.world.res_mut::<game::Hud>().message(if want { "Anochece en la ciudad" } else { "Amanece en la ciudad" });
+            }
+        }
         if self.input.pressed("screenshot") {
             self.want_screenshot = true;
         }
@@ -378,7 +578,26 @@ impl Sandbox {
             hud.bodies = bodies;
         }
         let Some(gpu) = &mut self.gpu else { return };
+        let Some(perf_state) = &mut self.perf else { return };
+        if std::mem::take(&mut perf_state.dirty) {
+            gpu.renderer.apply_graphics(&perf_state.cfg);
+            let mode = present_mode(&gpu.present_modes, perf_state.cfg.vsync);
+            let latency = perf_state.cfg.frame_latency;
+            if gpu.config.present_mode != mode || gpu.config.desired_maximum_frame_latency != latency {
+                gpu.config.present_mode = mode;
+                gpu.config.desired_maximum_frame_latency = latency;
+                gpu.surface.configure(&gpu.renderer.device, &gpu.config);
+            }
+        }
+        // Internal resolution (dynamic resolution); the final pass
+        // upsamples to the window.
+        let scale = perf_state.next_scale();
+        let iw = ((gpu.config.width as f32 * scale) as u32).max(64);
+        let ih = ((gpu.config.height as f32 * scale) as u32).max(64);
+        gpu.renderer.resize(iw, ih);
+        let te = Instant::now();
         let frame = self.extract.frame(&mut gpu.renderer, &self.app);
+        let extract_ms = te.elapsed().as_secs_f32() * 1000.0;
         let surface_tex = match gpu.surface.get_current_texture() {
             forja_render::wgpu::CurrentSurfaceTexture::Success(t) | forja_render::wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
             forja_render::wgpu::CurrentSurfaceTexture::Outdated | forja_render::wgpu::CurrentSurfaceTexture::Lost => {
@@ -388,7 +607,10 @@ impl Sandbox {
             _ => return,
         };
         let view = surface_tex.texture.create_view(&Default::default());
+        let tr = Instant::now();
         gpu.renderer.render(&frame, &view);
+        let render_cpu_ms = tr.elapsed().as_secs_f32() * 1000.0;
+        let tu = Instant::now();
         self.ui.render_stats = gpu.renderer.stats;
         self.ui.adapter = format!("{} ({:?})", gpu.renderer.adapter_info.name, gpu.renderer.adapter_info.backend);
         // UI.
@@ -396,7 +618,11 @@ impl Sandbox {
         let ctx = gpu.egui_state.egui_ctx().clone();
         let world = &mut self.app.world;
         let ui_state = &mut self.ui;
-        let out = ctx.run_ui(raw, |ui| ui::draw(ui.ctx(), world, ui_state));
+        let out = ctx.run_ui(raw, |ui| {
+            ui::draw(ui.ctx(), world, ui_state);
+            perf::draw_overlay(ui.ctx(), perf_state);
+            perf::draw_options(ui.ctx(), perf_state);
+        });
         gpu.egui_state.handle_platform_output(&gpu.window, out.platform_output);
         let jobs = ctx.tessellate(out.shapes, out.pixels_per_point);
         let screen = egui_wgpu::ScreenDescriptor { size_in_pixels: [gpu.config.width, gpu.config.height], pixels_per_point: out.pixels_per_point };
@@ -427,11 +653,30 @@ impl Sandbox {
         for id in &out.textures_delta.free {
             gpu.egui_renderer.free_texture(id);
         }
+        let ui_ms = tu.elapsed().as_secs_f32() * 1000.0;
         gpu.window.pre_present_notify();
         gpu.renderer.queue.present(surface_tex);
+        {
+            let timings = self.app.world.res::<forja_core::SystemTimings>();
+            perf_state.record(FrameSample {
+                frame_ms: dt * 1000.0,
+                sim_ms,
+                extract_ms,
+                render_cpu_ms,
+                ui_ms,
+                gpu_ms: gpu.renderer.profiler.total_ms,
+                systems: timings.last.clone(),
+                render_scopes: gpu.renderer.cpu.scopes.clone(),
+                gpu_passes: gpu.renderer.profiler.last.clone(),
+                fixed_steps: timings.fixed_steps,
+                stats: gpu.renderer.stats,
+                render_scale: scale,
+                heavy: if perf_state.overlay { gpu.renderer.heaviest_meshes(6, false) } else { Vec::new() },
+            });
+        }
         if std::mem::take(&mut self.want_screenshot) {
             let img = gpu.renderer.render_to_image(&frame, gpu.config.width, gpu.config.height);
-            gpu.renderer.resize(gpu.config.width, gpu.config.height);
+            gpu.renderer.resize(iw, ih);
             let name = format!("screenshots/forja-{}.png", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0));
             let _ = std::fs::create_dir_all("screenshots");
             match img.save(&name) {
@@ -454,18 +699,27 @@ impl ApplicationHandler for Sandbox {
         let surface = instance.create_surface(window.clone()).expect("surface");
         let mut renderer = Renderer::new(&instance, Some(&surface)).expect("GPU");
         let size = window.inner_size();
-        let mut config = surface
-            .get_default_config(&forja_render::wgpu::Adapter::clone(&pollster::block_on(instance.request_adapter(&forja_render::wgpu::RequestAdapterOptions { compatible_surface: Some(&surface), ..Default::default() })).expect("adapter")), size.width.max(1), size.height.max(1))
-            .expect("surface config");
+        let adapter = pollster::block_on(instance.request_adapter(&forja_render::wgpu::RequestAdapterOptions {
+            power_preference: forja_render::wgpu::PowerPreference::HighPerformance,
+            compatible_surface: Some(&surface),
+            ..Default::default()
+        }))
+        .expect("adapter");
+        let present_modes = surface.get_capabilities(&adapter).present_modes;
+        let mut config = surface.get_default_config(&adapter, size.width.max(1), size.height.max(1)).expect("surface config");
         config.format = renderer.output_format;
-        config.present_mode = forja_render::wgpu::PresentMode::AutoVsync;
+        let perf_state = PerfState::load(&paths().data.join("graphics.toml"), &renderer);
+        renderer.apply_graphics(&perf_state.cfg);
+        config.present_mode = present_mode(&present_modes, perf_state.cfg.vsync);
+        config.desired_maximum_frame_latency = perf_state.cfg.frame_latency;
         surface.configure(&renderer.device, &config);
+        self.perf = Some(perf_state);
         renderer.resize(config.width, config.height);
         let egui_ctx = egui::Context::default();
         let egui_state = egui_winit::State::new(egui_ctx, egui::ViewportId::ROOT, &window, Some(window.scale_factor() as f32), None, None);
         let egui_renderer = egui_wgpu::Renderer::new(&renderer.device, renderer.output_format, Default::default());
         log::info!("{} on {:?}", renderer.adapter_info.name, renderer.adapter_info.backend);
-        self.gpu = Some(Gpu { window, surface, config, renderer, egui_state, egui_renderer });
+        self.gpu = Some(Gpu { window, surface, config, renderer, egui_state, egui_renderer, present_modes });
         self.capture(true);
         self.last = Instant::now();
         self.gpu.as_ref().expect("just set").window.request_redraw();
@@ -498,8 +752,26 @@ impl ApplicationHandler for Sandbox {
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
                     let name = format!("{code:?}");
-                    if name == "F10" && event.state == ElementState::Pressed && !event.repeat {
-                        self.ui.help = !self.ui.help;
+                    if event.state == ElementState::Pressed && !event.repeat {
+                        match name.as_str() {
+                            "F10" => self.ui.help = !self.ui.help,
+                            "F11" => {
+                                if let Some(p) = &mut self.perf {
+                                    p.overlay = !p.overlay;
+                                }
+                            }
+                            "F9" => {
+                                let open = self.perf.as_mut().map(|p| {
+                                    p.options = !p.options;
+                                    p.options
+                                });
+                                // The options menu needs the mouse.
+                                if let Some(open) = open {
+                                    self.capture(!open);
+                                }
+                            }
+                            _ => {}
+                        }
                     }
                     match event.state {
                         ElementState::Pressed => self.input.key_down(&name),
@@ -508,7 +780,8 @@ impl ApplicationHandler for Sandbox {
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
-                if !self.captured && state == ElementState::Pressed && button == MouseButton::Left && !self.ui.inventory_open {
+                let menu = self.perf.as_ref().is_some_and(|p| p.options);
+                if !self.captured && state == ElementState::Pressed && button == MouseButton::Left && !self.ui.inventory_open && !menu {
                     self.capture(true);
                     return;
                 }
@@ -534,6 +807,19 @@ impl ApplicationHandler for Sandbox {
         {
             self.input.mouse_moved(Vec2::new(delta.0 as f32, delta.1 as f32));
         }
+    }
+}
+
+/// FIFO with v-sync; without it Mailbox (no tearing, lowest latency) or
+/// Immediate when the surface lacks Mailbox.
+fn present_mode(modes: &[forja_render::wgpu::PresentMode], vsync: bool) -> forja_render::wgpu::PresentMode {
+    use forja_render::wgpu::PresentMode;
+    if vsync {
+        PresentMode::AutoVsync
+    } else if modes.contains(&PresentMode::Mailbox) {
+        PresentMode::Mailbox
+    } else {
+        PresentMode::AutoNoVsync
     }
 }
 
