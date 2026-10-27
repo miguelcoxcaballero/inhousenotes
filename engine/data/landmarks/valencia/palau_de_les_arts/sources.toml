@@ -12,6 +12,33 @@ commons_category = "Palau de les Arts Reina Sofia"
 wikipedia = { es = "https://es.wikipedia.org/wiki/Palacio_de_las_Artes_Reina_Sof%C3%ADa", ca = "https://ca.wikipedia.org/wiki/Palau_de_les_Arts_Reina_Sofia", en = "https://en.wikipedia.org/wiki/Palau_de_les_Arts_Reina_Sof%C3%ADa" }
 
 [facts]
+calibration = { value = "6 photos, rms 2.5-7.4 px", source = "measured", note = "Second pass: every camera solved jointly (scratch script ba.py) with fixed EXIF focal lengths in pixels (n10 Galaxy S2 4.03 mm = 1136 px; m7 G3X 8.8 mm = 1011 px; n09/n06 27 mm eq = 960 px; n08 G3X 12.93 mm = 1254 px; e22 iPhone, free: 1153 px), eye height 1.6 m (n06 in the Turia garden, m7 on the Pont de Montolivet, e22 on the bridge deck solved at 11.1 m), horizon lines where visible, and shared unknown 3D points (beaks, plume tip, lips, eye-opening corners and apex, plume top as a curve). Plan control from PNOA: plume root s -123 +-1.5, plume tip s 88 +-1.5, eye corners s +40 / -35.5 at |t| 29, 4 pool planters (ground, exact). rms all observations: n10 2.9, m7 3.4, n09 2.5, n06 6.3, n08 7.4, e22 3.5 px. Extra views solved with the points fixed: e26 3.8, e21 9.3, n03 12.4 (focal free), e19 16.0 px (panorama, focal free)" }
+axis_azimuth = { value = 128.3, unit = "deg", source = "OSM way 23433773 tips (-69.20, -54.74) / (69.34, 54.74), grid azimuth", note = "model axis frame: s along the axis (+ = SE), t across (+ = NE), origin at the midpoint of the OSM tips (0.07, 0.0)" }
+height_published = { value = 75.0, unit = "m", source = "https://es.wikipedia.org/wiki/Palacio_de_las_Artes_Reina_Sof%C3%ADa (Su altura es de 75 metros; also en.wikipedia)", note = "not reproduced by the photo measurements; probably taken from the lowest level of the building (3 floors below ground), the model uses the measured crest" }
+height = { value = 70.2, unit = "m", source = "measured", note = "constrained bundle adjustment of photos n10, m7, n09, n06, n08, e22 (EXIF focal lengths, eye-height priors, PNOA plan control); top centre of the plume crest at s = 0 above the street datum (camera eye 1.6 m). Plume-top silhouettes of 4 photos: joint fit 70.2 m; fits with only one photo's silhouette: n10 66.5, m7 67.5, n08 65.5, n06 66.6 m -> 68 +-3 m. The e22 camera (fixed by the 4 pool planters) sees the plume tangent at s ~ 80 consistent with the joint profile" }
+plume_profile = { value = [[-122.8, 0.0], [-110, 14.9], [-95, 29.7], [-80, 43.0], [-60, 55.2], [-40, 63.6], [-20, 68.6], [0, 70.2], [20, 68.2], [40, 62.9], [60, 54.2], [75, 44.8], [92.2, 32.2]], unit = "m (s, y top)", source = "measured", note = "constrained bundle adjustment of photos n10, m7, n09, n06, n08, e22 (EXIF focal lengths, eye-height priors, PNOA plan control); plume top as a curve fitted to the silhouettes of n10, m7, n08, n06 (near top edge, t = +-w/2) and the e22 tangent; curve rms 0.6-7.8 px" }
+plume_root = { value = [-122.8, 0.0, 2.5], unit = "m (s, t, y)", source = "PNOA 2024 (root foot, no relief displacement) and photos n06/n08", note = "the foot stands on a raised plaza block with steps to the street (n08); bundle y 2.5 +-0.7" }
+plume_tip = { value = [92.2, 0.0, 32.2], unit = "m (s, t, y)", source = "measured", note = "constrained bundle adjustment of photos n10, m7, n09, n06, n08, e22 (EXIF focal lengths, eye-height priors, PNOA plan control); seen in n09 (rms 2 px); PNOA 2008 wedge tip s = 88" }
+plume_length = { value = 230.0, unit = "m", source = "https://en.wikipedia.org/wiki/Palau_de_les_Arts_Reina_Sof%C3%ADa", note = "model: root s = -122.8 to tip s = +92.2 = 215 m horizontal, 238 m along the top curve" }
+plume_plan_width = { value = 23.5, unit = "m", source = "PNOA 2008 central lens (t -12..+12 at s = 0)", note = "tapers to ~9 m at s = -85 and to a point at the SE tip; depth 6 m at the crest (n10/m7 band 10 m incl. the visible underside)" }
+beak_se = { value = [87.9, 0.3, 28.8], unit = "m (s, t, y)", source = "measured", note = "constrained bundle adjustment of photos n10, m7, n09, n06, n08, e22 (EXIF focal lengths, eye-height priors, PNOA plan control); SE beak tips of both shells, seen in n09, m7, e22 (the pointed arch apex end-on), e26" }
+beak_nw = { value = [-93.6, 4.0, 22.1], unit = "m (s, t, y)", source = "measured", note = "constrained bundle adjustment of photos n10, m7, n09, n06, n08, e22 (EXIF focal lengths, eye-height priors, PNOA plan control); NW beak tips, seen in m7, n06, n08, e21" }
+shell_length = { value = 181.5, unit = "m", source = "measured", note = "beak to beak (s -93.6 .. +87.9); OSM way 23433773 tip to tip 176.6 m (envelope remapped onto the measured beaks); published ~163 m not verified" }
+shell_width = { value = 88.5, unit = "m", source = "OSM way 23433773 (max extent across the axis at s = -2), PNOA 2008 shells outer edges t = +47 / -45", note = "taken as the plan of the shells lower free edge" }
+shell_top = { value = [[-93, 22.1], [-77, 27], [-67.5, 35.5], [-57, 45.5], [-43, 49.6], [-28, 53], [-10, 56.5], [5, 57], [25, 54], [44, 49], [55, 44.5], [67, 39.6], [74.3, 35.7], [78.8, 31], [82.7, 28.9], [88, 28.8]], unit = "m (s, y)", source = "measured", note = "upper edge of the shells next to the plume gap: rays of m7 (t = +6..10) and n10 (t = -8..-11) through the calibrated cameras; the two photos agree within 2 m at s = -57" }
+shell_free_edge = { value = [[-93, 22.1], [-75, 16.5], [-59, 9.9], [-47, 4.8], [-39.5, 0], [16, 0], [27, 6.9], [35, 7.4], [42, 8.5], [50, 11], [56, 13.2], [67, 18.8], [78, 25], [88, 28.8]], unit = "m (s, y)", source = "measured", note = "lower free edge (plan = OSM outline): NW half from n08 (SW shell) and n06 (NE shell), agreeing within 1-2 m (-74: 17.0 / 14.8, -59: 9.9 / 9.7, -42: 3.7 / 4.2); SE half from n09; ground contact (feet) at s -42..-33 and +9..+16 (n08, n06, m7)" }
+eye_apex = { value = [-2.7, 18.3, 54.4], unit = "m (s, |t|, y)", source = "measured", note = "constrained bundle adjustment of photos n10, m7, n09, n06, n08, e22 (EXIF focal lengths, eye-height priors, PNOA plan control); seen in n10, m7, n06, e19; rays: n10 53.0, m7 55.1" }
+eye_corner_se = { value = [41.4, 29.7, 27.1], unit = "m (s, |t|, y)", source = "measured", note = "constrained bundle adjustment of photos n10, m7, n09, n06, n08, e22 (EXIF focal lengths, eye-height priors, PNOA plan control); rounded SE end of the eye at terrace level, seen in m7, n09, e26, e19" }
+eye_corner_nw = { value = [-44.6, 31.1, 25.5], unit = "m (s, |t|, y)", source = "measured", note = "constrained bundle adjustment of photos n10, m7, n09, n06, n08, e22 (EXIF focal lengths, eye-height priors, PNOA plan control); NW end of the eye, seen in m7, n06, n08, n10, e21" }
+eye_boundary_ne = { value = [[-44.6, 25.5], [-36.5, 35.6], [-26.5, 44.2], [-16, 51.3], [-2.7, 54.4], [11.5, 52.1], [23.5, 45.9], [34.9, 36.4], [41.4, 27.1]], unit = "m (s, y)", source = "measured", note = "upper boundary of the NE eye opening, rays of m7 on t = 16.5..26; below the terrace the opening runs down to the ground between the feet (m7, n06, n10)" }
+eye_boundary_sw = { value = [[-44.6, 25.5], [-34.4, 33.8], [-24.5, 40.8], [-13.8, 47.8], [-2.7, 54.4], [11.8, 46.8], [19.1, 40.1], [25.9, 33.3], [31.1, 28.6], [41.4, 27.1]], unit = "m (s, y)", source = "measured", note = "upper boundary of the SW eye opening from n10 (straighter, pointed); the SW and NE photos disagree by up to 7 m on the SE flank, kept per side" }
+terrace_levels = { value = [9.5, 15.0, 21.2, 24.8, 28.5], unit = "m", source = "measured", note = "rays of m7 and n10 at s = 0 on the deck fronts (t = +-33): lower deck 9.4, slab 21.6 (m7 23.6 / n10 19.6), portholes 25-27, parapet top 28.5 (m7 30.8 / n10 26.2)" }
+lip_se = { value = [83.3, 0.0, 20.6], unit = "m (s, t, y top)", source = "measured", note = "constrained bundle adjustment of photos n10, m7, n09, n06, n08, e22 (EXIF focal lengths, eye-height priors, PNOA plan control); front of the SE canopy (n09; e22 ray 20.3); thickness 3 m at the rim (n09)" }
+lip_nw = { value = [-89.4, 0.0, 14.9], unit = "m (s, t, y top)", source = "measured", note = "constrained bundle adjustment of photos n10, m7, n09, n06, n08, e22 (EXIF focal lengths, eye-height priors, PNOA plan control); front of the NW canopy (n06, n08, e21)" }
+lobby_se = { value = [6.3, 15.5], unit = "m (y bottom, top)", source = "measured", note = "fan of glazing and fins (n09 rays 6.4-14.3 at s 70; e22 6.2-15.8 on the axis), its top follows the shell free edge down the flanks to s ~ 45" }
+pool_planters = { value = [[70.3, 13.3], [80.3, 13.3], [70.3, -13.3], [80.3, -13.3]], unit = "m (s, t)", source = "PNOA 2024 (0.15 m/px) and 2008", note = "round trencadis planters in the SE pools; ground control for e22" }
+ne_promenade = { value = "raised promenade s -112..+62, t +45..+90", source = "PNOA 2024", note = "double row of cypresses and palms from the tree shadows" }
+sw_walkway = { value = "pergola from (-85, -33) to (92, -71.5)", unit = "m (s, t)", source = "PNOA 2024", note = "white steel Y struts at ~6 m; trencadis vent hoods along (-110, -45) .. (42, -62)" }
 built = { value = "2005-10-08", source = "https://www.wikidata.org/wiki/Q747342#P571" }
 architect = { value = "Santiago Calatrava", source = "https://www.wikidata.org/wiki/Q747342#P84" }
 catastro_refcat = { value = "7611101YJ2770G", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=7611101&rc2=YJ2770G" }
@@ -20,18 +47,6 @@ catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatast
 catastro_floor_area = { value = 89517.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=7611101&rc2=YJ2770G", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 12, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 87 parts" }
 
-height = { value = 75.0, unit = "m", source = "https://es.wikipedia.org/wiki/Palacio_de_las_Artes_Reina_Sof%C3%ADa (also en.wikipedia)", note = "top of the plume crest; used as the vertical scale anchor of the photo measurements (model crest 75.0 m at s = -6)" }
-plume_length = { value = 230.0, unit = "m", source = "https://en.wikipedia.org/wiki/Palau_de_les_Arts_Reina_Sof%C3%ADa", note = "along the curve; model plume from the root at s = -126 (ground, NW plaza) to the SE tip at s = +91.5 (y 42): 218 m horizontal, ~245 m along the top curve" }
-axis_azimuth = { value = 128.3, unit = "deg", source = "OSM way 23433773 tips (-69.20, -54.74) / (69.34, 54.74), grid azimuth", note = "model axis frame: s along the axis (+ = SE), t across (+ = NE), origin at the midpoint of the tips (0.07, 0.0)" }
-shell_length = { value = 176.6, unit = "m", source = "OSM way 23433773 tip to tip; checked on PNOA 2008 (near nadir), the shell tips coincide with the OSM tips", note = "published figures of ~163 m could not be verified against the plan data" }
-shell_width = { value = 88.5, unit = "m", source = "OSM way 23433773 (max extent across the axis at s = -2), PNOA 2008 shells' outer edges at t = +47 / -45", note = "model shell envelope = OSM half-width W(s) per station" }
-plume_root = { value = [-125.5, 0.0], unit = "m (s, t)", source = "PNOA 2024 and 2008 orthophotos (root foot on the NW plaza, no relief displacement)" }
-plume_plan_width = { value = 23.5, unit = "m", source = "PNOA 2008 central lens (t -12..+12 at s = 0) and 2024 band between the dark slits", note = "tapers to ~9 m at s = -85 and to a point at the SE tip" }
-eye_opening_plan = { value = [-37.5, 41.0], unit = "m (s range at roof level)", source = "PNOA 2008: NE opening s -33..+42 at t 20..37, SW -42..+40" }
-eye_opening_elevation = { value = [-52.0, 55.0], unit = "m (s range at deck level)", source = "broadside photo n10 (Coentor, Galaxy S2 4.03 mm, horizon at the car roofs): opening corners at deck level, apex 55 m", note = "triangular/rounded upper boundary; lower boundary = top garden deck ~27-29 m" }
-shell_top = { value = 57.5, unit = "m", source = "photo n10 scaled to the 75 m crest (shell top edge under the plume gap, t ~ 15)" }
-beak_tips = { value = [40.0, 37.0], unit = "m (SE, NW)", source = "photos n09/e19 (SE) and n06/e21 (NW), ratios to the lip and plume tip; uncertain +-4 m" }
-decks = { value = [14.0, 20.5, 28.5], unit = "m", source = "photo n10 deck bands (porthole parapet top at ~28.5 m)" }
 stage_mouth = { value = [17.0, 36.0], unit = "m (width, height)", source = "https://ca.wikipedia.org/wiki/Palau_de_les_Arts_Reina_Sofia" }
 floors = { value = "14 above ground, 3 below", source = "https://en.wikipedia.org/wiki/Palau_de_les_Arts_Reina_Sof%C3%ADa" }
 
@@ -305,7 +320,7 @@ width = 1280
 height = 960
 exterior = true
 selected = true
-side = "SW long side broadside at dusk (view n10): plume profile, shell top, eye opening, deck levels (stable copy of the fetched file)"
+side = "SW long side broadside at dusk (view n10, calibrated: eye s 2, t -194, f 1136 px, rms 2.9 px): plume profile, SW eye opening, terraces"
 
 [[photo]]
 file = "extra/p_Choinowski_2014.jpg"
@@ -317,7 +332,7 @@ width = 1280
 height = 853
 exterior = true
 selected = true
-side = "SE end from the SW pool, close (view n09): beak, lip, SE lobby glazing (stable copy of the fetched file)"
+side = "SE end from the SW pool, close (view n09, calibrated: eye s 83, t -72, rms 2.5 px): SE beak, plume tip, lip, lobby fan"
 
 [[photo]]
 file = "extra/p_Ymblanter_north.jpg"
@@ -329,7 +344,7 @@ width = 1280
 height = 854
 exterior = true
 selected = true
-side = "NE side from the Turia garden, NW end near (view n06): NW beak, plume descending to its root (stable copy of the fetched file)"
+side = "NE side from the Turia rose garden, NW end near (view n06, calibrated: eye s -141, t 141, 7 m below the street, rms 6.3 px): NW beak, NE free edge, plume root"
 
 [[photo]]
 file = "extra/p_Michielverbeek_Montolivet.jpg"
@@ -341,7 +356,7 @@ width = 1280
 height = 798
 exterior = true
 selected = true
-side = "NE long side from the Pont de Montolivet (view n07) (stable copy of the fetched file)"
+side = "NE long side broadside from the Pont de Montolivet (view m7, calibrated: eye s 43, t 196, rms 3.4 px): both beaks, NE eye opening, plume profile"
 
 [[photo]]
 file = "extra/p_Michielverbeek_LopezPinero.jpg"
@@ -353,7 +368,7 @@ width = 1280
 height = 582
 exterior = true
 selected = true
-side = "W / NW end from Av. Professor Lopez Pinero (view n08): plume root leg on the NW plaza (stable copy of the fetched file)"
+side = "W / NW end from Av. Professor Lopez Pinero (view n08, calibrated: eye s -189, t -113, rms 7.4 px): plume root, SW free edge, NW lip"
 
 [[photo]]
 file = "extra/p_aerial_Puente.jpg"
@@ -377,7 +392,7 @@ width = 1280
 height = 859
 exterior = true
 selected = true
-side = "SW side near the SE end from the street (view n03); EXIF GPS camera is ~100 m off (stable copy of the fetched file)"
+side = "SW side near the SE end from the street (view n03, solved with fixed points and free focal, rms 12.4 px)"
 
 [[photo]]
 file = "extra/p_Diliff_2007.jpg"
@@ -437,7 +452,7 @@ width = 1280
 height = 711
 exterior = true
 selected = true
-side = "NE side near the SE end (view e19, cropped panorama, fov unknown): beak, lip, lobby, eye opening"
+side = "NE side near the SE end (view e19, cropped panorama, solved with fixed points and free focal, rms 16 px)"
 
 [[photo]]
 file = "extra/e20_Pehlemann_Montolivet.jpg"
@@ -461,7 +476,7 @@ width = 1280
 height = 960
 exterior = true
 selected = true
-side = "NE side from the Turia garden, NW end near (view e21)"
+side = "NE side from the Turia garden, NW end near (view e21, solved with fixed points, rms 9.3 px)"
 
 [[photo]]
 file = "extra/e22_MCAE_South_View.jpg"
@@ -473,7 +488,7 @@ width = 1280
 height = 1707
 exterior = true
 selected = true
-side = "SE end on axis (view e22, iPhone 13 ultrawide 15 mm eq.)"
+side = "SE end on axis from the bridge deck (view e22, calibrated on the 4 pool planters: eye s 114, 11.1 m up, rms 3.5 px): beak arch, lip, lobby"
 
 [[photo]]
 file = "extra/e23_MCAE_Pool_View.jpg"
@@ -521,7 +536,7 @@ width = 1280
 height = 853
 exterior = true
 selected = true
-side = "SE end from the SW pool"
+side = "SE end from the SW pool (view e26, solved with fixed points, rms 3.8 px)"
 
 [[photo]]
 file = "extra/e28_Riobo_2019.jpg"
@@ -598,7 +613,7 @@ side = "SW side from the street"
 [[reference]]
 url = "https://www.ign.es/wms-inspire/pnoa-ma"
 title = "IGN PNOA orthophotos (maxima actualidad 2024; pnoa-historico PNOA2008/PNOA2012), EPSG:25830, 0.2 m/px"
-notes = "CC BY 4.0, PNOA cedido por (c) Instituto Geografico Nacional. bbox 727338,4370795,727638,4371095. Rectified into the axis frame for plan measurements; 2008 is near nadir, 2012/2024 lean ~18 m SW at plume height."
+notes = "CC BY 4.0, PNOA cedido por (c) Instituto Geografico Nacional. bbox 727338,4370795,727638,4371095 (second pass also 727150,4370650,727850,4371350 and 0.15 m/px tiles of the SE pools and the rose garden). Rectified into the axis frame for plan measurements; 2008 is near nadir, 2012/2024 lean ~18 m SW at plume height (ground features such as planters, walkway and promenade are not displaced)."
 
 [[reference]]
 url = "https://calatrava.com/projects/palau-de-las-artes-valencia.html"
