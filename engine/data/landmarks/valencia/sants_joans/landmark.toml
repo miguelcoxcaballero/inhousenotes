@@ -1,0 +1,1548 @@
+# Real Parroquia de los Santos Juanes (Sant Joan del Mercat), Valencia.
+# Gothic single nave (14th-15th c.) with chapels between internal
+# buttresses, rebuilt after the 1592 fire; Baroque bell tower (1625-1650),
+# Baroque east facade on the Placa del Mercat (1700) crowned by the clock
+# espadana with the "pardal de Sant Joan" (eagle weathervane), Capella de la
+# Comunio (18th c.) with a blue glazed-tile dome, and the "covetes" (sunken
+# shops) under the terrace in front of the east facade.
+#
+# Plan: OSM way 183237709 and its building:parts, checked on the IGN PNOA
+# orthophoto and the Catastro map (parcel 5528401YJ2752H).
+#   part:0  nave (polygonal apse at the east)      part:5  bell tower (SW corner)
+#   part:1  covetes + terrace (0.5 levels)         part:3  Comunio dome circle (r 4.2)
+#   part:2,4,6,8,9,10  fill between the apse and the Baroque east screen
+# Heights: constrained bundle adjustment over photos 01, 02, 08 and extra/27
+# (scratchpad sj/ba.py, eye prior 1.6 m, f prior from EXIF for photo 01),
+# see sources.toml [facts].
+#
+# Frames: the east facade is laid out in a group whose local x runs along the
+# facade chord from its S end (23.0, 14.3) to its N end (14.1, -13.15)
+# (28.86 m, rotate_y 107.9), y up, local +z out of the facade (azimuth 72).
+
+[landmark]
+name = "Real Parroquia de los Santos Juanes"
+slug = "sants_joans"
+main_facade = "facing:e"
+notes = "Gothic nave with chapels and buttress pinnacles, Baroque bell tower, Baroque east facade with clock espadana and eagle vane over the covetes terrace, blind Gothic oculus on the west front, blue tiled dome of the Comunio chapel."
+
+[landmark.info]
+architect = "Gothic church after 1311 / 1368; tower 1625-1650; east facade 1700 (Jacopo Bertesi sculpture)"
+style = "Valencian Gothic, Baroque"
+heritage = "BIC RI-51-0001207 (1947)"
+
+[defaults]
+material = "stone"
+roof_material = "roof"
+glass_material = "glass"
+door_material = "doors"
+iron_material = "iron"
+
+[render]
+sun = [200, 52]
+paving = 70
+
+# ------------------------------------------------------------- materials
+
+[material.stone]
+kind = "ashlar"
+tint = "#c2aa8c"
+block = [0.9, 0.38]
+weathering = 0.35
+seed = 11
+
+[material.stone_east]
+kind = "ashlar"
+tint = "#d3c3aa"
+block = [0.8, 0.34]
+weathering = 0.3
+seed = 5
+
+[material.stone_fine]
+kind = "limestone"
+tint = "#ddd0b8"
+weathering = 0.25
+
+[material.sculpture]
+kind = "limestone"
+tint = "#ece6da"
+weathering = 0.2
+
+[material.brick]
+kind = "sandstone"
+tint = "#e6b89a"
+block = [0.3, 0.07]
+weathering = 0.25
+
+[material.roof]
+kind = "roof_tiles"
+tint = "#b48e72"
+weathering = 0.4
+
+[material.dome_tiles]
+kind = "glazed_tiles"
+pattern = "stripes"
+colors = ["#1d4f8f", "#2b64a8", "#f1ede2"]
+weights = [0.45, 0.4, 0.15]
+
+[material.doors]
+kind = "painted_wood"
+color = "#4a4236"
+tint = "#4a4236"
+
+[material.covetes_doors]
+kind = "wood"
+tint = "#7a5236"
+
+[material.glass]
+kind = "glass"
+
+[material.iron]
+kind = "iron"
+
+[material.clock]
+kind = "flat"
+color = "#e8e4da"
+roughness = 0.6
+
+[material.dark]
+kind = "dark"
+
+# ===================================================================== massing
+
+[[element]]
+type = "mass"
+name = "nave"
+polygon = "part:0"
+height = 19.0
+material = "stone"
+note = "single Gothic nave, OSM part 1288123734 (17.7 m across the walls); wall top 19.0 + crest parapet to 19.9 (photo solve 02/08: H_crest 19.9 +-0.5)"
+parapet = { height = 0.9, thickness = 0.45, edges = ["facing:s", "facing:n"] }
+cornice = { profile = "gothic", size = 0.45, edges = ["facing:s", "facing:n"], material = "stone_fine" }
+roof = { shape = "hip", pitch = 21, overhang = 0.1 }
+[[element]]
+type = "mass"
+name = "chapels_s"
+polygon = [[-15.94, 21.99], [-16.95, 17.18], [14.41, 10.57], [15.75, 15.73]]
+height = 15.0
+material = "stone"
+note = "south chapels between the internal buttresses, outer wall on Carrer Vell de la Palla; cornice 14.8-15.0 m (photo 02 solve), flat roofs behind the gallery"
+cornice = { profile = "cornice", size = 0.45, edges = "facing:s", material = "stone_fine" }
+string_courses = [11.9]
+
+  [[element.openings]]
+  edges = "facing:s"
+  kind = "lancet"
+  arch = "pointed"
+  width = 1.35
+  height = 4.1
+  levels = [5.0]
+  bays = { at = [1.8, 12.3, 17.4, 22.6, 27.5] }
+  depth = 0.45
+  infill = "stained"
+  mullions = 1
+  tracery = "trefoil"
+  orders = 1
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:s"
+  kind = "window"
+  arch = "flat"
+  width = 0.85
+  height = 1.45
+  levels = [12.55]
+  bays = { at = [1.15, 2.65, 6.35, 7.85, 11.55, 13.05, 16.75, 18.25, 21.95, 23.45, 27.15, 28.65] }
+  depth = 0.6
+  infill = "dark"
+  frame = 0.0
+  material = "stone_fine"
+[[element]]
+type = "mass"
+name = "chapels_n"
+polygon = [[-27.45, -4.32], [-25.93, -4.62], [-22.36, -5.37], [-21, -6.26], [-17.16, -7.12], [-15.5, -6.99], [-11.54, -7.79], [-6.4, -8.9], [-1.2, -10], [3.9, -11], [9.3, -11.5], [10.8, -6.74], [-26.37, 1.03]]
+height = 15.0
+material = "stone"
+note = "north chapels (Catastro 1-2 floor strip between the nave and the Comunio block)"
+cornice = { profile = "cornice", size = 0.45, edges = "facing:w", material = "stone_fine" }
+[[element]]
+type = "mass"
+name = "comunio_block"
+polygon = [[-11.54, -7.79], [-12.5, -12.3], [-13.3, -16.4], [-14.46, -21.63], [3.54, -25.45], [6.72, -22.01], [8.87, -12.22], [9.3, -11.5], [3.9, -11], [-1.2, -10], [-6.4, -8.9]]
+height = 13.2
+material = "brick"
+note = "Capella de la Comunio and its annexes (Catastro 3 floors), brick with tiled hip roof; eave ~13 m (photo 01)"
+plinth = { profile = "plinth", size = 1.2, material = "stone" }
+roof = { shape = "hip", pitch = 24, overhang = 0.45 }
+
+  [[element.openings]]
+  edges = ["facing:n", "facing:w"]
+  kind = "window"
+  arch = "flat"
+  width = 1.1
+  height = 1.9
+  levels = [5.2, 9.4]
+  bays = { spacing = 4.2 }
+  depth = 0.3
+  infill = "shutters"
+  material = "stone_fine"
+[[element]]
+type = "mass"
+name = "annex_ne"
+polygon = [[6.72, -22.01], [13.7, -13.3], [15.5, -7.8], [16.6, -4.6], [15.52, -3.59], [11.68, -6.15], [10.8, -6.74], [9.3, -11.5], [8.87, -12.22]]
+height = 12.6
+material = "brick"
+note = "brick annex north of the east screen (OSM parts 1288123738/1288123742, Catastro 2 floors), eave ~12.6 m (photo 01)"
+roof = { shape = "hip", pitch = 24, overhang = 0.45 }
+
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "window"
+  arch = "flat"
+  width = 1.0
+  height = 1.8
+  levels = [4.6, 8.6]
+  bays = { spacing = 3.6 }
+  depth = 0.3
+  infill = "grille"
+  material = "stone_fine"
+[[element]]
+type = "mass"
+name = "east_front"
+polygon = [[23, 14.3], [14.1, -13.15], [12.6, -12.6], [11.68, -6.15], [15.52, -3.59], [14.92, 9.79], [14.41, 10.57], [16.13, 15.66]]
+height = 16.1
+material = "stone_east"
+note = "Baroque east facade on the Placa del Mercat (1700) and the rooms between it and the Gothic apse; straight chord of the OSM front line (bows 0.7 m), 28.9 m wide; base at the terrace (1.4 m)"
+cornice = { profile = "classical", size = 0.55, edges = ["facing:e", "facing:s"], material = "stone_fine" }
+string_courses = [12.85]
+
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "window"
+  arch = "flat"
+  width = 1.0
+  height = 1.48
+  levels = [13.35]
+  bays = { at = [1.35, 3.17, 4.96, 6.72, 8.51, 12.0, 13.8, 15.5, 17.3, 20.8, 22.4, 24.1, 25.7, 27.2] }
+  depth = 0.7
+  infill = "dark"
+  frame = 0.0
+  surround = { width = 0.12, projection = 0.05 }
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:s"
+  kind = "window"
+  arch = "flat"
+  width = 1.0
+  height = 1.48
+  levels = [13.35]
+  bays = { at = [1.3, 3.2] }
+  depth = 0.7
+  infill = "dark"
+  frame = 0.0
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "door"
+  arch = "flat"
+  width = 2.0
+  height = 3.6
+  levels = [1.4]
+  bays = { at = [6.06] }
+  depth = 0.4
+  infill = "door"
+  material = "stone_fine"
+[[element]]
+type = "mass"
+name = "covetes"
+polygon = "part:1"
+height = 1.4
+material = "stone_fine"
+top_material = "paving"
+note = "the covetes de Sant Joan: sunken shops under the terrace in front of the east facade; terrace 1.4 m above the street (photo 01 solve 1.4 +-0.2), stone posts and iron railing to 2.75 m"
+parapet = { height = 0.35, thickness = 0.4, edges = ["facing:e", "facing:n"] }
+
+  [[element.openings]]
+  edges = ["facing:e", "facing:n"]
+  kind = "door"
+  arch = "flat"
+  width = 1.5
+  height = 1.15
+  levels = [0.0]
+  bays = { spacing = 2.9 }
+  depth = 0.25
+  infill = "door"
+  door_material = "covetes_doors"
+[[element]]
+type = "group"
+name = "terrace_railing"
+note = "stone pillars every ~3.2 m with an iron railing (photo 01, 04, 27)"
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  center = [3.74, 1.75, -25.2]
+  size = [0.42, 1.55, 0.42]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  center = [6.77, 1.75, -23.666]
+  size = [0.42, 1.55, 0.42]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  center = [9.8, 1.75, -22.132]
+  size = [0.42, 1.55, 0.42]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  center = [12.83, 1.75, -20.598]
+  size = [0.42, 1.55, 0.42]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  center = [15.86, 1.75, -19.064]
+  size = [0.42, 1.55, 0.42]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  center = [18.89, 1.75, -17.53]
+  size = [0.42, 1.55, 0.42]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  center = [19.816, 1.75, -14.463]
+  size = [0.42, 1.55, 0.42]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  center = [20.742, 1.75, -11.396]
+  size = [0.42, 1.55, 0.42]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  center = [21.668, 1.75, -8.329]
+  size = [0.42, 1.55, 0.42]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  center = [22.594, 1.75, -5.262]
+  size = [0.42, 1.55, 0.42]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  center = [23.52, 1.75, -2.195]
+  size = [0.42, 1.55, 0.42]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  center = [24.446, 1.75, 0.872]
+  size = [0.42, 1.55, 0.42]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  center = [25.372, 1.75, 3.939]
+  size = [0.42, 1.55, 0.42]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  center = [26.298, 1.75, 7.006]
+  size = [0.42, 1.55, 0.42]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  center = [27.224, 1.75, 10.073]
+  size = [0.42, 1.55, 0.42]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  center = [28.15, 1.75, 13.14]
+  size = [0.42, 1.55, 0.42]
+  [[element.children]]
+  type = "array"
+  mode = "path"
+  path = { points = [[3.74, 1.75, -25.2], [18.89, 1.75, -17.53], [28.15, 1.75, 13.14]] }
+  spacing = 0.16
+  children = [{ type = "cylinder", at = [0.0, 0.0, 0.0], height = 0.97, radius = 0.014, segments = 4, material = "iron" }]
+  [[element.children]]
+  type = "sweep"
+  material = "iron"
+  profile = { shape = "rect", size = [0.05, 0.06] }
+  path = { points = [[3.74, 2.72, -25.2], [18.89, 2.72, -17.53], [28.15, 2.72, 13.14]] }
+# ======================================================================= tower
+
+[[element]]
+type = "tower"
+name = "campanar"
+polygon = "part:5"
+material = "stone"
+note = "Baroque bell tower 1625-1650 on the SW corner (OSM part 1288123735, 5.9 x 6.0 m); belfry cornice underside 28.5, belfry top 37.6, lantern 45.0, vane top 48.6 m (photo solve 02/08)"
+  [[element.stages]]
+  name = "tower_shaft"
+  height = 28.5
+  plinth = { profile = "plinth", size = 0.8 }
+  string_courses = [21.0]
+    [[element.stages.openings]]
+    kind = "window"
+    arch = "flat"
+    width = 0.55
+    height = 1.6
+    levels = [12.8, 22.4]
+    bays = 1
+    edges = ["facing:s", "facing:w"]
+    depth = 0.5
+    infill = "dark"
+    [[element.stages.openings]]
+    kind = "oculus"
+    width = 2.4
+    levels = [7.8]
+    bays = 1
+    edges = "facing:s"
+    depth = 0.35
+    infill = "blind"
+    tracery = "quatrefoil"
+    material = "stone_fine"
+  [[element.stages]]
+  name = "belfry_base"
+  height = 0.9
+  inset = -0.25
+  material = "stone_fine"
+  [[element.stages]]
+  name = "belfry"
+  height = 8.2
+  inset = 0.25
+  cornice = { profile = "classical", size = 0.85, projection = 0.55, material = "stone_fine" }
+    [[element.stages.openings]]
+    kind = "window"
+    arch = "round"
+    width = 1.6
+    height = 4.8
+    levels = [30.4]
+    bays = 1
+    depth = 0.9
+    infill = "void"
+    bells = true
+    balcony = { depth = 0.35, railing = "iron" }
+    surround = { width = 0.25, projection = 0.08 }
+    material = "stone_fine"
+  [[element.stages]]
+  name = "belfry_attic"
+  height = 1.6
+  inset = 0.7
+  balustrade = { height = 0.9, finials = "ball" }
+  [[element.top]]
+  type = "lantern"
+  radius = 1.15
+  height = 3.0
+  sides = 8
+  cap = "dome"
+  cap_height = 1.4
+  cap_material = "dome_tiles"
+  material = "stone_fine"
+  finial = "ball"
+[[element]]
+type = "pinnacle"
+at = [-22.023, 39.1, 18.193]
+width = 0.55
+height = 2.1
+sides = 4
+material = "stone_fine"
+[[element]]
+type = "pinnacle"
+at = [-21.152, 39.1, 22.319]
+width = 0.55
+height = 2.1
+sides = 4
+material = "stone_fine"
+[[element]]
+type = "pinnacle"
+at = [-16.919, 39.1, 21.426]
+width = 0.55
+height = 2.1
+sides = 4
+material = "stone_fine"
+[[element]]
+type = "pinnacle"
+at = [-17.646, 39.1, 17.963]
+width = 0.55
+height = 2.1
+sides = 4
+material = "stone_fine"
+[[element]]
+type = "finial"
+name = "tower_vane"
+at = [-19.435, 45.3, 19.975]
+style = "weathervane"
+size = 3.3
+material = "iron"
+note = "vane top 48.6 m (photo solve 02/08)"
+# ================================================================== west front
+
+[[element]]
+type = "mass"
+name = "west_front"
+polygon = [[-26.37, 1.03], [-23.03, 17.5], [-21.462, 17.182], [-24.802, 0.712]]
+height = 24.4
+material = "stone"
+note = "Gothic west front on the Placa de la Ciutat de Bruges: top 24.2-24.6 m, raised centre 26.0 (photo 02 solve); blind oculus 11.5 m across centred at 14.8 m"
+cornice = { profile = "gothic", size = 0.4, edges = "facing:w" }
+
+  [[element.openings]]
+  edges = "facing:w"
+  kind = "door"
+  arch = "flat"
+  width = 2.4
+  height = 4.6
+  levels = [0.0]
+  bays = { at = [8.443] }
+  depth = 0.6
+  infill = "door"
+  surround = { width = 0.55, projection = 0.25, pediment = "broken_segmental" }
+  material = "stone_fine"
+[[element]]
+type = "mass"
+name = "west_front_crown"
+polygon = [[-25.169, 6.952], [-24.215, 11.657], [-23.039, 11.418], [-23.993, 6.714]]
+y0 = 24.4
+height = 1.6
+material = "stone"
+note = "raised centre of the west front, 26.0 m, with finials"
+[[element]]
+type = "finial"
+at = [-24.679, 26.0, 6.853]
+style = "urn"
+size = 1.3
+material = "stone_fine"
+[[element]]
+type = "finial"
+at = [-23.725, 26.0, 11.557]
+style = "urn"
+size = 1.3
+material = "stone_fine"
+[[element]]
+type = "torus"
+name = "oculus_ring"
+center = [-24.788, 14.8, 9.324]
+radius = 5.45
+tube = 0.32
+axis = [0.98, 0.0, -0.199]
+segments = 48
+material = "stone_fine"
+note = "moulded ring of the blind oculus, 11.4 m across, centre 14.8 m (photo 02 solve: ring 8.75-20.9 m)"
+[[element]]
+type = "cylinder"
+name = "oculus_disc"
+from = [-24.67, 14.8, 9.3]
+to = [-24.729, 14.8, 9.312]
+radius = 5.15
+segments = 48
+material = "plaster"
+note = "the blind oculus (always walled up), rendered panel with a small central window"
+[[element]]
+type = "box"
+material = "dark"
+center = [0.0, 0.0, 0.0]
+size = [0.25, 2.0, 1.1]
+transform = { translate = [-24.748, 15.2, 9.316], rotate_y = 11.464 }
+[[element]]
+type = "mass"
+name = "west_front_n"
+polygon = [[-27.45, -4.32], [-26.37, 1.03], [-24.802, 0.712], [-25.882, -4.638]]
+height = 19.5
+material = "stone"
+note = "north bay of the west front, top ~19.5 m (photos 02, 29: NW corner 18.2-20.5)"
+[[element]]
+type = "mass"
+name = "north_octagon_chapel"
+polygon = { shape = "octagon", center = [-16.0, -8.7], width = 3.4, rotation = 12 }
+height = 7.2
+material = "stone"
+note = "small octagonal chapel on the north side with a blue tiled pyramid cupola (photo extra/21); position estimated from the photo, sticks 1.5 m out of the OSM outline"
+cornice = { profile = "eave", size = 0.3, material = "stone_fine" }
+roof = { shape = "pyramid", height = 2.3, overhang = 0.2, material = "blue_tiles" }
+
+[[element]]
+type = "openings"
+on = "chapels_n"
+edges = "facing:n"
+kind = "portal"
+arch = "flat"
+width = 2.6
+height = 5.0
+levels = [0.0]
+bays = { at = [2.2] }
+depth = 0.5
+infill = "door"
+surround = { width = 0.6, projection = 0.3, pediment = "segmental" }
+material = "stone_fine"
+note = "portal of the Placa de la Comunio de Sant Joan (photos extra/21, extra/26)"
+
+[[element]]
+type = "openings"
+on = "chapels_n"
+edges = "facing:n"
+kind = "door"
+arch = "pointed"
+width = 2.5
+height = 4.0
+levels = [0.0]
+bays = { at = [8.6, 11.6] }
+depth = 0.6
+infill = "grille"
+material = "stone_fine"
+note = "two Gothic arcosolia with iron gates beside the north door (photo extra/21)"
+
+[[element]]
+type = "openings"
+on = "chapels_n"
+edges = "facing:n"
+kind = "oculus"
+width = 2.2
+levels = [9.0]
+bays = { at = [10.1] }
+depth = 0.3
+infill = "blind"
+tracery = "quatrefoil"
+material = "stone_fine"
+# ============================================================ south side detail
+[[element]]
+type = "openings"
+on = "chapels_s"
+edges = "facing:s"
+kind = "portal"
+arch = "flat"
+width = 2.3
+height = 4.9
+levels = [0.0]
+bays = { at = [7.4] }
+depth = 0.5
+infill = "door"
+surround = { width = 0.7, projection = 0.35, pediment = "broken_segmental" }
+material = "stone_fine"
+note = "Baroque portal of Carrer Vell de la Palla, door 2.3 x 4.9 m (photo 02 solve)"
+[[element]]
+type = "pilaster"
+at = [-10.378, 0.0, 20.993]
+facing = "168.826"
+height = 7.0
+width = 0.75
+depth = 0.45
+order = "composite"
+material = "stone_fine"
+[[element]]
+type = "pilaster"
+at = [-6.944, 0.0, 20.315]
+facing = "168.826"
+height = 7.0
+width = 0.75
+depth = 0.45
+order = "composite"
+material = "stone_fine"
+[[element]]
+type = "box"
+name = "south_portal_attic"
+material = "stone_fine"
+center = [0.0, 0.0, 0.0]
+size = [2.6, 4.6, 0.5]
+transform = { translate = [-8.632, 9.8, 20.801], rotate_y = 11.174 }
+note = "niche storey of the south portal with the statue, top 13.5 m (photo 02)"
+
+[[element]]
+type = "statue"
+at = [-8.545, 8.6, 21.243]
+facing = "168.826"
+height = 1.9
+style = "figure"
+material = "sculpture"
+[[element]]
+type = "box"
+material = "stone"
+center = [0.0, 0.0, 0.0]
+size = [6.782, 0.7, 0.9]
+transform = { translate = [-12.007, 16.95, 18.679], rotate = [0.0, 0.0, -38.814], rotate_y = -78.826 }
+note = "sloped coping of an internal buttress between two chapels (photos 02, 08, PNOA)"
+[[element]]
+type = "pinnacle"
+at = [-12.44, 19.9, 16.485]
+width = 0.55
+height = 2.6
+sides = 4
+crockets = 2
+material = "stone_fine"
+[[element]]
+type = "finial"
+at = [-9.896, 19.9, 15.949]
+style = "ball"
+size = 0.8
+material = "stone_fine"
+[[element]]
+type = "box"
+material = "stone"
+center = [0.0, 0.0, 0.0]
+size = [6.833, 0.7, 0.9]
+transform = { translate = [-6.912, 16.95, 17.639], rotate = [0.0, 0.0, -38.445], rotate_y = -78.826 }
+note = "sloped coping of an internal buttress between two chapels (photos 02, 08, PNOA)"
+[[element]]
+type = "pinnacle"
+at = [-7.352, 19.9, 15.412]
+width = 0.55
+height = 2.6
+sides = 4
+crockets = 2
+material = "stone_fine"
+[[element]]
+type = "finial"
+at = [-4.808, 19.9, 14.876]
+style = "ball"
+size = 0.8
+material = "stone_fine"
+[[element]]
+type = "box"
+material = "stone"
+center = [0.0, 0.0, 0.0]
+size = [6.885, 0.7, 0.9]
+transform = { translate = [-1.817, 16.95, 16.599], rotate = [0.0, 0.0, -38.082], rotate_y = -78.826 }
+note = "sloped coping of an internal buttress between two chapels (photos 02, 08, PNOA)"
+[[element]]
+type = "pinnacle"
+at = [-2.263, 19.9, 14.34]
+width = 0.55
+height = 2.6
+sides = 4
+crockets = 2
+material = "stone_fine"
+[[element]]
+type = "finial"
+at = [0.281, 19.9, 13.804]
+style = "ball"
+size = 0.8
+material = "stone_fine"
+[[element]]
+type = "box"
+material = "stone"
+center = [0.0, 0.0, 0.0]
+size = [6.937, 0.7, 0.9]
+transform = { translate = [3.278, 16.95, 15.558], rotate = [0.0, 0.0, -37.725], rotate_y = -78.826 }
+note = "sloped coping of an internal buttress between two chapels (photos 02, 08, PNOA)"
+[[element]]
+type = "pinnacle"
+at = [2.825, 19.9, 13.267]
+width = 0.55
+height = 2.6
+sides = 4
+crockets = 2
+material = "stone_fine"
+[[element]]
+type = "finial"
+at = [5.37, 19.9, 12.731]
+style = "ball"
+size = 0.8
+material = "stone_fine"
+[[element]]
+type = "box"
+material = "stone"
+center = [0.0, 0.0, 0.0]
+size = [6.99, 0.7, 0.9]
+transform = { translate = [8.373, 16.95, 14.518], rotate = [0.0, 0.0, -37.373], rotate_y = -78.826 }
+note = "sloped coping of an internal buttress between two chapels (photos 02, 08, PNOA)"
+[[element]]
+type = "pinnacle"
+at = [7.914, 19.9, 12.195]
+width = 0.55
+height = 2.6
+sides = 4
+crockets = 2
+material = "stone_fine"
+[[element]]
+type = "finial"
+at = [10.458, 19.9, 11.658]
+style = "ball"
+size = 0.8
+material = "stone_fine"
+[[element]]
+type = "box"
+material = "stone"
+center = [0.0, 0.0, 0.0]
+size = [7.042, 0.7, 0.9]
+transform = { translate = [13.468, 16.95, 13.478], rotate = [0.0, 0.0, -37.027], rotate_y = -78.826 }
+note = "sloped coping of an internal buttress between two chapels (photos 02, 08, PNOA)"
+[[element]]
+type = "pinnacle"
+at = [13.003, 19.9, 11.122]
+width = 0.55
+height = 2.6
+sides = 4
+crockets = 2
+material = "stone_fine"
+[[element]]
+type = "box"
+material = "stone"
+center = [0.0, 0.0, 0.0]
+size = [6.882, 0.7, 0.9]
+transform = { translate = [-16.419, 16.95, -3.655], rotate = [0.0, 0.0, -38.108], rotate_y = 101.174 }
+note = "sloped coping of an internal buttress between two chapels (photos 02, 08, PNOA)"
+[[element]]
+type = "pinnacle"
+at = [-15.973, 19.9, -1.399]
+width = 0.55
+height = 2.6
+sides = 4
+crockets = 2
+material = "stone_fine"
+[[element]]
+type = "finial"
+at = [-13.428, 19.9, -1.931]
+style = "ball"
+size = 0.8
+material = "stone_fine"
+[[element]]
+type = "box"
+material = "stone"
+center = [0.0, 0.0, 0.0]
+size = [6.882, 0.7, 0.9]
+transform = { translate = [-11.329, 16.95, -4.719], rotate = [0.0, 0.0, -38.108], rotate_y = 101.174 }
+note = "sloped coping of an internal buttress between two chapels (photos 02, 08, PNOA)"
+[[element]]
+type = "pinnacle"
+at = [-10.883, 19.9, -2.463]
+width = 0.55
+height = 2.6
+sides = 4
+crockets = 2
+material = "stone_fine"
+[[element]]
+type = "finial"
+at = [-8.338, 19.9, -2.995]
+style = "ball"
+size = 0.8
+material = "stone_fine"
+[[element]]
+type = "box"
+material = "stone"
+center = [0.0, 0.0, 0.0]
+size = [6.882, 0.7, 0.9]
+transform = { translate = [-6.238, 16.95, -5.783], rotate = [0.0, 0.0, -38.108], rotate_y = 101.174 }
+note = "sloped coping of an internal buttress between two chapels (photos 02, 08, PNOA)"
+[[element]]
+type = "pinnacle"
+at = [-5.793, 19.9, -3.527]
+width = 0.55
+height = 2.6
+sides = 4
+crockets = 2
+material = "stone_fine"
+[[element]]
+type = "finial"
+at = [-3.247, 19.9, -4.059]
+style = "ball"
+size = 0.8
+material = "stone_fine"
+[[element]]
+type = "box"
+material = "stone"
+center = [0.0, 0.0, 0.0]
+size = [6.882, 0.7, 0.9]
+transform = { translate = [-1.148, 16.95, -6.847], rotate = [0.0, 0.0, -38.108], rotate_y = 101.174 }
+note = "sloped coping of an internal buttress between two chapels (photos 02, 08, PNOA)"
+[[element]]
+type = "pinnacle"
+at = [-0.702, 19.9, -4.591]
+width = 0.55
+height = 2.6
+sides = 4
+crockets = 2
+material = "stone_fine"
+[[element]]
+type = "finial"
+at = [1.843, 19.9, -5.123]
+style = "ball"
+size = 0.8
+material = "stone_fine"
+[[element]]
+type = "box"
+material = "stone"
+center = [0.0, 0.0, 0.0]
+size = [6.882, 0.7, 0.9]
+transform = { translate = [3.942, 16.95, -7.911], rotate = [0.0, 0.0, -38.108], rotate_y = 101.174 }
+note = "sloped coping of an internal buttress between two chapels (photos 02, 08, PNOA)"
+[[element]]
+type = "pinnacle"
+at = [4.388, 19.9, -5.655]
+width = 0.55
+height = 2.6
+sides = 4
+crockets = 2
+material = "stone_fine"
+[[element]]
+type = "finial"
+at = [6.933, 19.9, -6.187]
+style = "ball"
+size = 0.8
+material = "stone_fine"
+[[element]]
+type = "box"
+material = "stone"
+center = [0.0, 0.0, 0.0]
+size = [6.882, 0.7, 0.9]
+transform = { translate = [9.033, 16.95, -8.975], rotate = [0.0, 0.0, -38.108], rotate_y = 101.174 }
+note = "sloped coping of an internal buttress between two chapels (photos 02, 08, PNOA)"
+[[element]]
+type = "pinnacle"
+at = [9.478, 19.9, -6.719]
+width = 0.55
+height = 2.6
+sides = 4
+crockets = 2
+material = "stone_fine"
+# =============================================================== Comunio dome
+
+[[element]]
+type = "mass"
+name = "comunio_drum_low"
+polygon = { shape = "circle", center = [-2.36, -16.55], radius = 5.3 }
+y0 = 12.0
+height = 5.4
+material = "brick"
+note = "drum of the Comunio dome (Catastro circle r 5.4); springing ~18.5 m, crown ~22.8, lantern cap 26.0 (photo 01/27 solve)"
+cornice = { profile = "eave", size = 0.35, material = "roof" }
+
+[[element]]
+type = "mass"
+name = "comunio_drum_high"
+polygon = { shape = "circle", center = [-2.36, -16.55], radius = 4.65 }
+y0 = 17.4
+height = 1.1
+material = "brick"
+cornice = { profile = "eave", size = 0.3, material = "roof" }
+
+[[element]]
+type = "dome"
+name = "comunio_dome"
+center = [-2.36, -16.55]
+y = 18.5
+radius = 4.3
+height = 4.2
+profile = "hemisphere"
+material = "dome_tiles"
+ribs = { count = 8, width = 0.28, depth = 0.1, material = "sculpture" }
+  [[element.lantern]]
+  type = "lantern"
+  radius = 1.0
+  height = 2.2
+  sides = 8
+  cap = "dome"
+  cap_height = 0.9
+  cap_material = "dome_tiles"
+  material = "brick"
+  finial = "cross"
+# ========================================================= east facade (frame)
+
+[[element]]
+type = "group"
+name = "east_decor"
+material = "stone_fine"
+transform = { translate = [23, 0, 14.3], rotate_y = 107.964 }
+note = "local x along the facade from its S end, z out of the facade; positions from photo 01 (rectified, 31.9 px/m on the facade plane)"
+  [[element.children]]
+  type = "box"
+  min = [0.0, 16.1, -0.9]
+  max = [28.857, 16.8, -0.25]
+  [[element.children]]
+  type = "finial"
+  at = [0.4, 16.8, -0.55]
+  style = "ball"
+  size = 0.65
+  [[element.children]]
+  type = "finial"
+  at = [2.26, 16.8, -0.55]
+  style = "ball"
+  size = 0.65
+  [[element.children]]
+  type = "finial"
+  at = [4.07, 16.8, -0.55]
+  style = "ball"
+  size = 0.65
+  [[element.children]]
+  type = "finial"
+  at = [5.84, 16.8, -0.55]
+  style = "ball"
+  size = 0.65
+  [[element.children]]
+  type = "finial"
+  at = [7.6, 16.8, -0.55]
+  style = "ball"
+  size = 0.65
+  [[element.children]]
+  type = "finial"
+  at = [10.25, 16.8, -0.55]
+  style = "ball"
+  size = 0.65
+  [[element.children]]
+  type = "finial"
+  at = [19.05, 16.8, -0.55]
+  style = "ball"
+  size = 0.65
+  [[element.children]]
+  type = "finial"
+  at = [21.6, 16.8, -0.55]
+  style = "ball"
+  size = 0.65
+  [[element.children]]
+  type = "finial"
+  at = [23.25, 16.8, -0.55]
+  style = "ball"
+  size = 0.65
+  [[element.children]]
+  type = "finial"
+  at = [24.9, 16.8, -0.55]
+  style = "ball"
+  size = 0.65
+  [[element.children]]
+  type = "finial"
+  at = [26.45, 16.8, -0.55]
+  style = "ball"
+  size = 0.65
+  [[element.children]]
+  type = "finial"
+  at = [28.457, 16.8, -0.55]
+  style = "ball"
+  size = 0.65
+  [[element.children]]
+  type = "box"
+  min = [-0.05, 16.8, -1.0]
+  max = [1.15, 17.9, 0.1]
+  [[element.children]]
+  type = "statue"
+  at = [0.55, 17.9, -0.45]
+  facing = "s"
+  height = 2.4
+  style = "figure"
+  material = "sculpture"
+  [[element.children]]
+  type = "box"
+  min = [27.707, 16.8, -1.0]
+  max = [28.907, 17.9, 0.1]
+  [[element.children]]
+  type = "statue"
+  at = [28.307, 17.9, -0.45]
+  facing = "s"
+  height = 2.4
+  style = "figure"
+  material = "sculpture"
+  [[element.children]]
+  type = "extrude"
+  plane = "xy"
+  origin = [0.0, 0.0, -2.2]
+  length = 1.6
+  material = "stone_east"
+  profile = [[7.6, 16.1], [21.4, 16.1], [21.4, 17.3], [19.6, 18.2], [18.8, 20.3], [16.2, 21.1], [12.6, 21.1], [10.0, 20.3], [9.2, 18.2], [7.6, 17.3]]
+  [[element.children]]
+  type = "box"
+  min = [9.25, 16.1, -1.2]
+  max = [10.75, 20.6, -0.2]
+  [[element.children]]
+  type = "statue"
+  at = [10, 20.6, -0.7]
+  facing = "s"
+  height = 2.7
+  style = "figure"
+  material = "sculpture"
+  [[element.children]]
+  type = "box"
+  min = [18.05, 16.1, -1.2]
+  max = [19.55, 20.6, -0.2]
+  [[element.children]]
+  type = "statue"
+  at = [18.8, 20.6, -0.7]
+  facing = "s"
+  height = 2.7
+  style = "figure"
+  material = "sculpture"
+  [[element.children]]
+  type = "box"
+  min = [12.55, 16.1, -3.2]
+  max = [16.35, 20.2, -0.2]
+  [[element.children]]
+  type = "box"
+  min = [12.9, 20.2, -3]
+  max = [16, 23.5, -0.25]
+  [[element.children]]
+  type = "box"
+  min = [12.05, 23.5, -3.4]
+  max = [16.85, 24.1, 0.15]
+  [[element.children]]
+  type = "box"
+  min = [12.75, 24.1, -3.1]
+  max = [16.15, 27.6, -0.1]
+  [[element.children]]
+  type = "box"
+  material = "dark"
+  min = [13.9, 24.5, -0.6]
+  max = [15, 26.9, -0.08]
+  [[element.children]]
+  type = "box"
+  min = [12.25, 27.6, -3.35]
+  max = [16.65, 28.3, 0.15]
+  [[element.children]]
+  type = "box"
+  min = [13.15, 28.3, -2.9]
+  max = [15.75, 30.0, -0.3]
+  [[element.children]]
+  type = "cone"
+  at = [14.45, 30.0, -1.6]
+  height = 3.2
+  radius = 0.95
+  radius_top = 0.05
+  segments = 4
+  faceted = true
+  material = "slate"
+  [[element.children]]
+  type = "sphere"
+  center = [14.45, 33.6, -1.6]
+  radius = 0.4
+  material = "iron"
+  [[element.children]]
+  type = "finial"
+  at = [14.45, 33.95, -1.6]
+  style = "weathervane"
+  size = 2.0
+  material = "iron"
+  note = "the pardal de Sant Joan: eagle weathervane, eagle top 34.9 m, rod 36 m (photo solve 01/02/08/27)"
+  [[element.children]]
+  type = "cylinder"
+  from = [14.45, 22.3, -0.25]
+  to = [14.45, 22.3, -0.1]
+  radius = 0.95
+  segments = 32
+  material = "clock"
+  [[element.children]]
+  type = "column"
+  at = [13.35, 24.1, -0.05]
+  height = 3.5
+  radius = 0.17
+  order = "salomonic"
+  [[element.children]]
+  type = "column"
+  at = [15.55, 24.1, -0.05]
+  height = 3.5
+  radius = 0.17
+  order = "salomonic"
+  [[element.children]]
+  type = "statue"
+  at = [13.45, 28.3, -0.6]
+  facing = "s"
+  height = 1.2
+  style = "angel"
+  material = "sculpture"
+  [[element.children]]
+  type = "statue"
+  at = [15.45, 28.3, -0.6]
+  facing = "s"
+  height = 1.2
+  style = "angel"
+  material = "sculpture"
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  min = [2.04, 12.85, 0.0]
+  max = [2.48, 15.55, 0.12]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  min = [3.845, 12.85, 0.0]
+  max = [4.285, 15.55, 0.12]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  min = [5.62, 12.85, 0.0]
+  max = [6.06, 15.55, 0.12]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  min = [7.395, 12.85, 0.0]
+  max = [7.835, 15.55, 0.12]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  min = [12.68, 12.85, 0.0]
+  max = [13.12, 15.55, 0.12]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  min = [14.43, 12.85, 0.0]
+  max = [14.87, 15.55, 0.12]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  min = [16.18, 12.85, 0.0]
+  max = [16.62, 15.55, 0.12]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  min = [21.38, 12.85, 0.0]
+  max = [21.82, 15.55, 0.12]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  min = [23.03, 12.85, 0.0]
+  max = [23.47, 15.55, 0.12]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  min = [24.68, 12.85, 0.0]
+  max = [25.12, 15.55, 0.12]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  min = [26.23, 12.85, 0.0]
+  max = [26.67, 15.55, 0.12]
+  [[element.children]]
+  type = "column"
+  at = [13.1, 20.2, -0.15]
+  height = 3.3
+  radius = 0.2
+  order = "salomonic"
+  [[element.children]]
+  type = "finial"
+  at = [13.1, 28.3, -0.4]
+  style = "urn"
+  size = 0.9
+  [[element.children]]
+  type = "column"
+  at = [15.8, 20.2, -0.15]
+  height = 3.3
+  radius = 0.2
+  order = "salomonic"
+  [[element.children]]
+  type = "finial"
+  at = [15.8, 28.3, -0.4]
+  style = "urn"
+  size = 0.9
+  [[element.children]]
+  type = "sweep"
+  material = "sculpture"
+  profile = { shape = "circle", radius = 0.1 }
+  path = { center = [14.45, 22.3, -0.1], radius = 1.0, angles = [0, 360], normal = [0, 0, 1] }
+  [[element.children]]
+  type = "box"
+  material = "sculpture"
+  min = [13.25, 16.9, -0.2]
+  max = [15.65, 20.0, 0.15]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  min = [3.66, 4.1, 0.0]
+  max = [8.46, 8.1, 0.22]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  min = [2.96, 8.1, 0.0]
+  max = [9.16, 8.75, 0.75]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  min = [4.16, 8.75, 0.0]
+  max = [7.96, 10.5, 0.35]
+  [[element.children]]
+  type = "box"
+  material = "dark"
+  min = [5.61, 8.95, 0.3]
+  max = [6.51, 10.35, 0.37]
+  [[element.children]]
+  type = "statue"
+  at = [6.06, 8.95, 0.25]
+  facing = "s"
+  height = 1.35
+  style = "figure"
+  material = "sculpture"
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  min = [3.46, 10.5, 0.0]
+  max = [8.66, 10.85, 0.7]
+  [[element.children]]
+  type = "extrude"
+  material = "stone_fine"
+  plane = "xy"
+  origin = [0.0, 0.0, 0.0]
+  length = 0.75
+  profile = [[3.31, 10.85], [8.81, 10.85], [6.06, 12.0]]
+  [[element.children]]
+  type = "column"
+  at = [3.41, 4.1, 0.45]
+  height = 4.0
+  radius = 0.2
+  order = "composite"
+  pedestal = 1.1
+  material = "stone_fine"
+  [[element.children]]
+  type = "column"
+  at = [4.11, 4.1, 0.45]
+  height = 4.0
+  radius = 0.2
+  order = "composite"
+  pedestal = 1.1
+  material = "stone_fine"
+  [[element.children]]
+  type = "column"
+  at = [8.01, 4.1, 0.45]
+  height = 4.0
+  radius = 0.2
+  order = "composite"
+  pedestal = 1.1
+  material = "stone_fine"
+  [[element.children]]
+  type = "column"
+  at = [8.71, 4.1, 0.45]
+  height = 4.0
+  radius = 0.2
+  order = "composite"
+  pedestal = 1.1
+  material = "stone_fine"
+  [[element.children]]
+  type = "sweep"
+  material = "stone_fine"
+  profile = { shape = "circle", radius = 0.12 }
+  path = { center = [3.86, 9.4, 0.25], radius = 0.45, angles = [0, 330], normal = [0, 0, 1] }
+  [[element.children]]
+  type = "sweep"
+  material = "stone_fine"
+  profile = { shape = "circle", radius = 0.12 }
+  path = { center = [8.26, 9.4, 0.25], radius = 0.45, angles = [0, 330], normal = [0, 0, 1] }
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  min = [20.3, 4.1, 0.0]
+  max = [25.1, 8.1, 0.22]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  min = [19.6, 8.1, 0.0]
+  max = [25.8, 8.75, 0.75]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  min = [20.8, 8.75, 0.0]
+  max = [24.6, 10.5, 0.35]
+  [[element.children]]
+  type = "box"
+  material = "dark"
+  min = [22.25, 8.95, 0.3]
+  max = [23.15, 10.35, 0.37]
+  [[element.children]]
+  type = "statue"
+  at = [22.7, 8.95, 0.25]
+  facing = "s"
+  height = 1.35
+  style = "figure"
+  material = "sculpture"
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  min = [20.1, 10.5, 0.0]
+  max = [25.3, 10.85, 0.7]
+  [[element.children]]
+  type = "extrude"
+  material = "stone_fine"
+  plane = "xy"
+  origin = [0.0, 0.0, 0.0]
+  length = 0.75
+  profile = [[19.95, 10.85], [25.45, 10.85], [22.7, 12.0]]
+  [[element.children]]
+  type = "column"
+  at = [20.05, 4.1, 0.45]
+  height = 4.0
+  radius = 0.2
+  order = "composite"
+  pedestal = 1.1
+  material = "stone_fine"
+  [[element.children]]
+  type = "column"
+  at = [20.75, 4.1, 0.45]
+  height = 4.0
+  radius = 0.2
+  order = "composite"
+  pedestal = 1.1
+  material = "stone_fine"
+  [[element.children]]
+  type = "column"
+  at = [24.65, 4.1, 0.45]
+  height = 4.0
+  radius = 0.2
+  order = "composite"
+  pedestal = 1.1
+  material = "stone_fine"
+  [[element.children]]
+  type = "column"
+  at = [25.35, 4.1, 0.45]
+  height = 4.0
+  radius = 0.2
+  order = "composite"
+  pedestal = 1.1
+  material = "stone_fine"
+  [[element.children]]
+  type = "sweep"
+  material = "stone_fine"
+  profile = { shape = "circle", radius = 0.12 }
+  path = { center = [20.5, 9.4, 0.25], radius = 0.45, angles = [0, 330], normal = [0, 0, 1] }
+  [[element.children]]
+  type = "sweep"
+  material = "stone_fine"
+  profile = { shape = "circle", radius = 0.12 }
+  path = { center = [24.9, 9.4, 0.25], radius = 0.45, angles = [0, 330], normal = [0, 0, 1] }
+  [[element.children]]
+  type = "extrude"
+  material = "stone_fine"
+  plane = "xy"
+  origin = [0.0, 0.0, 0.0]
+  length = 0.55
+  profile = [[11.9, 5.6], [17.5, 5.6], [17.5, 10.2], [14.7, 11.25], [11.9, 10.2], [11.9, 5.6], [12.4, 6.0], [12.4, 10.0], [14.7, 10.75], [17, 10.0], [17, 6.0], [12.4, 6.0]]
+  [[element.children]]
+  type = "sphere"
+  material = "sculpture"
+  center = [14.7, 8.6, 0.05]
+  radii = [2.0, 2.2, 0.32]
+  [[element.children]]
+  type = "statue"
+  at = [14.7, 7.2, 0.45]
+  facing = "s"
+  height = 2.4
+  style = "group"
+  material = "sculpture"
+  [[element.children]]
+  type = "box"
+  material = "dark"
+  min = [14.2, 5.95, 0.0]
+  max = [15.2, 6.85, 0.1]
+
+
+# ======================================================================= views
+# cameras from the joint bundle adjustment (scratchpad sj/ba.py, o5.json)
+
+[[view]]
+name = "east_frontal"
+photo = "photos/01_Iglesia_de_los_Juanes_Valencia_Espana_2014_06_29_DD_19.jpg"
+eye = [50.34, 1.55, -5.92]
+target = [11.34, 1.55, 2.97]
+fov_y = 62.65
+roll = -1.02
+shift = [0.0, 0.363]
+sun = [150, 60]
+context = false
+
+[[view]]
+name = "southwest_far"
+photo = "photos/02_Valencia_chiesa_dei_Santos_Juanes_01_0.jpg"
+eye = [-52.33, 1.32, 84.22]
+target = [-32.61, 1.32, 49.42]
+fov_y = 40.9
+roll = -0.36
+shift = [0.0, 0.401]
+sun = [200, 40]
+
+[[view]]
+name = "southwest_tower"
+photo = "photos/08_Iglesia_de_los_Santos_Juanes_panoramio.jpg"
+eye = [-31.77, 1.66, 79.13]
+target = [-21.56, 9.45, 41.25]
+fov_y = 62.64
+roll = -0.22
+sun = [250, 15]
+
+[[view]]
+name = "east_oblique"
+photo = "extra/27.jpg"
+eye = [55.65, 1.61, -7.5]
+target = [18.51, 14.67, -0.39]
+fov_y = 44.43
+roll = 1.94
+context = false
+
+[[view]]
+name = "east_trees"
+photo = "photos/05_Fachada_trasera_de_la_Iglesia_de_los_Santos_Juanes.jpg"
+eye_height = 1.6
+context = false
+match = [
+  { px = [205, 396], world = [23.0, 13.35, 14.3] },
+  { px = [205, 300], world = [23.0, 16.1, 14.3] },
+  { px = [1005, 445], world = [14.1, 13.35, -13.15] },
+  { px = [1005, 397], world = [14.1, 14.85, -13.15] },
+  { px = [627, 203], world = [18.45, 22.3, 0.59] },
+  { px = [217, 190], world = [22.4, 20.3, 13.92] },
+]
+
+[[view]]
+name = "west_tower_dd"
+photo = "photos/09_Iglesia_de_los_Juanes_Valencia_Espana_2014_06_30_DD_109.jpg"
+eye_height = 1.6
+context = false
+match = [
+  { px = [987, 2142], world = [-21.82, 0.0, 23.23] },
+  { px = [1147, 2117], world = [-15.94, 0.0, 21.99] },
+  { px = [987, 908], world = [-21.82, 28.5, 23.23] },
+  { px = [713, 908], world = [-23.03, 28.5, 17.5] },
+  { px = [1138, 908], world = [-15.94, 28.5, 21.99] },
+  { px = [900, 187], world = [-19.43, 48.6, 19.98] },
+  { px = [92, 2117], world = [-27.45, 0.0, -4.32] },
+  { px = [425, 1533], world = [-24.67, 14.8, 9.3] },
+]
+
+[[view]]
+name = "west_catastro"
+photo = "photos/catastro_5528401YJ2752H.jpg"
+eye_height = 1.6
+match = [
+  { px = [611, 1429], world = [-21.82, 0.0, 23.23] },
+  { px = [736, 1433], world = [-15.94, 0.0, 21.99] },
+  { px = [611, 569], world = [-21.82, 28.5, 23.23] },
+  { px = [721, 569], world = [-15.94, 28.5, 21.99] },
+  { px = [493, 569], world = [-23.03, 28.5, 17.5] },
+  { px = [607, 221], world = [-19.43, 48.6, 19.98] },
+  { px = [100, 1407], world = [-27.45, 0.0, -4.32] },
+  { px = [311, 986], world = [-24.67, 14.8, 9.3] },
+]
+
+[[view]]
+name = "south_lateral"
+photo = "photos/13_Real_Parroquia_de_los_Santos_Juanes.jpg"
+eye = [-15.0, 1.6, 60.0]
+fix = ["height"]
+context = false
+match = [
+  { px = [403, 895], world = [-15.94, 0.0, 21.99] },
+  { px = [397, 243], world = [-15.94, 28.5, 21.99] },
+  { px = [250, 243], world = [-21.82, 28.5, 23.23] },
+  { px = [330, 18], world = [-19.43, 48.6, 19.98] },
+  { px = [1070, 545], world = [22.4, 20.3, 13.92] },
+  { px = [1105, 580], world = [23.0, 16.1, 14.3] },
+  { px = [598, 895], world = [-8.63, 0.0, 20.6] },
+]
+
+[[view]]
+name = "west_front"
+photo = "extra/29.jpg"
+eye_height = 1.6
+match = [
+  { px = [624, 880], world = [-24.67, 14.8, 9.3] },
+  { px = [913, 387], world = [-23.03, 28.5, 17.5] },
+  { px = [1153, 387], world = [-21.82, 28.5, 23.23] },
+  { px = [987, 29], world = [-19.43, 48.6, 19.98] },
+  { px = [603, 1527], world = [-24.67, 0.0, 9.3] },
+  { px = [309, 587], world = [-26.37, 24.4, 1.03] },
+  { px = [627, 520], world = [-24.67, 26.0, 9.3] },
+]
+
+[[view]]
+name = "east_low"
+photo = "photos/06_Esglesia_Parroquial_dels_Sants_Joans_2.jpg"
+eye_height = 1.6
+context = false
+match = [
+  { px = [80, 255], world = [22.4, 20.3, 13.92] },
+  { px = [1125, 480], world = [13.84, 20.3, -12.49] },
+  { px = [712, 340], world = [18.45, 22.3, 0.59] },
+  { px = [630, 45], world = [17.02, 34.9, 1.05] },
+  { px = [30, 585], world = [23.0, 13.35, 14.3] },
+  { px = [1210, 690], world = [14.1, 13.35, -13.15] },
+]

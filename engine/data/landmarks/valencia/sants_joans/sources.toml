@@ -21,6 +21,32 @@ catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatast
 catastro_floor_area = { value = 2501.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5528401&rc2=YJ2752H", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 5, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 44 parts" }
 
+# ---- measured for landmark.toml (photo bundle adjustment: scratchpad sj/ba.py on photos 01, 02, 08, extra/27;
+# ---- eye-height prior 1.6 m; f prior from EXIF: photo 01 Canon 5D II 17 mm -> 1025 px at 1280 (solved 1027),
+# ---- photo 02 Canon 6D 30 mm -> 2118 px (solved 2037, unconstrained); plan from OSM checked on IGN PNOA (CC BY 4.0))
+plan_nave_width = { value = 17.7, unit = "m", source = "OSM way 1288123734 (perpendicular distance of the N and S nave walls)" }
+plan_overall_length = { value = 51.0, unit = "m", source = "OSM way 183237709, west front (x -27.45) to covetes front (x 28.4) along the nave axis", note = "nave + apse to the east screen ~45 m" }
+plan_east_facade_width = { value = 28.9, unit = "m", source = "OSM inner line of the covetes part 1288123733, (14.42,-13.26)-(23.30,14.22); bows 0.7 m, modelled as the straight chord", note = "photo 01 rectified: 920 px = 28.9 m -> 31.9 px/m, attic windows 14, 1.0 x 1.48 m" }
+plan_tower = { value = [5.9, 6.0], unit = "m", source = "OSM way 1288123735 / Catastro part 2 (5 floors)" }
+plan_comunio_dome_radius = { value = 4.2, unit = "m", source = "OSM way 1288123736 (dome), Catastro circle r 5.4 (drum)" }
+plan_covetes_depth = { value = 5.1, unit = "m", source = "OSM part 1288123733 (outer street front to the facade line)" }
+h_tower_belfry_base = { value = 28.5, unit = "m", source = "photo BA 02+08", note = "+-0.6; underside of the belfry cornice" }
+h_tower_belfry_top = { value = 37.6, unit = "m", source = "photo BA 02+08", note = "+-0.8; balustrade top 39.2, corner pinnacles 41.1 (photo 02 ray heights)" }
+h_tower_lantern = { value = 45.0, unit = "m", source = "photo BA 02+08", note = "+-0.9; lantern base 41.9" }
+h_tower_vane_top = { value = 48.6, unit = "m", source = "photo BA 02+08", note = "+-1.0" }
+h_tower_belfry_opening = { value = [30.4, 35.3], unit = "m", source = "photo 02 ray/plane heights on the tower south face", note = "1.6 m wide" }
+h_lateral_crest = { value = 19.9, unit = "m", source = "photo BA 02+08 (H_crest)", note = "+-0.5; nave wall crest at the tower, pinnacles above" }
+h_chapel_cornice = { value = 14.8, unit = "m", source = "photo 02 plane heights on the south wall", note = "gallery of square openings 12.5-14.1 m, paired every 5.2 m; lancets 5.0-9.1 m at u 1.8/12.3/17.4/22.6/27.5 m from the tower" }
+h_south_portal = { value = [4.9, 13.5], unit = "m", source = "photo 02", note = "door top 4.9, statue group top 13.5; centre 7.4 m from the tower" }
+h_west_front_top = { value = [24.4, 26.0], unit = "m", source = "photo 02 plane heights", note = "shoulders 24.2-24.6, raised centre 26.0, north bay ~19.5" }
+h_west_oculus = { value = [8.75, 20.9], unit = "m", source = "photo 02 plane heights", note = "blind oculus ~11.4 m across, centre 14.8 m, 13.9 m from the north end of the west front" }
+h_east_attic_windows = { value = [13.35, 14.85], unit = "m", source = "photo BA 01+27", note = "+-0.5" }
+h_east_cornice = { value = 16.1, unit = "m", source = "photo 01 (31.9 px/m from the window heights)", note = "balustrade 16.8, corner statues to 20.3" }
+h_clock_ball = { value = 33.8, unit = "m", source = "photo BA 01+02+08+27", note = "+-0.4; clock centre 22.3, eagle top 34.9 +-0.4, rod ~36" }
+h_terrace = { value = 1.4, unit = "m", source = "photo BA 01", note = "+-0.2; railing top 2.75" }
+h_comunio_dome = { value = [18.5, 22.8, 26.0], unit = "m", source = "photo 01/27 ray heights", note = "springing, crown, lantern cap (approximate, +-1 m)" }
+h_comunio_block_eave = { value = 13.2, unit = "m", source = "photo 01 (approximate)" }
+
 [[photo]]
 file = "photos/01_Iglesia_de_los_Juanes_Valencia_Espana_2014_06_29_DD_19.jpg"
 title = "File:Iglesia de los Juanes, Valencia, España, 2014-06-29, DD 19.JPG"
@@ -30,8 +56,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1250
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/02_Valencia_chiesa_dei_Santos_Juanes_01_0.jpg"
@@ -42,8 +68,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1541
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/03_Iglesia_de_los_Juanes_Valencia_Espana_2014_06_30_DD_110.jpg"
@@ -54,8 +80,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 2144
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/04_Sant_Joan_del_Mercat_Valencia_Marcok_f02.jpg"
@@ -68,8 +94,8 @@ height = 960
 camera = [46.84, 6.29]
 heading = 268.6
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/05_Fachada_trasera_de_la_Iglesia_de_los_Santos_Juanes.jpg"
@@ -81,8 +107,8 @@ width = 1280
 height = 853
 camera = [-23.18, 8.55]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/06_Esglesia_Parroquial_dels_Sants_Joans_2.jpg"
@@ -94,8 +120,8 @@ width = 1280
 height = 960
 camera = [6.14, 4.36]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/07_Iglesia_de_los_Santos_Juanes_01.jpg"
@@ -107,8 +133,8 @@ width = 1280
 height = 960
 camera = [-12.95, 195.67]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/08_Iglesia_de_los_Santos_Juanes_panoramio.jpg"
@@ -120,8 +146,8 @@ width = 1280
 height = 1920
 camera = [-53.28, 51.19]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/09_Iglesia_de_los_Juanes_Valencia_Espana_2014_06_30_DD_109.jpg"
@@ -132,8 +158,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 2296
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/10_Iglesia_de_los_Santos_Juanes_3.jpg"
@@ -145,8 +171,8 @@ width = 1280
 height = 2005
 camera = [-57.53, -94.89]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/11_Sant_Joan_del_Mercat_i_la_Llotja_Valencia.jpg"
@@ -169,8 +195,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/13_Real_Parroquia_de_los_Santos_Juanes.jpg"
@@ -181,8 +207,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/14_Iglesia_Parroquial_de_los_Santos_Juanes.jpg"
@@ -193,8 +219,8 @@ license = "CC BY-SA 2.0"
 width = 1280
 height = 1912
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/15_San_Juan_Valencia_02.jpg"
@@ -217,8 +243,8 @@ license = "CC BY-SA 2.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/catastro_5528401YJ2752H.jpg"
@@ -229,8 +255,86 @@ license = "Catastro open data (attribution required)"
 width = 1200
 height = 1600
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
+
+[[photo]]
+file = "extra/27.jpg"
+title = "File:Sant joan del mercat darrere2.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3ASant_joan_del_mercat_darrere2.jpg"
+author = "Felivet"
+license = "Public domain"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "e"
+note = "fetched by hand (Special:FilePath ?width=1280) into extra/"
+
+[[photo]]
+file = "extra/28.jpg"
+title = "File:Església de sant Joan del Mercat, façana de la plaça del Mercat.JPG"
+url = "https://commons.wikimedia.org/wiki/File%3AEsgl%C3%A9sia_de_sant_Joan_del_Mercat%2C_fa%C3%A7ana_de_la_pla%C3%A7a_del_Mercat.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 947
+exterior = true
+selected = true
+side = "e"
+note = "fetched by hand (Special:FilePath ?width=1280) into extra/"
+
+[[photo]]
+file = "extra/29.jpg"
+title = "File:065 Sant Joan del Mercat (València), façana oest, pl. Ciutat de Bruges.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3A065_Sant_Joan_del_Mercat_%28Val%C3%A8ncia%29%2C_fa%C3%A7ana_oest%2C_pl._Ciutat_de_Bruges.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "w"
+note = "fetched by hand (Special:FilePath ?width=1280) into extra/"
+
+[[photo]]
+file = "extra/30.jpg"
+title = "File:Cúpula de la capella de la Comunió de Sant Joan del Mercat, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File%3AC%C3%BApula_de_la_capella_de_la_Comuni%C3%B3_de_Sant_Joan_del_Mercat%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "n"
+note = "fetched by hand (Special:FilePath ?width=1280) into extra/"
+
+[[photo]]
+file = "extra/21.jpg"
+title = "File:123 Sant Joan del Mercat (València), angle nord- oest, pl. Comunió de Sant Joan.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3A123_Sant_Joan_del_Mercat_%28Val%C3%A8ncia%29%2C_angle_nord-_oest%2C_pl._Comuni%C3%B3_de_Sant_Joan.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "nw"
+note = "fetched by hand (Special:FilePath ?width=1280) into extra/"
+
+[[photo]]
+file = "extra/26.jpg"
+title = "File:Portalada de la plaça de la Comunió de sant Joan, sant Joan del Mercat, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File%3APortalada_de_la_pla%C3%A7a_de_la_Comuni%C3%B3_de_sant_Joan%2C_sant_Joan_del_Mercat%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 2040
+exterior = true
+selected = true
+side = "n"
+note = "fetched by hand (Special:FilePath ?width=1280) into extra/"
 
 [[plan]]
 file = "plans/01_1_08_IGLESIA_PARROQUIAL_DE_LOS_SANTOS_JUANES_firmado.jpg"
@@ -289,3 +393,8 @@ notes = "built=1450; use=4_3_publicServices; area=2501; area_in_outline=1488.4"
 url = "https://eduwp.edu.gva.es/patrimonio-cultural/ficha-inmueble.php?id=1403"
 title = "Described at"
 notes = "Wikidata P973"
+
+[[reference]]
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+title = "IGN PNOA orthophoto (CC BY 4.0)"
+notes = "used to check the OSM plan, buttress rhythm (~5.2-5.9 m) and roofs"
