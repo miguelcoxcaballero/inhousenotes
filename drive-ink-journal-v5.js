@@ -10,7 +10,38 @@
     const UPLOAD='https://www.googleapis.com/upload/drive/v3/files';
     const OUTBOX='ink-journal-outbox';
     const KIND='ink-journal-v1', PREFIX='ink-journal:', MAX_BODY=8*1024*1024;
+    const MAX_OPERATION_CHARS=MAX_BODY/2;
     const folderLookups=new WeakMap();
+    const requiresPdf=()=>Object.assign(new Error('This edit requires the full PDF save'),{code:'INK_REQUIRES_PDF'});
+    const plainObject=value=>value&&typeof value==='object'
+        &&(Object.getPrototypeOf(value)===Object.prototype||Object.getPrototypeOf(value)===null)
+        &&typeof value.toJSON!=='function';
+    function ownValue(object,key){
+        const property=Object.getOwnPropertyDescriptor(object,key);
+        return property?.enumerable&&'value' in property?property.value:undefined;
+    }
+    function exceedsAssetLimit(operation){
+        if(!plainObject(operation))return false;
+        const pages=ownValue(operation,'pages');
+        if(!Array.isArray(pages)||typeof pages.toJSON==='function')return false;
+        let lowerBound=0;
+        for(const page of pages){
+            if(!plainObject(page))continue;
+            const background=ownValue(page,'backgroundImage');
+            if(typeof background==='string')lowerBound+=background.length;
+            const images=ownValue(page,'images');
+            if(Array.isArray(images)&&typeof images.toJSON!=='function')for(const image of images){
+                if(!plainObject(image))continue;
+                const src=ownValue(image,'src');
+                if(typeof src==='string')lowerBound+=src.length;
+            }
+            // JSON escaping can only increase these enumerable string values.
+            // Ignore envelope/point overhead here; the exact check still runs
+            // below for every operation that might fit.
+            if(lowerBound>MAX_OPERATION_CHARS)return true;
+        }
+        return false;
+    }
     const escape=value=>String(value).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     class Journal {
         constructor(host){
@@ -41,8 +72,9 @@
         }
         enqueue(operation,version){
             if(this.stopped||!this.docId)return Promise.reject(new Error('No journal document'));
+            if(exceedsAssetLimit(operation))return Promise.reject(requiresPdf());
             const encoded=JSON.stringify(operation);
-            if(encoded.length>MAX_BODY/2)return Promise.reject(new Error('This edit requires the full PDF save'));
+            if(encoded.length>MAX_OPERATION_CHARS)return Promise.reject(requiresPdf());
             if(!this.current||this.current.ops.length>=128||this.current.bytes+encoded.length>256*1024){
                 const previous=this.current;
                 if(previous&&previous.ack>=previous.rev)this.records.delete(this.key(previous));

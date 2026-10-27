@@ -472,3 +472,51 @@ test('success follow-up enforces the write rate limit and failures never schedul
   const saved=await journal.read(journal.key(journal.current));assert.equal(saved.ack,2);assert.equal(saved.rev,3);
  }finally{journal.stop();t.mock.timers.reset();}
 });
+
+test('oversized photo payloads reject before serialization without mutating the durable queue',async()=>{
+ const api=fakeInkDrive(),writer=replica(api,'writer');const photo='data:image/png;base64,'+'A'.repeat(4*1024*1024);
+ const operation={v:1,pages:[{pageId:'photo',backgroundImage:photo,images:[]}]};
+ const stringify=JSON.stringify;let encoded=0;
+ JSON.stringify=(value,...args)=>{if(value===operation)encoded++;return stringify(value,...args);};
+ try{
+  for(let i=0;i<3;i++)await assert.rejects(writer.j.enqueue(operation,1),error=>error.code==='INK_REQUIRES_PDF');
+ }finally{JSON.stringify=stringify;writer.j.stop();}
+ assert.equal(encoded,0);assert.equal(operation.pages[0].backgroundImage,photo);
+ assert.equal(writer.j.records.size,0);assert.equal(writer.store.data.size,0);assert.equal(writer.receipts.length,0);
+});
+
+test('photo preflight sums all page and embedded image payloads conservatively',async()=>{
+ const api=fakeInkDrive(),writer=replica(api,'writer');const image='A'.repeat(1536*1024);
+ const operation={v:1,pages:[{backgroundImage:image,images:[{src:image}]},{images:[{src:image}]}]};
+ const stringify=JSON.stringify;let encoded=0;
+ JSON.stringify=(value,...args)=>{if(value===operation)encoded++;return stringify(value,...args);};
+ try{await assert.rejects(writer.j.enqueue(operation,1),error=>error.code==='INK_REQUIRES_PDF');}
+ finally{JSON.stringify=stringify;writer.j.stop();}
+ assert.equal(encoded,0);assert.equal(writer.j.records.size,0);
+});
+
+test('fitting photos retain identical wire bytes and exact serialization checks escaped overflow',async()=>{
+ const api=fakeInkDrive(),writer=replica(api,'writer');
+ const fitting={v:1,pages:[{backgroundImage:'data:image/png;base64,'+'A'.repeat(1024*1024),images:[{src:'small'}]}]};
+ const expected=JSON.stringify(fitting);await writer.j.enqueue(fitting,1);assert.equal(writer.j.current.ops[0],expected);
+ const escaped={v:1,pages:[{backgroundImage:'"'.repeat(3*1024*1024)}]};
+ await assert.rejects(writer.j.enqueue(escaped,2),error=>error.code==='INK_REQUIRES_PDF');
+ const envelope={v:1,pages:[{backgroundImage:'A'.repeat(4*1024*1024-8)}]};
+ await assert.rejects(writer.j.enqueue(envelope,3),error=>error.code==='INK_REQUIRES_PDF');
+ assert.equal(writer.j.current.rev,1);assert.equal(writer.j.current.version,1);writer.j.stop();
+});
+
+test('size preflight does not reject omitted fields or custom JSON serialization',async()=>{
+ const api=fakeInkDrive(),writer=replica(api,'writer');const huge='A'.repeat(5*1024*1024);
+ const hidden={pageId:'hidden'};Object.defineProperty(hidden,'backgroundImage',{value:huge,enumerable:false});
+ const custom={backgroundImage:huge,toJSON(){return {pageId:'small'};}};
+ const operation={v:1,pages:[hidden,custom]};const expected=JSON.stringify(operation);
+ await writer.j.enqueue(operation,1);assert.equal(writer.j.current.ops[0],expected);writer.j.stop();
+});
+
+test('size classification never masks a real local persistence failure',async()=>{
+ const api=fakeInkDrive(),writer=replica(api,'writer');const failure=Object.assign(Error('Device storage full'),{code:'QUOTA'});
+ writer.store.patch=async()=>{throw failure;};
+ await assert.rejects(writer.j.enqueue({v:1,pages:[{backgroundImage:'small'}]},1),error=>error===failure);
+ assert.equal(writer.j.status().pending,1);assert.equal(writer.receipts.length,0);writer.j.stop();
+});
