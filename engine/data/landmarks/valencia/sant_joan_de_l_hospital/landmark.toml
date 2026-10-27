@@ -1,0 +1,783 @@
+# Església de Sant Joan de l'Hospital, València (Knights Hospitaller, before 1255 - 1316).
+# Single Gothic nave (pointed barrel vault on diaphragm arches, chapels between the buttresses)
+# ending in a five-sided ribbed apse that faces Carrer del Trinquet de Cavallers behind the
+# brick-and-ashlar crenellated wall of the medieval cemetery. North: the long courtyard (patio
+# del Calvari) with the Romanesque/Gothic north portal and the 17th-c. bell tower (stone shaft,
+# stuccoed bell stage with ball finials), closed to the east by the white house of the order
+# (brick front on the street, no. 5). South of the presbytery: the Baroque Real Capella de Santa
+# Bàrbara (Juan Pérez Castiel, 1684-89), Greek cross with a tiled dome on a short drum.
+#
+# Every dimension is in sources.toml [facts] with its source. Summary:
+# * plan: OSM way 514000994 + Catastro 6029506YJ2762G parts, checked on the IGN PNOA orthophoto;
+#   apse = half octagon of 4.57 m sides (Catastro), centre (14.88, -0.18);
+# * heights: constrained bundle adjustment of Commons photos 06, 07, 09, 13 (focal lengths from
+#   EXIF, eye-height prior) for the apse, buttresses, windows, dome and cemetery wall (brick-course
+#   count cross-check); photos 05, 08 for the bell tower and the north chapels.
+
+[landmark]
+name = "Església de Sant Joan de l'Hospital"
+slug = "sant_joan_de_l_hospital"
+main_facade = "facing:e"
+notes = "Gothic church of the Hospitallers in Ciutat Vella: apse with tall lancets and gargoyle buttresses behind the crenellated cemetery wall on Trinquet de Cavallers, north courtyard with the bell tower, Baroque domed chapel of Santa Bàrbara."
+[landmark.info]
+built = "before 1255 (nave) - 1316 (Gothic apse); bell tower first half of the 17th c.; Santa Bàrbara 1684-89"
+style = "Valencian Gothic (Cistercian-influenced); Baroque chapel"
+heritage = "BIC RI-51-0001123 (national monument 1943)"
+
+[defaults]
+material = "stone"
+roof_material = "roof"
+detail = 1.0
+
+[render]
+sun = [120, 50]
+paving = 45
+street_eye = [27.0, 1.6, 14.0]
+street_target = [18.5, 8.5, 1.0]
+street_fov = 66
+hide_context = ["context:364"]
+
+# ---------------------------------------------------------------- materials
+[material.stone]
+kind = "ashlar"
+tint = "#ab917f"
+block = [0.75, 0.32]
+weathering = 0.45
+seed = 3
+
+[material.stone_fine]
+kind = "limestone"
+tint = "#cdb79c"
+weathering = 0.35
+
+[material.stone_grey]
+kind = "ashlar"
+tint = "#b9ab98"
+block = [0.7, 0.3]
+weathering = 0.55
+seed = 11
+
+[material.brick]
+kind = "sandstone"
+tint = "#d6ad84"
+weathering = 0.3
+
+[material.brick_house]
+kind = "sandstone"
+tint = "#e8bca4"
+weathering = 0.15
+
+[material.yellow_brick]
+kind = "sandstone"
+tint = "#ecd09a"
+weathering = 0.2
+
+[material.white]
+kind = "stucco"
+tint = "#efe9dd"
+weathering = 0.15
+
+[material.tower_stucco]
+kind = "stucco"
+tint = "#e6cfb2"
+weathering = 0.15
+
+[material.red_trim]
+kind = "stucco"
+tint = "#b0664a"
+weathering = 0.15
+
+[material.roof]
+kind = "roof_tiles"
+tint = "#8c7d74"
+weathering = 0.55
+
+[material.dome_tiles]
+kind = "roof_tiles"
+tint = "#7c7672"
+weathering = 0.35
+
+[material.wood]
+kind = "wood"
+tint = "#5e3b25"
+
+[material.iron]
+kind = "iron"
+
+# ---------------------------------------------------------------- church
+# Nave + apse. Nave walls z -8.3 (north) / 5.0 (south) from the PNOA eaves (-8.4 / 5.2) and the
+# OSM notch at z 4.75; west wall x -19.2 (PNOA roof end, shadow on the narthex). Apse: regular half
+# octagon, E face x 20.4 (Catastro 20.35-20.45, PNOA roof edge 20.5), sides 4.57 m.
+[[element]]
+type = "mass"
+name = "church"
+polygon = [[-19.2, -8.3], [14.6, -8.3], [14.6, -5.72], [17.17, -5.72], [20.4, -2.46], [20.4, 2.1], [17.2, 5.0], [-19.2, 5.0]]
+height = 14.25
+note = "eave (top of the corbel table under the tiles) 14.24 +- 0.48 m by bundle adjustment of the apse; the same line fits the nave's south eave in photo 07"
+
+# Corbel-table cornice of the apse (photos 06, 07, 11, 13, 15).
+[[element]]
+type = "cornice"
+on = "church"
+edges = ["facing:e", "facing:45:15", "facing:135:15"]
+y = 13.45
+profile = "corbel_table"
+size = 0.8
+projection = 0.45
+material = "stone_fine"
+modillions = { spacing = 0.62, width = 0.2, height = 0.32, style = "corbel" }
+
+[[element]]
+type = "cornice"
+on = "church"
+edges = ["facing:n", "facing:s"]
+y = 13.7
+profile = "eave"
+size = 0.55
+projection = 0.4
+material = "stone_fine"
+
+# Nave: low gable roof, ridge E-W at z -1.65 (PNOA); apse: hip roof whose hips converge at
+# x ~ 15-16 (PNOA).
+[[element]]
+type = "roof"
+polygon = [[-19.2, -8.3], [14.6, -8.3], [14.6, 5.0], [-19.2, 5.0]]
+y = 14.25
+shape = "gable"
+ridge = "ew"
+pitch = 22
+overhang = 0.3
+wall_material = "stone"
+
+[[element]]
+type = "roof"
+polygon = [[11.0, -5.72], [17.17, -5.72], [20.4, -2.46], [20.4, 2.1], [17.2, 5.0], [11.0, 5.0]]
+y = 14.25
+shape = "hip"
+pitch = 22
+overhang = 0.35
+ridge_cap = true
+
+# Apse windows (u along each face). E face: wide two-light window with a quatrefoil, apex 13.3,
+# sill 4.75; SE and NE faces: narrow lancets, apex 12.85, sill ~4.85 (photos 06, 07, 13).
+[[element]]
+type = "openings"
+on = "church"
+edges = "facing:e"
+kind = "lancet"
+arch = "pointed"
+width = 1.9
+height = 8.55
+levels = [4.75]
+bays = 1
+mullions = 1
+tracery = "quatrefoil"
+infill = "glass"
+depth = 0.7
+splay = 0.25
+orders = 2
+order_step = 0.14
+hood = { size = 0.12, gap = 0.05 }
+material = "stone_fine"
+glass_material = "glass"
+note = "central window (wider, tracery and colonnettes: Wikipedia es/ca); 2.0 m across the mouldings (photo 13)"
+
+[[element]]
+type = "openings"
+on = "church"
+edges = ["facing:45:15", "facing:135:15"]
+kind = "lancet"
+arch = "pointed"
+width = 0.75
+height = 8.0
+levels = [4.85]
+bays = 1
+infill = "glass"
+depth = 0.7
+splay = 0.3
+orders = 2
+order_step = 0.16
+material = "stone_fine"
+
+# North portal in the bay between the north chapels and the tower block (photos 01, 14):
+# round-arched Romanesque door with an alfiz-like round arch, pointed recess above with a
+# Maltese-cross tracery window (off-axis).
+[[element]]
+type = "openings"
+on = "church"
+edges = ["facing:n", "not:shortest"]
+kind = "portal"
+arch = "round"
+width = 1.9
+height = 3.6
+levels = [0.0]
+bays = { at = [9.8] }
+orders = 2
+order_step = 0.25
+tympanum = false
+infill = "door"
+depth = 0.6
+hood = { size = 0.18, gap = 0.55 }
+material = "stone_fine"
+door_material = "wood"
+note = "door 1.9 x 3.6 m (photo 14: ~245 px on the leaves); bay x 0.9-9.8 (OSM notch), u from the NE corner (x 14.6): centre x 4.8"
+
+[[element]]
+type = "openings"
+on = "church"
+edges = ["facing:n", "not:shortest"]
+kind = "lancet"
+arch = "pointed"
+width = 4.6
+height = 4.4
+levels = [5.6]
+bays = { at = [9.6] }
+tracery = "quatrefoil"
+infill = "blind"
+depth = 0.55
+orders = 2
+order_step = 0.2
+material = "stone_fine"
+note = "pointed recess with the Maltese-cross tracery window over the portal (photos 01, 14)"
+
+# Apse buttresses on the octagon corners, along the bisectors (photos 06, 07, 11, 13):
+# tops 13.6-13.8 m (bundle adjustment), gargoyles on the S, SE and NE ones.
+[[element]]
+type = "buttress"
+at = [17.2, 0.0, 5.0]
+facing = 157.5
+height = 13.8
+width = 1.3
+depth = 1.7
+setoffs = 1
+cap = "slope"
+material = "stone"
+
+[[element]]
+type = "buttress"
+at = [20.4, 0.0, 2.1]
+facing = 112.5
+height = 13.75
+width = 1.35
+depth = 2.2
+setoffs = 1
+cap = "slope"
+material = "stone"
+note = "SE buttress: the cemetery wall abuts its front (photos 07, 09)"
+
+[[element]]
+type = "buttress"
+at = [20.4, 0.0, -2.46]
+facing = 67.5
+height = 13.6
+width = 1.3
+depth = 2.0
+setoffs = 1
+cap = "slope"
+material = "stone"
+
+# Gargoyles (photos 06, 07, 13): beasts on the buttress tops, pointing out.
+[component.gargoyle]
+material = "stone_grey"
+  [[component.gargoyle.children]]
+  type = "box"
+  size = [0.3, 0.4, 0.8]
+  center = [0.0, 0.0, 0.25]
+  [[component.gargoyle.children]]
+  type = "sphere"
+  center = [0.0, 0.42, 0.55]
+  radius = 0.2
+  segments = 8
+
+[[element]]
+type = "array"
+mode = "points"
+points = [[17.78, 13.6, 6.4], [22.2, 13.55, 2.85], [22.07, 13.4, -3.15]]
+facings = [157.5, 112.5, 67.5]
+component = "gargoyle"
+
+# Buttresses of the nave (PNOA: buttress shadows at x -13.3, -7.1, -0.9, 5.1, 11.4 on the
+# south side, ~6.15 m bays). South ones project to the chapel front; north ones run over the
+# north chapels to their front (z -12.6).
+[[element]]
+type = "array"
+mode = "points"
+points = [[-13.3, 0.0, 5.0], [-7.15, 0.0, 5.0], [-1.0, 0.0, 5.0]]
+facings = [180, 180, 180]
+children = [{ type = "buttress", at = [0, 0, 0], facing = "s", height = 12.4, width = 1.2, depth = 2.15, setoffs = 1, cap = "slope", material = "stone" }]
+
+[[element]]
+type = "array"
+mode = "points"
+points = [[-13.3, 0.0, -8.3], [-7.15, 0.0, -8.3], [-1.0, 0.0, -8.3]]
+facings = [0, 0, 0]
+children = [{ type = "buttress", at = [0, 0, 0], facing = "n", height = 12.4, width = 1.2, depth = 4.3, setoffs = 1, cap = "slope", material = "stone" }]
+
+# ---------------------------------------------------------------- chapels and annexes
+# North chapels between the buttresses (OSM: z -12.6 from x -18.4 to 0.9), eave 7.7 m
+# (photos 05, 08: bundle adjustment 7.6 +- 0.6 m at the NE corner 0.9, -12.3).
+[[element]]
+type = "mass"
+name = "chapels_n"
+polygon = [[-18.43, -12.63], [0.92, -12.3], [0.85, -8.3], [-18.73, -8.3]]
+height = 7.7
+cornice = { profile = "eave", size = 0.35, projection = 0.3, material = "stone_fine" }
+note = "small round-arched windows high in the wall, tile panels of the Via Crucis (photos 05, 08)"
+  [[element.openings]]
+  edges = "facing:n"
+  kind = "window"
+  arch = "round"
+  width = 0.7
+  height = 1.6
+  levels = [5.0]
+  bays = { at = [3.0, 9.2, 15.4] }
+  infill = "dark"
+  depth = 0.5
+  splay = 0.2
+
+[[element]]
+type = "roof"
+polygon = [[-18.43, -12.63], [0.92, -12.3], [0.85, -8.3], [-18.73, -8.3]]
+y = 7.7
+shape = "shed"
+ridge = "n"
+height = 2.2
+overhang = 0.35
+
+# South chapels (shallow, z 5.0-7.1, OSM) with lean-to roofs.
+[[element]]
+type = "mass"
+name = "chapels_s"
+polygon = [[-19.2, 5.0], [0.7, 5.0], [0.57, 7.32], [-0.53, 7.5], [-6.32, 7.14], [-19.2, 7.08]]
+height = 8.0
+cornice = { profile = "eave", size = 0.35, projection = 0.3, material = "stone_fine" }
+
+[[element]]
+type = "roof"
+polygon = [[-19.2, 5.0], [0.7, 5.0], [0.57, 7.32], [-0.53, 7.5], [-6.32, 7.14], [-19.2, 7.08]]
+y = 8.0
+shape = "shed"
+ridge = "s"
+height = 1.6
+overhang = 0.3
+
+# Narthex / chapel of the Mare de Déu dels Estudiants (former atrium, three bays) at the west
+# end, lower than the nave (PNOA: nave west wall shadow on its roof).
+[[element]]
+type = "mass"
+name = "narthex"
+polygon = [[-22.35, -8.39], [-22.66, -6.21], [-22.78, -5.4], [-24.58, 7.04], [-19.2, 7.08], [-19.2, -8.3], [-18.73, -8.07], [-18.43, -12.63], [-22.35, -12.6]]
+height = 10.0
+roof = { shape = "hip", pitch = 18, overhang = 0.3 }
+note = "height estimated (photos do not show it; enclosed by neighbours)"
+
+# Small annex on the south side between chapels and cemetery (OSM bump) and the long two-storey
+# gallery wing along the south cemetery (Catastro part 7, 2 floors).
+[[element]]
+type = "mass"
+name = "south_annex"
+polygon = [[-6.32, 7.14], [-0.53, 7.5], [-0.71, 9.66], [-2.72, 9.72], [-6.5, 9.23]]
+height = 5.5
+material = "stone_grey"
+roof = { shape = "flat" }
+
+[[element]]
+type = "mass"
+name = "gallery_s"
+polygon = [[-6.5, 9.23], [-7.1, 9.31], [-9.39, 21.26], [-4.73, 22.08], [-2.72, 9.72]]
+height = 7.0
+material = "white"
+roof = { shape = "shed", ridge = "e", height = 1.0, overhang = 0.3 }
+note = "Catastro part 7 (2 floors): the arcosolia gallery of the south cemetery (Commons fossar sud)"
+
+# Real Capella de Santa Bàrbara (1684-89): yellow brick walls, tiled roofs, short drum and tiled
+# dome with a weathervane. Plan OSM (polygonal south end); dome centre (9.3, 11.0) from the PNOA
+# ring; dome tiles from 12.2 to 15.1 m, tiled drum eave 11.6 m (bundle adjustment, photo 07);
+# radius 3.4 m (photo 07 width at 21.6 m).
+[[element]]
+type = "mass"
+name = "santa_barbara"
+material = "yellow_brick"
+polygon = [[3.99, 5.0], [3.99, 12.85], [5.92, 16.84], [12.12, 17.06], [14.5, 13.15], [14.7, 5.0]]
+height = 10.0
+cornice = { profile = "cyma", size = 0.4, projection = 0.3, material = "white" }
+roof = { shape = "hip", pitch = 24, overhang = 0.3 }
+
+[[element]]
+type = "dome"
+center = [9.3, 11.0]
+y = 11.0
+radius = 2.85
+height = 2.9
+profile = "segmental"
+gores = 0
+material = "dome_tiles"
+base_ring = true
+drum = { height = 1.2, sides = 8, windows = 4, window_width = 0.7, window_height = 0.8, window_arch = "round", window_infill = "dark", cornice = true }
+drum_material = "yellow_brick"
+finial = "weathervane"
+
+# Tall 14th-c. chapel south of the presbytery (OSM x 14.7-17.9), east gable with a traceried
+# oculus (photo 07: centre 8.25 m, gable top ~10.8 m).
+[[element]]
+type = "mass"
+name = "chapel_se"
+polygon = [[14.6, 5.0], [17.2, 5.0], [17.67, 7.95], [14.7, 7.91]]
+height = 9.6
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "rose"
+  width = 1.5
+  levels = [8.25]
+  bays = 1
+  tracery = "trefoil"
+  infill = "stained"
+  depth = 0.4
+  material = "stone_fine"
+
+[[element]]
+type = "roof"
+polygon = [[14.6, 5.0], [17.2, 5.0], [17.67, 7.95], [14.7, 7.91]]
+y = 9.6
+shape = "gable"
+ridge = "ew"
+pitch = 35
+overhang = 0.2
+wall_material = "stone"
+
+# ---------------------------------------------------------------- bell tower and house
+# Bell tower (first half of the 17th c.): Catastro part 1 (3.7 m square). Stone shaft to 17.2 m,
+# stuccoed bell stage as wide as the shaft (photo 05) with one round arch per face (apex 21.0 m),
+# cornice to 22.4 m, parapet 22.9 m, ball finials to ~24.1 m (photos 05, 08: bundle adjustment
+# 17.3 +- 1.0 / 21.15 +- 1.2 / 24.2 +- 1.4 m with the tower on its Catastro plan; photo 02 for
+# the stage design).
+[[element]]
+type = "tower"
+name = "campanar"
+material = "stone"
+polygon = [[9.79, -12.99], [13.34, -13.19], [13.15, -9.44], [9.61, -9.51]]
+  [[element.stages]]
+  name = "shaft"
+  height = 17.2
+  cornice = { profile = "fillet", size = 0.3, projection = 0.12, material = "stone_fine" }
+  [[element.stages]]
+  name = "bell_plinth"
+  height = 0.5
+  inset = 0.05
+  material = "tower_stucco"
+  cornice = { profile = "fillet", size = 0.15, projection = 0.1, material = "red_trim" }
+  [[element.stages]]
+  name = "belfry"
+  height = 3.7
+  material = "tower_stucco"
+    [[element.stages.openings]]
+    kind = "arch"
+    arch = "round"
+    width = 1.1
+    height = 2.0
+    levels = [19.0]
+    bays = 1
+    depth = 0.5
+    infill = "grille"
+    bells = true
+    surround = { width = 0.2, projection = 0.06 }
+    material = "tower_stucco"
+  [[element.stages]]
+  name = "cornice"
+  height = 1.0
+  material = "tower_stucco"
+  cornice = { profile = "classical", size = 0.7, projection = 0.5, material = "red_trim" }
+  [[element.stages]]
+  name = "terrace"
+  height = 0.5
+  inset = 0.15
+  material = "tower_stucco"
+
+[[element]]
+type = "array"
+mode = "points"
+points = [[10.15, 22.9, -12.65], [12.95, 22.9, -12.8], [12.8, 22.9, -9.8], [10.0, 22.9, -9.85]]
+children = [{ type = "finial", at = [0.0, 0.0, 0.0], style = "ball", size = 0.75, material = "stone_fine" }]
+
+# Low block between the tower and the nave (OSM / Catastro part 4, 2 floors).
+[[element]]
+type = "mass"
+name = "tower_link"
+polygon = [[9.76, -8.3], [9.84, -10.33], [10.52, -10.39], [13.2, -9.44], [13.2, -8.3]]
+height = 7.5
+material = "stone_grey"
+roof = { shape = "flat" }
+
+# House of the order (Catastro part 2, 3 floors): brick street front (Catastro photo, no. 5,
+# eave 10.6 m: three window rows) from the corner at z -13.04 to the NE apse buttress.
+[[element]]
+type = "mass"
+name = "house"
+material = "white"
+polygon = [[13.2, -13.19], [20.9, -13.04], [21.8, -4.4], [18.48, -4.4], [17.17, -5.72], [14.6, -5.72], [14.6, -8.3], [13.2, -8.3]]
+height = 10.6
+edge_materials = [{ edges = "facing:e", material = "brick_house" }]
+cornice = { profile = "eave", size = 0.3, projection = 0.35, material = "white" }
+roof = { shape = "hip", pitch = 20, overhang = 0.35 }
+note = "eave 10.6 m: three window rows and the balcony on the Catastro facade photo; courtyard photos 05/08 (white eave 9.2-11.0 m by bundle adjustment)"
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "door"
+  arch = "flat"
+  width = 1.5
+  height = 2.8
+  levels = [0.0]
+  bays = { at = [5.2] }
+  depth = 0.3
+  infill = "door"
+  door_material = "wood"
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "window"
+  arch = "flat"
+  width = 1.05
+  height = 1.6
+  levels = [1.4]
+  bays = { at = [2.6, 7.4] }
+  infill = "grille"
+  depth = 0.25
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "window"
+  arch = "segmental"
+  width = 0.9
+  height = 1.4
+  levels = [5.0, 8.0]
+  bays = { at = [3.0, 7.0] }
+  infill = "grille"
+  depth = 0.3
+
+# White house closing the courtyard to the east (Catastro context parcel, replaced here): white
+# front with two ajimez windows, tiled porch and the pointed passage to the street (photos 05, 08).
+[[element]]
+type = "mass"
+name = "house_w"
+material = "white"
+polygon = [[10.1, -18.95], [13.58, -19.08], [13.34, -13.19], [11.7, -13.22], [11.69, -12.94], [9.79, -12.99], [10.02, -17.36]]
+height = 9.6
+cornice = { profile = "eave", size = 0.25, projection = 0.3, material = "white" }
+roof = { shape = "hip", pitch = 20, overhang = 0.3 }
+  [[element.openings]]
+  edges = "facing:273:3"
+  kind = "arch"
+  arch = "pointed"
+  width = 1.7
+  height = 3.0
+  levels = [0.0]
+  bays = { at = [3.9] }
+  depth = 0.5
+  infill = "dark"
+  material = "stone_fine"
+  [[element.openings]]
+  edges = "facing:273:3"
+  kind = "twin"
+  arch = "round"
+  width = 1.0
+  height = 1.9
+  levels = [5.3]
+  bays = { at = [2.6, 5.0] }
+  infill = "glass"
+  depth = 0.25
+  surround = { width = 0.18, projection = 0.05 }
+  material = "stone_fine"
+
+[[element]]
+type = "roof"
+polygon = [[10.02, -17.36], [8.6, -17.36], [8.6, -12.99], [9.79, -12.99]]
+y = 3.9
+shape = "shed"
+ridge = "w"
+height = 0.6
+overhang = 0.1
+note = "tiled porch roof in front of the white courtyard front (photos 05, 08)"
+
+# ---------------------------------------------------------------- cemetery wall
+# Crenellated wall of the medieval cemetery along Trinquet de Cavallers (photos 06, 07, 09, 10,
+# 13): north end against the SE apse buttress (bundle adjustment x 23.06 +- 0.65 at z 3.1; PNOA
+# merlon line x 22.6-23.9 from z 3 to 17). Crest 3.2 m, pyramid-capped merlons ~0.55 m wide at
+# ~1.0 m, tops 3.95 m; ashlar lower band 1.85 m on the north half (20 brick courses ~ 1.35 m
+# between band and crest in photo 09 = bundle adjustment 1.38 m).
+[[element]]
+type = "mass"
+name = "cemetery_wall"
+polygon = [[22.375, 3.0], [23.675, 17.2], [24.325, 17.15], [23.025, 2.95]]
+height = 3.2
+material = "brick"
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "door"
+  arch = "round"
+  width = 2.8
+  height = 2.9
+  levels = [0.0]
+  bays = { at = [2.7] }
+  depth = 0.25
+  infill = "grille"
+  material = "brick"
+  note = "arched cemetery gate near the south end of the wall (photos 07, 16): centre z ~ 14.5; photo 09 puts its north jamb ~2 m further north"
+
+[[element]]
+type = "crenellations"
+polygon = [[22.375, 3.0], [23.675, 17.2], [24.325, 17.15], [23.025, 2.95]]
+edges = "facing:e"
+y = 3.2
+shape = "pyramidal"
+width = 0.55
+gap = 0.45
+height = 0.75
+thickness = 0.62
+wall = 0.0
+material = "brick"
+
+[[element]]
+type = "wall"
+path = [[23.06, 3.0], [23.53, 8.0]]
+y0 = 0.0
+height = 1.85
+thickness = 0.1
+align = "center"
+material = "stone_grey"
+note = "old ashlar base of the wall (photo 09), from the buttress to z ~ 8"
+
+# ---------------------------------------------------------------- views
+# Cameras from the constrained bundle adjustment (sources [facts]).
+[[view]]
+name = "apse_07"
+context = false
+photo = "photos/07_Sant_Joan_de_l_Hospital_P1140090.jpg"
+eye = [30.03, 1.37, 17.08]
+target = [15.98, 7.89, 4.43]
+fov_y = 49.76
+roll = -0.99
+
+[[view]]
+name = "apse_13"
+context = false
+photo = "photos/13_Santjoanhospital_testa_exterior.jpg"
+eye = [28.31, 1.85, 6.13]
+target = [13.33, 13.27, -0.58]
+fov_y = 49.72
+roll = -1.62
+
+[[view]]
+name = "apse_06"
+context = false
+photo = "photos/06_Merlets_i_capcalera_de_l_esglesia_de_sant_Joan_de_l_Hospital.jpg"
+eye = [29.6, 1.36, 16.59]
+target = [16.24, 10.67, 4.99]
+fov_y = 43.59
+roll = 1.38
+
+[[view]]
+name = "wall_09"
+context = false
+photo = "photos/09_Pared_exterior_del_cementerio_medieval.jpg"
+fov_y = 56.57
+fix = ["fov"]
+eye_height = 1.6
+match = [
+  { px = [1140, 935], world = [22.7, 0.0, 3.0] },
+  { px = [1115, 285], world = [22.7, 3.2, 3.0] },
+  { px = [1140, 545], world = [22.7, 1.85, 3.0] },
+  { px = [410, 835], world = [23.16, 0.0, 7.98] },
+  { px = [410, 580], world = [23.16, 1.85, 7.98] },
+]
+
+[[view]]
+name = "courtyard_05"
+photo = "photos/05_Patio_norte_da_igrexa_de_Sant_Joan_de_l_Hospital.jpg"
+eye = [-20.24, 1.43, -14.96]
+target = [-1.65, 8.63, -13.36]
+fov_y = 63.68
+roll = 0.0
+
+[[view]]
+name = "courtyard_08"
+photo = "photos/08_Sant_Joan_de_l_Hospital_Valencia_05.jpg"
+eye = [-18.0, 1.88, -15.6]
+target = [0.78, 8.54, -13.95]
+fov_y = 63.25
+roll = 0.0
+
+# Cameras solved by `match` from model points at the measured heights (fov from EXIF, fixed).
+[[view]]
+name = "apse_10"
+photo = "photos/10_Exterior_de_la_iglesia_de_San_Juan_del_Hospital_Valencia_02.jpg"
+context = false
+fov_y = 46.3
+fix = ["fov"]
+eye_height = 1.6
+match = [
+  { px = [615, 395], world = [17.53, 13.8, 5.79] },
+  { px = [915, 365], world = [21.42, 13.75, 2.52] },
+  { px = [1068, 465], world = [21.32, 13.6, -2.84] },
+  { px = [770, 445], world = [18.8, 12.85, 3.55] },
+  { px = [770, 388], world = [19.0, 14.25, 3.75] },
+  { px = [265, 440], world = [9.3, 15.1, 11.0] },
+]
+
+[[view]]
+name = "apse_11"
+photo = "photos/11_Capcalera_de_l_esglesia_de_sant_Joan_de_l_Hospital_Valencia.jpg"
+context = false
+fov_y = 44.2
+fix = ["fov"]
+eye_height = 1.6
+match = [
+  { px = [727, 130], world = [21.42, 13.75, 2.52] },
+  { px = [340, 315], world = [17.53, 13.8, 5.79] },
+  { px = [1130, 245], world = [21.32, 13.6, -2.84] },
+  { px = [560, 335], world = [18.8, 12.85, 3.55] },
+  { px = [940, 280], world = [20.4, 13.3, -0.18] },
+  { px = [560, 257], world = [19.0, 14.25, 3.75] },
+  { px = [940, 249], world = [20.75, 14.25, -0.18] },
+]
+
+[[view]]
+name = "apse_15"
+photo = "photos/15_Exterior_de_la_iglesia_de_San_Juan_del_Hospital_Valencia_03.jpg"
+context = false
+fov_y = 19.9
+fix = ["fov"]
+eye_height = 1.6
+match = [
+  { px = [240, 305], world = [17.53, 13.8, 5.79] },
+  { px = [1035, 280], world = [21.42, 13.75, 2.52] },
+  { px = [648, 455], world = [18.8, 12.85, 3.55] },
+  { px = [648, 322], world = [19.0, 14.25, 3.75] },
+  { px = [400, 330], world = [17.6, 14.25, 4.85] },
+  { px = [905, 318], world = [20.2, 14.25, 2.6] },
+]
+
+[[view]]
+name = "portal_14"
+photo = "photos/14_Iglesia_San_Juan_del_Hospital_North_Patio_Entrance_Ciutat_Ve.jpg"
+fov_y = 94.5
+fix = ["fov"]
+eye_height = 1.6
+match = [
+  { px = [483, 1700], world = [5.75, 0.0, -8.3] },
+  { px = [722, 1700], world = [3.85, 0.0, -8.3] },
+  { px = [600, 1040], world = [4.8, 3.6, -8.3] },
+  { px = [640, 440], world = [4.6, 10.0, -8.3] },
+  { px = [355, 1150], world = [6.9, 2.6, -8.3] },
+  { px = [905, 1150], world = [2.7, 2.6, -8.3] },
+]
+
+[[view]]
+name = "street_16"
+photo = "photos/16_Exterior_de_la_iglesia_de_San_Juan_del_Hospital_Valencia_01.jpg"
+eye_height = 1.6
+match = [
+  { px = [164, 582], world = [17.53, 13.8, 5.79] },
+  { px = [536, 669], world = [21.42, 13.75, 2.52] },
+  { px = [649, 804], world = [21.32, 13.6, -2.84] },
+  { px = [336, 727], world = [18.8, 12.85, 3.55] },
+  { px = [609, 1309], world = [22.7, 3.2, 3.0] },
+  { px = [609, 1545], world = [22.7, 0.0, 3.0] },
+]
