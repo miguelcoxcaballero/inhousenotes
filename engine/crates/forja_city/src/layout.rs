@@ -631,7 +631,8 @@ fn traffic_info(lay: &mut CityLayout, f: &Fabric, plan: &CityPlan, lib: &Profile
         let (k0, k1) = (g.kerb_mouth(si, End::A, lib), s.len() - g.kerb_mouth(si, End::B, lib));
         let (m0, m1) = if k1 - k0 >= 1.0 { (k0, k1) } else { (((k0 + k1) * 0.5 - 0.5).max(0.0), ((k0 + k1) * 0.5 + 0.5).min(s.len())) };
         let end = |e: End, from: f32| {
-            // `ground::markings`: zebra 1-5 m past the mouth, stop line at 6 m.
+            // `ground::markings`: zebra 1-5 m past the mouth, stop line at 6 m;
+            // without them traffic waits at the mouth itself.
             let extra = (g.mouth(si, e, lib) - from).max(0.0);
             if ground::has_zebra(g, lib, si, e) { TrafficEnd { crosswalk: Some(extra + 3.0), stop_line: extra + 6.0 } } else { TrafficEnd { crosswalk: None, stop_line: extra + 1.0 } }
         };
