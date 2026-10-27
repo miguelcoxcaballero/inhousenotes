@@ -1,0 +1,1104 @@
+# Real Colegio Seminario de Corpus Christi ("El Patriarca"), Valencia, 1586-1610.
+#
+# PLAN (footprint.json, landmark-local metres, x east, z south). A whole
+# block: main (south) front on the Placa del Patriarca / c. de la Nau facing
+# La Nau, east front on c. de Sant Joan de Ribera, west front on c. de la
+# Creu Nova, north front on c. del Cardenal Paya. Volumes from the Catastro
+# building parts (refcat 6027501YJ2762E): south + east wing (catastro:8),
+# church (catastro:5, one tall storey, Latin cross, crossing dome at OSM way
+# 1077212192), cloister galleries (catastro:6) round the patio (OSM inner
+# ring 0, 8 x 5 arches), north wing (catastro:3), north blocks
+# (catastro:0, 1, 9), NE block (catastro:7), the two stair towers
+# (catastro:4, catastro:10 with the espadanya) and the bell tower (OSM way
+# 1414404138 / catastro:2) at the SW corner.
+#
+# FACADE FRAME. The south front is one straight line from the tower SW corner
+# A = (-32.81, 28.95) at azimuth 98.15 deg: P(s) = A + s * (0.9899, 0.1418),
+# outward normal (-0.1418, 0.9899). Positions on it are quoted as s (m).
+#
+# HEIGHTS: constrained bundle adjustment of photos catastro, 02, 04 (fixed
+# focal lengths from EXIF, eye-height prior 1.6 m, tower corners from OSM,
+# La Nau corner from OSM context): tower belfry band 21.5, belfry opening
+# 23.8-27.7, cornice 28.6-30.7, parapet 31.4, corner balls 32.5; south front
+# cornice top 19.4 (19.0 at s 18.7), triglyph frieze 17.0-18.4, gallery
+# windows 13.9-16.6 at 1.85 m centres, gallery string course 12.5-13.2;
+# lantern cap 35.1. Details in sources.toml [facts].
+
+[landmark]
+name = "Real Colegio Seminario de Corpus Christi (El Patriarca)"
+slug = "el_patriarca"
+main_facade = "facing:s"
+notes = "Renaissance seminary college of Archbishop Juan de Ribera: severe brick and ashlar fronts, a Doric gallery of small arched windows under a triglyph frieze, the Renaissance portal (1603), the classical bell tower at the corner, the church dome on a high drum with blue-and-white glazed tiles and a lantern, and the two-storey marble cloister."
+
+[landmark.info]
+architect = "Guillem del Rei (works), Gaspar Gregori (design attribution)"
+built = "1586-1610"
+style = "Renaissance"
+heritage = "Bien de Interes Cultural RI-51-0001416"
+
+[defaults]
+material = "brick_render"
+roof_material = "roof"
+glass_material = "glass"
+door_material = "door"
+iron_material = "iron"
+floor_height = 3.6
+
+[render]
+sun = [200, 52]
+paving = 70
+street_eye = [-36.0, 1.6, 64.0]
+street_target = [-14.0, 11.0, 31.0]
+street_fov = 62
+
+[reference_heights]
+campanar = { height = 31.4, tolerance = 0.6, source = "tower parapet top: bundle adjustment of photos catastro, 02, 04" }
+tower_balls = { height = 32.5, tolerance = 0.6, source = "corner balls, same solve" }
+south_cornice = { height = 19.2, tolerance = 0.4, source = "south front cornice top 19.4 at the tower, 19.0 at s 18.7 (photos 02, 04)" }
+dome = { height = 36.0, tolerance = 0.8, source = "lantern cap apex 35.0-35.1 (photos 02, 04) + cross" }
+
+# ------------------------------------------------------------- materials
+
+[material.brick_render]
+kind = "plaster"
+tint = "#d4b597"
+weathering = 0.5
+uv_scale = 3.0
+
+[material.brick]
+kind = "ashlar"
+tint = "#e4b58e"
+block = [0.3, 0.075]
+weathering = 0.25
+seed = 17
+note = "thin Valencian brick (rajola); the kit brick set renders too red"
+
+[material.ashlar]
+kind = "ashlar"
+tint = "#cbbda6"
+block = [0.9, 0.45]
+weathering = 0.45
+seed = 4
+
+[material.stone_fine]
+kind = "limestone"
+tint = "#e0d2b8"
+weathering = 0.35
+
+[material.marble]
+kind = "marble"
+colors = ["#eeeae2", "#dcd6cc"]
+tint = "#ebe6dc"
+roughness = 0.4
+
+[material.roof]
+kind = "roof_tiles"
+tint = "#9e8270"
+weathering = 0.6
+note = "weathered clay tiles, greyish brown on the PNOA orthophoto"
+
+[material.dome_tiles]
+kind = "glazed_tiles"
+pattern = "stripes"
+colors = ["#27457e", "#eeeae0", "#3a5c96"]
+weights = [0.35, 0.5, 0.15]
+
+[material.drum_brick]
+kind = "ashlar"
+tint = "#d9a07e"
+block = [0.3, 0.075]
+seed = 23
+weathering = 0.3
+
+[material.glass]
+kind = "glass"
+tint = "#6c7680"
+
+[material.door]
+kind = "painted_wood"
+color = "#3b2c22"
+tint = "#3b2c22"
+
+[material.iron]
+kind = "iron"
+
+[material.dark]
+kind = "dark"
+
+[material.terrace]
+kind = "paving"
+tint = "#b89c80"
+uv_scale = 2.0
+weathering = 0.4
+
+[material.patio]
+kind = "paving"
+tint = "#d8d2c6"
+uv_scale = 2.5
+
+# ===================================================== south + east wing
+
+[[element]]
+type = "mass"
+name = "south_wing"
+polygon = "catastro:8"
+height = 19.0
+plinth = { profile = "plinth", size = 2.6, material = "ashlar" }
+string_courses = [12.6]
+edge_materials = [{ edges = "facing:s", material = "brick_render" }]
+note = "Catastro part 8 (L: the south front on the plaza and the east front on c. de Sant Joan de Ribera). Cornice top 19.4 at the tower, 19.0 mid-front (photos 02, 04, catastro solve)."
+  [[element.openings]]
+  edges = ["facing:s", "not:1", "not:8"]
+  kind = "window"
+  arch = "round"
+  width = 0.9
+  height = 2.65
+  levels = [13.9]
+  bays = { spacing = 1.85, margins = [1.0, 4.6] }
+  depth = 0.45
+  infill = "glass"
+  surround = { width = 0.16, projection = 0.05 }
+  sill = true
+  note = "Doric gallery of small round-arched windows (galeria d'arquets, 1593): 13.9-16.6 m, 1.85 m centres; solid corner pier at the SE corner (photo 16)"
+  [[element.openings]]
+  edges = "longest"
+  kind = "window"
+  arch = "round"
+  width = 0.9
+  height = 2.65
+  levels = [13.9]
+  bays = { spacing = 1.85, margins = [4.6, 1.0] }
+  depth = 0.45
+  infill = "glass"
+  surround = { width = 0.16, projection = 0.05 }
+  sill = true
+  [[element.openings]]
+  edges = ["facing:s", "not:1", "not:8"]
+  kind = "door"
+  width = 2.3
+  height = 4.9
+  levels = [0]
+  bays = { at = [16.86] }
+  infill = "door"
+  depth = 0.7
+  note = "vestibule portal (1603), door s 20.15-22.45, 4.9 m (photo 11 solve)"
+  [[element.openings]]
+  edges = ["facing:s", "not:1", "not:8"]
+  kind = "door"
+  width = 2.4
+  height = 5.0
+  levels = [0]
+  bays = { at = [21.86] }
+  infill = "door"
+  depth = 0.6
+  note = "second doorway s 25.0-27.6 (photo 11)"
+  [[element.openings]]
+  edges = ["facing:s", "not:1", "not:8"]
+  kind = "window"
+  width = 0.7
+  height = 1.6
+  levels = [4.3]
+  bays = { at = [12.56] }
+  infill = "dark"
+  depth = 0.3
+  [[element.openings]]
+  edges = ["facing:s", "not:1", "not:8"]
+  kind = "window"
+  width = 1.8
+  height = 2.0
+  levels = [8.8]
+  bays = { at = [14.06] }
+  infill = "grille"
+  depth = 0.3
+  note = "grilled window s 17.4-19.3, 8.5-10.7 m (photos 04, 11)"
+  [[element.openings]]
+  edges = ["facing:s", "not:1", "not:8"]
+  kind = "window"
+  width = 1.6
+  height = 2.2
+  levels = [7.3]
+  bays = { at = [23.26, 26.86, 33.5, 39.0, 44.5] }
+  infill = "grille"
+  depth = 0.3
+  note = "grilled windows s 27.7 and 31.3 (photo 11); further east as photo 16"
+  [[element.openings]]
+  edges = ["facing:s", "not:1", "not:8"]
+  kind = "window"
+  width = 1.1
+  height = 1.6
+  levels = [3.4]
+  bays = { at = [30.0, 35.5, 41.0, 46.0] }
+  infill = "grille"
+  depth = 0.3
+  [[element.openings]]
+  edges = "longest"
+  kind = "window"
+  width = 1.2
+  height = 1.8
+  levels = [3.4, 8.0]
+  bays = { spacing = 6.0, margins = [8.0, 4.0] }
+  infill = "grille"
+  depth = 0.3
+
+[[element]]
+type = "cornice"
+name = "south_frieze"
+on = "south_wing"
+edges = ["facing:s", "facing:e"]
+y = 17.0
+size = 1.4
+projection = 0.25
+profile = "band"
+modillions = { spacing = 0.93, width = 0.3, height = 0.75, style = "block" }
+material = "brick"
+note = "Doric triglyph frieze 17.0-18.4"
+
+[[element]]
+type = "cornice"
+name = "south_cornice"
+on = "south_wing"
+edges = ["facing:s", "facing:e"]
+y = 18.4
+size = 0.65
+projection = 0.75
+profile = "classical"
+material = "brick"
+
+[[element]]
+type = "roof"
+name = "south_roof"
+on = "south_wing"
+shape = "hip"
+pitch = 18
+overhang = 0.1
+ridge_cap = true
+
+# ======================================================== bell tower
+
+[[element]]
+type = "tower"
+name = "campanar"
+polygon = "part:1"
+y = 0
+note = "OSM way 1414404138 (4.9 x 4.9 m). Brick shaft on an ashlar base; belfry with one round arch per face between pilasters; Doric frieze and cornice; parapet with corner balls (photos 01-05, catastro)."
+  [[element.stages]]
+  name = "tower_shaft"
+  height = 21.1
+  material = "brick"
+  plinth = { profile = "plinth", size = 3.0, material = "ashlar" }
+    [[element.stages.openings]]
+    kind = "slit"
+    edges = "facing:s"
+    width = 0.35
+    height = 0.75
+    levels = [7.97, 11.87, 16.13]
+    bays = { at = [2.6] }
+  [[element.stages]]
+  name = "tower_band"
+  height = 0.5
+  inset = -0.12
+  material = "brick"
+  [[element.stages]]
+  name = "belfry"
+  height = 7.0
+  inset = 0.12
+  material = "brick"
+    [[element.stages.openings]]
+    kind = "arch"
+    arch = "round"
+    width = 1.6
+    height = 3.9
+    levels = [23.8]
+    bays = 1
+    infill = "dark"
+    bells = true
+    surround = { width = 0.25, projection = 0.08 }
+  [[element.stages]]
+  name = "tower_frieze"
+  height = 1.2
+  material = "brick"
+  [[element.stages]]
+  name = "tower_cornice"
+  height = 0.9
+  inset = -0.45
+  material = "brick"
+  [[element.stages]]
+  name = "tower_parapet"
+  height = 0.7
+  inset = 0.45
+  material = "brick"
+
+[[element]]
+type = "array"
+name = "tower_balls"
+mode = "points"
+points = [[-32.45, 31.4, 28.55], [-28.32, 31.4, 29.14], [-27.6, 31.4, 25.17], [-31.55, 31.4, 24.42]]
+  [[element.children]]
+  type = "box"
+  size = [0.5, 0.5, 0.5]
+  material = "brick"
+  [[element.children]]
+  type = "sphere"
+  center = [0, 0.78, 0]
+  radius = 0.3
+  material = "stone_fine"
+
+# ============================================================ church
+
+[[element]]
+type = "mass"
+name = "church"
+polygon = "catastro:5"
+height = 17.0
+material = "brick_render"
+plinth = { profile = "plinth", size = 2.2, material = "ashlar" }
+note = "Catastro part 5 (church, one storey): Latin cross with the crossing under the dome; flat head to the north."
+
+[[element]]
+type = "roof"
+name = "church_roof"
+on = "church"
+shape = "hip"
+pitch = 24
+overhang = 0.3
+ridge_cap = true
+
+[[element]]
+type = "cylinder"
+name = "drum"
+at = [-18.25, 19.0, 1.2]
+height = 7.3
+radius = 4.5
+segments = 64
+material = "drum_brick"
+note = "high round drum (1595 change of design); ring radius 4.7 on PNOA, 4.75 in photo 07"
+  [[element.openings]]
+  kind = "window"
+  width = 0.9
+  height = 1.9
+  levels = [22.6]
+  bays = { count = 8 }
+  infill = "glass"
+  depth = 0.4
+
+[[element]]
+type = "cylinder"
+name = "drum_cornice"
+at = [-18.25, 26.3, 1.2]
+height = 0.7
+radius = 4.65
+segments = 64
+material = "drum_brick"
+
+[[element]]
+type = "cone"
+name = "drum_ring"
+at = [-18.25, 27.0, 1.2]
+height = 0.25
+radius = 4.65
+radius_top = 3.8
+segments = 64
+material = "roof"
+
+[[element]]
+type = "dome"
+name = "dome"
+center = [-18.25, 1.2]
+y = 27.2
+radius = 3.8
+height = 2.6
+profile = "segmental"
+material = "dome_tiles"
+base_ring = false
+note = "glazed blue-and-white tiled half-orange; base 27.2, lantern 29.8-33.6, cap apex 35.0 (photos 02, 04, 07, 15)"
+  [[element.lantern]]
+  type = "lantern"
+  radius = 1.3
+  height = 3.8
+  sides = 16
+  material = "drum_brick"
+  cap = "dome"
+  cap_height = 1.4
+  cap_material = "dome_tiles"
+  finial = "cross"
+
+# ======================================================= cloister
+
+[[element]]
+type = "mass"
+name = "cloister_wings"
+polygon = { ref = "catastro:6", subtract = [{ points = [[-6.63, 19.46], [-2.55, -7.0], [14.56, -4.39], [10.48, 22.07]], offset = 4.2 }] }
+height = 11.0
+note = "Catastro part 6 (two storeys) round the patio; the 4.2 m galleries are the arcades below."
+
+[[element]]
+type = "roof"
+name = "cloister_roof"
+polygon = { ref = "catastro:6", subtract = [[[-6.63, 19.46], [-2.55, -7.0], [14.56, -4.39], [10.48, 22.07]]] }
+y = 11.0
+shape = "hip"
+pitch = 16
+overhang = 0.4
+ridge_cap = true
+
+[[element]]
+type = "slab"
+name = "patio_floor"
+polygon = [[-6.63, 19.46], [-2.55, -7.0], [14.56, -4.39], [10.48, 22.07]]
+y = 0.15
+thickness = 0.15
+material = "patio"
+
+# ======================================================= other wings
+
+[[element]]
+type = "mass"
+name = "north_wing"
+polygon = "catastro:3"
+height = 14.5
+plinth = { profile = "plinth", size = 1.5, material = "ashlar" }
+roof = { shape = "hip", pitch = 18, overhang = 0.3 }
+
+[[element]]
+type = "mass"
+name = "north_block_w"
+polygon = "catastro:1"
+height = 13.2
+roof = { shape = "hip", pitch = 18, overhang = 0.3 }
+note = "north front behind the Renaissance fence; eave 13.2 m at the NW corner (photo 07)"
+  [[element.openings]]
+  edges = "longest"
+  kind = "window"
+  width = 1.15
+  height = 1.5
+  levels = [10.6]
+  bays = { at = [3.9, 9.5] }
+  infill = "glass"
+  depth = 0.3
+  [[element.openings]]
+  edges = "longest"
+  kind = "window"
+  width = 1.2
+  height = 1.7
+  levels = [6.7]
+  bays = { at = [3.9, 9.5] }
+  infill = "grille"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.08, pediment = "broken" }
+  [[element.openings]]
+  edges = "longest"
+  kind = "door"
+  arch = "round"
+  width = 2.4
+  height = 4.4
+  levels = [0]
+  bays = { at = [3.9] }
+  infill = "grille"
+  depth = 0.5
+
+[[element]]
+type = "mass"
+name = "north_block_c"
+polygon = "catastro:0"
+height = 16.0
+roof = { shape = "hip", pitch = 18, overhang = 0.3 }
+
+[[element]]
+type = "mass"
+name = "north_block_e"
+polygon = "catastro:9"
+height = 13.5
+roof = { shape = "hip", pitch = 18, overhang = 0.3 }
+
+[[element]]
+type = "mass"
+name = "ne_block"
+polygon = "catastro:7"
+height = 11.0
+roof = { shape = "hip", pitch = 18, overhang = 0.3 }
+
+[[element]]
+type = "mass"
+name = "stair_tower_ne"
+polygon = "catastro:4"
+height = 21.0
+roof = { shape = "hip", pitch = 22, overhang = 0.4 }
+note = "stone monumental stair box (torrassa)"
+
+[[element]]
+type = "mass"
+name = "stair_tower_se"
+polygon = "catastro:10"
+height = 24.5
+balustrade = { height = 0.85, spacing = 0.35, finials = "ball" }
+roof = { shape = "hip", pitch = 22, overhang = 0.4 }
+note = "brick stair box crowned by the espadanya (photos 01, 06)"
+
+# ======================================================= portal and miradors
+# Facade frame groups: rotate_y = -8.15 turns local x along the south front
+# (towards the east) and local z out of it (south).
+
+[[element]]
+type = "group"
+name = "portal"
+material = "stone_fine"
+transform = { translate = [-11.78, 0, 32.33], rotate_y = -8.15 }
+note = "Portal of the vestibule (finished 1603): paired Doric columns of Genoese marble on pedestals, lintel, entablature, attic with the founder's arms and a pediment, balls; top 10.2 m (photos 02, 11, 13)"
+  [[element.children]]
+  type = "box"
+  min = [-2.75, 0, 0]
+  max = [-1.35, 1.6, 0.95]
+  [[element.children]]
+  type = "box"
+  min = [1.35, 0, 0]
+  max = [2.75, 1.6, 0.95]
+  [[element.children]]
+  type = "column"
+  at = [-2.35, 1.6, 0.5]
+  height = 4.0
+  radius = 0.27
+  order = "doric"
+  material = "marble"
+  [[element.children]]
+  type = "column"
+  at = [-1.7, 1.6, 0.5]
+  height = 4.0
+  radius = 0.27
+  order = "doric"
+  material = "marble"
+  [[element.children]]
+  type = "column"
+  at = [1.7, 1.6, 0.5]
+  height = 4.0
+  radius = 0.27
+  order = "doric"
+  material = "marble"
+  [[element.children]]
+  type = "column"
+  at = [2.35, 1.6, 0.5]
+  height = 4.0
+  radius = 0.27
+  order = "doric"
+  material = "marble"
+  [[element.children]]
+  type = "box"
+  min = [-1.35, 0, 0]
+  max = [-1.15, 5.0, 0.35]
+  [[element.children]]
+  type = "box"
+  min = [1.15, 0, 0]
+  max = [1.35, 5.0, 0.35]
+  [[element.children]]
+  type = "box"
+  min = [-2.95, 5.6, 0]
+  max = [2.95, 6.5, 1.0]
+  [[element.children]]
+  type = "box"
+  min = [-1.45, 6.5, 0]
+  max = [1.45, 8.8, 0.55]
+  [[element.children]]
+  type = "relief"
+  at = [0, 6.9, 0.55]
+  facing = "s"
+  size = [1.2, 1.5]
+  shape = "shield"
+  depth = 0.12
+  relief = "boss"
+  [[element.children]]
+  type = "extrude"
+  plane = "xy"
+  profile = [[-1.75, 8.8], [1.75, 8.8], [0, 9.85]]
+  origin = [0, 0, 0]
+  length = 0.6
+  [[element.children]]
+  type = "sphere"
+  center = [-2.5, 6.85, 0.5]
+  radius = 0.32
+  [[element.children]]
+  type = "sphere"
+  center = [2.5, 6.85, 0.5]
+  radius = 0.32
+  [[element.children]]
+  type = "sphere"
+  center = [0, 10.0, 0.3]
+  radius = 0.2
+
+[component.mirador]
+material = "iron"
+note = "projecting iron-grilled timber mirador (gelosia), 4.1 x 6.7 m"
+[[component.mirador.children]]
+type = "box"
+min = [-2.05, 0, 0]
+max = [2.05, 6.7, 0.8]
+material = "dark"
+[[component.mirador.children]]
+type = "box"
+min = [-2.2, 6.7, 0]
+max = [2.2, 6.95, 0.95]
+material = "iron"
+[[component.mirador.children]]
+type = "box"
+min = [-2.2, -0.25, 0]
+max = [2.2, 0, 0.95]
+material = "iron"
+[[component.mirador.children]]
+type = "array"
+mode = "linear"
+count = 17
+step = [0.25, 0, 0]
+  [[component.mirador.children.children]]
+  type = "box"
+  min = [-2.04, 0, 0.82]
+  max = [-1.99, 6.7, 0.87]
+[[component.mirador.children]]
+type = "array"
+mode = "linear"
+count = 9
+step = [0, 0.8, 0]
+  [[component.mirador.children.children]]
+  type = "box"
+  min = [-2.05, 0.1, 0.82]
+  max = [2.05, 0.15, 0.9]
+
+[[element]]
+type = "instance"
+name = "mirador_w"
+component = "mirador"
+at = [-22.33, 9.1, 30.56]
+facing = "s"
+transform = { rotate_y = -8.15, pivot = [-22.33, 9.1, 30.56] }
+note = "west mirador s 8.6-12.7, 9.1-15.8 m (photo 04 solve)"
+
+[[element]]
+type = "instance"
+name = "mirador_e"
+component = "mirador"
+at = [19.7, 9.1, 37.4]
+facing = "s"
+transform = { rotate_y = -8.15, pivot = [19.7, 9.1, 37.4] }
+note = "east mirador about s 53 (photo 16)"
+
+# ======================================================= espadanya
+
+[[element]]
+type = "wall"
+name = "espadanya"
+path = [[15.5, 26.0], [18.3, 26.4]]
+y0 = 24.5
+top_profile = [[0, 29.2], [1.41, 30.2], [2.83, 29.2]]
+thickness = 0.6
+material = "brick"
+note = "bell gable on the SE stair tower, top ~31 m with its ball (photo 01 ray, photos 06)"
+  [[element.openings]]
+  edges = 0
+  kind = "arch"
+  arch = "round"
+  width = 1.0
+  height = 2.1
+  levels = [25.9]
+  bays = 1
+  infill = "dark"
+  bells = true
+
+[[element]]
+type = "sphere"
+name = "espadanya_ball"
+center = [16.9, 30.55, 26.2]
+radius = 0.35
+material = "stone_fine"
+
+# ======================================================= cloister arcades
+
+[[element]]
+type = "arcade"
+name = "cloister_w_lower"
+from = [-6.63, 19.46]
+to = [-2.55, -7.0]
+face = "right"
+bays = 8
+arch = "round"
+impost = 4.3
+height = 6.6
+depth = 0.7
+gallery = 4.2
+column = { order = "doric", radius = 0.28 }
+cornice = { profile = "classical", size = 0.5 }
+material = "stone_fine"
+
+[[element]]
+type = "arcade"
+name = "cloister_n_lower"
+from = [-2.55, -7.0]
+to = [14.56, -4.39]
+face = "right"
+bays = 5
+arch = "round"
+impost = 4.3
+height = 6.6
+depth = 0.7
+gallery = 4.2
+column = { order = "doric", radius = 0.28 }
+cornice = { profile = "classical", size = 0.5 }
+material = "stone_fine"
+
+[[element]]
+type = "arcade"
+name = "cloister_e_lower"
+from = [14.56, -4.39]
+to = [10.48, 22.07]
+face = "right"
+bays = 8
+arch = "round"
+impost = 4.3
+height = 6.6
+depth = 0.7
+gallery = 4.2
+column = { order = "doric", radius = 0.28 }
+cornice = { profile = "classical", size = 0.5 }
+material = "stone_fine"
+
+[[element]]
+type = "arcade"
+name = "cloister_s_lower"
+from = [10.48, 22.07]
+to = [-6.63, 19.46]
+face = "right"
+bays = 5
+arch = "round"
+impost = 4.3
+height = 6.6
+depth = 0.7
+gallery = 4.2
+column = { order = "doric", radius = 0.28 }
+cornice = { profile = "classical", size = 0.5 }
+material = "stone_fine"
+
+[[element]]
+type = "arcade"
+name = "cloister_w_upper"
+from = [-6.63, 19.46]
+to = [-2.55, -7.0]
+face = "right"
+y = 6.6
+bays = 8
+arch = "round"
+impost = 2.6
+height = 4.4
+depth = 0.6
+gallery = 4.2
+column = { order = "ionic", radius = 0.22 }
+cornice = { profile = "cyma", size = 0.4 }
+material = "stone_fine"
+
+[[element]]
+type = "arcade"
+name = "cloister_n_upper"
+from = [-2.55, -7.0]
+to = [14.56, -4.39]
+face = "right"
+y = 6.6
+bays = 5
+arch = "round"
+impost = 2.6
+height = 4.4
+depth = 0.6
+gallery = 4.2
+column = { order = "ionic", radius = 0.22 }
+cornice = { profile = "cyma", size = 0.4 }
+material = "stone_fine"
+
+[[element]]
+type = "arcade"
+name = "cloister_e_upper"
+from = [14.56, -4.39]
+to = [10.48, 22.07]
+face = "right"
+y = 6.6
+bays = 8
+arch = "round"
+impost = 2.6
+height = 4.4
+depth = 0.6
+gallery = 4.2
+column = { order = "ionic", radius = 0.22 }
+cornice = { profile = "cyma", size = 0.4 }
+material = "stone_fine"
+
+[[element]]
+type = "arcade"
+name = "cloister_s_upper"
+from = [10.48, 22.07]
+to = [-6.63, 19.46]
+face = "right"
+y = 6.6
+bays = 5
+arch = "round"
+impost = 2.6
+height = 4.4
+depth = 0.6
+gallery = 4.2
+column = { order = "ionic", radius = 0.22 }
+cornice = { profile = "cyma", size = 0.4 }
+material = "stone_fine"
+
+[[element]]
+type = "balustrade"
+name = "cloister_upper_balustrade"
+polygon = [[-6.63, 19.46], [-2.55, -7.0], [14.56, -4.39], [10.48, 22.07]]
+y = 6.6
+height = 0.9
+spacing = 0.4
+finials = "none"
+material = "stone_fine"
+
+# ======================================================= rear fence (tanca)
+
+[component.fence_pier]
+material = "stone_fine"
+[[component.fence_pier.children]]
+type = "box"
+min = [-0.5, 0, -0.5]
+max = [0.5, 1.2, 0.5]
+[[component.fence_pier.children]]
+type = "box"
+min = [-0.38, 1.2, -0.38]
+max = [0.38, 4.6, 0.38]
+[[component.fence_pier.children]]
+type = "box"
+min = [-0.48, 4.6, -0.48]
+max = [0.48, 4.9, 0.48]
+[[component.fence_pier.children]]
+type = "sphere"
+center = [0, 5.35, 0]
+radius = 0.4
+
+[component.fence_obelisk]
+material = "stone_fine"
+[[component.fence_obelisk.children]]
+type = "box"
+min = [-0.6, 0, -0.6]
+max = [0.6, 1.2, 0.6]
+[[component.fence_obelisk.children]]
+type = "box"
+min = [-0.45, 1.2, -0.45]
+max = [0.45, 4.6, 0.45]
+[[component.fence_obelisk.children]]
+type = "box"
+min = [-0.55, 4.6, -0.55]
+max = [0.55, 4.95, 0.55]
+[[component.fence_obelisk.children]]
+type = "cone"
+at = [0, 4.95, 0]
+height = 2.2
+radius = 0.4
+radius_top = 0.08
+segments = 4
+faceted = true
+
+[[element]]
+type = "group"
+name = "tanca"
+transform = { translate = [-21.02, 0, -37.4], rotate_y = -9.55 }
+note = "Renaissance stone-and-iron fence in front of the north block on c. del Cardenal Paya (photos 07, 09, 12): piers with balls, a central pedestal with two obelisks and the arms, an obelisk pier at the west end; local x runs east along the front, local -z north, 2.2 m out"
+  [[element.children]]
+  type = "instance"
+  component = "fence_obelisk"
+  at = [0.7, 0, -2.2]
+  [[element.children]]
+  type = "instance"
+  component = "fence_pier"
+  at = [1.6, 0, -2.2]
+  [[element.children]]
+  type = "instance"
+  component = "fence_pier"
+  at = [4.4, 0, -2.2]
+  [[element.children]]
+  type = "box"
+  min = [5.2, 0, -2.85]
+  max = [7.6, 4.9, -1.55]
+  [[element.children]]
+  type = "cone"
+  at = [5.6, 4.9, -2.2]
+  height = 2.3
+  radius = 0.38
+  radius_top = 0.08
+  segments = 4
+  faceted = true
+  [[element.children]]
+  type = "cone"
+  at = [7.2, 4.9, -2.2]
+  height = 2.3
+  radius = 0.38
+  radius_top = 0.08
+  segments = 4
+  faceted = true
+  [[element.children]]
+  type = "relief"
+  at = [6.4, 2.0, -2.85]
+  facing = "n"
+  size = [1.0, 1.4]
+  shape = "shield"
+  depth = 0.1
+  relief = "boss"
+  [[element.children]]
+  type = "instance"
+  component = "fence_pier"
+  at = [9.3, 0, -2.2]
+  [[element.children]]
+  type = "box"
+  min = [0.7, 0, -2.25]
+  max = [9.3, 0.6, -2.15]
+  material = "stone_fine"
+  [[element.children]]
+  type = "array"
+  mode = "linear"
+  count = 58
+  step = [0.15, 0, 0]
+    [[element.children.children]]
+    type = "box"
+    min = [1.0, 0.6, -2.22]
+    max = [1.03, 4.0, -2.18]
+    material = "iron"
+  [[element.children]]
+  type = "box"
+  min = [0.7, 3.9, -2.24]
+  max = [9.3, 4.0, -2.16]
+  material = "iron"
+
+# ============================================================== views
+
+[[view]]
+name = "plaza_02"
+photo = "photos/02_109_Placa_del_Col_legi_del_Patriarca_Valencia_amb_el_Col_leg.jpg"
+eye = [-35.01, 0.99, 66.26]
+target = [-17.69, 13.54, 32.46]
+fov_y = 53.56
+roll = -1.90
+
+[[view]]
+name = "plaza_01"
+photo = "photos/01_Patriarca_facana.jpg"
+eye = [-50, 1.6, 75]
+target = [-25, 15, 30]
+fov_y = 34.92
+fix = ["fov"]
+eye_height = 1.6
+match = [
+  { px = [177, 316], world = [-32.81, 21.6, 28.95] },
+  { px = [305, 334], world = [-27.95, 21.6, 29.64] },
+  { px = [127, 354], world = [-31.92, 21.6, 23.95] },
+  { px = [304, 386], world = [-27.95, 19.4, 29.64] },
+  { px = [238, 459], world = [-30.24, 16.5, 29.32] },
+  { px = [192, 34], world = [-32.45, 32.48, 28.55] },
+  { px = [298, 63], world = [-28.32, 32.48, 29.14] },
+  { px = [153, 86], world = [-31.55, 32.48, 24.42] },
+  { px = [725, 668], world = [-11.73, 10.2, 31.97] },
+]
+
+[[view]]
+name = "catastro"
+photo = "photos/catastro_6027501YJ2762E.jpg"
+eye = [-50.59, 1.84, 44.89]
+target = [-18.34, 17.90, 27.51]
+fov_y = 57.37
+roll = -1.66
+
+[[view]]
+name = "plaza_04"
+photo = "photos/04_El_Patriarca_Valencia_2008.jpg"
+eye = [-42.84, 1.36, 79.46]
+target = [-24.49, 12.62, 45.75]
+fov_y = 33.60
+roll = -0.19
+
+[[view]]
+name = "rear_07"
+photo = "photos/07_Patriarca_darrere.jpg"
+eye = [-15.5, 1.6, -70.5]
+target = [-18.25, 30, 1.2]
+fov_y = 30.55
+fix = ["fov", "eye"]
+level = true
+eye_height = 1.6
+match = [
+  { px = [734, 121], world = [-18.25, 35.1, 1.2] },
+  { px = [734, 440], world = [-18.25, 27.4, 1.2] },
+]
+
+[[view]]
+name = "se_corner_16"
+photo = "photos/16_Seminari_Corpus_Christi_P1400104.jpg"
+eye = [31.0, 1.6, 44.0]
+target = [19.05, 13.38, 33.12]
+fov_y = 63.5
+roll = -10.03
+
+[[view]]
+name = "dome_15"
+photo = "photos/15_Patriarca_cupula.jpg"
+eye = [-15.5, 1.6, -70.5]
+target = [-18.25, 30, 1.2]
+fov_y = 9.3
+fix = ["fov", "eye"]
+level = true
+match = [
+  { px = [482, 45], world = [-18.25, 35.0, 1.2] },
+  { px = [482, 527], world = [-18.25, 27.2, 1.2] },
+]
+
+[[view]]
+name = "dames_14"
+photo = "photos/14_Seminari_Corpus_Christi_DSCN2905.jpg"
+eye = [-85.0, 1.6, -7.5]
+target = [-18.25, 30, 1.2]
+fov_y = 52.6
+fix = ["fov", "eye"]
+level = true
+match = [
+  { px = [703, 100], world = [-18.25, 35.0, 1.2] },
+  { px = [690, 290], world = [-18.25, 27.2, 1.2] },
+]
+
+[[view]]
+name = "llibrers_08"
+photo = "photos/08_Seminari_Corpus_Christi_DSCN2896.jpg"
+eye = [-119.0, 1.6, 0.0]
+target = [-18.25, 30, 1.2]
+fov_y = 18.7
+fix = ["fov", "eye"]
+level = true
+match = [
+  { px = [667, 190], world = [-18.25, 35.0, 1.2] },
+  { px = [655, 590], world = [-18.25, 27.2, 1.2] },
+]
+
+[[view]]
+name = "belfry_03"
+photo = "photos/03_La_campana_de_la_Mitja_de_Valencia.jpg"
+eye = [-35.0, 1.6, 75.0]
+target = [-30, 25, 29]
+fov_y = 20.0
+fix = ["fov"]
+eye_height = 1.6
+match = [
+  { px = [88, 1065], world = [-32.93, 21.6, 28.9] },
+  { px = [950, 1005], world = [-27.83, 21.6, 29.7] },
+  { px = [525, 365], world = [-30.38, 27.7, 29.42] },
+  { px = [520, 795], world = [-30.38, 23.8, 29.42] },
+]
+
+[[view]]
+name = "portal_11"
+photo = "photos/11_Reial_Col_legi_del_Corpus_Christi_de_Valencia_exterior.jpg"
+eye = [-30.0, 1.6, 42.0]
+target = [-12, 6, 32]
+fov_y = 40.8
+fix = ["fov"]
+eye_height = 1.6
+match = [
+  { px = [548, 895], world = [-12.86, 0.0, 31.81] },
+  { px = [631, 895], world = [-10.59, 0.0, 32.13] },
+  { px = [603, 361], world = [-11.73, 10.2, 32.3] },
+  { px = [800, 900], world = [-12.9, 0.0, 36.8] },
+]
+
