@@ -36,33 +36,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Museo_y_Colegio_del_Arte_Mayor_de_la_Seda_Valencia_02.jpg"
-title = "File:Museo y Colegio del Arte Mayor de la Seda, Valencia 02.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Museo_y_Colegio_del_Arte_Mayor_de_la_Seda%2C_Valencia_02.jpg"
-author = "Simon Burchell"
-license = "CC BY-SA 4.0"
+file = "photos/02_Col_Arte_Mayor_de_la_Seda_VLC_a.jpg"
+title = "File:Col Arte Mayor de la Seda VLC a.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Col_Arte_Mayor_de_la_Seda_VLC_a.jpg"
+author = "B25es"
+license = "CC BY-SA 3.0"
 width = 1280
-height = 960
-camera = [14.02, -11.4]
+height = 1783
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Museo_y_Colegio_del_Arte_Mayor_de_la_Seda_Valencia_06.jpg"
-title = "File:Museo y Colegio del Arte Mayor de la Seda, Valencia 06.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Museo_y_Colegio_del_Arte_Mayor_de_la_Seda%2C_Valencia_06.jpg"
-author = "Simon Burchell"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-camera = [9.24, -27.81]
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/04_Facana_del_Col_legi_de_l_Art_Major_de_la_Seda_Valencia.jpg"
+file = "photos/03_Facana_del_Col_legi_de_l_Art_Major_de_la_Seda_Valencia.jpg"
 title = "File:Façana del Col·legi de l'Art Major de la Seda, València.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_del_Col%C2%B7legi_de_l%27Art_Major_de_la_Seda%2C_Val%C3%A8ncia.jpg"
 author = "Joanbanjo"
@@ -74,43 +60,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Col_legi_de_l_Art_Major_de_la_Seda_de_Valencia_cotilla.jpg"
-title = "File:Col·legi de l'Art Major de la Seda de València, cotilla.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Col%C2%B7legi_de_l%27Art_Major_de_la_Seda_de_Val%C3%A8ncia%2C_cotilla.jpg"
+file = "photos/04_Pati_del_col_legi_de_l_Art_Major_de_la_Seda_Valencia.jpg"
+title = "File:Pati del col·legi de l'Art Major de la Seda, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Pati_del_col%C2%B7legi_de_l%27Art_Major_de_la_Seda%2C_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 1820
+height = 874
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Libro_de_Clavarios_de_1591_a_1592_Colegio_del_Arte_Mayor_de_.jpg"
-title = "File:Libro de Clavarios (de 1591 a 1592) . Colegio del Arte Mayor de la Seda, Valencia.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Libro_de_Clavarios_%28de_1591_a_1592%29_._Colegio_del_Arte_Mayor_de_la_Seda%2C_Valencia.jpg"
-author = "Dorieo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/07_Libro_de_los_maestros_del_Arte_Mayor_de_la_Seda_siglo_XVIII_.jpg"
-title = "File:Libro de los maestros del Arte Mayor de la Seda (siglo XVIII). Colegio del Arte Mayor de la Seda, Valencia.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Libro_de_los_maestros_del_Arte_Mayor_de_la_Seda_%28siglo_XVIII%29._Colegio_del_Arte_Mayor_de_la_Seda%2C_Valencia.jpg"
-author = "Dorieo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Col_legi_de_l_Art_Major_de_la_Seda_P1400156.jpg"
+file = "photos/05_Col_legi_de_l_Art_Major_de_la_Seda_P1400156.jpg"
 title = "File:Col·legi de l'Art Major de la Seda P1400156.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Col%C2%B7legi_de_l%27Art_Major_de_la_Seda_P1400156.JPG"
 author = "Pere López"
@@ -122,43 +84,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_Pragmatica_Sancion_de_Felipe_V_1736_Colegio_del_Arte_Mayor_d.jpg"
-title = "File:Pragmática Sanción de Felipe V (1736). Colegio del Arte Mayor de la Seda, Valencia.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Pragm%C3%A1tica_Sanci%C3%B3n_de_Felipe_V_%281736%29._Colegio_del_Arte_Mayor_de_la_Seda%2C_Valencia.jpg"
-author = "Dorieo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1920
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Facana_del_col_legi_de_l_Art_Major_de_la_Seda_Valencia.jpg"
-title = "File:Façana del col·legi de l'Art Major de la Seda (València).JPG"
-url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_del_col%C2%B7legi_de_l%27Art_Major_de_la_Seda_%28Val%C3%A8ncia%29.JPG"
-author = "Eclèctica"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1707
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Col_Arte_Mayor_de_la_Seda_VLC_a.jpg"
-title = "File:Col Arte Mayor de la Seda VLC a.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Col_Arte_Mayor_de_la_Seda_VLC_a.jpg"
+file = "photos/06_Col_Arte_Mayor_de_la_Seda_VLC_b.jpg"
+title = "File:Col Arte Mayor de la Seda VLC b.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Col_Arte_Mayor_de_la_Seda_VLC_b.jpg"
 author = "B25es"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 1783
-exterior = "unknown"
+height = 1794
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_Col_legi_de_l_Art_Major_de_la_Seda_P1400164.jpg"
+file = "photos/07_Col_legi_de_l_Art_Major_de_la_Seda_P1400164.jpg"
 title = "File:Col·legi de l'Art Major de la Seda P1400164.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Col%C2%B7legi_de_l%27Art_Major_de_la_Seda_P1400164.JPG"
 author = "Pere López"
@@ -170,21 +108,9 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Maquina_de_Jacquard_col_legi_de_l_Art_Major_de_la_Seda_de_Va.jpg"
-title = "File:Màquina de Jacquard, col·legi de l'Art Major de la Seda de València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:M%C3%A0quina_de_Jacquard%2C_col%C2%B7legi_de_l%27Art_Major_de_la_Seda_de_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1902
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Facana_del_col_legi_de_l_Art_Major_de_la_Seda_Valencia_amb_c.jpg"
-title = "File:Façana del col·legi de l'Art Major de la Seda (València) amb ciclista.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_del_col%C2%B7legi_de_l%27Art_Major_de_la_Seda_%28Val%C3%A8ncia%29_amb_ciclista.JPG"
+file = "photos/08_Facana_del_col_legi_de_l_Art_Major_de_la_Seda_Valencia.jpg"
+title = "File:Façana del col·legi de l'Art Major de la Seda (València).JPG"
+url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_del_col%C2%B7legi_de_l%27Art_Major_de_la_Seda_%28Val%C3%A8ncia%29.JPG"
 author = "Eclèctica"
 license = "CC BY-SA 3.0"
 width = 1280
@@ -194,27 +120,40 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Museo_y_Colegio_del_Arte_Mayor_de_la_Seda_Valencia_03.jpg"
-title = "File:Museo y Colegio del Arte Mayor de la Seda, Valencia 03.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Museo_y_Colegio_del_Arte_Mayor_de_la_Seda%2C_Valencia_03.jpg"
+file = "photos/09_Museo_y_Colegio_del_Arte_Mayor_de_la_Seda_Valencia_08.jpg"
+title = "File:Museo y Colegio del Arte Mayor de la Seda, Valencia 08.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Museo_y_Colegio_del_Arte_Mayor_de_la_Seda%2C_Valencia_08.jpg"
 author = "Simon Burchell"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 1707
-camera = [11.17, -20.65]
+camera = [9.48, -13.82]
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Col_Arte_Mayor_de_la_Seda_VLC_b.jpg"
-title = "File:Col Arte Mayor de la Seda VLC b.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Col_Arte_Mayor_de_la_Seda_VLC_b.jpg"
-author = "B25es"
+file = "photos/10_Col_legi_de_l_Art_Major_de_la_Seda_Valencia.jpg"
+title = "File:Col·legi de l'Art Major de la Seda (València).JPG"
+url = "https://commons.wikimedia.org/wiki/File:Col%C2%B7legi_de_l%27Art_Major_de_la_Seda_%28Val%C3%A8ncia%29.JPG"
+author = "Eclèctica"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 1794
-exterior = "unknown"
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/11_Museo_y_Colegio_del_Arte_Mayor_de_la_Seda_Valencia_26.jpg"
+title = "File:Museo y Colegio del Arte Mayor de la Seda, Valencia 26.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Museo_y_Colegio_del_Arte_Mayor_de_la_Seda%2C_Valencia_26.jpg"
+author = "Simon Burchell"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+camera = [9.24, -27.7]
+exterior = true
 selected = false
 side = ""
 

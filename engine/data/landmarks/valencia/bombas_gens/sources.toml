@@ -35,7 +35,46 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Bombas_Gens_08.jpg"
+file = "photos/02_Vivienda_anexa_a_Bombas_Gens_02.jpg"
+title = "File:Vivienda anexa a Bombas Gens 02.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Vivienda_anexa_a_Bombas_Gens_02.JPG"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1920
+camera = [-51.21, 10.46]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/03_Fabrica_de_Bombes_Gens_avinguda_de_Burjassot_Valencia.jpg"
+title = "File:Fàbrica de Bombes Gens, avinguda de Burjassot, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:F%C3%A0brica_de_Bombes_Gens%2C_avinguda_de_Burjassot%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 812
+camera = [-9.33, 69.04]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/04_Edificio_Bombas_Gens_Centro_de_Arte_05.jpg"
+title = "File:Edificio Bombas Gens Centro de Arte 05.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_Bombas_Gens_Centro_de_Arte_05.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+camera = [45.19, 11.86]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_Bombas_Gens_08.jpg"
 title = "File:Bombas Gens 08.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Bombas_Gens_08.JPG"
 author = "B25es"
@@ -48,7 +87,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Remat_de_la_facana_de_la_fabrica_de_Bombes_Gens.jpg"
+file = "photos/06_Remat_de_la_facana_de_la_fabrica_de_Bombes_Gens.jpg"
 title = "File:Remat de la façana de la fàbrica de Bombes Gens.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Remat_de_la_fa%C3%A7ana_de_la_f%C3%A0brica_de_Bombes_Gens.JPG"
 author = "Joanbanjo"
@@ -61,64 +100,26 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Entrada_al_refugi_des_del_centre_d_art_Bombas_Gens.jpg"
-title = "File:Entrada al refugi des del centre d'art, Bombas Gens.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Entrada_al_refugi_des_del_centre_d%27art%2C_Bombas_Gens.jpg"
-author = "Joanbanjo"
+file = "photos/07_Bombas_Gens_Ramon_Esteve_Estudio.jpg"
+title = "File:Bombas Gens. Ramón Esteve Estudio.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Bombas_Gens._Ram%C3%B3n_Esteve_Estudio.jpg"
+author = "Ramon Esteve Estudio"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 883
+height = 800
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Vivienda_anexa_a_Bombas_Gens_02.jpg"
-title = "File:Vivienda anexa a Bombas Gens 02.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Vivienda_anexa_a_Bombas_Gens_02.JPG"
-author = "Dorieo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1920
-camera = [-51.21, 10.46]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/06_Edificio_Bombas_Gens_Centro_de_Arte_05.jpg"
-title = "File:Edificio Bombas Gens Centro de Arte 05.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Edificio_Bombas_Gens_Centro_de_Arte_05.jpg"
+file = "photos/08_Edificio_Bombas_Gens_Centro_de_Arte_04.jpg"
+title = "File:Edificio Bombas Gens Centro de Arte 04.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_Bombas_Gens_Centro_de_Arte_04.jpg"
 author = "19Tarrestnom65"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 960
-camera = [45.19, 11.86]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/07_Bombas_Gens_09.jpg"
-title = "File:Bombas Gens 09.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Bombas_Gens_09.JPG"
-author = "B25es"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-camera = [-7.38, -49.17]
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Entrada_al_refugi_antiaeri_de_Bombas_Gens_Valencia.jpg"
-title = "File:Entrada al refugi antiaeri de Bombas Gens, València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Entrada_al_refugi_antiaeri_de_Bombas_Gens%2C_Val%C3%A8ncia.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 854
+height = 1707
+camera = [-29.48, -38.87]
 exterior = true
 selected = false
 side = ""
@@ -132,64 +133,14 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1707
 camera = [-5.57, 15.19]
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/10_Bombas_Gens_Ramon_Esteve_Estudio.jpg"
-title = "File:Bombas Gens. Ramón Esteve Estudio.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Bombas_Gens._Ram%C3%B3n_Esteve_Estudio.jpg"
-author = "Ramon Esteve Estudio"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 800
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Edificio_Bombas_Gens_Centro_de_Arte_04.jpg"
-title = "File:Edificio Bombas Gens Centro de Arte 04.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Edificio_Bombas_Gens_Centro_de_Arte_04.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-camera = [-29.48, -38.87]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_Bombas_Gens_Centre_d_Art_Ramon_Esteve_Estudio.jpg"
-title = "File:Bombas Gens Centre d'Art. Ramón Esteve Estudio.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Bombas_Gens_Centre_d%27Art._Ram%C3%B3n_Esteve_Estudio.jpg"
-author = "Ramon Esteve Estudio"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1606
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Fabrica_de_Bombes_Gens_avinguda_de_Burjassot_Valencia.jpg"
-title = "File:Fàbrica de Bombes Gens, avinguda de Burjassot, València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:F%C3%A0brica_de_Bombes_Gens%2C_avinguda_de_Burjassot%2C_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 812
-camera = [-9.33, 69.04]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Bombas_Gens_10.jpg"
-title = "File:Bombas Gens 10.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Bombas_Gens_10.JPG"
+file = "photos/10_Bombas_Gens_09.jpg"
+title = "File:Bombas Gens 09.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Bombas_Gens_09.JPG"
 author = "B25es"
 license = "CC BY-SA 3.0"
 width = 1280
@@ -200,7 +151,31 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Fabrica_de_Bombes_Hidrauliques_Gens_Valencia_01.jpg"
+file = "photos/11_Bombas_Gens_Centre_d_Art_retol.jpg"
+title = "File:Bombas Gens Centre d'Art, rètol.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Bombas_Gens_Centre_d%27Art%2C_r%C3%A8tol.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 840
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/12_Entrada_al_refugi_antiaeri_de_Bombas_Gens_Valencia.jpg"
+title = "File:Entrada al refugi antiaeri de Bombas Gens, València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Entrada_al_refugi_antiaeri_de_Bombas_Gens%2C_Val%C3%A8ncia.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 854
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/13_Fabrica_de_Bombes_Hidrauliques_Gens_Valencia_01.jpg"
 title = "File:Fàbrica de Bombes Hidràuliques Gens (València) 01.jpg"
 url = "https://commons.wikimedia.org/wiki/File:F%C3%A0brica_de_Bombes_Hidr%C3%A0uliques_Gens_%28Val%C3%A8ncia%29_01.jpg"
 author = "Millars"
@@ -208,19 +183,33 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 camera = [-42.17, 56.13]
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Pilar_del_refugi_antiaeri_de_Bombas_Gens.jpg"
-title = "File:Pilar del refugi antiaeri de Bombas Gens.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Pilar_del_refugi_antiaeri_de_Bombas_Gens.jpg"
-author = "Joanbanjo"
+file = "photos/14_Edificio_Bombas_Gens_Centro_de_Arte_06.jpg"
+title = "File:Edificio Bombas Gens Centro de Arte 06.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_Bombas_Gens_Centro_de_Arte_06.jpg"
+author = "19Tarrestnom65"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 1950
-exterior = "unknown"
+height = 960
+camera = [48.86, 10.83]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/15_Bombas_Gens_10.jpg"
+title = "File:Bombas Gens 10.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Bombas_Gens_10.JPG"
+author = "B25es"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+camera = [-7.38, -49.17]
+exterior = true
 selected = false
 side = ""
 
