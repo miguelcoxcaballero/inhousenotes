@@ -176,7 +176,7 @@ fn night_hour() -> Option<f32> {
 /// analytic sky, exposure for streets lit at ~15 lux.
 fn night_env(env: &mut Environment, dark: f32) {
     env.use_ibl = false;
-    env.look = Look::Night;
+    env.camera = CameraModel::Night;
     env.sun_dir = Vec3::new(-0.35, 0.72, -0.55).normalize();
     env.sun_illuminance = 0.025 + 14.0 * (1.0 - dark).powi(3);
     env.set_linear_exposure(0.55 + 3.0 * dark);
