@@ -42,7 +42,7 @@ function disposeDocument(id) {
     for (const [key, object] of objects) if (object.owner === id) objects.delete(key);
 }
 
-// Same quadratic paths and highlighter blending as the interactive renderer.
+// Same measured pen paths and highlighter blending as the interactive renderer.
 function drawStroke(ctx, stroke) {
     const points = stroke.points || [];
     if (!points.length || stroke.tool === 'eraser-stroke') return;
@@ -74,14 +74,8 @@ function drawStroke(ctx, stroke) {
     ctx.strokeStyle = stroke.tool === 'eraser-area' ? 'rgba(0,0,0,1)' : stroke.color;
     ctx.lineWidth = stroke.width; ctx.lineCap = ctx.lineJoin = 'round';
     ctx.beginPath(); ctx.moveTo(points[0].x, points[0].y);
-    if (points.length > 2) {
-        ctx.lineTo((points[0].x + points[1].x) / 2, (points[0].y + points[1].y) / 2);
-        for (let i = 1; i < points.length - 1; i++) {
-            ctx.quadraticCurveTo(points[i].x, points[i].y,
-                (points[i].x + points[i + 1].x) / 2, (points[i].y + points[i + 1].y) / 2);
-        }
-    }
-    ctx.lineTo(points[points.length - 1].x, points[points.length - 1].y); ctx.stroke();
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+    ctx.stroke();
 }
 
 async function compress(value) {
@@ -135,6 +129,14 @@ function embedPreparedRaster(doc, raster) {
     return PDFLib.PDFImage.of(ref, doc, embedder);
 }
 
+function embedPreparedVector(doc, vector) {
+    const ref = doc.context.register(PDFLib.PDFRawStream.of(doc.context.obj({
+        Type:'XObject', Subtype:'Form', FormType:1,
+        BBox:[0,0,vector.width,vector.height], Resources:{}, Filter:'FlateDecode'
+    }), vector.contentBytes));
+    return {pdfVector:true, ref, width:vector.width, height:vector.height};
+}
+
 async function processTask(type, data) {
     if (type === 'packInkCheckpoint') {
         await InhouseRust.ready;
@@ -183,6 +185,12 @@ async function processTask(type, data) {
     }
     if (type === 'renderOverlay') {
         const page = JSON.parse(data.json);
+        if (data.pdfRaster && data.vectorInk && !page.images?.length) {
+            await InhouseRust.ready;
+            const paths = InhouseRust.pdfInk(page.strokes, data.bounds, data.scale);
+            if (paths) return {pdfVector:true, width:data.bounds.width, height:data.bounds.height,
+                contentBytes:await deflateBytes(paths)};
+        }
         const canvas = new OffscreenCanvas(Math.max(1, Math.round(data.bounds.width * data.scale)),
             Math.max(1, Math.round(data.bounds.height * data.scale)));
         const ctx = canvas.getContext('2d');
@@ -232,6 +240,10 @@ async function processTask(type, data) {
         if (type === 'pdfAddPage') return pageInfo(doc.addPage(data.page ? objectFor(data.page, data.id) : data.size));
         if (type === 'pdfEmbed') {
             if (!['embedPng', 'embedJpg'].includes(data.kind)) throw new Error('Unsupported image format');
+            if (data.bytes?.pdfVector) {
+                const image = embedPreparedVector(doc, data.bytes);
+                return {id:remember(image,data.id),ref:{objectNumber:image.ref.objectNumber}};
+            }
             let raster = data.bytes?.pdfRaster ? data.bytes : null;
             if (!raster && data.kind === 'embedPng') {
                 // Imported PNG backgrounds use exactly pdf-lib's decoder, but
@@ -245,6 +257,18 @@ async function processTask(type, data) {
         if (type === 'pdfDrawImage') {
             const page = objectFor(data.page, data.id);
             const image = objectFor(data.image, data.id);
+            if (image.pdfVector) {
+                const options = data.options || {};
+                const name = page.node.newXObject('Ink', image.ref);
+                page.pushOperators(...PDFLib.drawPage(name, {
+                    x:options.x || 0, y:options.y || 0,
+                    xScale:(options.width ?? image.width) / image.width,
+                    yScale:(options.height ?? image.height) / image.height,
+                    rotate:options.rotate || PDFLib.degrees(0),
+                    xSkew:PDFLib.degrees(0), ySkew:PDFLib.degrees(0)
+                }));
+                return name.toString().replace(/^\//, '');
+            }
             page.drawImage(image, data.options);
             const xobjects = page.node.lookup(PDFLib.PDFName.of('Resources')).lookup(PDFLib.PDFName.of('XObject'));
             for (const [name, ref] of xobjects.entries()) {
@@ -297,7 +321,8 @@ async function processTask(type, data) {
 self.onmessage = async ({ data: { id, type, data } }) => {
     try {
         const value = await processTask(type, data);
-        const transfers = value?.inkCheckpoint ? [value.bytes.buffer] : value instanceof Uint8Array ? [value.buffer]
+        const transfers = value?.pdfVector ? [value.contentBytes.buffer]
+            : value?.inkCheckpoint ? [value.bytes.buffer] : value instanceof Uint8Array ? [value.buffer]
             : value?.pdfRaster ? [value.colorBytes.buffer, ...(value.alphaBytes ? [value.alphaBytes.buffer] : [])] : [];
         self.postMessage({ id, value }, transfers);
     } catch (error) {

@@ -18,6 +18,25 @@ catastro_refcat = { value = "6329805YJ2762G", source = "https://www1.sedecatastr
 catastro_built = { value = 1880, source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6329805&rc2=YJ2762G", note = "Catastro dateOfConstruction (often the last major works)" }
 catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6329805&rc2=YJ2762G" }
 catastro_floor_area = { value = 6281.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6329805&rc2=YJ2762G", note = "Catastro officialArea (gross floor area)" }
+front_length = { value = 37.36, unit = "m", source = "OSM way 495233207 edge 1, checked on IGN PNOA orthophoto (WMS, CC BY 4.0)" }
+front_azimuth = { value = 111.5, unit = "deg", source = "OSM way 495233207 edge 1" }
+tower_s_plan = { value = "6.5 x 6.3", unit = "m", source = "photo camera solve (6.49-6.56 along the front); Catastro part 7 (6.6 x 6.2)" }
+tower_n_plan = { value = "6.8 x 7.4", unit = "m", source = "photo camera solve (6.64-6.74, 7.0 at first floor); Catastro part 4 (6.8 x 7.6)" }
+front_range_depth = { value = 7.3, unit = "m", source = "IGN PNOA orthophoto: facade to the glazed courtyard (Catastro part 1)" }
+socle_top = { value = 1.15, unit = "m", source = "camera solve, catastro facade photo (Canon SX270, EXIF 6.497 mm = 1685 px)" }
+ground_windows = { value = "1.32-4.17 x 1.52 wide", unit = "m", source = "camera solve, catastro photo" }
+band_first_floor = { value = "4.82-5.04", unit = "m", source = "camera solve, catastro photo + photo 01 (b1 4.63-4.76)" }
+first_floor_windows = { value = "5.04-8.08 x 1.46 wide", unit = "m", source = "camera solve, catastro photo" }
+band_second_floor = { value = "9.66-9.92", unit = "m", source = "camera solve (9.46-9.55)" }
+second_floor_windows = { value = "9.92-12.52 x 1.35 wide", unit = "m", source = "camera solve, catastro photo" }
+main_cornice = { value = "13.75-14.30", unit = "m", source = "camera solve, catastro photo + photo 01 (14.24-14.33)" }
+parapet_top = { value = 15.5, unit = "m", source = "camera solve (15.47); urns to ~16.2" }
+tower_window = { value = "16.5-18.7 x 1.2 wide", unit = "m", source = "camera solve, catastro photo" }
+tower_crown_cornice = { value = "20.55-21.7", unit = "m", source = "camera solve (21.56-21.70 top)" }
+tower_attic_top = { value = 22.8, unit = "m", source = "camera solve (22.74-22.93); corner urns to ~23.6" }
+carriage_door = { value = "3.06 x 3.85", unit = "m", source = "back-projection on solved catastro camera; check: person in the doorway ~1.7 m" }
+bays_from_south_corner = { value = "3.1 | 8.69 12.57 16.59(door) 20.65 24.57 28.49 | 33.9", unit = "m", source = "back-projection of window centres on the solved catastro camera; 3.96 m spacing" }
+rear_block_height = { value = 17.0, unit = "m", source = "Catastro part 6, 5 floors x 3.2 + 1 m (estimate, not visible in photos)" }
 catastro_floors_max = { value = 5, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 7 parts" }
 
 [[photo]]
@@ -29,8 +48,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/02_At_Valencia_2025_048.jpg"
@@ -42,8 +61,8 @@ width = 1280
 height = 853
 camera = [31.72, 29.21]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
 
 [[photo]]
 file = "photos/03_At_Valencia_2025_418.jpg"
@@ -56,8 +75,8 @@ height = 960
 camera = [48.7, 19.33]
 heading = 288.8
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/04_Facana_del_Palau_de_Cervello.jpg"
@@ -80,8 +99,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/06_Palau_de_Cervello_a_Valencia.jpg"
@@ -92,8 +111,8 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "ne"
 
 [[photo]]
 file = "photos/07_Palau_de_Cervello_Plaza_Tetuan_Ciutat_Vella_Valencia_Spain.jpg"
@@ -104,8 +123,8 @@ license = "CC0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/08_Palau_de_Cervello_Ciutat_Vella_Valencia_Spain.jpg"
@@ -116,8 +135,8 @@ license = "CC0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/09_Palau_de_Cervello_de_Valencia.jpg"
@@ -128,8 +147,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
 
 [[photo]]
 file = "photos/10_Palau_de_Cervello_facana.jpg"
@@ -140,8 +159,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/11_At_Valencia_2025_051.jpg"
@@ -153,8 +172,8 @@ width = 1280
 height = 853
 camera = [38.11, 21.8]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/12_Valencia_palau_de_Cervello.jpg"
@@ -165,8 +184,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "ne"
 
 [[photo]]
 file = "photos/13_Palau_de_Cervello_Valencia_1870_J_Laurent.jpg"
@@ -189,8 +208,8 @@ license = "Catastro open data (attribution required)"
 width = 1600
 height = 1200
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[plan]]
 file = "plans/01_1_35bis_PAL_CONDES_CERVELLON_2011_firmado.jpg"
@@ -249,3 +268,8 @@ notes = "Wikidata P973"
 url = "https://eduwp.edu.gva.es/patrimonio-cultural/ficha-inmueble.php?id=1398"
 title = "Described at"
 notes = "Wikidata P973"
+
+[[reference]]
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+title = "IGN PNOA orthophoto WMS (CC BY 4.0)"
+notes = "used for the plan check, front-range depth, courtyard and roof layout"

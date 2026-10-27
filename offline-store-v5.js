@@ -62,6 +62,21 @@
             };
         });
     }
+    // Commit a small edit and its upload-queue pointer atomically. Readers can
+    // consult the sparse index instead of cloning every historical ink file.
+    async function patchAndQueue(account, id, update, indexId, revision) {
+        return transaction(['settings'], 'readwrite', (stores, done) => {
+            const store=stores.settings;
+            store.get(key(account,id)).onsuccess=event=>{
+                const previous=event.target.result||{account,id,key:key(account,id)};
+                const next=update(previous);store.put(next);done(next);
+            };
+            store.get(key(account,indexId)).onsuccess=event=>{
+                const previous=event.target.result||{account,id:indexId,key:key(account,indexId)};
+                store.put({...previous,pending:{...previous.pending,[id]:Math.max(previous.pending?.[id]||0,revision)}});
+            };
+        });
+    }
     async function settings(account) {
         return { retentionDays:14, ...(await read('settings',account,'preferences')) };
     }
@@ -89,13 +104,22 @@
         });
     }
     async function acknowledge(account,id,generation,meta,blob) {
-        return transaction(['documents','outbox','entries'], 'readwrite', (s, done) => {
+        return transaction(['documents','outbox','entries','recoveries'], 'readwrite', (s, done) => {
             s.documents.get(key(account,id)).onsuccess = event => {
                 const doc = event.target.result;
                 if (!doc) { done(false); return; }
                 // Edits made while the upload was in flight must stay pending.
                 const settled = doc.generation === generation;
                 const next = {...doc,remoteId:meta.id || doc.remoteId || id,lastUploadMeta:meta,lastUploadedAt:Date.now()};
+                // Keep one recoverable editable draft before replacing it with
+                // the uploaded PDF. A successful HTTP response must not erase
+                // the only independent copy of the user's stroke data.
+                if (settled && doc.snapshot) {
+                    const recoveryId = `last-upload-draft:${id}`;
+                    s.recoveries.put({key:key(account,recoveryId),account,id:recoveryId,
+                        fileId:id,generation,snapshot:doc.snapshot,originalBlob:doc.originalBlob,
+                        previousBlob:doc.blob,uploadedMeta:meta,createdAt:Date.now()});
+                }
                 if (settled) next.baseMeta=meta;
                 if (settled) { next.dirty=false; next.offlineEdited=false; next.snapshot=null; next.analysis=null; next.originalBlob=null; next.preparedBlob=null; next.preparedGeneration=null; next.blob=blob || doc.blob; s.outbox.delete(doc.key); }
                 s.documents.put(next);
@@ -173,6 +197,6 @@
         }).catch(()=>{lost=true;}),10000);
         try {return await work(assert);} finally {clearInterval(timer);await patch('leases',account,name,old=>old.owner===owner?null:old);}
     }
-    root.InhouseOfflineStore=Object.freeze({open,read,list,put,patch,settings,setRetention,checkpoint,acknowledge,
+    root.InhouseOfflineStore=Object.freeze({open,read,list,put,patch,patchAndQueue,settings,setRetention,checkpoint,acknowledge,
         createFolder,cacheEntries,resolveId,finishFolder,prune,withLease});
 })(globalThis);

@@ -12,6 +12,22 @@ commons_category = "Mercat d'Abastos de València"
 wikipedia = { es = "https://es.wikipedia.org/wiki/Mercado_de_Abastos_de_Valencia", ca = "https://ca.wikipedia.org/wiki/Antic_Mercat_d%27Abastiments_de_Val%C3%A8ncia" }
 
 [facts]
+frame = { value = "building frame s (azimuth 149.2) / t (azimuth 59.2), origin local (0.475, -0.25)", source = "https://www.openstreetmap.org/way/243447549", note = "long sides of the OSM outline run at azimuth 149.2 +- 0.2; all dimensions below are in this frame; the main facade (Carrer d'Alberic) is t = -35.5" }
+plan_pillar_line = { value = [192.0, 71.0], unit = "m", source = "https://www.openstreetmap.org/way/243447549", note = "OSM outline = pillar line of the perimeter portico (s -96..96, t -35.5..35.5), checked on the PNOA orthophoto at 0.1 m/px; Wikidata 226 x 105.5 m is the plot" }
+canopy_projection = { value = 3.5, unit = "m", source = "https://www.ign.es/wms-inspire/pnoa-ma (IGN PNOA orthophoto, CC BY 4.0)", note = "canopy edges at t +39.0 (lean-corrected) and s -99.6 in the rectified orthophoto" }
+canopy_height = { value = 6.2, unit = "m", source = "https://www.ign.es/wms-inspire/pnoa-ma (IGN PNOA orthophoto, CC BY 4.0) + photos 06, 09, 10", note = "canopy shadow on the ground 2.2 m = same as the upper storey shadow on the terrace; with the tower-calibrated shadow ratio 0.39 m/m -> canopy ~5.6-6 m; grey stone dado 2.5 m (door scale, photo 09), screens to 5.4 m, slab top 6.2 m. Uncertainty ~1 m" }
+portico_bay = { value = 4.6, unit = "m", source = "https://www.ign.es/wms-inspire/pnoa-ma (IGN PNOA orthophoto, CC BY 4.0)", note = "autocorrelation of the canopy roof along both long sides: drains every 9.25 m = 2 bays; 14 bays between the N end and the gate pavilion (s -96..-32)" }
+gallery_depth = { value = 4.0, unit = "m", source = "photos 15, 16", note = "estimated; open gallery between the pillars and the shop fronts" }
+upper_storey = { value = [174.8, 57.0, 11.2], unit = "m", source = "https://www.ign.es/wms-inspire/pnoa-ma (IGN PNOA orthophoto, CC BY 4.0)", note = "faces at s +-87.4 / t +-28.5 after correcting the roof lean (0.134 m per m of height towards azimuth 239); its shadow on the terrace 2.2 m -> ~5.6 m above it; merloned parapet to 11.9 m (photo 03)" }
+glass_halls = { value = "two hip glass roofs s -83.1..82.4, t 5.2..19.3 and -21.4..-7.4, crossing s +-9.6 between their ridges", source = "https://www.ign.es/wms-inspire/pnoa-ma (IGN PNOA orthophoto, CC BY 4.0)", note = "valleys of the crossing meet the hall ridges, so the crossing ridge = hall ridge; eave 11.2, ridge 15.0 m estimated (glass visible just above the parapet in photo 03)" }
+side_towers = { value = { eave = 21.7, apex = 26.4, ball_top = 27.4, width = 9.2, depth = 9.2 }, unit = "m", source = "bundle adjustment of photos 01, 02 and the Catastro photo (EXIF 4.5 mm, 1162 px), 11-12 matches each, rms 2.8-4.1 px", note = "eave 21.7 +- 0.3, pyramid apex 26.4 +- 0.2; walls s -26.6..-17.4 and 17.05..26.6, front t -36.3 +- 0.6 (OSM -35.8); three slit windows 1.05 x 14.4 m from 3.2 m at offsets 0 / +-1.95 m, three small windows 19.0-20.4 m" }
+central_tower = { value = { eave = 19.1, apex = 23.4, width = 8.4, depth = 17.4 }, unit = "m", source = "same bundle", note = "eave 19.1 +- 0.5, hip apex 23.4 +- 0.5 (ridge along t, PNOA green hip 9.5 x 17 m); front t -44.6 = arch front; three arched windows 13.9-15.8 m, lettering ~17 m, corner pier caps 17.1 m, coat of arms 10.6-13.0 m" }
+main_arch = { value = [5.7, 6.5], unit = "m", source = "photos 01, 02, Catastro (solved cameras)", note = "width 5.7 +- 0.15, crown 6.5 +- 0.2 m; stone arch block with scroll crest to ~9.6 m" }
+wings = { value = { eave = 13.4, ridge = 15.7, front_t = -39.4 }, unit = "m", source = "photo 02 ray-cast on the solved camera; OSM parts 18/19", note = "upper windows 8.6-11.2 m, ground windows 1.5-4.5 m, senyera tiles ~6.3-7.1 m; green tiled lean-to roof ~30 deg" }
+quarter_pavilions = { value = { radius = 4.8, eave = 5.7 }, unit = "m", source = "OSM parts 23/24 + photo 02", note = "quarter-round pavilions flanking the arch" }
+gate_pavilions = { value = { s = [-32.0, -25.2], front_t = -39.4, cornice = 9.2, ball_top = 12.7 }, unit = "m", source = "photos 02, 05, 07, 08, 14", note = "project ~3 m in front of the outer half of each side tower; extent along s uncertain (+-1.5 m): photos 05 and 07 place them slightly further out than 08" }
+east_block = { value = { eave = 23.5, pent_band = 21.2, plan = [17.5, 11.2] }, unit = "m", source = "photo 03 solved camera (23.7 +- 2.6) + PNOA roof lean (22.4-24.6 m)", note = "hip roof 18.5 x 12.4 m on PNOA; 4 small windows under the eave on each face; flanked by 3-storey wings with roof terraces (Catastro III, ~13.6 m)" }
+roof_lean = { value = 0.134, unit = "m/m", source = "https://www.ign.es/wms-inspire/pnoa-ma (IGN PNOA orthophoto, CC BY 4.0)", note = "tower roofs displaced towards azimuth 239 by 2.9 m at 21.7 m and 2.5 m at 19.1 m; used to correct all roof edges" }
 built = { value = "1940s", source = "https://www.wikidata.org/wiki/Q8200942#P571", note = "start time: 1940-12-01; end time: 1948-06-28" }
 architect = { value = "Francisco Javier Goerlich Lleó", source = "https://www.wikidata.org/wiki/Q8200942#P84" }
 style = { value = "Rationalist architecture in the Land of Valencia", source = "https://www.wikidata.org/wiki/Q8200942#P149" }
@@ -35,8 +51,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 837
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W main facade frontal (view, rms 4.1 px)"
 
 [[photo]]
 file = "photos/02_Valencia_Mercado_de_Abastos_2026_09_13.jpg"
@@ -48,8 +64,8 @@ width = 1280
 height = 853
 camera = [-2.18, 0.63]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W main facade frontal (view, rms 4.1 px)"
 
 [[photo]]
 file = "photos/03_Mercat_d_Abastos_de_Valencia_des_de_l_exterior.jpg"
@@ -60,8 +76,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 823
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W main facade frontal (view, rms 4.1 px)"
 
 [[photo]]
 file = "photos/04_Torre_del_mercat_d_Abastos_de_Valencia.jpg"
@@ -72,8 +88,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 890
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W main facade frontal (view, rms 4.1 px)"
 
 [[photo]]
 file = "photos/05_Carril_bici_al_carrer_d_Ontinyent_de_Valencia_1.jpg"
@@ -84,8 +100,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 768
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W main facade frontal (view, rms 4.1 px)"
 
 [[photo]]
 file = "photos/06_Lateral_del_mercat_d_Abastos_Valencia.jpg"
@@ -96,8 +112,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1975
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W main facade frontal (view, rms 4.1 px)"
 
 [[photo]]
 file = "photos/07_Abastos01.jpg"
@@ -108,8 +124,8 @@ license = "CC BY-SA 4.0"
 width = 960
 height = 724
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W main facade frontal (view, rms 4.1 px)"
 
 [[photo]]
 file = "photos/08_Mercat_d_Abastos_de_Valencia.jpg"
@@ -120,8 +136,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 768
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W main facade frontal (view, rms 4.1 px)"
 
 [[photo]]
 file = "photos/09_Mercat_d_Abastiments_de_Valencia_lateral.jpg"
@@ -132,8 +148,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W main facade frontal (view, rms 4.1 px)"
 
 [[photo]]
 file = "photos/10_Lateral_del_Mercat_d_Abastos_de_Valencia.jpg"
@@ -144,8 +160,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1928
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W main facade frontal (view, rms 4.1 px)"
 
 [[photo]]
 file = "photos/11_Mercat_d_Abastiments_de_Valencia_exterior.jpg"
@@ -156,8 +172,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 868
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W main facade frontal (view, rms 4.1 px)"
 
 [[photo]]
 file = "photos/12_Valencia_antic_mercat_d_abastiments.jpg"
@@ -168,8 +184,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1963
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W main facade frontal (view, rms 4.1 px)"
 
 [[photo]]
 file = "photos/13_Mercat_d_Abastos_de_Valencia_2012.jpg"
@@ -180,8 +196,8 @@ license = "CC BY-SA 3.0"
 width = 500
 height = 377
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W main facade frontal (view, rms 4.1 px)"
 
 [[photo]]
 file = "photos/14_Mercat_d_Abastos_de_Valencia_torre_lateral.jpg"
@@ -192,8 +208,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1999
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W main facade frontal (view, rms 4.1 px)"
 
 [[photo]]
 file = "photos/catastro_4721301YJ2742B.jpg"
@@ -204,8 +220,92 @@ license = "Catastro open data (attribution required)"
 width = 1600
 height = 1200
 exterior = true
+selected = true
+side = "W main facade frontal (view, rms 4.1 px)"
+
+[[photo]]
+file = "photos/15_Mercat_d_Abastos_de_Valencia_lateral.jpg"
+title = "File:Mercat d'Abastos de València, lateral.JPG"
+url = "https://commons.wikimedia.org/wiki/File%3AMercat_d%27Abastos_de_Val%C3%A8ncia%2C_lateral.JPG"
+author = "Joanbanjo (to verify: Commons API rate-limited, 429)"
+license = "CC BY-SA 3.0 (to verify; as the photographer's other files in the category)"
+width = 1280
+height = 1920
+exterior = true
+selected = true
+side = "gallery behind the portico (gallery depth)"
+
+[[photo]]
+file = "photos/16_Mercat_d_Abastos_de_Valencia_porxo.jpg"
+title = "File:Mercat d'Abastos de València, porxo.JPG"
+url = "https://commons.wikimedia.org/wiki/File%3AMercat_d%27Abastos_de_Val%C3%A8ncia%2C_porxo.JPG"
+author = "Joanbanjo (to verify: Commons API rate-limited, 429)"
+license = "CC BY-SA 3.0 (to verify; as the photographer's other files in the category)"
+width = 1280
+height = 894
+exterior = true
+selected = true
+side = "portico screens and gallery ceiling"
+
+[[photo]]
+file = "photos/17_Mercat_d_Abastiments_de_Valencia_coberta.jpg"
+title = "File:Mercat d'Abastiments de València, coberta.JPG"
+url = "https://commons.wikimedia.org/wiki/File%3AMercat_d%27Abastiments_de_Val%C3%A8ncia%2C_coberta.JPG"
+author = "Joanbanjo (to verify: Commons API rate-limited, 429)"
+license = "CC BY-SA 3.0 (to verify; as the photographer's other files in the category)"
+width = 1280
+height = 1920
+exterior = false
 selected = false
-side = ""
+side = "interior"
+
+[[photo]]
+file = "photos/18_Mercat_d_Abastos_de_Valencia_arc_d_entrada.jpg"
+title = "File:Mercat d'Abastos de València, arc d'entrada.JPG"
+url = "https://commons.wikimedia.org/wiki/File%3AMercat_d%27Abastos_de_Val%C3%A8ncia%2C_arc_d%27entrada.JPG"
+author = "Joanbanjo (to verify: Commons API rate-limited, 429)"
+license = "CC BY-SA 3.0 (to verify; as the photographer's other files in the category)"
+width = 1280
+height = 1975
+exterior = false
+selected = false
+side = "interior"
+
+[[photo]]
+file = "photos/19_Mercat_d_Abastos_de_Valencia_institut.jpg"
+title = "File:Mercat d'Abastos de València, institut.JPG"
+url = "https://commons.wikimedia.org/wiki/File%3AMercat_d%27Abastos_de_Val%C3%A8ncia%2C_institut.JPG"
+author = "Joanbanjo (to verify: Commons API rate-limited, 429)"
+license = "CC BY-SA 3.0 (to verify; as the photographer's other files in the category)"
+width = 1280
+height = 871
+exterior = false
+selected = false
+side = "interior"
+
+[[photo]]
+file = "photos/20_Tanca_de_l_antic_mercat_d_Abastiments_de_Valencia.jpg"
+title = "File:Tanca de l'antic mercat d'Abastiments de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File%3ATanca_de_l%27antic_mercat_d%27Abastiments_de_Val%C3%A8ncia.JPG"
+author = "Joanbanjo (to verify: Commons API rate-limited, 429)"
+license = "CC BY-SA 3.0 (to verify; as the photographer's other files in the category)"
+width = 1280
+height = 1947
+exterior = true
+selected = true
+side = "perimeter fence (not modelled)"
+
+[[photo]]
+file = "photos/21_Tanca_de_l_antic_mercat_d_Abastos_de_Valencia.jpg"
+title = "File:Tanca de l'antic mercat d'Abastos de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File%3ATanca_de_l%27antic_mercat_d%27Abastos_de_Val%C3%A8ncia.JPG"
+author = "Joanbanjo (to verify: Commons API rate-limited, 429)"
+license = "CC BY-SA 3.0 (to verify; as the photographer's other files in the category)"
+width = 1280
+height = 899
+exterior = true
+selected = true
+side = "perimeter fence (not modelled)"
 
 [[plan]]
 file = "plans/01_3_01_ANT_MERCADO_DE_ABASTOS_firmado.jpg"
@@ -264,3 +364,12 @@ notes = "Wikidata P973"
 url = "https://eduwp.edu.gva.es/patrimonio-cultural/ficha-inmueble.php?id=262"
 title = "Described at"
 notes = "Wikidata P973"
+
+[[plan]]
+file = "(scratchpad) pnoa.jpg"
+title = "IGN PNOA orthophoto (WMS pnoa-ma), bbox E 724579-724769, N 4371855-4372085"
+url = "https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=OI.OrthoimageCoverage&SRS=EPSG:25830&BBOX=724579.265,4371854.938,724769.265,4372084.938&WIDTH=1900&HEIGHT=2300&FORMAT=image/jpeg"
+author = "Instituto Geográfico Nacional"
+license = "CC BY 4.0"
+kind = "orthophoto"
+notes = "0.1 m/px; rectified into the building frame for measuring roof edges, canopy rhythm, shadows and roof lean"

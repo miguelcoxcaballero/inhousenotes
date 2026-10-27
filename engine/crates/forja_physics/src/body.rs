@@ -26,6 +26,8 @@ pub enum BodyType {
 pub struct RigidBody {
     pub body_type: BodyType,
     pub(crate) iso: Iso,
+    /// Pose at the start of the last step (render interpolation).
+    pub(crate) prev_iso: Iso,
     pub linvel: Vec3,
     pub angvel: Vec3,
     pub linear_damping: f32,
@@ -53,6 +55,21 @@ impl RigidBody {
 
     pub fn position(&self) -> Vec3 {
         self.iso.pos
+    }
+
+    /// Pose at the start of the last step.
+    pub fn prev_iso(&self) -> Iso {
+        self.prev_iso
+    }
+
+    /// Pose between the last two steps for rendering with a fixed timestep
+    /// (Fiedler, "Fix Your Timestep!"): `alpha` is the fraction of a step
+    /// left in the accumulator (`forja_core::Time::alpha`). Rendering this
+    /// instead of [`RigidBody::iso`] removes the judder of 60 Hz physics on
+    /// 75-240 Hz displays and at uneven frame rates.
+    pub fn interpolated_iso(&self, alpha: f32) -> Iso {
+        let a = alpha.clamp(0.0, 1.0);
+        Iso::new(self.prev_iso.pos.lerp(self.iso.pos, a), self.prev_iso.rot.slerp(self.iso.rot, a).normalize())
     }
 
     pub fn rotation(&self) -> Quat {
@@ -110,8 +127,10 @@ impl RigidBody {
         }
     }
 
+    /// Teleports the body (no interpolation from the old pose).
     pub fn set_iso(&mut self, iso: Iso) {
         self.iso = iso;
+        self.prev_iso = iso;
         self.wake();
     }
 
@@ -144,6 +163,19 @@ impl RigidBody {
         self.force += f;
         self.torque += (p - self.com()).cross(f);
         self.wake();
+    }
+
+    /// Like [`RigidBody::apply_force_at_point`] without waking the body, so
+    /// controllers that push every step (vehicle suspension) still let a
+    /// resting body fall asleep.
+    pub fn add_force_at_point(&mut self, f: Vec3, p: Vec3) {
+        self.force += f;
+        self.torque += (p - self.com()).cross(f);
+    }
+
+    /// Non-waking [`RigidBody::apply_torque`].
+    pub fn add_torque(&mut self, t: Vec3) {
+        self.torque += t;
     }
 
     pub fn apply_impulse(&mut self, j: Vec3) {
@@ -246,6 +278,7 @@ impl RigidBodyDesc {
         RigidBody {
             body_type: self.body_type,
             iso: self.iso,
+            prev_iso: self.iso,
             linvel: self.linvel,
             angvel: self.angvel,
             linear_damping: self.linear_damping,

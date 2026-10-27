@@ -127,12 +127,14 @@ for (const mode of ['strokes','pdf','home-frame','home-memory-auth','home-auth-4
   const ctx=canvas.getContext('2d');await first.render({canvasContext:ctx,viewport,intent:'print'}).promise;
   const pixel=[...ctx.getImageData(Math.floor(canvas.width/2),Math.floor(canvas.height/2),1,1).data];
   await pdf.destroy();
-  const recovery=(await InhouseOfflineStore.list('recoveries','worker@example.test'))[0];
+  // The store also retains the last uploaded local draft. Select merge recoveries explicitly.
+  const recoveries=(await InhouseOfflineStore.list('recoveries','worker@example.test')).filter(item=>item.remoteBlob);
+  const recovery=recoveries[0];
   if(!recovery)return {summary:window.result,dirty:stored.dirty,meta:stored.baseMeta,ids:pages.flatMap(p=>p.strokes.map(s=>s.id)),recoveries:0,pixel};
   const rp=await pdfjsLib.getDocument({data:await recovery.remoteBlob.arrayBuffer()}).promise;
   const rpage=await rp.getPage(1);await rpage.render({canvasContext:ctx,viewport:rpage.getViewport({scale:0.2}),intent:'print'}).promise;
   const remotePixel=[...ctx.getImageData(Math.floor(canvas.width/2),Math.floor(canvas.height/2),1,1).data];await rp.destroy();
-  return {summary:window.result,dirty:stored.dirty,pixel,remotePixel,ids:pages.flatMap(p=>p.strokes.map(s=>s.id)),recoveries:(await InhouseOfflineStore.list('recoveries','worker@example.test')).length};
+  return {summary:window.result,dirty:stored.dirty,pixel,remotePixel,ids:pages.flatMap(p=>p.strokes.map(s=>s.id)),recoveries:recoveries.length};
  });
  expect(result.summary.errors).toEqual([]);expect(result.dirty).toBe(false);expect(uploads).toBe(1);expect(downloads).toBe(1);
  for(let i=0;i<3;i++)expect(result.ids).toEqual(expect.arrayContaining(mode==='home-flat'?[`first-${i}`]:[`first-${i}`,`remote-${i}`]));
