@@ -989,6 +989,9 @@ pub struct Renderer {
     /// Bytes written since the last flush of the upload queue (see
     /// [`Renderer::flush_uploads`]).
     pending_upload: u64,
+    /// Blocking upload flushes so far: `(count, total ms)` waited in
+    /// [`Renderer::flush_uploads`] (the sandbox's `--frame-trace` reads it).
+    pub upload_waits: (u32, f64),
     scratch: Vec<InstanceRaw>,
     /// Batches of the last frame: camera, then every shadow view.
     last_batches: (Vec<Batch>, Vec<Batch>),
@@ -1729,6 +1732,7 @@ impl Renderer {
             mesh_bytes: 0,
             target_bytes: 0,
             pending_upload: 0,
+            upload_waits: (0, 0.0),
             scratch: Vec::new(),
             last_batches: Default::default(),
             sky_bgl,
@@ -2588,8 +2592,11 @@ impl Renderer {
             return;
         }
         self.pending_upload = 0;
+        let t = std::time::Instant::now();
         self.queue.submit([]);
         let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        self.upload_waits.0 += 1;
+        self.upload_waits.1 += t.elapsed().as_secs_f64() * 1000.0;
     }
 
     /// Forgets cached textures whose pixel data nobody else holds any
@@ -3228,6 +3235,13 @@ impl Renderer {
         if auto.is_some() {
             compute(&mut enc, &self.pipelines.exposure_begin, &t.exposure_bind, (1, 1), "exposure");
         }
+        // Per-pass CPU encode time ("enc ..." scopes inside "encode").
+        let mut t_pass = std::time::Instant::now();
+        let mut enc_scopes: [(&'static str, f32); 5] = [("enc shadows", 0.0), ("enc prepass", 0.0), ("enc ao+fog", 0.0), ("enc main", 0.0), ("enc post", 0.0)];
+        let mut lap = |k: usize| {
+            enc_scopes[k].1 += t_pass.elapsed().as_secs_f32() * 1000.0;
+            t_pass = std::time::Instant::now();
+        };
         const SHADOW_NAMES: [&str; 5] = ["shadow c0", "shadow c1", "shadow c2", "shadow c3", "shadow spots"];
         // 1. Shadows (alpha-masked casters are alpha tested): sun cascades
         // (the cached far ones skipped), then the shadowed spot lights.
@@ -3284,6 +3298,7 @@ impl Renderer {
                 stats.shadow_triangles += (count / 3) as u64 * b.count as u64;
             }
         }
+        lap(0);
         // 2. Depth + normal prepass of the opaque surfaces (blended ones are
         // sorted last and skipped). Opaque materials keep whatever material
         // group is bound: their prepass shader reads no texture.
@@ -3354,6 +3369,7 @@ impl Renderer {
             pass.set_bind_group(1, bind, &[]);
             pass.draw(0..3, 0..1);
         };
+        lap(1);
         // 3. Ambient occlusion: GTAO + bilateral denoise, at half resolution
         // with a depth-aware upsample, or at full resolution.
         if s.ssao {
@@ -3375,6 +3391,7 @@ impl Renderer {
         // fog: lit by this frame's shadow maps and light clusters.
         self.fog.encode_sky(&self.device, &mut enc, &self.frame_bind, prof);
         self.fog.encode_volume(&self.queue, &mut enc, &self.frame_bind, prof);
+        lap(2);
         // 4. Main HDR pass + sky + lines, depth-tested against the prepass
         // (read-only, so the shaders can also sample it).
         {
@@ -3448,6 +3465,7 @@ impl Renderer {
                 pass.draw(0..frame.lines.len() as u32, 0..1);
             }
         }
+        lap(3);
         // 5. TAA resolve into `resolved`, which becomes next frame's history.
         screen_pass(&mut enc, &t.resolved, &self.pipelines.taa, &t.taa_bind, "taa");
         enc.copy_texture_to_texture(
@@ -3522,9 +3540,16 @@ impl Renderer {
             self.camera_fx.camera_pass(&mut enc, target, &t.camera, prof.pass("camera fx"));
         }
         self.profiler.resolve(&mut enc);
+        lap(4);
         self.cpu.add("encode", t_enc.elapsed().as_secs_f32() * 1000.0);
+        for (name, ms) in enc_scopes {
+            self.cpu.add(name, ms);
+        }
+        let t_fin = std::time::Instant::now();
+        let cmd = enc.finish();
+        self.cpu.add("finish", t_fin.elapsed().as_secs_f32() * 1000.0);
         let t_sub = std::time::Instant::now();
-        self.queue.submit([enc.finish()]);
+        self.queue.submit([cmd]);
         self.profiler.after_submit();
         self.cpu.add("submit", t_sub.elapsed().as_secs_f32() * 1000.0);
         stats.cpu_ms = t0.elapsed().as_secs_f32() * 1000.0;
