@@ -25,6 +25,56 @@ catastro_use = { value = "1_residential", source = "https://www1.sedecatastro.go
 catastro_floor_area = { value = 26062.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6423501&rc2=YJ2762C", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 3, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 3 parts" }
 
+# ------------------------------------------------- measured / documented dimensions used by the model
+# Building frame: u along the hall (azimuth 60, SW Jorge Juan -> NE Salvatierra),
+# w across (azimuth 150, NW Martinez Ferrando -> SE Ciril Amoros), y up; origin
+# = plan centre (local x 1.14, z -0.67). See the header of landmark.toml.
+
+[facts.plan]
+value = "hall u -32.6..32.6 (65.2 m) x w -19.13..19.2 (38.3 m); Jorge Juan pavilion u -38.7..-31.1 (7.6 m deep) x w -13.8..13.98 (27.8 m), towers projecting to u -39.6 at |w| 5.7..9.65; NE front u 33.0-33.2 with round tower kiosks r 4.45 m centred at w +-9.0; side canopies to |w| 24.4"
+source = "OSM way 10120283 and Catastro INSPIRE parts 4-6 of 6423501YJ2762C (footprint.json, they agree within 0.2 m); PNOA orthophoto for the canopy edges"
+note = "es.wikipedia gives the municipal pavilion a 31 x 7.5 m base: the depth matches, the 31 m width probably includes the projecting stone bases; OSM/Catastro (27.8 m) are kept."
+
+[facts.parcel_area]
+value = 4348.45
+unit = "m2"
+source = "PGOU de Valencia, ficha BIC 02.02.01 (plans/01_2_01_MERCADO_COLON_firmado.jpg)"
+
+[facts.nave_height]
+value = 18.6
+unit = "m"
+source = "https://es.wikipedia.org/wiki/Mercado_de_Col%C3%B3n"
+note = "'una [nave] central de 18,60 m de altura' -> nave ridge RIDGE_Y = 18.6 (was 17.8)."
+
+[facts.hall_structure]
+value = "side naves 9.70 m span, 6 m cantilevers each side, 9 bays 7 m apart, cast-iron pillars 8 m and 5 m"
+source = "https://es.wikipedia.org/wiki/Mercado_de_Col%C3%B3n"
+note = "Model: outer pillars (5 m + bracket post) on the column line w +-19.15 and nave pillars (8 m) at w +-9.45 (19.15 - 9.70), 9 bays of 7 m from u -31.5 to 31.5. Cantilever kept at 5.25 m to the PNOA roof edge (24.4) - the 6 m is probably measured along the slope / to the gutter."
+
+[facts.jorge_juan_arch]
+value = "arch key 16 m, 13 m between the supports"
+source = "https://es.wikipedia.org/wiki/Mercado_de_Col%C3%B3n"
+note = "Model: round arch 11.6 m at the brick intrados (photo 16: 510 px / 43.2 px/m = 11.8 m), white stone supports 12.7 m apart at the foot (photo 16), springing 10.2, key 16.0 m."
+
+[facts.jorge_juan_heights]
+value = "wing parapet 10.8 m (outer corner) rising to 13.6 m at the towers; gallery crest 11.6; gable shoulders 16.4; tower shaft top 16.6; turret ring 17.4-17.9; cupola top 19.3, finial ball 19.45; spikes 21.1; gable apex (crest base) 19.6; crest sculpture to 21.3"
+source = "photo 16 (Felivet, telephoto from ~95 m, near-orthographic): horizontal scale 43.2 px/m from the 27.8 m portal width (OSM/Catastro), vertical anchored on the documented 16 m arch key at y 300 px; heights = 16 + (300 - y)/43.2. Checked against photos 01, 04, 12, 17 with the edge overlays."
+note = "EXIF focal lengths could not be read (Commons API and upload.wikimedia.org returned HTTP 429 for this session), so the constrained solver (scratchpad cba.py: eye-height prior 1.6 m, focal fixed or free) ran with free focal; on photos 01, 02 (stitched), 03 and 04 its fits were inconsistent (rms 15-60 px) and were not used for heights."
+
+[facts.canopy_heights]
+value = "side canopy eave 6.0 m at w +-24.4, ridge 9.0 m over the column line (w +-19.1), inner slope to the lower clerestory at 8.0 m (w +-11.6), clerestories 8.0-10.6 and 11.2-15.4 m"
+source = "edge-overlay cycles on photos 01, 02 and 18 after the fronts/towers were aligned (the canopy ran 1.5-2 m low at 5.2/7.0 m); consistent with the documented 5 m outer pillars carrying branching brackets"
+
+[facts.salvatierra_heights]
+value = "NE wall shoulders 19.2 m, wavy crest apex 23.5 (+trencadis roll), pointed glazed arch 10.9 m wide springing 10.2, apex 17.7, oculus centre 15.7, marquee 10.1; round towers r 1.45 at w +-9.0, stone ring 18.8, belfry to 23.0, trencadis cupola top 24.4, spikes 26.5"
+source = "photo 06 (frontal telephoto at night; tower axes 18 m apart = 1045 px -> 58 px/m) for ratios and widths, solved views from the first modelling pass (photos 06, 18); tower radius from photo 06 (shaft ~160 px = 2.75 m)"
+note = "Absolute NE heights rest on the camera solves of the first pass (no documented figure); es.wikipedia gives the glass marquee about 4 m in height (its own height, not modelled separately)."
+
+[facts.sunken_level]
+value = "lower level (2003 refurbishment) with a pool, escalators and shops under the hall; four basement levels (car park)"
+source = "https://es.wikipedia.org/wiki/Mercado_de_Col%C3%B3n; photo 13 (interior)"
+note = "Not modelled as an opening in the hall floor (only the car-park ramp trench on Martinez Ferrando and the glazed shopfront ring are)."
+
 [[photo]]
 file = "photos/01_Mercado_de_Colon_106.jpg"
 title = "File:Mercado de Colon 106.JPG"
@@ -34,8 +84,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SW Jorge Juan portal and S wing from the south (Jorge Juan / Ciril Amoros corner), SE canopy at right; view jorge_juan_south"
 
 [[photo]]
 file = "photos/02_Mercado_de_Colon_Valencia_Espana_2014_06_29_DD_06.jpg"
@@ -45,9 +95,9 @@ author = "Diego Delso"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 847
-exterior = "unknown"
-selected = false
-side = ""
+exterior = true
+selected = true
+side = "NE Comte de Salvatierra front from the east with the SE canopy and NE brick caseta; view salvatierra_east; overlay cycles set the canopy eave 6.0 m / ridge 9.0 m"
 
 [[photo]]
 file = "photos/03_Mercat_de_Colon_Valencia.jpg"
@@ -59,8 +109,8 @@ width = 1280
 height = 951
 camera = [-86.08, 224.8]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "Jorge Juan great arch and gallery from close below; view jorge_juan_arch (hand camera, perspective/lens not fully consistent)"
 
 [[photo]]
 file = "photos/04_Valencia_Mercado_de_Colon_from_the_northwest.jpg"
@@ -72,8 +122,8 @@ width = 1280
 height = 1904
 camera = [-70.03, -4.09]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "Jorge Juan portal, N wing and SW caseta from the northwest; view jorge_juan_nw"
 
 [[photo]]
 file = "photos/05_Ruta_Marc_Versos_per_a_Anna_4019.jpg"
@@ -85,9 +135,9 @@ width = 1280
 height = 1707
 camera = [43.73, -6.52]
 heading = 302.7
-exterior = true
+exterior = false
 selected = false
-side = ""
+side = "Ruta Marc poetry plaque in the pavement, not the building"
 
 [[photo]]
 file = "photos/06_VLC_Fachada_N_mercado_colon.jpg"
@@ -100,8 +150,8 @@ height = 1707
 camera = [45.08, -28.11]
 heading = 250.0
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NE front frontal at night (telephoto); view salvatierra_night; tower axes 18 m apart = 1045 px"
 
 [[photo]]
 file = "photos/07_Mercado_de_Colon_Valencia_Espana_2014_06_29_DD_08.jpg"
@@ -111,9 +161,9 @@ author = "Diego Delso"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 2122
-exterior = "unknown"
+exterior = false
 selected = false
-side = ""
+side = "interior: nave roof, clerestories and skylight looking SW"
 
 [[photo]]
 file = "photos/08_Torre_del_Mercado_de_Colon_en_Valencia.jpg"
@@ -125,7 +175,7 @@ width = 1280
 height = 853
 exterior = true
 selected = false
-side = ""
+side = "NE round tower with the trencadis cupola, close-up"
 
 [[photo]]
 file = "photos/09_Fachada_del_Mercado_de_Colon_en_Valencia.jpg"
@@ -137,7 +187,7 @@ width = 1280
 height = 1920
 exterior = true
 selected = false
-side = ""
+side = "NE glazed arch and N tower from close below"
 
 [[photo]]
 file = "photos/10_Entrada_al_Mercado_de_Colon_por_la_Calle_Conde_Salvatierra_d.jpg"
@@ -148,8 +198,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1920
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NE entrance with the glass kiosk and marquee from the SE tower foot; view salvatierra_entrance (wide angle, approximate)"
 
 [[photo]]
 file = "photos/11_Mercado_de_Colon_Entrada_por_la_Calle_Jorge_Juan.jpg"
@@ -161,7 +211,7 @@ width = 1280
 height = 853
 exterior = true
 selected = false
-side = ""
+side = "S wing door, oculus and portal piers along Jorge Juan, close"
 
 [[photo]]
 file = "photos/12_Mercado_de_Colon_Valencia_Espana_2014_06_29_DD_09.jpg"
@@ -171,9 +221,9 @@ author = "Diego Delso"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 951
-exterior = "unknown"
-selected = false
-side = ""
+exterior = true
+selected = true
+side = "Jorge Juan portal frontal (stitched/wide); view jorge_juan_frontal"
 
 [[photo]]
 file = "photos/13_Mercado_de_Colon_Valencia.jpg"
@@ -184,9 +234,9 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 camera = [-12.86, -27.98]
-exterior = "unknown"
+exterior = false
 selected = false
-side = ""
+side = "interior: the sunken lower level (2003) with the pool, escalators and NE glazing"
 
 [[photo]]
 file = "photos/14_Mercado_de_Colon.jpg"
@@ -197,9 +247,9 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 camera = [-26.75, 44.98]
-exterior = "unknown"
+exterior = true
 selected = false
-side = ""
+side = "Jorge Juan arch and gallery from below at the S tower"
 
 [[photo]]
 file = "photos/15_Mercat_colom_coberta.jpg"
@@ -211,7 +261,7 @@ width = 1280
 height = 960
 exterior = true
 selected = false
-side = ""
+side = "NE front and NW canopy across the Martinez Ferrando car-park trench; could not be solved consistently, not used as a view"
 
 [[photo]]
 file = "photos/16_Mercat_colom_jorgejuan.jpg"
@@ -222,8 +272,47 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "Jorge Juan portal frontal, telephoto (near-orthographic); view jorge_juan_gate; main height measurement (43.2 px/m)"
+
+# ------------------------------------------------- added by hand (model pass 1)
+# 17 and 18 were downloaded by the first fetch and kept in the raw folder
+# under these names (copies of photos/_not_in_model_sources/).
+
+[[photo]]
+file = "photos/17_Mercado_de_Colon_Valencia_Espana_2014_06_30_DD_165.jpg"
+title = "File:Mercado de Colón, Valencia, España, 2014-06-30, DD 165.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Mercado_de_Col%C3%B3n%2C_Valencia%2C_Espa%C3%B1a%2C_2014-06-30%2C_DD_165.JPG"
+author = "Diego Delso"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 871
+exterior = true
+selected = true
+side = "Jorge Juan portal frontal from the forecourt (stitched wide panorama, not metric); view jorge_juan_wide"
+
+[[photo]]
+file = "photos/18_VLC_fachada_Mercado_Colon_XMas.jpg"
+title = "File:VLC fachada Mercado Colon XMas.jpg"
+url = "https://commons.wikimedia.org/wiki/File:VLC_fachada_Mercado_Colon_XMas.jpg"
+author = "Pcb2mail"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+camera = [31.19, -52.82]
+heading = 250.0
+exterior = true
+selected = true
+side = "NE front and SE canopy at night from Comte de Salvatierra; view salvatierra_north_night; canopy eave/ridge check"
+
+[[plan]]
+file = "plans/pnoa.jpg"
+title = "PNOA orthophoto (IGN), WMS OI.OrthoimageCoverage"
+url = "https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=OI.OrthoimageCoverage&SRS=EPSG:25830&BBOX=726311.96,4372061.72,726450.04,4372187.51&WIDTH=1381&HEIGHT=1258&FORMAT=image/jpeg"
+author = "Instituto Geográfico Nacional (PNOA)"
+license = "CC BY 4.0 (scne.es)"
+kind = "orthophoto"
+notes = "0.1 m/px, north up, same bbox as the Catastro WMS; resampled into the building frame (u along azimuth 60). Used for the canopy edges (w -23.5 / +25.0 incl. roof lean -> +-24.4), the skylight band (u -24.9..27.3), the NE and SW brick casetas (6 x 6.6 m, centres u +-44..51, w +-11.4..12.8) and the car-park trench on Martinez Ferrando (w -28.2..-33)."
 
 [[plan]]
 file = "plans/01_2_01_MERCADO_COLON_firmado.jpg"
@@ -292,3 +381,8 @@ notes = "Wikidata P973"
 url = "https://eduwp.edu.gva.es/patrimonio-cultural/ficha-inmueble.php?id=17107&lang=ca"
 title = "Described at"
 notes = "Wikidata P973"
+
+[[reference]]
+url = "https://es.wikipedia.org/wiki/Mercado_de_Col%C3%B3n"
+title = "Wikipedia (es): dimensions"
+notes = "nave 18.60 m high; side naves 9.70 m span with 6 m cantilevers; 9 bays of 7 m; cast-iron pillars 8 and 5 m; Jorge Juan pavilion base 31 x 7.5 m, arch 16 m to the key and 13 m span; Salvatierra glass marquee about 4 m; four basement levels"
