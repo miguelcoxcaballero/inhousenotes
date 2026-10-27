@@ -42,7 +42,7 @@ function disposeDocument(id) {
     for (const [key, object] of objects) if (object.owner === id) objects.delete(key);
 }
 
-// Same measured pen paths and highlighter blending as the interactive renderer.
+// Same pen spline and highlighter blending as the interactive renderer.
 function drawStroke(ctx, stroke) {
     const points = stroke.points || [];
     if (!points.length || stroke.tool === 'eraser-stroke') return;
@@ -74,8 +74,36 @@ function drawStroke(ctx, stroke) {
     ctx.strokeStyle = stroke.tool === 'eraser-area' ? 'rgba(0,0,0,1)' : stroke.color;
     ctx.lineWidth = stroke.width; ctx.lineCap = ctx.lineJoin = 'round';
     ctx.beginPath(); ctx.moveTo(points[0].x, points[0].y);
-    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+    const end = points.length - 1;
+    for (let i = 0; i < end; i++) {
+        appendPenSplineSegment(ctx, points[Math.max(0, i - 1)], points[i], points[i + 1], points[Math.min(end, i + 2)]);
+    }
     ctx.stroke();
+}
+
+// Identical to appendPenSplineSegment in app-v5.js: the centripetal
+// Catmull-Rom spline through every measured pen sample.
+function appendPenSplineSegment(target, p0, p1, p2, p3) {
+    const ax = p2.x - p1.x, ay = p2.y - p1.y, length2 = ax * ax + ay * ay;
+    // Below 2 px a segment is visually straight: skip the curve maths so
+    // dense handwriting repaints as fast as a polyline.
+    if (length2 < 4) { target.lineTo(p2.x, p2.y); return; }
+    const bx = p1.x - p0.x, by = p1.y - p0.y, cx = p3.x - p2.x, cy = p3.y - p2.y;
+    const d1 = Math.sqrt(Math.sqrt(bx * bx + by * by));
+    const d2 = Math.sqrt(Math.sqrt(length2));
+    const d3 = Math.sqrt(Math.sqrt(cx * cx + cy * cy));
+    let c1x = p1.x, c1y = p1.y, c2x = p2.x, c2y = p2.y;
+    if (d1 >= 1e-3) {
+        const a = d1 * d1, b = d2 * d2, c = 2 * a + 3 * d1 * d2 + b, n = 3 * d1 * (d1 + d2);
+        c1x = (a * p2.x - b * p0.x + c * p1.x) / n;
+        c1y = (a * p2.y - b * p0.y + c * p1.y) / n;
+    }
+    if (d3 >= 1e-3) {
+        const a = d3 * d3, b = d2 * d2, c = 2 * a + 3 * d3 * d2 + b, n = 3 * d3 * (d3 + d2);
+        c2x = (a * p1.x - b * p3.x + c * p2.x) / n;
+        c2y = (a * p1.y - b * p3.y + c * p2.y) / n;
+    }
+    target.bezierCurveTo(c1x, c1y, c2x, c2y, p2.x, p2.y);
 }
 
 async function compress(value) {

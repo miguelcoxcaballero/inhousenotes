@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "assets": {
     "/app-v5.js": {
-      "sha256": "8839b8b4d5c71225a9e1784f1fd402588ade6b4e421e96b6342c471f6f43254b",
-      "size": 1952641,
+      "sha256": "54521bba2c4b1b88d7a86db8a074ed30796af7c255cfb847ee19e4538263a93b",
+      "size": 1958763,
       "mime": "application/javascript"
     },
     "/boot-v5.js": {
@@ -27,8 +27,8 @@
       "mime": "application/javascript"
     },
     "/document-processing-worker-v5.js": {
-      "sha256": "0177cf9d84211976b1be330373fbe6a5582efbd0e1d7c057d03868c5b4916448",
-      "size": 17675,
+      "sha256": "a59587034fb46e820659229f2959a6b99e4ac2b55431723201d2bf8982b94a57",
+      "size": 19040,
       "mime": "application/javascript"
     },
     "/drive-ink-app-v5.js": {
@@ -42,8 +42,8 @@
       "mime": "application/javascript"
     },
     "/drive-live-preview-v5.js": {
-      "sha256": "0b95abe6839ccfa90483c3eda6bb9d2dd43d21330c1b9199bd10d69127029e1c",
-      "size": 16787,
+      "sha256": "d5a2dc7dd90d399d742b1c0202b542afa07a7f5e5b36257a4b1a6368a3dd90b4",
+      "size": 17238,
       "mime": "application/javascript"
     },
     "/icons/welcome-pages.svg": {

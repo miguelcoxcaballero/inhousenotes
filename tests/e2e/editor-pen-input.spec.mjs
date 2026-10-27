@@ -236,10 +236,22 @@ test('pen segments are definitive before lift with no layer transfer or pixel sh
   let visible=0;for(let i=3;i<pixels.length;i+=4)if(pixels[i])visible++;
   c.dispatchEvent(new PointerEvent('pointerup',{pointerType:'pen',pointerId:penInputId,buttons:0,bubbles:true,clientX:r.left+195*r.width/794,clientY:r.top+400*r.height/1123}));
   const after=pagePaints,cleared=live.getContext('2d').getImageData(0,0,live.width,live.height).data.every((v,i)=>i%4!==3||v===0);
+  const tip=document.querySelector('.cursor-overlay[data-page="0"]');
+  const tipCleared=tip.getContext('2d').getImageData(0,0,tip.width,tip.height).data.every((v,i)=>i%4!==3||v===0);
   CanvasRenderingContext2D.prototype.stroke=stroke;
-  return {during,after,livePaints,visible,cleared,identical:before===c.toDataURL()};
+  // Lifting may only add the newest segment of the curve (around the last
+  // sample); everything drawn during contact stays exactly where it was.
+  const afterPixels=c.getContext('2d').getImageData(0,0,c.width,c.height).data,sx=c.width/794,sy=c.height/1123;
+  const ex0=(195-10)*sx,ex1=(195+10)*sx,ey0=(400-10)*sy,ey1=(400+10)*sy;
+  let shifted=0;
+  for(let y=0;y<c.height;y++)for(let x=0;x<c.width;x++){
+   if(x>=ex0&&x<=ex1&&y>=ey0&&y<=ey1)continue;
+   const i=(y*c.width+x)*4;if(pixels[i]!==afterPixels[i]||pixels[i+3]!==afterPixels[i+3])shifted++;
+  }
+  return {during,after,livePaints,visible,cleared,tipCleared,shifted};
  });
- expect(result.during).toBeGreaterThan(3);expect(result.after).toBe(result.during);expect(result.livePaints).toBe(0);expect(result.identical).toBe(true);expect(result.visible).toBeGreaterThan(30);expect(result.cleared).toBe(true);
+ expect(result.during).toBeGreaterThan(3);expect(result.after-result.during).toBeLessThanOrEqual(1);expect(result.livePaints).toBe(0);
+ expect(result.shifted).toBe(0);expect(result.visible).toBeGreaterThan(30);expect(result.cleared).toBe(true);expect(result.tipCleared).toBe(true);
  await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',...target,button:'left',buttons:0,clickCount:1,pointerType:'pen'});
 });
 

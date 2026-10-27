@@ -4476,7 +4476,23 @@
                     return;
                 }
 
-                if (appendPenSamples(e)) schedulePenPaint();
+                const appended = appendPenSamples(e);
+                if (currentStroke && currentStroke.tool !== 'highlighter') {
+                    let predicted = null;
+                    try { predicted = e.getPredictedEvents?.(); } catch (_) { }
+                    const geometry = drawGeometry || refreshDrawGeometry();
+                    const next = [];
+                    // A short horizon: enough to cover one frame of latency
+                    // without visibly overshooting at the end of a letter.
+                    for (let i = 0; predicted && i < Math.min(predicted.length, 3); i++) {
+                        const x = (predicted[i].clientX - geometry.rectLeft) * geometry.scaleX;
+                        const y = (predicted[i].clientY - geometry.rectTop) * geometry.scaleY;
+                        if (Number.isFinite(x) && Number.isFinite(y)) next.push({ x, y });
+                    }
+                    const changed = next.length || currentStroke.predictedPoints?.length;
+                    currentStroke.predictedPoints = next;
+                    if (appended || changed) schedulePenPaint();
+                } else if (appended) schedulePenPaint();
             };
             canvas.addEventListener('pointermove', moveDrawing);
             canvas.addEventListener('pointerrawupdate', moveDrawing);
@@ -4598,6 +4614,7 @@
                             publishLiveStrokePreview(currentStrokePageId, currentStroke, { cancel: true });
                         }
                         // Page was deleted while we were drawing — drop the stroke.
+                        clearEraserPreview(pageIndex);
                         currentStroke = null;
                         currentStrokePageId = null;
                         drawGeometry = null;
@@ -4695,17 +4712,96 @@
             ctx.setLineDash([]);
         }
 
-        function drawStrokeTailSegment(ctx, stroke) {
+        // Pen ink is drawn as a centripetal Catmull-Rom spline: it passes
+        // exactly through every measured sample (corners stay where the pen
+        // was) and is curved between them instead of a polyline. Centripetal
+        // parameterisation never loops or overshoots. Stored points never
+        // change. Live and repainted ink use this same segment function, so a
+        // stroke does not shift when the page is redrawn.
+        function appendPenSplineSegment(target, p0, p1, p2, p3) {
+            const ax = p2.x - p1.x, ay = p2.y - p1.y, length2 = ax * ax + ay * ay;
+            // Below 2 px a segment is visually straight: skip the curve maths so
+            // dense handwriting repaints as fast as a polyline.
+            if (length2 < 4) { target.lineTo(p2.x, p2.y); return; }
+            const bx = p1.x - p0.x, by = p1.y - p0.y, cx = p3.x - p2.x, cy = p3.y - p2.y;
+            const d1 = Math.sqrt(Math.sqrt(bx * bx + by * by));
+            const d2 = Math.sqrt(Math.sqrt(length2));
+            const d3 = Math.sqrt(Math.sqrt(cx * cx + cy * cy));
+            let c1x = p1.x, c1y = p1.y, c2x = p2.x, c2y = p2.y;
+            if (d1 >= 1e-3) {
+                const a = d1 * d1, b = d2 * d2, c = 2 * a + 3 * d1 * d2 + b, n = 3 * d1 * (d1 + d2);
+                c1x = (a * p2.x - b * p0.x + c * p1.x) / n;
+                c1y = (a * p2.y - b * p0.y + c * p1.y) / n;
+            }
+            if (d3 >= 1e-3) {
+                const a = d3 * d3, b = d2 * d2, c = 2 * a + 3 * d3 * d2 + b, n = 3 * d3 * (d3 + d2);
+                c2x = (a * p1.x - b * p3.x + c * p2.x) / n;
+                c2y = (a * p1.y - b * p3.y + c * p2.y) / n;
+            }
+            target.bezierCurveTo(c1x, c1y, c2x, c2y, p2.x, p2.y);
+        }
+
+        // Segment i joins points[i] and points[i + 1]. During contact the page
+        // canvas receives every segment whose following sample is known; the
+        // newest segment is drawn on the cursor overlay (drawLivePenTip).
+        function drawStrokeTailSegment(ctx, stroke, final = false) {
             if (!stroke?.points || stroke.points.length < 2) return;
             const points = stroke.points;
-            const start = Math.max(0, stroke.finalizedIndex ?? -1);
-            if (start >= points.length - 1) return;
+            const last = points.length - 1;
+            const from = Number.isInteger(stroke.liveCurveIndex) ? stroke.liveCurveIndex : 0;
+            const to = final ? last : last - 1;
+            if (from >= to) return;
             setupContext(ctx, stroke.tool, stroke.color, stroke.width);
             setStrokeCaps(ctx, stroke.tool);
+            ctx.lineWidth = getStrokeWidth(stroke);
             ctx.beginPath();
-            ctx.moveTo(points[start].x, points[start].y);
-            for (let i = start + 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+            ctx.moveTo(points[from].x, points[from].y);
+            for (let i = from; i < to; i++) {
+                appendPenSplineSegment(ctx, points[Math.max(0, i - 1)], points[i], points[i + 1], points[Math.min(last, i + 2)]);
+            }
             ctx.stroke();
+            stroke.liveCurveIndex = to;
+        }
+
+        // The uncommitted tip: the newest segment, continued through the
+        // browser's predicted pen positions so ink reaches the pen instead of
+        // trailing a frame behind it. Redrawn on the overlay every frame.
+        function drawLivePenTip(previewCanvas, pageIndex, stroke, metrics = null) {
+            const points = stroke?.points;
+            if (!previewCanvas || !points || points.length < 2) return;
+            const ctx = previewCanvas.getContext('2d');
+            const scale = (metrics && metrics.cursorOverlay === previewCanvas && Number.isFinite(metrics.cursorScale))
+                ? metrics.cursorScale
+                : getOverlayCanvasRenderScale(previewCanvas, getPageDimensions(pageIndex).width, CURSOR_OVERLAY_BASE_SCALE);
+            ctx.setTransform(scale, 0, 0, scale, 0, 0);
+            const previous = liveCursorPreviewBounds.get(previewCanvas);
+            if (previous) ctx.clearRect(previous.x, previous.y, previous.width, previous.height);
+            const last = points.length - 1;
+            const from = Number.isInteger(stroke.liveCurveIndex) ? stroke.liveCurveIndex : 0;
+            if (from >= last) { liveCursorPreviewBounds.delete(previewCanvas); return; }
+            const predicted = Array.isArray(stroke.predictedPoints) ? stroke.predictedPoints : [];
+            const chain = points.slice(Math.max(0, from - 1)).concat(predicted);
+            const offset = from > 0 ? 1 : 0;
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const point of chain) {
+                minX = Math.min(minX, point.x); maxX = Math.max(maxX, point.x);
+                minY = Math.min(minY, point.y); maxY = Math.max(maxY, point.y);
+            }
+            setupContext(ctx, stroke.tool, stroke.color, stroke.width);
+            setStrokeCaps(ctx, stroke.tool);
+            ctx.lineWidth = getStrokeWidth(stroke);
+            ctx.beginPath();
+            ctx.moveTo(chain[offset].x, chain[offset].y);
+            const end = chain.length - 1;
+            for (let i = offset; i < end; i++) {
+                appendPenSplineSegment(ctx, chain[Math.max(0, i - 1)], chain[i], chain[i + 1], chain[Math.min(end, i + 2)]);
+            }
+            ctx.stroke();
+            const padding = Math.max(4, getStrokeWidth(stroke) + 2);
+            liveCursorPreviewBounds.set(previewCanvas, {
+                x: minX - padding, y: minY - padding,
+                width: Math.max(1, maxX - minX + padding * 2), height: Math.max(1, maxY - minY + padding * 2)
+            });
         }
 
         function drawSinglePointStroke(ctx, stroke) {
@@ -4795,18 +4891,19 @@
                 drawSmoothStroke(ctx, stroke);
                 return;
             }
-            finalizeStrokeSegments(pageIndex, canvas, stroke);
-            drawStrokeTailSegment(ctx, stroke);
+            const size = getPageDimensions(pageIndex);
+            ctx.setTransform(canvas.width / size.width, 0, 0, canvas.height / size.height, 0, 0);
+            stroke.predictedPoints = null;
+            drawStrokeTailSegment(ctx, stroke, true);
         }
 
         function finalizeStrokeSegments(pageIndex, canvas, stroke) {
-            if (stroke.points.length < 2 || stroke.finalizedIndex >= stroke.points.length - 1) return;
+            if (stroke.points.length < 2) return;
             const ctx = canvas.getContext('2d');
             const size = getPageDimensions(pageIndex);
             ctx.setTransform(canvas.width / size.width, 0, 0, canvas.height / size.height, 0, 0);
             drawStrokeTailSegment(ctx, stroke);
             stroke.finalizedIndex = stroke.points.length - 1;
-            stroke.lastMid = null;
         }
 
         function updateLiveStroke(pageIndex, canvas, stroke, previewCanvas = null, metrics = null) {
@@ -4825,11 +4922,8 @@
                 }
                 return;
             }
-            const pending = stroke.points.length - 1 - stroke.finalizedIndex;
-            if (pending <= 0) return;
-            if (pending > 0) {
-                finalizeStrokeSegments(pageIndex, canvas, stroke);
-            }
+            finalizeStrokeSegments(pageIndex, canvas, stroke);
+            drawLivePenTip(previewCanvas, pageIndex, stroke, metrics);
         }
 
         function drawEraserPreview(pageIndex, pos) {
@@ -13316,9 +13410,12 @@
                 || cached.firstY !== first.y || cached.lastX !== last.x || cached.lastY !== last.y) {
                 const path = new Path2D();
                 path.moveTo(first.x, first.y);
-                // Rounded joins remove raster corners without moving any
-                // measured point or averaging away handwriting details.
-                for (let i = 1; i < points.length; i++) path.lineTo(points[i].x, points[i].y);
+                // The same spline the live pen draws: through every measured
+                // sample, curved between them.
+                const end = points.length - 1;
+                for (let i = 0; i < end; i++) {
+                    appendPenSplineSegment(path, points[Math.max(0, i - 1)], points[i], points[i + 1], points[Math.min(end, i + 2)]);
+                }
                 cached = { path, length: points.length, firstX: first.x, firstY: first.y, lastX: last.x, lastY: last.y };
                 penPathCache.set(points, cached);
             }
