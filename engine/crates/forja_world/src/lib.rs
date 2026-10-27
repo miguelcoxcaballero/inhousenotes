@@ -82,6 +82,9 @@ pub struct WorldDescription {
     /// Credits required by the data licenses.
     pub attribution: Vec<String>,
     pub stats: Vec<(String, usize)>,
+    /// Lanes, signs and traffic lights for traffic AI (procedural cities);
+    /// signal placements index `placements`.
+    pub traffic: Option<forja_city::traffic::TrafficInfo>,
 }
 
 impl WorldDescription {
