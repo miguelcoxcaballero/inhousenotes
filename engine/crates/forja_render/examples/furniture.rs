@@ -45,7 +45,7 @@ fn main() {
     while x < 40.0 {
         let s = list[k % list.len()];
         let w = 14.0 + (k % 3) as f32 * 2.5;
-        let lot = Lot { ring: vec![Vec2::new(x, -18.0), Vec2::new(x + w, -18.0), Vec2::new(x + w, 0.0), Vec2::new(x, 0.0)], edges: vec![EdgeKind::Courtyard, EdgeKind::Party, EdgeKind::Street, EdgeKind::Party], base: 0.15 };
+        let lot = Lot { ring: vec![Vec2::new(x, -18.0), Vec2::new(x + w, -18.0), Vec2::new(x + w, 0.0), Vec2::new(x, 0.0)], edges: vec![EdgeKind::Courtyard, EdgeKind::Party, EdgeKind::Street, EdgeKind::Party], base: 0.15, ..Default::default() };
         building::build(&mut lib, &mut out, &lot, s, k as u64 * 7 + 3);
         x += w;
         k += 1;
