@@ -55,6 +55,11 @@ pub struct MeshData {
     pub aabb: Aabb,
     /// Simplified index lists (LOD 1, 2, ...) over the same vertices.
     pub lods: Vec<Vec<u32>>,
+    /// Switch LODs together with the other `lod_sync` primitives of the same
+    /// mesh (a tree's trunk and crown): the renderer picks one level for all
+    /// of them from their summed triangle counts and joint bounds, so a
+    /// mid-detail trunk never stands under a billboard crown.
+    pub lod_sync: bool,
 }
 
 impl MeshData {
@@ -165,10 +170,30 @@ pub struct MaterialData {
     pub clearcoat_roughness: f32,
     /// Skin-like subsurface scattering amount (0..1).
     pub subsurface: f32,
+    /// Leaf / frond / impostor shading (see [`FoliageShading`]).
+    pub foliage: Option<FoliageShading>,
     /// KHR_materials_specular factor: scales the Fresnel reflectance of
     /// dielectrics (1 = F0 0.04). Porous masonry, unglazed clay and lime
     /// render reflect less than their solid mineral (~0.65-0.8).
     pub specular: f32,
+}
+
+/// Foliage shading for alpha-tested cards: normals are not flipped on back
+/// faces (cards carry bent crown normals), diffuse wraps around and light
+/// passing through the leaves (`translucency`) brightens the shadowed side.
+/// Back faces whose `v` texture coordinate is above `backface_cull_v` are
+/// discarded, so one-sided impostor quads can share a double-sided
+/// material with the leaf cards.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FoliageShading {
+    pub translucency: f32,
+    pub backface_cull_v: f32,
+}
+
+impl Default for FoliageShading {
+    fn default() -> Self {
+        Self { translucency: 0.5, backface_cull_v: 2.0 }
+    }
 }
 
 impl Default for MaterialData {
@@ -192,6 +217,7 @@ impl Default for MaterialData {
             clearcoat: 0.0,
             clearcoat_roughness: 0.03,
             subsurface: 0.0,
+            foliage: None,
             specular: 1.0,
         }
     }
@@ -415,6 +441,7 @@ pub fn load_gltf(path: &Path) -> Result<SceneData, AssetError> {
             clearcoat: clearcoat(&doc, m.index()).0,
             clearcoat_roughness: clearcoat(&doc, m.index()).1,
             subsurface: 0.0,
+            foliage: None,
             specular: m.specular().map(|s| s.specular_factor()).unwrap_or(1.0),
         });
     }
@@ -441,6 +468,7 @@ pub fn load_gltf(path: &Path) -> Result<SceneData, AssetError> {
                 }),
                 aabb: Aabb::EMPTY,
                 lods: Vec::new(),
+                lod_sync: false,
             };
             md.finalize();
             prims.push(md);

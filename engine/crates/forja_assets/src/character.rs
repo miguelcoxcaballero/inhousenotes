@@ -185,6 +185,7 @@ pub fn make_photoreal_with(scene: &mut SceneData, hair: HairCards) {
                         occlusion_tex: None,
                         normal_tex: None,
                         subsurface: 0.0,
+                        foliage: None,
                         ..mat.clone()
                     };
                     scene.materials.push(eye_mat);

@@ -6,7 +6,8 @@ struct Material {
     base_color: vec4<f32>,
     emissive: vec4<f32>,   // w: normal scale
     params: vec4<f32>,     // x: metallic, y: roughness, z: alpha cutoff, w: unlit
-    layers: vec4<f32>,     // x: clearcoat, y: clearcoat roughness, z: transmission
+    layers: vec4<f32>,     // x: clearcoat, y: clearcoat roughness, z: transmission, w: subsurface
+    foliage: vec4<f32>,    // x: translucency, y: cull back faces above this v, z: foliage on
     extra: vec4<f32>,      // x: specular factor (KHR_materials_specular: scales dielectric Fresnel)
 };
 
@@ -104,6 +105,22 @@ fn vs_skinned(v: VertexIn, s: SkinIn) -> VertexOut {
 // Depth prepass output: geometric normal for GTAO. Opaque materials skip the
 // texture fetch so the pass keeps early depth testing; masked materials
 // (leaves, hair cards) repeat the main pass's alpha test.
+// Impostor quads (foliage texels past `foliage.y` in v) show one view per
+// face: back faces are dropped, and quads seen at grazing angles dissolve
+// (dithered, resolved by TAA) so crossed planes never show as thin seams.
+// `face` is the geometric normal from screen derivatives, taken by the
+// caller in uniform control flow.
+fn impostor_hidden(in: VertexOut, front: bool, face: vec3<f32>) -> bool {
+    // Only foliage materials have impostor texels: other materials tile
+    // their textures, so their v can take any value.
+    if (material.foliage.z < 0.5 || in.uv.y <= material.foliage.y) { return false; }
+    if (!front) { return true; }
+    let c = abs(dot(normalize(face), normalize(frame.camera_pos.xyz - in.world_pos)));
+    let p = vec2<u32>(in.clip.xy);
+    let h = f32((p.x * 73856093u) ^ (p.y * 19349663u) ^ u32(frame.jitter.z * 997.0)) / 4294967295.0;
+    return c < mix(0.42, 0.72, fract(h * 7.31));
+}
+
 @fragment
 fn fs_prepass(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
     let n = normalize(in.normal);
@@ -112,10 +129,12 @@ fn fs_prepass(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0)
 
 @fragment
 fn fs_prepass_masked(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    let face = cross(dpdx(in.world_pos), dpdy(in.world_pos));
     let a = textureSample(base_tex, tex_sampler, in.uv).a * material.base_color.a * in.tint.a;
     if (a < material.params.z) { discard; }
+    if (impostor_hidden(in, front, face)) { discard; }
     let n = normalize(in.normal);
-    return vec4<f32>(select(-n, n, front), 1.0);
+    return vec4<f32>(select(-n, n, front || material.foliage.z > 0.5), 1.0);
 }
 
 fn screen_max() -> vec2<i32> {
@@ -519,9 +538,12 @@ fn shade_local(p: vec3<f32>, n: vec3<f32>, ng: vec3<f32>, v: vec3<f32>, nv: f32,
 
 @fragment
 fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    let face = cross(dpdx(in.world_pos), dpdy(in.world_pos));
     let base_s = textureSample(base_tex, tex_sampler, in.uv);
     let base = base_s * material.base_color * in.tint;
     if (base.a < material.params.z) { discard; }
+    // One-sided impostor quads inside a double-sided foliage material.
+    if (impostor_hidden(in, front, face)) { discard; }
     if (material.params.w > 0.5) {
         if (frame.params.w > 0.5) {
             // Daylight camera: unlit (KHR_materials_unlit) colours are
@@ -534,7 +556,9 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
         return vec4<f32>(height_fog(base.rgb * k * 3.0, in.world_pos, normalize(in.world_pos - frame.camera_pos.xyz)), base.a);
     }
     var ng = normalize(in.normal);
-    if (!front) { ng = -ng; }
+    // Foliage cards carry bent crown normals on both faces.
+    let fol = material.foliage.z > 0.5;
+    if (!front && !fol) { ng = -ng; }
     let t = normalize(in.tangent.xyz - ng * dot(ng, in.tangent.xyz));
     let b = cross(ng, t) * in.tangent.w;
     var nm = textureSample(normal_tex, tex_sampler, in.uv).xyz * 2.0 - vec3<f32>(1.0);
@@ -587,7 +611,7 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
     let ndl = dot(nd, l);
     let on_surface = is_prepass_surface(in.clip);
     var shadow = 1.0;
-    if (nl > 0.0 || (sss > 0.0 && ndl > -0.5)) {
+    if (nl > 0.0 || fol || (sss > 0.0 && ndl > -0.5)) {
         shadow = shadow_factor(in.world_pos, ng, in.view_depth, in.clip.xy);
         if (shadow > 0.0 && on_surface && frame.fx.y > 0.5) {
             shadow *= contact_shadow(in.world_pos, ng, in.view_depth, in.clip.xy);
@@ -602,6 +626,17 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
         shadow *= clamp(abs(nl) + 2.0 * ao * ao - 1.0, 0.0, 1.0);
     }
     var dterm = vec3<f32>(nl * shadow);
+    if (fol) {
+        // Wrapped diffuse for the soft, many-layered crown, plus light
+        // transmitted through the leaves: toward the viewer when looking
+        // into the sun, and onto the far side of the crown. Transmitted
+        // light is warmer (chlorophyll passes yellow-green).
+        let wrap = 0.45;
+        let wd = clamp((dot(n, l) + wrap) / (1.0 + wrap), 0.0, 1.0);
+        let back = pow(clamp(dot(-v, l), 0.0, 1.0), 4.0);
+        let through = material.foliage.x * (0.3 * clamp(-dot(ng, l) + 0.3, 0.0, 1.0) + 0.9 * back);
+        dterm = (vec3<f32>(wd) + through * vec3<f32>(1.05, 1.12, 0.55)) * shadow;
+    }
     if (sss > 0.0) {
         // Measured skin scatters red light ~3x further than blue; keep the
         // wrap small so lit skin stays neutral and only the terminator and

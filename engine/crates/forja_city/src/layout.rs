@@ -35,6 +35,31 @@ pub enum PropKind {
     Bench,
 }
 
+/// What kind of place a prop stands in, so a tree generator can choose
+/// fitting species (plane trees on boulevards, orange trees in plazas and
+/// narrow streets, palms on avenues and the port).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Setting {
+    #[default]
+    Street,
+    NarrowStreet,
+    Boulevard,
+    /// Median of a grand avenue.
+    Avenue,
+    Plaza,
+    Park,
+    Port,
+}
+
+/// Context of one entry of [`CityLayout::props`].
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PropSite {
+    pub setting: Setting,
+    pub valencia: bool,
+    /// Street width between building lines (m; 0 off-street).
+    pub street_width: f32,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Spawn {
     pub vehicle: bool,
@@ -59,6 +84,8 @@ pub struct StreetInfo {
 pub struct CityLayout {
     pub out: CityOut,
     pub props: Vec<(PropKind, Mat4)>,
+    /// Where each prop stands (parallel to `props`).
+    pub prop_sites: Vec<PropSite>,
     pub spawns: Vec<Spawn>,
     /// Half size of the playable area (centred on the origin).
     pub extent: Vec2,
@@ -69,6 +96,36 @@ pub struct CityLayout {
     pub items: Vec<Item>,
     /// Lanes, junctions, signs and traffic lights for the traffic AI.
     pub traffic: TrafficInfo,
+}
+
+impl CityLayout {
+    /// Adds a library prop with its site.
+    pub fn add_prop(&mut self, kind: PropKind, m: Mat4, site: PropSite) {
+        self.props.push((kind, m));
+        self.prop_sites.push(site);
+    }
+}
+
+/// The site of a prop at `p`: a plaza, an avenue's median, or the nearest
+/// street by its width.
+fn prop_site(f: &Fabric, plan: &CityPlan, p: Vec2) -> PropSite {
+    let near = f.graph.near(p, 40.0).into_iter().min_by(|a, b| a.2.abs().total_cmp(&b.2.abs()));
+    let Some((si, t, _)) = near else { return PropSite { setting: Setting::Park, valencia: false, street_width: 0.0 } };
+    let s = f.graph.street(si);
+    let valencia = plan.zone(s.zone).is_some_and(|z| z.valencia());
+    let width = s.width_at(t);
+    let setting = if f.ground.in_plaza(p) {
+        Setting::Plaza
+    } else if f.ground.median.contains(p) {
+        Setting::Avenue
+    } else if width >= 18.0 {
+        Setting::Boulevard
+    } else if width >= 12.0 {
+        Setting::Street
+    } else {
+        Setting::NarrowStreet
+    };
+    PropSite { setting, valencia, street_width: if setting == Setting::Plaza { 0.0 } else { width } }
 }
 
 #[derive(Clone, Debug)]
@@ -230,7 +287,7 @@ pub fn realize(kit: &Kit, styles: &StyleLibrary, fabric: Fabric, plan: &CityPlan
     let fronts = lay.out.frontages.clone();
     let mut items = dress::street_items(&fabric, plan, lib, &fronts, seed);
     items.extend(dress::after_buildings(&fabric, lib, &eaves, &fronts, seed));
-    place_items(&mut mlib, &mut lay, &items, seed);
+    place_items(&mut mlib, &mut lay, &items, seed, &|p| prop_site(&fabric, plan, p));
     lay.items = items;
     // 5. What the traffic AI drives by: the street graph's roadways with
     // their lanes, and the signs and lights just placed.
@@ -350,7 +407,7 @@ fn place(lay: &mut CityLayout, m: usize, it: &Item) {
 }
 
 /// Turns planned items into module placements, lights and props.
-fn place_items(lib: &mut ModuleLib, lay: &mut CityLayout, items: &[Item], seed: u64) {
+fn place_items(lib: &mut ModuleLib, lay: &mut CityLayout, items: &[Item], seed: u64, site: &dyn Fn(Vec2) -> PropSite) {
     let night = lib.kit.night.is_night();
     for it in items {
         let p = it.pos;
@@ -440,10 +497,10 @@ fn place_items(lib: &mut ModuleLib, lay: &mut CityLayout, items: &[Item], seed: 
                 let m = lib.named(&mut lay.out, "tree_grate", furniture::tree_grate);
                 place(lay, m, it);
                 let mut rng = Rng::keyed(seed, stage::DRESS, crate::geom::point_key(Vec2::new(p.x, p.z)));
-                lay.props.push((PropKind::Tree, Mat4::from_rotation_translation(Quat::from_rotation_y(rng.range(0.0, std::f32::consts::TAU)), p - Vec3::Y * 0.01)));
+                lay.add_prop(PropKind::Tree, Mat4::from_rotation_translation(Quat::from_rotation_y(rng.range(0.0, std::f32::consts::TAU)), p - Vec3::Y * 0.01), site(Vec2::new(p.x, p.z)));
             }
-            ItemKind::Palm => lay.props.push((PropKind::Palm, Mat4::from_rotation_translation(Quat::from_rotation_y(it.yaw), p))),
-            ItemKind::Bench => lay.props.push((PropKind::Bench, Mat4::from_rotation_translation(Quat::from_rotation_y(it.yaw), p))),
+            ItemKind::Palm => lay.add_prop(PropKind::Palm, Mat4::from_rotation_translation(Quat::from_rotation_y(it.yaw), p), site(Vec2::new(p.x, p.z))),
+            ItemKind::Bench => lay.add_prop(PropKind::Bench, Mat4::from_rotation_translation(Quat::from_rotation_y(it.yaw), p), site(Vec2::new(p.x, p.z))),
             ItemKind::Fountain(r) => {
                 let r = (r * 2.0).round() * 0.5;
                 let m = lib.named(&mut lay.out, &format!("fountain_{r}"), || furniture::fountain(r));
@@ -714,7 +771,7 @@ mod tests {
         for seed in 0..8 {
             let mut items = Vec::new();
             dress::terrace(&fr, 4.5, &mut Rng::new(seed), &mut items);
-            place_items(&mut lib, &mut lay, &items, seed);
+            place_items(&mut lib, &mut lay, &items, seed, &|_| PropSite::default());
         }
         assert!(lay.out.placements.len() >= 8);
         for (s, m) in &lay.out.placements {
@@ -737,6 +794,8 @@ mod tests {
         assert!(city.spawns.iter().any(|s| s.vehicle) && city.spawns.iter().any(|s| !s.vehicle));
         assert!(!city.out.lights.is_empty());
         assert!(city.props.iter().any(|p| p.0 == PropKind::Tree));
+        assert_eq!(city.props.len(), city.prop_sites.len());
+        assert!(city.prop_sites.iter().any(|s| s.setting == Setting::Avenue));
         // Every placement sits inside the map.
         for (_, m) in &city.out.placements {
             let p = m.w_axis.truncate();
