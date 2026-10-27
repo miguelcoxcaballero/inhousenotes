@@ -496,7 +496,7 @@ impl Default for RenderSettings {
             shadow_distance_scale: 1.0,
             lod_detail: 1.0,
             shadow_caster_texels: 2.5,
-            max_texture_size: 4096,
+            max_texture_size: 2048,
             look: true,
             dof: true,
             multiscatter: true,
@@ -888,6 +888,9 @@ pub struct Renderer {
     texture_bytes: u64,
     mesh_bytes: u64,
     target_bytes: u64,
+    /// Bytes written since the last flush of the upload queue (see
+    /// [`Renderer::flush_uploads`]).
+    pending_upload: u64,
     scratch: Vec<InstanceRaw>,
     /// Batches of the last frame: camera, then every shadow view.
     last_batches: (Vec<Batch>, Vec<Batch>),
@@ -1594,6 +1597,7 @@ impl Renderer {
             texture_bytes: 0,
             mesh_bytes: 0,
             target_bytes: 0,
+            pending_upload: 0,
             scratch: Vec::new(),
             last_batches: Default::default(),
         };
@@ -1930,6 +1934,7 @@ impl Renderer {
         }
         let (view, bytes) = Self::upload_texture_with(&self.device, &self.queue, t, alpha_cutoff, self.settings.max_texture_size);
         self.texture_bytes += bytes;
+        self.note_upload(bytes);
         self.texture_cache.insert(key, (t.rgba8.clone(), view.clone()));
         view
     }
@@ -1940,6 +1945,7 @@ impl Renderer {
     /// the bytes of GPU memory used.
     fn upload_texture_with(device: &wgpu::Device, queue: &wgpu::Queue, t: &TextureData, alpha_cutoff: Option<f32>, max_size: u32) -> (wgpu::TextureView, u64) {
         let format = if t.srgb { wgpu::TextureFormat::Rgba8UnormSrgb } else { wgpu::TextureFormat::Rgba8Unorm };
+        let max_size = texture_cap(max_size, t.srgb);
         let mut mips = generate_mips(t, alpha_cutoff);
         while mips.len() > 1 && mips[0].0.max(mips[0].1) > max_size.max(1) {
             mips.remove(0);
@@ -2050,7 +2056,9 @@ impl Renderer {
                     .map(|i| Vertex { pos: p.positions[i].to_array(), normal: p.normals[i].to_array(), uv: p.uvs[i].to_array(), tangent: p.tangents[i].to_array() })
                     .collect();
                 let vertex = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("vb"), contents: bytemuck::cast_slice(&verts), usage: wgpu::BufferUsages::VERTEX });
-                self.mesh_bytes += (verts.len() * std::mem::size_of::<Vertex>() + p.indices.len() * 4 + p.lods.iter().map(|l| l.len() * 4).sum::<usize>()) as u64;
+                let bytes = (verts.len() * std::mem::size_of::<Vertex>() + p.indices.len() * 4 + p.lods.iter().map(|l| l.len() * 4).sum::<usize>()) as u64;
+                self.mesh_bytes += bytes;
+                self.note_upload(bytes);
                 let index = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("ib"), contents: bytemuck::cast_slice(&p.indices), usage: wgpu::BufferUsages::INDEX });
                 let skin = p.is_skinned().then(|| {
                     let sv: Vec<SkinVertex> = (0..p.positions.len())
@@ -2176,6 +2184,44 @@ impl Renderer {
 
     pub fn shadow_resolution(&self) -> u32 {
         self.shadow_size
+    }
+
+    /// Counts `bytes` written to the GPU and flushes the upload queue every
+    /// ~64 MB. `create_buffer_init` and `write_texture` stage their data in
+    /// host memory until the next submit; a whole city uploaded in one go
+    /// would otherwise hold a second copy of every mesh and texture (GBs of
+    /// RAM) until the first frame.
+    fn note_upload(&mut self, bytes: u64) {
+        self.pending_upload += bytes;
+        if self.pending_upload > 64 << 20 {
+            self.flush_uploads();
+        }
+    }
+
+    /// Submits the staged uploads and waits for them, releasing the staging
+    /// memory.
+    pub fn flush_uploads(&mut self) {
+        if self.pending_upload == 0 {
+            return;
+        }
+        self.pending_upload = 0;
+        self.queue.submit([]);
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+    }
+
+    /// Forgets cached textures whose pixel data nobody else holds any
+    /// more (the caller dropped its scenes after uploading them), so the
+    /// CPU copy is freed. The GPU textures stay bound to their materials.
+    /// Safe: a dropped buffer's address can only be reused after its entry
+    /// is gone.
+    pub fn prune_texture_cache(&mut self) {
+        self.texture_cache.retain(|_, (data, _)| std::sync::Arc::strong_count(data) > 1);
+    }
+
+    /// Bytes of uploaded meshes (vertex, index and LOD buffers) and
+    /// textures (with mips).
+    pub fn uploaded_bytes(&self) -> (u64, u64) {
+        (self.mesh_bytes, self.texture_bytes)
     }
 
     /// Estimated GPU memory in bytes: textures (with mips), meshes, render
@@ -3204,6 +3250,15 @@ fn aabb_in_planes(b: &Aabb, planes: &[Vec4; 6]) -> bool {
 /// passing the test matches level 0 (Castaño 2010), region by region so an
 /// atlas of sparse leaf cards next to solid impostor views keeps both: leaf
 /// cards keep their density at distance instead of dissolving.
+/// Largest first mip uploaded for a texture under the preset's cap
+/// `max_size`: colour maps (sRGB) use the cap, data maps (normal, ORM) half
+/// of it below 4096 (Ultra). Their detail is tiled at a few millimetres a
+/// texel either way, and on the default map this saves ~0.5 GB of VRAM on
+/// High.
+pub fn texture_cap(max_size: u32, srgb: bool) -> u32 {
+    if srgb || max_size >= 4096 { max_size } else { (max_size / 2).max(512) }
+}
+
 fn generate_mips(t: &TextureData, alpha_cutoff: Option<f32>) -> Vec<(u32, u32, Vec<u8>)> {
     let to_lin: Vec<f32> = (0..256).map(|i| {
         let c = i as f32 / 255.0;

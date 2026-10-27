@@ -555,11 +555,17 @@ impl WindowKey {
             Piece::Surround => WindowKey { surround: self.surround, surround_kind: self.surround_kind, balcony: has_balcony, grille: self.grille, ..blank },
             Piece::Glazing => WindowKey { frame: self.frame, mirador: self.mirador, surround: if self.mirador.is_some() { self.surround } else { Mat::Iron }, ..blank },
             Piece::Interior => WindowKey { interior: self.interior, light: self.light, ..blank },
-            Piece::Shutter => WindowKey {
-                shutter: self.shutter,
-                balcony: if self.mirador.is_some() { None } else { self.balcony.map(|b| BalconyKey { width_cm: 0, depth_cm: b.depth_cm, belly: false, ends: (false, false), pots: 0, awning: None, terrace: 0 }) },
-                ..blank
-            },
+            // Only alicantinas hang over the balcony (its depth matters);
+            // roller blinds have no colour of their own. Dropping what a
+            // shutter does not use keeps one module per visible variant.
+            Piece::Shutter => {
+                let alicantina = matches!(self.shutter, Some((ShutterKind::Alicantina, ..)));
+                WindowKey {
+                    shutter: self.shutter.map(|(kind, c, state)| (kind, if kind == ShutterKind::Roller { [0; 3] } else { c }, state)),
+                    balcony: if self.mirador.is_some() || !alicantina { None } else { self.balcony.map(|b| BalconyKey { width_cm: 0, depth_cm: b.depth_cm, belly: false, ends: (false, false), pots: 0, awning: None, terrace: 0 }) },
+                    ..blank
+                }
+            }
             Piece::Balcony => WindowKey { surround: self.surround, balcony: if self.mirador.is_some() { None } else { self.balcony }, ..blank },
         }
     }

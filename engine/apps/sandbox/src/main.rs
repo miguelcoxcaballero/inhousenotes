@@ -131,7 +131,63 @@ impl Extract {
         Self { handles: Vec::new(), env_loaded: false, statics_uploaded: None, legacy: std::env::var_os("FORJA_LEGACY_STATICS").is_some() }
     }
 
-    fn frame(&mut self, renderer: &mut Renderer, app: &App) -> FrameDesc {
+    /// Uploads the models added since the last frame. The world's scenes
+    /// lose their CPU copies (vertices, indices, textures) as soon as they
+    /// are on the GPU, so the load never holds both (see
+    /// [`game::world::strip`]); flushes keep the staging memory bounded.
+    fn upload(&mut self, renderer: &mut Renderer, app: &mut App) {
+        let n = app.world.res::<RenderScene>().models.len();
+        if self.handles.len() >= n {
+            return;
+        }
+        let (t, first) = (Instant::now(), self.handles.len());
+        let mut freed = 0usize;
+        let handles = &mut self.handles;
+        let mut upload = |rs: &mut RenderScene, mut world: Option<(&mut game::world::GameWorld, usize)>| {
+            while handles.len() < n {
+                let i = handles.len();
+                handles.push(renderer.upload_scene(&rs.models[i]));
+                if let Some((gw, base)) = world.as_mut()
+                    && let Some(d) = i.checked_sub(*base).and_then(|j| gw.desc.scenes.get_mut(j))
+                {
+                    let (s, b) = game::world::strip(&rs.models[i]);
+                    freed += b;
+                    let s = Arc::new(s);
+                    *d = Arc::clone(&s);
+                    rs.models[i] = s;
+                    if i % 512 == 0 {
+                        renderer.prune_texture_cache();
+                        perf::trim_heap();
+                    }
+                }
+            }
+        };
+        if app.world.resources.get::<game::world::GameWorld>().is_some_and(|w| !w.released) {
+            app.world.scope::<game::world::GameWorld, _>(|world, gw| {
+                let base = gw.scene_base;
+                upload(world.res_mut::<RenderScene>(), Some((&mut *gw, base)));
+                gw.released = true;
+            });
+        } else {
+            upload(app.world.res_mut::<RenderScene>(), None);
+        }
+        renderer.flush_uploads();
+        renderer.prune_texture_cache();
+        perf::trim_heap();
+        let (mesh, tex) = renderer.uploaded_bytes();
+        log::info!(
+            "uploaded {} models in {:.2?}: meshes {:.0} MB, textures {:.0} MB (total); dropped {:.0} MB of CPU mesh copies, resident {:.0} MB",
+            n - first,
+            t.elapsed(),
+            mesh as f64 / 1048576.0,
+            tex as f64 / 1048576.0,
+            freed as f64 / 1048576.0,
+            perf::resident_mb()
+        );
+    }
+
+    fn frame(&mut self, renderer: &mut Renderer, app: &mut App) -> FrameDesc {
+        self.upload(renderer, app);
         let rs = app.world.res::<RenderScene>();
         if !self.env_loaded {
             self.env_loaded = true;
@@ -141,10 +197,6 @@ impl Extract {
                     Err(e) => log::warn!("{e}"),
                 }
             }
-        }
-        while self.handles.len() < rs.models.len() {
-            let m = &rs.models[self.handles.len()];
-            self.handles.push(renderer.upload_scene(m));
         }
         // The world never moves: it is uploaded once into the renderer's
         // static culling grid; only dynamic items are resubmitted per frame.
@@ -320,7 +372,12 @@ fn run_headless(args: &Args) {
     let mut renderer = Renderer::new(&instance, None).expect("GPU");
     let t_build = Instant::now();
     let mut app = game::build_at(args.map, paths(), args.hours);
-    log::info!("world built in {:.2?}", t_build.elapsed());
+    log::info!("world built in {:.2?}, resident {:.0} MB", t_build.elapsed(), perf::resident_mb());
+    {
+        let (mesh, tex) = perf::upload_estimate(&app.world.res::<RenderScene>().models, &[1024, 2048, 4096]);
+        let mb = |b: u64| b as f64 / 1048576.0;
+        log::info!("GPU upload estimate: meshes {:.0} MB, textures {:.0} / {:.0} / {:.0} MB (cap 1024 / 2048 / 4096)", mb(mesh), mb(tex[0]), mb(tex[1]), mb(tex[2]));
+    }
     if let Some(h) = args.hours {
         let t = app.world.res_mut::<game::env::TimeOfDay>();
         t.hours = h;
@@ -363,7 +420,7 @@ fn run_headless(args: &Args) {
         bench(args, &mut app, &mut renderer, &mut extract, &mut perf_state);
     }
     let t_up = Instant::now();
-    let frame = extract.frame(&mut renderer, &app);
+    let frame = extract.frame(&mut renderer, &mut app);
     log::info!("GPU upload in {:.2?}", t_up.elapsed());
     let t1 = Instant::now();
     let tex = renderer.render_offscreen(&frame, args.width, args.height);
@@ -475,8 +532,9 @@ impl Sandbox {
             let t = self.app.world.res::<game::env::TimeOfDay>();
             (t.hours, t.photo_sky, t.speed)
         };
-        self.app = game::build_at(map, paths(), (!photo).then_some(hours));
-        self.app.world.res_mut::<game::env::TimeOfDay>().speed = speed;
+        // Free the old map (CPU and GPU) before building the new one, so a
+        // rebuild at dusk never holds two cities.
+        self.app = App::new();
         self.extract = Extract::new();
         if let Some(gpu) = &mut self.gpu {
             // Fresh GPU resources for the new map.
@@ -488,6 +546,9 @@ impl Sandbox {
                 p.dirty = true;
             }
         }
+        perf::trim_heap();
+        self.app = game::build_at(map, paths(), (!photo).then_some(hours));
+        self.app.world.res_mut::<game::env::TimeOfDay>().speed = speed;
     }
 
     fn sample_input(&mut self) {
@@ -596,7 +657,7 @@ impl Sandbox {
         let ih = ((gpu.config.height as f32 * scale) as u32).max(64);
         gpu.renderer.resize(iw, ih);
         let te = Instant::now();
-        let frame = self.extract.frame(&mut gpu.renderer, &self.app);
+        let frame = self.extract.frame(&mut gpu.renderer, &mut self.app);
         let extract_ms = te.elapsed().as_secs_f32() * 1000.0;
         let surface_tex = match gpu.surface.get_current_texture() {
             forja_render::wgpu::CurrentSurfaceTexture::Success(t) | forja_render::wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
@@ -708,7 +769,12 @@ impl ApplicationHandler for Sandbox {
         let present_modes = surface.get_capabilities(&adapter).present_modes;
         let mut config = surface.get_default_config(&adapter, size.width.max(1), size.height.max(1)).expect("surface config");
         config.format = renderer.output_format;
-        let perf_state = PerfState::load(&paths().data.join("graphics.toml"), &renderer);
+        let mut perf_state = PerfState::load(&paths().data.join("graphics.toml"), &renderer);
+        if let Some(p) = self.args.preset {
+            // `--preset` overrides the saved options and the automatic pick.
+            perf_state.cfg.auto = false;
+            perf_state.cfg.apply_preset(p);
+        }
         renderer.apply_graphics(&perf_state.cfg);
         config.present_mode = present_mode(&present_modes, perf_state.cfg.vsync);
         config.desired_maximum_frame_latency = perf_state.cfg.frame_latency;

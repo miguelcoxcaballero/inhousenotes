@@ -320,11 +320,17 @@ impl Kit {
             Some(root) => SETS.iter().map(|id| (*id, root.join(id))).filter(|(_, d)| d.exists()).collect(),
             None => Vec::new(),
         };
+        let t0 = std::time::Instant::now();
         let mut pbr: HashMap<&'static str, PbrSet> = found
             .into_par_iter()
             .filter_map(|(id, dir)| match forja_assets::load_pbr_set(&dir) {
                 Ok(s) => Some((id, match recipe(id) {
-                    Some(r) => macrotex::build(&s, &r),
+                    Some(r) => {
+                        let t = std::time::Instant::now();
+                        let m = macrotex::build(&s, &r);
+                        log::debug!("kit: {id} macro texture in {:.2?}", t.elapsed());
+                        m
+                    }
                     None => s,
                 })),
                 Err(e) => {
@@ -333,6 +339,7 @@ impl Kit {
                 }
             })
             .collect();
+        let t_scans = t0.elapsed().as_secs_f32();
         // Grain without hue: paint and stain colors come from the tint.
         if let Some(w) = pbr.get("arch_wood_shutter").cloned() {
             let mut gray = w.clone();
@@ -371,7 +378,7 @@ impl Kit {
             interior_ao: texgen::solid("interior_ao", 0.22),
             pbr,
         };
-        log::info!("city kit: {} scanned materials", kit.pbr.len());
+        log::info!("city kit: {} scanned materials in {:.1}s ({:.1}s decoding and weathering scans)", kit.pbr.len(), t0.elapsed().as_secs_f32(), t_scans);
         kit
     }
 
