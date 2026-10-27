@@ -463,6 +463,9 @@ test('Home keeps an unresolved photo checkpoint open and a stamped repair can ex
  await expect(page.locator('#editor-view')).toBeVisible();
  const reopened=await page.evaluate(async()=>{
   const doc=await InhouseOfflineStore.read('documents',InhouseOfflineLibrary.account(),state.driveFileId);
+  // Cached reopen intentionally hydrates only visible pages. Load both through
+  // the real storage path before checking every stroke; null is not empty ink.
+  await Promise.all(state.pages.map((_,index)=>ensurePageDataLoaded(index,{keepLoaded:true})));
   const key=getCollabPageFieldKey('second-photo','background');
   const summarize=(pages,fields,name)=>({ids:pages.map(p=>p.pageId),strokes:pages.map(p=>p.strokes.map(cloneStroke)),
    photo:pages[1].backgroundImage,register:fields.fields[key],name});

@@ -26,12 +26,33 @@
     }
     function sameMetadata(left,right){return !!left&&left.backgroundImage===right.backgroundImage&&left.key===right.key;}
     const pageFields=['background','template','size','sidePanel'];
+    const contextFieldIndexes=new WeakMap();
     function pageFieldsKey(pageId,metadata){
         return JSON.stringify(pageFields.map(field=>metadata.fields?.[`page:${pageId}:${field}`]||null));
     }
     function contextForPage(value,pageId=null){
-        const allowed=new Set(pageId?pageFields.map(field=>`page:${pageId}:${field}`):[]);
-        const fields=Object.fromEntries(Object.entries(value.fields.fields||{}).filter(([key])=>!key.startsWith('page:')||allowed.has(key)));
+        // context() owns a deep field snapshot, never the live mutable map.
+        // Index it once per capture rather than rescanning every page's fields
+        // for each page/chunk. Weak ownership releases completed snapshots.
+        const source=value.fields.fields||{};
+        let index=contextFieldIndexes.get(value);
+        if(!index||index.source!==source){
+            const documents=[],positions=new Map();
+            Object.entries(source).forEach(([key,record],position)=>{
+                positions.set(key,position);
+                if(!key.startsWith('page:'))documents.push([key,record,position]);
+            });
+            index={source,documents,positions};contextFieldIndexes.set(value,index);
+        }
+        const entries=index.documents.slice();
+        if(pageId)for(const field of pageFields){
+            const key=`page:${pageId}:${field}`;
+            if(index.positions.has(key))entries.push([key,source[key],index.positions.get(key)]);
+        }
+        // Preserve the original property order, including future document
+        // fields interleaved with page fields, so operation bytes stay stable.
+        entries.sort((left,right)=>left[2]-right[2]);
+        const fields=Object.fromEntries(entries.map(([key,record])=>[key,record]));
         // A winning photo register must arrive with that page's bytes. Sending
         // another page's field early would make its later payload look stale.
         return {...value,fields:{...value.fields,fields}};
