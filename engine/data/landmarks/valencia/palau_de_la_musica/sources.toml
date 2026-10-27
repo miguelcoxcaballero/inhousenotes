@@ -17,6 +17,21 @@ catastro_refcat = { value = "7121201YJ2772A", source = "https://www1.sedecatastr
 catastro_built = { value = 1987, source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=7121201&rc2=YJ2772A", note = "Catastro dateOfConstruction (often the last major works)" }
 catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=7121201&rc2=YJ2772A" }
 catastro_floor_area = { value = 14773.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=7121201&rc2=YJ2772A", note = "Catastro officialArea (gross floor area)" }
+frame = { value = "building frame: u along the Turia front, azimuth 156.1 grid (+ SSE); v to the back, azimuth 66.1; origin = OSM node (-36.32, -10.49) local", source = "OSM way 23167750 front edge, PNOA 2024" }
+pnoa_lean = { value = 0.33, unit = "m/m", source = "PNOA orthophoto + bundle adjustment", note = "roofs lean ~0.23-0.33 m per m of height towards azimuth 246 (WSW) in this PNOA image (checked on the 9-storey block at x 90; solved together with the photo cameras); every roof edge read on the orthophoto was corrected for it" }
+canopy_plan = { value = "u -1.3..46.6 (47.9 m), v -1.2..10.6 (11.8 m deep)", unit = "m", source = "PNOA (canopy ends, solar-panel field), bundle adjustment (front edge, lean-corrected)", note = "same width as the Catastro main block (u -1.1..46.6)" }
+canopy_top = { value = 17.26, unit = "m", source = "bundle adjustment of photos 06, 07, 10, 14, 01 (EXIF focal lengths, eye-height priors)", note = "above the terrace; tool match views p01, p03, p09, p12, p16 re-solve to 1.3-7 px with it" }
+canopy_soffit = { value = 15.7, unit = "m", source = "bundle adjustment (fascia underside, 5 photos)", note = "edge fascia 1.56 m deep" }
+piers = { value = "10 piers 0.6 x 1.2 m; bays 4.45 m, central opening 11.9 m (2.67 bays) on the axis u 22.65", source = "photos 06 and 14 (frontal, column centre pixels: ratios 109/293 px and 60.5/165 px), PNOA canopy length", note = "no pier on the axis: photos 03, 06, 09, 14" }
+vault_plan = { value = "u -19.6..65.5 (85.1 m), v 1.5..25.1 (23.6 m)", unit = "m", source = "PNOA (both free glass ends, eave lines lean-corrected), photo 14 (glass/portico width ratio 1.63)", note = "the middle runs into the main block (front wall v 7.7, Catastro) under the portico" }
+vault_shape = { value = "cloister (hipped) barrel vault: elliptic section, crown on v 13.3, hip apexes 11.8 m in from each end, creases from the corners", source = "photos 01, 07 (corner crease seen edge-on), catastro facade photo (central rib of the end face), 08, 15" }
+vault_eave = { value = 3.0, unit = "m", source = "photo 07: vanishing point of eave and base lines gives the horizon at y 696 px -> eave 3.2 m for a 1.6 m eye; bundle adjustment 2.8 m", note = "stone socle 1.75 m, glazed band to 2.6 m, white cornice 0.4 m" }
+vault_crown = { value = 13.4, unit = "m", source = "photo 07 (peak of the corner crease, y 118 px, with the solved camera), photo 14 crown line under the canopy, catastro facade photo", note = "the first bundle adjustment gave 13.8-16.6 m when the crease peak was wrongly taken as the hip apex" }
+hall_width = { value = 29.3, unit = "m", source = "PNOA (grey roof u 8.0..37.5) and photo 06 (half-disc 660 px vs canopy 1181 px)" }
+hall_roof = { value = "springing 21.5 m, apex 26.7 m, segmental barrel along v from the gable at v 13.3, rounded at the back (v 44.5..50.5)", source = "bundle adjustment (photos 06, 14, PNOA lean of the gable arc: apparent v 4.2 at the apex vs 6.2 at the springing)" }
+main_block = { value = 17.3, unit = "m", source = "photos 07, 16 (parapet flush with the canopy top, hidden behind it from photo 07)", note = "plan = Catastro parts 1, 2, 5 (4 storeys); stage house 20.5 m estimated from the catastro facade photo" }
+riverbed = { value = -6.2, unit = "m", source = "bundle adjustment (photos 06, 10, 14, 01, 16 at garden level, podium edge and pool edge)", note = "Jardi del Turia below the terrace; stair count in photo 16 suggests ~5-6 m; retaining wall on v -10.5 (bundle adjustment -11.05, PNOA hedge line -12.5)" }
+pool = { value = "u -40..84, v -64.5..-28", unit = "m", source = "PNOA (water area incl. the two pergolas)" }
 catastro_floors_max = { value = 4, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 4 parts" }
 
 [[photo]]
@@ -28,8 +43,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/02_Valencia_Palau_de_la_Musica_20100203_RM_195239.jpg"
@@ -52,8 +67,8 @@ license = "Public domain"
 width = 960
 height = 720
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/04_Palau_de_la_Musica_panoramio.jpg"
@@ -65,8 +80,8 @@ width = 1280
 height = 960
 camera = [-36.17, 79.73]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/05_Valencia_el_Pla_del_Rea_Palau_de_la_Musica_IMG_2892_2026_08_.jpg"
@@ -79,7 +94,7 @@ height = 779
 camera = [-127.83, 38.61]
 exterior = true
 selected = false
-side = ""
+side = "sw"
 
 [[photo]]
 file = "photos/06_Part_central_del_palau_de_la_Musica_de_Valencia.jpg"
@@ -90,8 +105,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 837
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/07_Palau_de_la_Musica_de_Valencia_vista_lateral.jpg"
@@ -102,8 +117,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 866
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/08_Palau_de_la_Musica_Valencia_2.jpg"
@@ -114,8 +129,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/09_Palau_de_Musica.jpg"
@@ -126,8 +141,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/10_Valencia_2016_13.jpg"
@@ -138,8 +153,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/11_Palau_musica.jpg"
@@ -151,7 +166,7 @@ width = 1280
 height = 920
 exterior = true
 selected = false
-side = ""
+side = "se"
 
 [[photo]]
 file = "photos/12_Valencia_porxo_del_palau_de_la_Musica.jpg"
@@ -162,8 +177,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1929
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/13_Entrada_al_Palau_de_la_Musica_de_Valencia.jpg"
@@ -174,8 +189,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "ne"
 
 [[photo]]
 file = "photos/14_Palau_de_la_Musica_a_Valencia.jpg"
@@ -187,8 +202,8 @@ width = 1280
 height = 960
 camera = [-35.17, -6.96]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/15_Jardin_del_Turia_Tramo_XI_09.jpg"
@@ -199,8 +214,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/16_Valencia_Palau_de_la_Musica_002.jpg"
@@ -212,8 +227,8 @@ width = 1280
 height = 720
 camera = [-108.2, -57.14]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/catastro_7121201YJ2772A.jpg"
@@ -224,8 +239,8 @@ license = "Catastro open data (attribution required)"
 width = 1600
 height = 1200
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[plan]]
 file = "plans/catastro_wms.png"
@@ -235,6 +250,15 @@ author = "Dirección General del Catastro"
 license = "Catastro open data (attribution required)"
 kind = "catastro"
 notes = "Cadastral map, EPSG:25830 bbox [727005.5, 4371769.71, 727137.18, 4371894.59], 0.080 m/px, north up; roman numerals = floors above ground; parcels 7121201YJ2772A"
+
+[[plan]]
+file = "plans/pnoa.jpg"
+title = "PNOA orthophoto (IGN), WMS OI.OrthoimageCoverage, 0.1 m/px"
+url = "https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=OI.OrthoimageCoverage&SRS=EPSG:25830&BBOX=726961.81,4371723.41,727181.81,4371943.41&WIDTH=2200&HEIGHT=2200&FORMAT=image/jpeg"
+author = "Instituto Geográfico Nacional (PNOA)"
+license = "CC BY 4.0 (scne.es)"
+kind = "orthophoto"
+notes = "220 x 220 m around the anchor, north up; roofs lean to the WSW (see facts.pnoa_lean)"
 
 [[reference]]
 url = "https://www.wikidata.org/wiki/Q9054601"
@@ -275,3 +299,8 @@ notes = "built=1987; use=4_3_publicServices; area=14773; area_in_outline=2181.6"
 url = "https://www.palauvalencia.com/"
 title = "Official website"
 notes = "Wikidata P856"
+
+[[reference]]
+url = "https://palauvalencia.com/"
+title = "Palau de la Música: halls (Sala Iturbi 1,781 seats, Sala Rodrigo 417), Hall dels Tarongers"
+notes = "no published overall dimensions found; all dimensions measured (see [facts])"
