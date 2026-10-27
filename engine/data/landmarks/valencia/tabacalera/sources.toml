@@ -25,6 +25,34 @@ catastro_use = { value = "3_industrial", source = "https://www1.sedecatastro.gob
 catastro_floor_area = { value = 29303.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=7029501&rc2=YJ2772G", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 4, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 5 parts" }
 
+# ---- measured dimensions used by landmark.toml (scratchpad tab/gen.py) ----
+main_front_length = { value = 120.4, unit = "m", source = "https://www.openstreetmap.org/relation/9603911 (SW node -72.49,27.52 to SE node 41.64,65.96)", note = "Catastro 7029501YJ2772G agrees within 0.3 m; azimuth of the facade normal 199 deg" }
+block_depth = { value = 74.8, unit = "m", source = "https://www.openstreetmap.org/relation/9603911", note = "west and east fronts; main block 120.4 x 74.8 m, rotated 18.6 deg" }
+corner_pavilions = { value = 12.5, unit = "m", source = "https://www.openstreetmap.org/relation/9603911 notches on the S and E fronts (0.47-0.75 m steps)", note = "corner pavilions 12.5 m square projecting ~0.5 m; Catastro photo shows 2 bays on their front" }
+wing_depth = { value = 12.1, unit = "m", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=7029501&rc2=YJ2772G (court notches of BuildingPart 14)", note = "perimeter wings; north wing 12.3 m" }
+pavilion_plan = { value = [40.3, 16.4], unit = "m", source = "OSM way 730891805 = Catastro parts 2-4 (40.0 m)", note = "projects 0.6 m from the wing face" }
+court_a = { value = [20.4, 42.6], unit = "m", source = "OSM inner ring of relation 9603911 (west court)", note = "Catastro court 27.5 x 50.4 m: the difference is the three-storey gallery ring 2.8-4.3 m deep; PNOA shows the flat gallery terraces" }
+court_b = { value = [20.3, 42.8], unit = "m", source = "OSM inner ring (east court)", note = "symmetric to court A about the axis s = 60.0" }
+small_court = { value = [21.9, 15.9], unit = "m", source = "OSM inner ring = Catastro hole", note = "on the axis behind the atrium" }
+atrium = { value = [22.6, 11.3], unit = "m", source = "Catastro notch behind the pavilion, IGN PNOA orthophoto WMS (https://www.ign.es/wms-inspire/pnoa-ma, CC BY 4.0)", note = "glass gable roof on PNOA" }
+internal_street = { value = 12.1, unit = "m", source = "OSM inner ring 0; IGN PNOA orthophoto WMS (https://www.ign.es/wms-inspire/pnoa-ma, CC BY 4.0)", note = "open paved street between the main block and the north hall (people visible on PNOA, LiDAR ~2 m)" }
+north_hall = { value = [120.1, 15.6], unit = "m", source = "OSM way 730854208" }
+wing_cornice = { value = 17.7, unit = "m", source = "bundle adjustment of photos 01 and 08 (scratchpad tab/ba.py: 2 cameras, 70 observations, rms 2.6/3.7 px, eye 1.2-1.9 m, f 1200/1270 px solved; scale = pavilion width 40.3 m)", note = "17.5-17.9 over the two solves; +-0.3 m" }
+wing_ridge = { value = 19.6, unit = "m", source = "IGN PNOA-LiDAR building heights (https://wms-mapa-lidar.idee.es/lidar, layer edificios-h30 by GetFeatureInfo, 2.5 m cells, ~3 m south offset, CC BY 4.0)", note = "19.3-19.7 m along the front wing; eave cells 16.8-17.6; hip pitch 20 deg" }
+pavilion_cornice = { value = [21.2, 22.1], unit = "m", source = "bundle adjustment of photos 01 and 08 (scratchpad tab/ba.py: 2 cameras, 70 observations, rms 2.6/3.7 px, eye 1.2-1.9 m, f 1200/1270 px solved; scale = pavilion width 40.3 m)", note = "cornice bottom / top at the corners" }
+pavilion_ridge = { value = 25.6, unit = "m", source = "IGN PNOA-LiDAR building heights (https://wms-mapa-lidar.idee.es/lidar, layer edificios-h30 by GetFeatureInfo, 2.5 m cells, ~3 m south offset, CC BY 4.0)", note = "25.3-25.6 m; hip pitch 23 deg" }
+acroteria = { value = 25.0, unit = "m", source = "bundle adjustment of photos 01 and 08 (scratchpad tab/ba.py: 2 cameras, 70 observations, rms 2.6/3.7 px, eye 1.2-1.9 m, f 1200/1270 px solved; scale = pavilion width 40.3 m)", note = "two crenellated acroteria 4.95 m either side of the axis" }
+pediment_top = { value = 27.85, unit = "m", source = "bundle adjustment of photos 01 and 08 (scratchpad tab/ba.py: 2 cameras, 70 observations, rms 2.6/3.7 px, eye 1.2-1.9 m, f 1200/1270 px solved; scale = pavilion width 40.3 m)", note = "top of the central pier with the city arms; bat weathervane ~0.9 m more" }
+clock_centre = { value = 23.86, unit = "m", source = "bundle adjustment of photos 01 and 08 (scratchpad tab/ba.py: 2 cameras, 70 observations, rms 2.6/3.7 px, eye 1.2-1.9 m, f 1200/1270 px solved; scale = pavilion width 40.3 m)", note = "dial ~1.6 m across (photo 08)" }
+portal = { value = [4.0, 8.0], unit = "m", source = "bundle adjustment of photos 01 and 08 (scratchpad tab/ba.py: 2 cameras, 70 observations, rms 2.6/3.7 px, eye 1.2-1.9 m, f 1200/1270 px solved; scale = pavilion width 40.3 m)", note = "width 3.83-4.0, crown 7.74-8.07; stone surround ~0.85 m (photo 01)" }
+window_rows = { value = [[2.1, 5.1], [7.35, 10.45], [12.9, 15.6], [18.4, 20.5]], unit = "m", source = "bundle adjustment of photos 01 and 08 (scratchpad tab/ba.py: 2 cameras, 70 observations, rms 2.6/3.7 px, eye 1.2-1.9 m, f 1200/1270 px solved; scale = pavilion width 40.3 m)", note = "ground (iron grilles), first, second (segmental arches with brick hoods), attic (pavilion only, flat)" }
+pavilion_bays = { value = [2.52, 7.45, 12.56, 17.55], unit = "m", source = "bundle adjustment of photos 01 and 08 (scratchpad tab/ba.py: 2 cameras, 70 observations, rms 2.6/3.7 px, eye 1.2-1.9 m, f 1200/1270 px solved; scale = pavilion width 40.3 m)", note = "offsets from the axis; 3 + 3 + 3 bays, door in the centre bay of the ground and first floors" }
+spine_roof = { value = 17.0, unit = "m", source = "IGN PNOA-LiDAR building heights (https://wms-mapa-lidar.idee.es/lidar, layer edificios-h30 by GetFeatureInfo, 2.5 m cells, ~3 m south offset, CC BY 4.0)", note = "flat 16.8-17.2 m behind the pavilion and round the small court" }
+gallery_roof = { value = 12.3, unit = "m", source = "IGN PNOA-LiDAR building heights (https://wms-mapa-lidar.idee.es/lidar, layer edificios-h30 by GetFeatureInfo, 2.5 m cells, ~3 m south offset, CC BY 4.0)", note = "11.2-13.6 m on the gallery rings (estimate +-1 m; galleries not seen in exterior photos)" }
+north_hall_heights = { value = [8.0, 11.0], unit = "m", source = "IGN PNOA-LiDAR building heights (https://wms-mapa-lidar.idee.es/lidar, layer edificios-h30 by GetFeatureInfo, 2.5 m cells, ~3 m south offset, CC BY 4.0)", note = "eaves 7.8-8.5, ridge 11.0-11.1" }
+carillon = { value = 30.0, unit = "m", source = "photos 04, 07, 09, 12 (estimate)", note = "steel lattice belfry with bells directly behind the pediment (hidden in frontal photo 01, above it in upright photo 09); mast ~34 m" }
+plan_check = { value = 0.97, source = "landmark check: footprint IoU vs OSM", note = "Catastro IoU 0.80 (Catastro omits galleries and the atrium)" }
+
 [[photo]]
 file = "photos/01_Tabacalera_de_Valencia.jpg"
 title = "File:Tabacalera de València.JPG"
@@ -34,8 +62,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 983
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/02_Fabrica_de_Tabacos_panoramio.jpg"
@@ -47,8 +75,8 @@ width = 1280
 height = 960
 camera = [-26.63, 74.05]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/03_Edificio_de_Tabacalera_431235203.jpg"
@@ -60,8 +88,8 @@ width = 1280
 height = 1707
 camera = [-247.48, -137.68]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/04_Facana_de_l_antiga_Tabacalera_de_Valencia.jpg"
@@ -72,8 +100,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/05_Calle_Amadeo_de_Saboya_Valencia_02.jpg"
@@ -84,8 +112,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
 
 [[photo]]
 file = "photos/06_Edificio_de_Tabacalera_Valencia_01.jpg"
@@ -96,8 +124,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1920
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/07_Parte_superior_del_Edificio_de_Tabacalera_Valencia.jpg"
@@ -108,8 +136,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/08_Facana_principal_del_la_Tabacalera_de_Valencia.jpg"
@@ -120,8 +148,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/09_Valencia_tabacalera.jpg"
@@ -132,8 +160,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/10_Edificio_de_Tabacalera_431232359.jpg"
@@ -145,8 +173,8 @@ width = 1280
 height = 960
 camera = [-247.48, -137.68]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/11_Edificio_de_Tabacalera_Valencia_02.jpg"
@@ -157,8 +185,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/12_Carillo_de_la_Tabacalera_Valencia.jpg"
@@ -169,8 +197,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 923
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/13_Edifici_de_l_antiga_Tabacalera_de_Valencia_lluneta.jpg"
@@ -181,8 +209,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 858
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/14_Puerta_de_la_antigua_Tabacalera_de_Valencia.jpg"
@@ -193,8 +221,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1920
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/catastro_7029501YJ2772G.jpg"
@@ -205,8 +233,21 @@ license = "Catastro open data (attribution required)"
 width = 1600
 height = 1200
 exterior = true
+selected = true
+side = "se"
+
+[[photo]]
+file = "photos/21_Carrer_del_Naturalista_Rafael_Cisternes__Valencia_01.jpg"
+title = "File:Carrer del Naturalista Rafael Cisternes, Valencia 01.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Carrer_del_Naturalista_Rafael_Cisternes,_Valencia_01.JPG"
+author = "unverified: Commons API rate-limited (HTTP 429) when fetched; check the file page"
+license = "unverified: see the Commons file page"
+width = 1280
+height = 853
+exterior = true
 selected = false
 side = ""
+note = "probably the east front (not confirmed: no camera solution matched) from Naturalista Rafael Cisternes (north-east); downloaded 2026-10-27 via Special:FilePath"
 
 [[plan]]
 file = "plans/01_6_04_TABACALERA_firmado.jpg"
@@ -225,6 +266,16 @@ author = "Dirección General del Catastro"
 license = "Catastro open data (attribution required)"
 kind = "catastro"
 notes = "Cadastral map, EPSG:25830 bbox [726860.06, 4372620.07, 727066.53, 4372815.7], 0.103 m/px, north up; roman numerals = floors above ground; parcels 7029501YJ2772G"
+
+[[reference]]
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+title = "IGN PNOA orthophoto WMS"
+notes = "plan, roofs, courts, atrium glass roof, internal street; CC BY 4.0"
+
+[[reference]]
+url = "https://wms-mapa-lidar.idee.es/lidar"
+title = "IGN PNOA-LiDAR building heights (GetFeatureInfo, layer edificios-h30)"
+notes = "~4200 cells of 2.5 m over the block; roof heights of wings, pavilion, spine, galleries and north hall"
 
 [[reference]]
 url = "https://www.wikidata.org/wiki/Q50309302"
