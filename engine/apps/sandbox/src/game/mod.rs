@@ -106,8 +106,11 @@ impl RenderScene {
         }
         let r = match forja_assets::load_model(path) {
             Ok(mut s) => {
-                // Scanned assets are dense: build LOD chains for big meshes.
-                forja_assets::lod::generate_lods(&mut s, 6, 20_000);
+                // Scanned assets are dense: build LOD chains. Parts from 1 k
+                // triangles get them too: cars (~1.7 k per part, hundreds
+                // of instances in the shadow maps) were drawn at full detail
+                // at any distance.
+                forja_assets::lod::generate_lods(&mut s, 8, 1_000);
                 Some(self.add_model(Arc::new(s)))
             }
             Err(e) => {

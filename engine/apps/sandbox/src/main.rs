@@ -240,12 +240,17 @@ fn bench(args: &Args, app: &mut App, renderer: &mut Renderer, extract: &mut Extr
             fixed_steps: timings.fixed_steps,
             stats: renderer.stats,
             render_scale: 1.0,
+            heavy: Vec::new(),
         };
         acc.push(sample.clone());
         perf_state.record(sample);
     }
     perf_state.stop_csv();
     print_bench(&acc);
+    for shadow in [false, true] {
+        let list: Vec<String> = renderer.heaviest_meshes(10, shadow).iter().map(|(n, k, t)| format!("{n} x{k} {:.2}M", *t as f64 / 1e6)).collect();
+        println!("  heaviest {}: {}", if shadow { "shadow" } else { "camera" }, list.join(", "));
+    }
 }
 
 fn print_bench(acc: &[FrameSample]) {
@@ -628,6 +633,7 @@ impl Sandbox {
                 fixed_steps: timings.fixed_steps,
                 stats: gpu.renderer.stats,
                 render_scale: scale,
+                heavy: if perf_state.overlay { gpu.renderer.heaviest_meshes(6, false) } else { Vec::new() },
             });
         }
         if std::mem::take(&mut self.want_screenshot) {

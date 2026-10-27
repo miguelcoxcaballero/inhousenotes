@@ -86,8 +86,11 @@ pub(crate) struct View<'a> {
     pub min_radius_per_m: f32,
     /// Absolute minimum radius (shadow texel threshold; 0 for the camera).
     pub min_radius: f32,
-    /// Camera: pixels covered per (radius/distance)^2, for LOD selection.
+    /// Camera: triangle budget per (radius/distance)^2, for LOD selection.
     pub lod_scale: f32,
+    /// Shadow cascade: triangle budget per radius^2 from the texel size
+    /// (0: unused). The coarser of the two budgets wins.
+    pub texel_lod_scale: f32,
     pub shadow: bool,
 }
 
@@ -118,6 +121,9 @@ pub(crate) struct StaticScene {
 /// Grid cell edge (m): about a city block side, so a street view touches
 /// a few dozen cells.
 pub(crate) const CELL_SIZE: f32 = 32.0;
+
+/// Runs with at most this many items pick a LOD per instance.
+const PER_ITEM_LOD_RUN: u32 = 32;
 
 fn sphere_in(planes: &[Vec4], c: Vec3, r: f32) -> bool {
     planes.iter().all(|p| p.truncate().dot(c) + p.w >= -r)
@@ -243,7 +249,11 @@ impl StaticScene {
                 }
                 let lod = if view.lod_scale > 0.0 {
                     let px = run.max_radius / d;
-                    lod_for(self.keys[run.key as usize].mesh, view.lod_scale * px * px)
+                    let mut budget = view.lod_scale * px * px;
+                    if view.texel_lod_scale > 0.0 {
+                        budget = budget.min(view.texel_lod_scale * run.max_radius * run.max_radius);
+                    }
+                    lod_for(self.keys[run.key as usize].mesh, budget)
                 } else {
                     lod_for(self.keys[run.key as usize].mesh, f32::INFINITY)
                 };
@@ -251,6 +261,29 @@ impl StaticScene {
                 // Radius-sorted: keep the prefix that is large enough.
                 let n = range.partition_point(|s| s.w.abs() >= min_r) as u32;
                 if n == 0 {
+                    continue;
+                }
+                // Few large items (trees, big props): LOD per instance from
+                // its own distance. The cell's nearest distance would give
+                // every tree of the camera's block its finest level.
+                if view.lod_scale > 0.0 && run.count <= PER_ITEM_LOD_RUN && run.max_radius > 1.0 {
+                    let mesh = self.keys[run.key as usize].mesh;
+                    for (k, s) in range[..n as usize].iter().enumerate() {
+                        if view.shadow && s.w < 0.0 {
+                            continue;
+                        }
+                        let r = s.w.abs();
+                        if class == 2 || sphere_in(view.planes, s.truncate(), r) {
+                            let di = ((s.truncate() - view.eye).length() - r).max(0.1);
+                            let mut budget = view.lod_scale * (r / di) * (r / di);
+                            if view.texel_lod_scale > 0.0 {
+                                budget = budget.min(view.texel_lod_scale * r * r);
+                            }
+                            let p0 = self.picked.len() as u32;
+                            self.picked.push(run.start + k as u32);
+                            self.segments.push(Segment { key: run.key, lod: lod_for(mesh, budget), src: Source::Picked(p0, 1) });
+                        }
+                    }
                     continue;
                 }
                 if class == 2 && (!view.shadow || range[..n as usize].iter().all(|s| s.w >= 0.0)) {
@@ -327,7 +360,7 @@ mod tests {
         let mut s = StaticScene::build(items);
         assert!(s.cell_count() >= 12);
         let planes = slab(-1.0, 99.0);
-        let view = View { planes: &planes, eye: Vec3::ZERO, min_radius_per_m: 0.0, min_radius: 0.0, lod_scale: 0.0, shadow: false };
+        let view = View { planes: &planes, eye: Vec3::ZERO, min_radius_per_m: 0.0, min_radius: 0.0, lod_scale: 0.0, texel_lod_scale: 0.0, shadow: false };
         let mut out = Vec::new();
         let mut batches = Vec::new();
         let n = s.gather(&view, &|_, _| 0, &mut out, &mut batches);
@@ -352,11 +385,43 @@ mod tests {
         let planes = slab(-100.0, 100.0);
         let mut out = Vec::new();
         let mut batches = Vec::new();
-        let view = View { planes: &planes, eye: Vec3::ZERO, min_radius_per_m: 0.0, min_radius: 0.5, lod_scale: 0.0, shadow: true };
+        let view = View { planes: &planes, eye: Vec3::ZERO, min_radius_per_m: 0.0, min_radius: 0.5, lod_scale: 0.0, texel_lod_scale: 0.0, shadow: true };
         let n = s.gather(&view, &|_, _| 1, &mut out, &mut batches);
         // Only the large caster survives: the small one is under the
         // threshold, the third does not cast.
         assert_eq!(n, 1);
         assert_eq!(batches[0].lod, 1);
+    }
+
+    #[test]
+    fn shadow_lod_follows_texel_size() {
+        let mut s = StaticScene::build(vec![item(0, 0.0, 10.0, 2.0)]);
+        let planes = slab(-100.0, 100.0);
+        // Budget -> LOD: one level per factor 10 below 1e6 triangles.
+        let lod = |_: u32, budget: f32| (6.0 - budget.max(1.0).log10()).clamp(0.0, 6.0) as u32;
+        let mut run = |texel_lod_scale: f32| {
+            let (mut out, mut batches) = (Vec::new(), Vec::new());
+            let v = View { planes: &planes, eye: Vec3::ZERO, min_radius_per_m: 0.0, min_radius: 0.0, lod_scale: 1e8, texel_lod_scale, shadow: true };
+            s.gather(&v, &lod, &mut out, &mut batches);
+            batches[0].lod
+        };
+        // Close to the camera: fine LOD unless the shadow texels are large.
+        assert_eq!(run(0.0), 0);
+        assert!(run(10.0) >= 4);
+    }
+
+    #[test]
+    fn large_items_pick_their_own_lod() {
+        // Two big items in one cell, 2 m and 25 m from the camera.
+        let mut s = StaticScene::build(vec![item(0, 3.0, 0.0, 2.0), item(0, 26.0, 0.0, 2.0)]);
+        let planes = slab(-100.0, 100.0);
+        let lod = |_: u32, budget: f32| (6.0 - budget.max(1.0).log10()).clamp(0.0, 6.0) as u32;
+        let (mut out, mut batches) = (Vec::new(), Vec::new());
+        let v = View { planes: &planes, eye: Vec3::ZERO, min_radius_per_m: 0.0, min_radius: 0.0, lod_scale: 1e6, texel_lod_scale: 0.0, shadow: false };
+        s.gather(&v, &lod, &mut out, &mut batches);
+        let mut lods: Vec<u32> = batches.iter().map(|b| b.lod).collect();
+        lods.sort();
+        assert_eq!(batches.iter().map(|b| b.count).sum::<u32>(), 2);
+        assert!(lods[0] < lods[1], "{lods:?}");
     }
 }
