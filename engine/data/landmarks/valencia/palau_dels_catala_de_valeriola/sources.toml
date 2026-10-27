@@ -35,14 +35,13 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Vista_del_pati_del_palau_dels_Catala_de_Valeriola_des_de_l_e.jpg"
-title = "File:Vista del pati del palau dels Català de Valeriola des de l'escala.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Vista_del_pati_del_palau_dels_Catal%C3%A0_de_Valeriola_des_de_l%27escala.JPG"
+file = "photos/02_Balcons_del_palau_dels_Catala_de_Valeriola_Valencia.jpg"
+title = "File:Balcons del palau dels Català de Valeriola, València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Balcons_del_palau_dels_Catal%C3%A0_de_Valeriola%2C_Val%C3%A8ncia.jpg"
 author = "Joanbanjo"
-license = "CC BY-SA 4.0"
+license = "CC BY-SA 3.0"
 width = 1280
-height = 858
-camera = [-12.2, -2.3]
+height = 960
 exterior = true
 selected = false
 side = ""
@@ -60,20 +59,31 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Pati_del_palau_dels_Catala_de_Valeriola_des_de_l_entrada_lat.jpg"
-title = "File:Pati del palau dels Català de Valeriola des de l'entrada lateral.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Pati_del_palau_dels_Catal%C3%A0_de_Valeriola_des_de_l%27entrada_lateral.JPG"
-author = "Joanbanjo"
+file = "photos/04_341_Palau_dels_Catala_de_Valeriola_pl_Nules_Valencia.jpg"
+title = "File:341 Palau dels Català de Valeriola, pl. Nules (València).jpg"
+url = "https://commons.wikimedia.org/wiki/File:341_Palau_dels_Catal%C3%A0_de_Valeriola%2C_pl._Nules_%28Val%C3%A8ncia%29.jpg"
+author = "Enric"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 877
-camera = [-12.2, -2.3]
+height = 1707
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Palau_dels_Catala_de_Valeriola_2015_02.jpg"
+file = "photos/05_Balco_del_palau_dels_Catala_de_Valeriola_de_Valencia.jpg"
+title = "File:Balcó del palau dels Català de Valeriola de València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Balc%C3%B3_del_palau_dels_Catal%C3%A0_de_Valeriola_de_Val%C3%A8ncia.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Palau_dels_Catala_de_Valeriola_2015_02.jpg"
 title = "File:Palau dels Català de Valeriola 2015 02.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Palau_dels_Catal%C3%A0_de_Valeriola_2015_02.JPG"
 author = "19Tarrestnom65"
@@ -85,21 +95,21 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Palau_dels_Marquesos_de_Malferit_Valencia_25.jpg"
-title = "File:Palau dels Marquesos de Malferit (València) 25.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_dels_Marquesos_de_Malferit_%28Val%C3%A8ncia%29_25.jpg"
-author = "Dorieo"
-license = "CC BY-SA 4.0"
+file = "photos/07_Portada_del_palau_dels_Catala_de_Valeriola_de_Valencia.jpg"
+title = "File:Portada del palau dels Català de Valeriola de València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Portada_del_palau_dels_Catal%C3%A0_de_Valeriola_de_Val%C3%A8ncia.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
 width = 1280
-height = 853
-exterior = "unknown"
+height = 1707
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Palau_dels_Catala_de_Valeriola_2015_01.jpg"
-title = "File:Palau dels Català de Valeriola 2015 01.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Palau_dels_Catal%C3%A0_de_Valeriola_2015_01.JPG"
+file = "photos/08_Palau_dels_Catala_de_Valeriola.jpg"
+title = "File:Palau dels Català de Valeriola.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_dels_Catal%C3%A0_de_Valeriola.jpg"
 author = "19Tarrestnom65"
 license = "CC BY-SA 4.0"
 width = 1280
@@ -109,47 +119,11 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_341_Palau_dels_Catala_de_Valeriola_pl_Nules_Valencia.jpg"
-title = "File:341 Palau dels Català de Valeriola, pl. Nules (València).jpg"
-url = "https://commons.wikimedia.org/wiki/File:341_Palau_dels_Catal%C3%A0_de_Valeriola%2C_pl._Nules_%28Val%C3%A8ncia%29.jpg"
-author = "Enric"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Palau_dels_Marquesos_de_Malferit_Valencia_26.jpg"
-title = "File:Palau dels Marquesos de Malferit (València) 26.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_dels_Marquesos_de_Malferit_%28Val%C3%A8ncia%29_26.jpg"
-author = "Dorieo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Balcons_del_palau_dels_Catala_de_Valeriola_Valencia.jpg"
-title = "File:Balcons del palau dels Català de Valeriola, València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Balcons_del_palau_dels_Catal%C3%A0_de_Valeriola%2C_Val%C3%A8ncia.jpg"
-author = "Joanbanjo"
+file = "photos/09_Palau_dels_Catala_de_Valeriola_P1390970.jpg"
+title = "File:Palau dels Català de Valeriola P1390970.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palau_dels_Catal%C3%A0_de_Valeriola_P1390970.JPG"
+author = "Pere prlpz ( talk )"
 license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Palau_dels_Catala_de_Valeriola_2015_04.jpg"
-title = "File:Palau dels Català de Valeriola 2015 04.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Palau_dels_Catal%C3%A0_de_Valeriola_2015_04.JPG"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
@@ -157,19 +131,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_Balco_del_palau_dels_Catala_de_Valeriola_de_Valencia.jpg"
-title = "File:Balcó del palau dels Català de Valeriola de València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Balc%C3%B3_del_palau_dels_Catal%C3%A0_de_Valeriola_de_Val%C3%A8ncia.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Palacio_de_los_Catala_de_Valeriola.jpg"
+file = "photos/10_Palacio_de_los_Catala_de_Valeriola.jpg"
 title = "File:Palacio de los Catalá de Valeriola.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Palacio_de_los_Catal%C3%A1_de_Valeriola.jpg"
 author = "Consellería de Cultura"
@@ -181,38 +143,14 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_Escut_del_palau_dels_Catala_de_Valeriola_Valencia_01.jpg"
-title = "File:Escut del palau dels Català de Valeriola, València 01.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Escut_del_palau_dels_Catal%C3%A0_de_Valeriola%2C_Val%C3%A8ncia_01.jpg"
-author = "Dorieo"
+file = "photos/11_Palau_dels_Catala_de_Valeriola_plaza_Nules_2_Valencia_Vicepr.jpg"
+title = "File:Palau dels Català de Valeriola, plaza Nules 2, Valencia. Vicepresidència Generalitat Valenciana.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_dels_Catal%C3%A0_de_Valeriola%2C_plaza_Nules_2%2C_Valencia._Vicepresid%C3%A8ncia_Generalitat_Valenciana.jpg"
+author = "19Tarrestnom65"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Vestibul_i_pati_del_palau_dels_Catala_de_Valeriola_Valencia.jpg"
-title = "File:Vestíbul i pati del palau dels Català de Valeriola, València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Vest%C3%ADbul_i_pati_del_palau_dels_Catal%C3%A0_de_Valeriola%2C_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 886
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_Palau_dels_Marquesos_de_Malferit_Valencia_27.jpg"
-title = "File:Palau dels Marquesos de Malferit (València) 27.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_dels_Marquesos_de_Malferit_%28Val%C3%A8ncia%29_27.jpg"
-author = "Dorieo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1920
-exterior = "unknown"
+height = 960
+exterior = true
 selected = false
 side = ""
 

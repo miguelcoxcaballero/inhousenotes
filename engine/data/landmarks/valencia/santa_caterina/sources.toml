@@ -122,13 +122,13 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_Esglesia_de_Santa_Caterina_de_Valencia_cobertes.jpg"
-title = "File:Església de Santa Caterina de València cobertes.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_de_Santa_Caterina_de_Val%C3%A8ncia_cobertes.JPG"
+file = "photos/09_Esglesia_de_Santa_Caterina_de_Valencia_facana_dels_peus.jpg"
+title = "File:Església de Santa Caterina de València façana dels peus.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_de_Santa_Caterina_de_Val%C3%A8ncia_fa%C3%A7ana_dels_peus.JPG"
 author = "Joanbanjo"
 license = "Public domain"
 width = 1280
-height = 1707
+height = 960
 exterior = true
 selected = false
 side = ""
@@ -170,31 +170,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Valencia_chiesa_di_santa_catalina_frammenti_scultorei_reimpi.jpg"
-title = "File:Valencia, chiesa di santa catalina, frammenti scultorei reimpiegati nella muratura di una cappella sepolcrale esterna.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia%2C_chiesa_di_santa_catalina%2C_frammenti_scultorei_reimpiegati_nella_muratura_di_una_cappella_sepolcrale_esterna.jpg"
-author = "Francesco Bini"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 743
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Santa_caterina_arcosolis.jpg"
-title = "File:Santa caterina arcosolis.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Santa_caterina_arcosolis.jpg"
-author = "Felivet"
-license = "Public domain"
-width = 1280
-height = 960
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Esglesia_de_Santa_Catalina_de_Valencia_1_png.jpg"
+file = "photos/13_Esglesia_de_Santa_Catalina_de_Valencia_1_png.jpg"
 title = "File:Església de Santa Catalina de Valencia (1).png"
 url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_de_Santa_Catalina_de_Valencia_%281%29.png"
 author = "Sea Olive"
@@ -206,13 +182,25 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Arcosolio_en_la_Iglesia_de_Santa_Catalina_Valencia_02.jpg"
+file = "photos/14_Arcosolio_en_la_Iglesia_de_Santa_Catalina_Valencia_02.jpg"
 title = "File:Arcosolio en la Iglesia de Santa Catalina, Valencia 02.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Arcosolio_en_la_Iglesia_de_Santa_Catalina%2C_Valencia_02.jpg"
 author = "Dorieo"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 1920
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/15_Esglesia_de_Santa_Caterina_de_Valencia_fornicula_amb_el_bust.jpg"
+title = "File:Església de Santa Caterina de València fornícula amb el bust de la titular sobre l'entrada.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_de_Santa_Caterina_de_Val%C3%A8ncia_forn%C3%ADcula_amb_el_bust_de_la_titular_sobre_l%27entrada.JPG"
+author = "Joanbanjo"
+license = "Public domain"
+width = 1280
+height = 960
 exterior = true
 selected = false
 side = ""

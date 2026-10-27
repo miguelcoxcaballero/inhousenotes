@@ -70,19 +70,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Gratacels_de_l_avinguda_corts_valencianes_1.jpg"
-title = "File:Gratacels de l'avinguda corts valencianes 1.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Gratacels_de_l%27avinguda_corts_valencianes_1.JPG"
-author = "B25es"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/06_Valencia_Hotel_Melia_Valencia_Torre_Hilton_06.jpg"
+file = "photos/05_Valencia_Hotel_Melia_Valencia_Torre_Hilton_06.jpg"
 title = "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 06.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Hotel_Meli%C3%A1_Valencia_%28Torre_Hilton%29_06.jpg"
 author = "Zarateman"
@@ -94,19 +82,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Gratacels_de_l_avinguda_corts_valencianes_2.jpg"
-title = "File:Gratacels de l'avinguda corts valencianes 2.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Gratacels_de_l%27avinguda_corts_valencianes_2.JPG"
-author = "B25es"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Valencia_Hotel_Melia_Valencia_Torre_Hilton_07.jpg"
+file = "photos/06_Valencia_Hotel_Melia_Valencia_Torre_Hilton_07.jpg"
 title = "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 07.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Hotel_Meli%C3%A1_Valencia_%28Torre_Hilton%29_07.jpg"
 author = "Zarateman"
@@ -118,7 +94,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_Hilton_Melia_Valencia.jpg"
+file = "photos/07_Hilton_Melia_Valencia.jpg"
 title = "File:Hilton Melia Valencia.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Hilton_Melia_Valencia.jpg"
 author = "Javi Vte Rejas"
@@ -130,7 +106,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/10_Valencia_Hotel_Melia_Valencia_Torre_Hilton_10.jpg"
+file = "photos/08_Valencia_Hotel_Melia_Valencia_Torre_Hilton_10.jpg"
 title = "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 10.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Hotel_Meli%C3%A1_Valencia_%28Torre_Hilton%29_10.jpg"
 author = "Zarateman"
@@ -142,7 +118,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/11_Valencia_Hotel_Melia_Valencia_Torre_Hilton_09.jpg"
+file = "photos/09_Valencia_Hotel_Melia_Valencia_Torre_Hilton_09.jpg"
 title = "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 09.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Hotel_Meli%C3%A1_Valencia_%28Torre_Hilton%29_09.jpg"
 author = "Zarateman"
@@ -154,7 +130,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_Valencia_Hotel_Melia_Valencia_Torre_Hilton_11.jpg"
+file = "photos/10_Valencia_Hotel_Melia_Valencia_Torre_Hilton_11.jpg"
 title = "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 11.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Hotel_Meli%C3%A1_Valencia_%28Torre_Hilton%29_11.jpg"
 author = "Zarateman"
@@ -166,7 +142,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Valencia_Hotel_Melia_Valencia_Torre_Hilton_12.jpg"
+file = "photos/11_Valencia_Hotel_Melia_Valencia_Torre_Hilton_12.jpg"
 title = "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 12.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Hotel_Meli%C3%A1_Valencia_%28Torre_Hilton%29_12.jpg"
 author = "Zarateman"
@@ -178,7 +154,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_Valencia_Hotel_Melia_Valencia_Torre_Hilton_05.jpg"
+file = "photos/12_Valencia_Hotel_Melia_Valencia_Torre_Hilton_05.jpg"
 title = "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 05.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Hotel_Meli%C3%A1_Valencia_%28Torre_Hilton%29_05.jpg"
 author = "Zarateman"
@@ -190,7 +166,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Valencia_Hotel_Melia_Valencia_Torre_Hilton_03.jpg"
+file = "photos/13_Valencia_Hotel_Melia_Valencia_Torre_Hilton_03.jpg"
 title = "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 03.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Hotel_Meli%C3%A1_Valencia_%28Torre_Hilton%29_03.jpg"
 author = "Zarateman"
@@ -202,13 +178,37 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Valencia_Hotel_Melia_Valencia_Torre_Hilton_08.jpg"
+file = "photos/14_Valencia_Hotel_Melia_Valencia_Torre_Hilton_08.jpg"
 title = "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 08.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Hotel_Meli%C3%A1_Valencia_%28Torre_Hilton%29_08.jpg"
 author = "Zarateman"
 license = "CC0"
 width = 1280
 height = 1849
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/15_Valencia_Hotel_Melia_Valencia_Torre_Hilton_04.jpg"
+title = "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 04.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Hotel_Meli%C3%A1_Valencia_%28Torre_Hilton%29_04.jpg"
+author = "Zarateman"
+license = "CC0"
+width = 1280
+height = 772
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/16_Valencia_Hotel_Melia_Valencia_Torre_Hilton_01.jpg"
+title = "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Hotel_Meli%C3%A1_Valencia_%28Torre_Hilton%29_01.jpg"
+author = "Zarateman"
+license = "CC0"
+width = 960
+height = 1641
 exterior = true
 selected = false
 side = ""
