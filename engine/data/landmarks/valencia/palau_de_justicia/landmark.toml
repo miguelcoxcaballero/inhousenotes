@@ -1,0 +1,2178 @@
+# Palau de Justícia de València (Palacio de Justicia), antigua Real Aduana / Casa de la Duana.
+# Built 1758-1802 for Charles III by Antoni Gilabert and Felip Rubio, finished by Tomàs Miner;
+# sculpture by Ignasi Vergara; tobacco factory 1828-1914, courts since 1914-1922 (ca/es.wikipedia).
+#
+# Written by a generator (scratchpad pdj/gen.py); every number below comes from data:
+# PLAN: OSM relation 18681032, a 63.8 x 47.6 m rectangle turned 21.8 deg (two light wells as
+#   inner rings); the IGN PNOA orthophoto (WMS pnoa-ma, CC BY 4.0) overlaid on it matches the
+#   roof outline within ~0.3 m. Main facade = NE edge (Carrer del Palau de Justícia, faces az
+#   21.8) with the frontispiece; NW = Plaça d'Alfons el Magnànim, SE = Plaça de la Porta de la
+#   Mar, SW = Carrer de Cerdà de Tallada.
+# BAYS: PNOA shows a dormer ridge over every window axis: 6.45 m apart on all four sides; long
+#   sides 9 axes (NE: pavilion + 3 + frontispiece + 3 + pavilion, centre gap 14.8 m; SW: 7 brick
+#   bays), short sides 7 axes (pavilion + 5 + pavilion). Corner pavilions in stone with
+#   rusticated quoins: 8.2 m (NE), 9.2 m (SW), 7.7 m (NW/SE) along each facade. Photo 06 gives
+#   centre-to-first-axis / bay = 1.22 (PNOA 7.5 / 6.45 = 1.16).
+# HEIGHTS: joint camera solve of photos 01, 07, 10 (EXIF focal lengths, eye height 1.6 m prior,
+#   footprint corners fixed, RMS 1.0 px): cornice top 21.0 +-0.4 m, corner finial tips 26.4,
+#   statue base 27.1, statue top 30.5 m. Storeys measured on the NE corner pavilion with the
+#   solved camera of photo 07: grilled ground windows 1.2-3.4, doors 3.9 m (checked against a
+#   1.68 m passer-by on the Catastro photo: 3.9 m), mezzanine 4.8-7.7, piano nobile 9.2-12.7
+#   (pediments to 14.3), second floor 15.1-17.9, architrave 18.4, cornice 19.9-21.0,
+#   balustrade to 22.8, pedestals 23.2, dormers 21.7-24.4, pediment apex 23.7 m.
+
+[landmark]
+name = "Palau de Justícia de València"
+slug = "palau_de_justicia"
+main_facade = "facing:n"
+notes = "Former Royal Customs House (1758-1802): brick walls between stone pilasters, stone corner pavilions, balustrade with flame finials and dormer niches, frontispiece crowned by Charles III between Prudence and Justice."
+
+[landmark.info]
+architect = "Antoni Gilabert, Felip Rubio; finished by Tomàs Miner (1802); sculpture Ignasi Vergara"
+built = "1758-1802; reformed 1910-1922 (Vicent Rodríguez)"
+style = "Neoclassical (academic) with Baroque cornice"
+heritage = "Bien de Interés Cultural RI-51-0004574"
+
+[defaults]
+material = "stone"
+roof_material = "roof_tiles"
+glass_material = "glass"
+door_material = "door"
+iron_material = "iron"
+
+[render]
+sun = [120, 42]
+paving = 70
+
+[reference_heights]
+"outline:0" = { height = 21.0, tolerance = 4.0, source = "cornice top 21.0 m, joint camera solve of photos 01/07/10; roof ridge ~23.5" }
+cornice = { height = 21.0, tolerance = 0.6, source = "camera solve photos 01/07/10" }
+charles_iii = { height = 30.5, tolerance = 0.8, source = "camera solve photos 01/07/10" }
+
+# ------------------------------------------------------------ materials (tints from photos 01/03/06)
+[material.stone]
+kind = "limestone"
+tint = "#fff1d8"
+weathering = 0.1
+uv_scale = 4.0
+
+[material.stone_fine]
+kind = "limestone"
+tint = "#e8ddc8"
+weathering = 0.35
+
+[material.rustic]
+kind = "ashlar"
+tint = "#fbeed6"
+block = [1.3, 0.55]
+weathering = 0.3
+
+[material.brick]
+kind = "brick"
+tint = "#ffffff"
+weathering = 0.1
+
+[material.brick_wash]
+kind = "plaster"
+tint = "#f7cfc4"
+weathering = 0.2
+
+[material.roof_tiles]
+kind = "roof_tiles"
+tint = "#c59a80"
+weathering = 0.4
+
+[material.dark_marble]
+kind = "marble"
+tint = "#5a5650"
+
+[material.door]
+kind = "wood"
+tint = "#6b4a30"
+
+# ------------------------------------------------------------ body (brick between stone pilasters)
+[[element]]
+type = "mass"
+name = "body"
+material = "brick_wash"
+polygon = "outline:0"
+y0 = 0
+height = 21.0
+plinth = { profile = "plinth", size = 1.0, material = "rustic" }
+note = "OSM relation 18681032 = PNOA roof outline (63.8 x 47.6 m); light wells = OSM inner rings"
+  [[element.openings]]
+  edges = ["facing:n", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.4
+  height = 2.2
+  levels = [1.2]
+  bays = { offsets = [-20.3, -7.5, 7.5, 20.3] }
+  infill = "grille"
+  depth = 0.35
+  surround = { width = 0.22, projection = 0.06 }
+  sill = true
+  material = "stone"
+  [[element.openings]]
+  edges = ["facing:n", "not:inner"]
+  kind = "door"
+  arch = "flat"
+  width = 1.7
+  height = 3.9
+  bays = { offsets = [-13.9, 13.9] }
+  infill = "door"
+  depth = 0.4
+  surround = { width = 0.3, projection = 0.1 }
+  material = "stone"
+  [[element.openings]]
+  edges = ["facing:n", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.3
+  height = 2.9
+  levels = [4.8]
+  bays = { offsets = [-20.3, -13.9, -7.5, 7.5, 13.9, 20.3] }
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.45, railing = "iron" }
+  material = "stone"
+  [[element.openings]]
+  edges = ["facing:n", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.6
+  height = 3.1
+  levels = [9.3]
+  bays = { offsets = [-20.3, -7.5, 7.5, 20.3] }
+  infill = "glass"
+  frame = 0.08
+  mullions = 1
+  transoms = 1
+  depth = 0.35
+  surround = { width = 0.24, projection = 0.08, ears = true, pediment = "triangle" }
+  balcony = { depth = 0.75, railing = "iron" }
+  material = "stone"
+  [[element.openings]]
+  edges = ["facing:n", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.6
+  height = 3.1
+  levels = [9.3]
+  bays = { offsets = [-13.9, 13.9] }
+  infill = "glass"
+  frame = 0.08
+  mullions = 1
+  transoms = 1
+  depth = 0.35
+  surround = { width = 0.24, projection = 0.08, ears = true, pediment = "segmental" }
+  balcony = { depth = 0.75, railing = "iron" }
+  material = "stone"
+  [[element.openings]]
+  edges = ["facing:n", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.35
+  height = 2.2
+  levels = [15.4]
+  bays = { offsets = [-20.3, -13.9, -7.5, 7.5, 13.9, 20.3] }
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.5, railing = "iron" }
+  material = "stone"
+  [[element.openings]]
+  edges = ["facing:w", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.4
+  height = 2.2
+  levels = [1.2]
+  bays = { offsets = [-12.9, -6.45, 0, 6.45, 12.9] }
+  infill = "grille"
+  depth = 0.35
+  surround = { width = 0.22, projection = 0.06 }
+  sill = true
+  material = "stone"
+  [[element.openings]]
+  edges = ["facing:w", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.3
+  height = 2.9
+  levels = [4.8]
+  bays = { offsets = [-12.9, -6.45, 0, 6.45, 12.9] }
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.45, railing = "iron" }
+  material = "stone"
+  [[element.openings]]
+  edges = ["facing:w", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.6
+  height = 3.1
+  levels = [9.3]
+  bays = { offsets = [-12.9, 0, 12.9] }
+  infill = "glass"
+  frame = 0.08
+  mullions = 1
+  transoms = 1
+  depth = 0.35
+  surround = { width = 0.24, projection = 0.08, ears = true, pediment = "triangle" }
+  balcony = { depth = 0.75, railing = "iron" }
+  material = "stone"
+  [[element.openings]]
+  edges = ["facing:w", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.6
+  height = 3.1
+  levels = [9.3]
+  bays = { offsets = [-6.45, 6.45] }
+  infill = "glass"
+  frame = 0.08
+  mullions = 1
+  transoms = 1
+  depth = 0.35
+  surround = { width = 0.24, projection = 0.08, ears = true, pediment = "segmental" }
+  balcony = { depth = 0.75, railing = "iron" }
+  material = "stone"
+  [[element.openings]]
+  edges = ["facing:w", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.35
+  height = 2.2
+  levels = [15.4]
+  bays = { offsets = [-12.9, -6.45, 0, 6.45, 12.9] }
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.5, railing = "iron" }
+  material = "stone"
+  [[element.openings]]
+  edges = ["facing:e", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.4
+  height = 2.2
+  levels = [1.2]
+  bays = { offsets = [-12.9, -6.45, 0, 6.45, 12.9] }
+  infill = "grille"
+  depth = 0.35
+  surround = { width = 0.22, projection = 0.06 }
+  sill = true
+  material = "stone"
+  [[element.openings]]
+  edges = ["facing:e", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.3
+  height = 2.9
+  levels = [4.8]
+  bays = { offsets = [-12.9, -6.45, 0, 6.45, 12.9] }
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.45, railing = "iron" }
+  material = "stone"
+  [[element.openings]]
+  edges = ["facing:e", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.6
+  height = 3.1
+  levels = [9.3]
+  bays = { offsets = [-12.9, 0, 12.9] }
+  infill = "glass"
+  frame = 0.08
+  mullions = 1
+  transoms = 1
+  depth = 0.35
+  surround = { width = 0.24, projection = 0.08, ears = true, pediment = "triangle" }
+  balcony = { depth = 0.75, railing = "iron" }
+  material = "stone"
+  [[element.openings]]
+  edges = ["facing:e", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.6
+  height = 3.1
+  levels = [9.3]
+  bays = { offsets = [-6.45, 6.45] }
+  infill = "glass"
+  frame = 0.08
+  mullions = 1
+  transoms = 1
+  depth = 0.35
+  surround = { width = 0.24, projection = 0.08, ears = true, pediment = "segmental" }
+  balcony = { depth = 0.75, railing = "iron" }
+  material = "stone"
+  [[element.openings]]
+  edges = ["facing:e", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.35
+  height = 2.2
+  levels = [15.4]
+  bays = { offsets = [-12.9, -6.45, 0, 6.45, 12.9] }
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.5, railing = "iron" }
+  material = "stone"
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.4
+  height = 2.2
+  levels = [1.2]
+  bays = { offsets = [-19.35, -12.9, -6.45, 0, 6.45, 12.9, 19.35] }
+  infill = "grille"
+  depth = 0.35
+  surround = { width = 0.22, projection = 0.06 }
+  sill = true
+  material = "stone"
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.3
+  height = 2.9
+  levels = [4.8]
+  bays = { offsets = [-19.35, -12.9, -6.45, 0, 6.45, 12.9, 19.35] }
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.45, railing = "iron" }
+  material = "stone"
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.6
+  height = 3.1
+  levels = [9.3]
+  bays = { offsets = [-19.35, -6.45, 6.45, 19.35] }
+  infill = "glass"
+  frame = 0.08
+  mullions = 1
+  transoms = 1
+  depth = 0.35
+  surround = { width = 0.24, projection = 0.08, ears = true, pediment = "triangle" }
+  balcony = { depth = 0.75, railing = "iron" }
+  material = "stone"
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.6
+  height = 3.1
+  levels = [9.3]
+  bays = { offsets = [-12.9, 0, 12.9] }
+  infill = "glass"
+  frame = 0.08
+  mullions = 1
+  transoms = 1
+  depth = 0.35
+  surround = { width = 0.24, projection = 0.08, ears = true, pediment = "segmental" }
+  balcony = { depth = 0.75, railing = "iron" }
+  material = "stone"
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.35
+  height = 2.2
+  levels = [15.4]
+  bays = { offsets = [-19.35, -12.9, -6.45, 0, 6.45, 12.9, 19.35] }
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.5, railing = "iron" }
+  material = "stone"
+
+# ------------------------------------------------------------ stone corner pavilions (rusticated quoins)
+[[element]]
+type = "mass"
+name = "pavilion_A"
+material = "stone"
+polygon = [[-20.892, -34.167], [-13.445, -31.192], [-16.404, -23.845], [-23.852, -26.82]]
+y0 = 0
+height = 18.4
+plinth = { profile = "plinth", size = 1.0, material = "rustic" }
+  [[element.openings]]
+  edges = ["facing:n", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.4
+  height = 2.2
+  levels = [1.2]
+  bays = 1
+  infill = "grille"
+  depth = 0.35
+  surround = { width = 0.22, projection = 0.06 }
+  sill = true
+  [[element.openings]]
+  edges = ["facing:n", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.3
+  height = 2.9
+  levels = [4.8]
+  bays = 1
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.45, railing = "iron" }
+  [[element.openings]]
+  edges = ["facing:n", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.6
+  height = 3.1
+  levels = [9.3]
+  bays = 1
+  infill = "glass"
+  frame = 0.08
+  mullions = 1
+  transoms = 1
+  depth = 0.35
+  surround = { width = 0.24, projection = 0.08, ears = true, pediment = "segmental" }
+  balcony = { depth = 0.75, railing = "iron" }
+  [[element.openings]]
+  edges = ["facing:n", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.35
+  height = 2.2
+  levels = [15.4]
+  bays = 1
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.5, railing = "iron" }
+  [[element.openings]]
+  edges = ["facing:w", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.4
+  height = 2.2
+  levels = [1.2]
+  bays = 1
+  infill = "grille"
+  depth = 0.35
+  surround = { width = 0.22, projection = 0.06 }
+  sill = true
+  [[element.openings]]
+  edges = ["facing:w", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.3
+  height = 2.9
+  levels = [4.8]
+  bays = 1
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.45, railing = "iron" }
+  [[element.openings]]
+  edges = ["facing:w", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.6
+  height = 3.1
+  levels = [9.3]
+  bays = 1
+  infill = "glass"
+  frame = 0.08
+  mullions = 1
+  transoms = 1
+  depth = 0.35
+  surround = { width = 0.24, projection = 0.08, ears = true, pediment = "segmental" }
+  balcony = { depth = 0.75, railing = "iron" }
+  [[element.openings]]
+  edges = ["facing:w", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.35
+  height = 2.2
+  levels = [15.4]
+  bays = 1
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.5, railing = "iron" }
+
+[[element]]
+type = "pilaster"
+material = "rustic"
+at = [-13.445, 1, -31.191]
+facing = 21.8
+height = 17.4
+width = 1.1
+depth = 0.16
+order = "plain"
+
+[[element]]
+type = "pilaster"
+material = "rustic"
+at = [-20.085, 1, -33.843]
+facing = 21.8
+height = 17.4
+width = 1.3
+depth = 0.16
+order = "plain"
+
+[[element]]
+type = "pilaster"
+material = "rustic"
+at = [-23.852, 1, -26.82]
+facing = 292.0
+height = 17.4
+width = 1.1
+depth = 0.16
+order = "plain"
+
+[[element]]
+type = "pilaster"
+material = "rustic"
+at = [-21.217, 1, -33.359]
+facing = 292.0
+height = 17.4
+width = 1.3
+depth = 0.16
+order = "plain"
+
+[[element]]
+type = "mass"
+name = "pavilion_B"
+material = "stone"
+polygon = [[-38.856, 10.422], [-35.896, 3.076], [-27.147, 6.568], [-30.107, 13.914]]
+y0 = 0
+height = 18.4
+plinth = { profile = "plinth", size = 1.0, material = "rustic" }
+  [[element.openings]]
+  edges = ["facing:w", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.4
+  height = 2.2
+  levels = [1.2]
+  bays = 1
+  infill = "grille"
+  depth = 0.35
+  surround = { width = 0.22, projection = 0.06 }
+  sill = true
+  [[element.openings]]
+  edges = ["facing:w", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.3
+  height = 2.9
+  levels = [4.8]
+  bays = 1
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.45, railing = "iron" }
+  [[element.openings]]
+  edges = ["facing:w", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.6
+  height = 3.1
+  levels = [9.3]
+  bays = 1
+  infill = "glass"
+  frame = 0.08
+  mullions = 1
+  transoms = 1
+  depth = 0.35
+  surround = { width = 0.24, projection = 0.08, ears = true, pediment = "segmental" }
+  balcony = { depth = 0.75, railing = "iron" }
+  [[element.openings]]
+  edges = ["facing:w", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.35
+  height = 2.2
+  levels = [15.4]
+  bays = 1
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.5, railing = "iron" }
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.4
+  height = 2.2
+  levels = [1.2]
+  bays = 1
+  infill = "grille"
+  depth = 0.35
+  surround = { width = 0.22, projection = 0.06 }
+  sill = true
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.3
+  height = 2.9
+  levels = [4.8]
+  bays = 1
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.45, railing = "iron" }
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.6
+  height = 3.1
+  levels = [9.3]
+  bays = 1
+  infill = "glass"
+  frame = 0.08
+  mullions = 1
+  transoms = 1
+  depth = 0.35
+  surround = { width = 0.24, projection = 0.08, ears = true, pediment = "segmental" }
+  balcony = { depth = 0.75, railing = "iron" }
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.35
+  height = 2.2
+  levels = [15.4]
+  bays = 1
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.5, railing = "iron" }
+
+[[element]]
+type = "pilaster"
+material = "rustic"
+at = [-35.897, 1, 3.076]
+facing = 292.0
+height = 17.4
+width = 1.1
+depth = 0.16
+order = "plain"
+
+[[element]]
+type = "pilaster"
+material = "rustic"
+at = [-38.531, 1, 9.615]
+facing = 292.0
+height = 17.4
+width = 1.3
+depth = 0.16
+order = "plain"
+
+[[element]]
+type = "pilaster"
+material = "rustic"
+at = [-30.107, 1, 13.915]
+facing = 201.8
+height = 17.4
+width = 1.1
+depth = 0.16
+order = "plain"
+
+[[element]]
+type = "pilaster"
+material = "rustic"
+at = [-38.048, 1, 10.745]
+facing = 201.8
+height = 17.4
+width = 1.3
+depth = 0.16
+order = "plain"
+
+[[element]]
+type = "mass"
+name = "pavilion_C"
+material = "stone"
+polygon = [[20.823, 34.247], [12.074, 30.754], [15.033, 23.408], [23.781, 26.9]]
+y0 = 0
+height = 18.4
+plinth = { profile = "plinth", size = 1.0, material = "rustic" }
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.4
+  height = 2.2
+  levels = [1.2]
+  bays = 1
+  infill = "grille"
+  depth = 0.35
+  surround = { width = 0.22, projection = 0.06 }
+  sill = true
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.3
+  height = 2.9
+  levels = [4.8]
+  bays = 1
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.45, railing = "iron" }
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.6
+  height = 3.1
+  levels = [9.3]
+  bays = 1
+  infill = "glass"
+  frame = 0.08
+  mullions = 1
+  transoms = 1
+  depth = 0.35
+  surround = { width = 0.24, projection = 0.08, ears = true, pediment = "segmental" }
+  balcony = { depth = 0.75, railing = "iron" }
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.35
+  height = 2.2
+  levels = [15.4]
+  bays = 1
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.5, railing = "iron" }
+  [[element.openings]]
+  edges = ["facing:e", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.4
+  height = 2.2
+  levels = [1.2]
+  bays = 1
+  infill = "grille"
+  depth = 0.35
+  surround = { width = 0.22, projection = 0.06 }
+  sill = true
+  [[element.openings]]
+  edges = ["facing:e", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.3
+  height = 2.9
+  levels = [4.8]
+  bays = 1
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.45, railing = "iron" }
+  [[element.openings]]
+  edges = ["facing:e", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.6
+  height = 3.1
+  levels = [9.3]
+  bays = 1
+  infill = "glass"
+  frame = 0.08
+  mullions = 1
+  transoms = 1
+  depth = 0.35
+  surround = { width = 0.24, projection = 0.08, ears = true, pediment = "segmental" }
+  balcony = { depth = 0.75, railing = "iron" }
+  [[element.openings]]
+  edges = ["facing:e", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.35
+  height = 2.2
+  levels = [15.4]
+  bays = 1
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.5, railing = "iron" }
+
+[[element]]
+type = "pilaster"
+material = "rustic"
+at = [12.074, 1, 30.753]
+facing = 201.8
+height = 17.4
+width = 1.1
+depth = 0.16
+order = "plain"
+
+[[element]]
+type = "pilaster"
+material = "rustic"
+at = [20.015, 1, 33.923]
+facing = 201.8
+height = 17.4
+width = 1.3
+depth = 0.16
+order = "plain"
+
+[[element]]
+type = "pilaster"
+material = "rustic"
+at = [23.781, 1, 26.9]
+facing = 112.0
+height = 17.4
+width = 1.1
+depth = 0.16
+order = "plain"
+
+[[element]]
+type = "pilaster"
+material = "rustic"
+at = [21.147, 1, 33.439]
+facing = 112.0
+height = 17.4
+width = 1.3
+depth = 0.16
+order = "plain"
+
+[[element]]
+type = "mass"
+name = "pavilion_D"
+material = "stone"
+polygon = [[38.776, -10.332], [35.817, -2.986], [28.369, -5.96], [31.328, -13.307]]
+y0 = 0
+height = 18.4
+plinth = { profile = "plinth", size = 1.0, material = "rustic" }
+  [[element.openings]]
+  edges = ["facing:e", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.4
+  height = 2.2
+  levels = [1.2]
+  bays = 1
+  infill = "grille"
+  depth = 0.35
+  surround = { width = 0.22, projection = 0.06 }
+  sill = true
+  [[element.openings]]
+  edges = ["facing:e", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.3
+  height = 2.9
+  levels = [4.8]
+  bays = 1
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.45, railing = "iron" }
+  [[element.openings]]
+  edges = ["facing:e", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.6
+  height = 3.1
+  levels = [9.3]
+  bays = 1
+  infill = "glass"
+  frame = 0.08
+  mullions = 1
+  transoms = 1
+  depth = 0.35
+  surround = { width = 0.24, projection = 0.08, ears = true, pediment = "segmental" }
+  balcony = { depth = 0.75, railing = "iron" }
+  [[element.openings]]
+  edges = ["facing:e", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.35
+  height = 2.2
+  levels = [15.4]
+  bays = 1
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.5, railing = "iron" }
+  [[element.openings]]
+  edges = ["facing:n", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.4
+  height = 2.2
+  levels = [1.2]
+  bays = 1
+  infill = "grille"
+  depth = 0.35
+  surround = { width = 0.22, projection = 0.06 }
+  sill = true
+  [[element.openings]]
+  edges = ["facing:n", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.3
+  height = 2.9
+  levels = [4.8]
+  bays = 1
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.45, railing = "iron" }
+  [[element.openings]]
+  edges = ["facing:n", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.6
+  height = 3.1
+  levels = [9.3]
+  bays = 1
+  infill = "glass"
+  frame = 0.08
+  mullions = 1
+  transoms = 1
+  depth = 0.35
+  surround = { width = 0.24, projection = 0.08, ears = true, pediment = "segmental" }
+  balcony = { depth = 0.75, railing = "iron" }
+  [[element.openings]]
+  edges = ["facing:n", "not:inner"]
+  kind = "window"
+  arch = "flat"
+  width = 1.35
+  height = 2.2
+  levels = [15.4]
+  bays = 1
+  infill = "shutters"
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.06, ears = true }
+  balcony = { depth = 0.5, railing = "iron" }
+
+[[element]]
+type = "pilaster"
+material = "rustic"
+at = [35.817, 1, -2.985]
+facing = 112.0
+height = 17.4
+width = 1.1
+depth = 0.16
+order = "plain"
+
+[[element]]
+type = "pilaster"
+material = "rustic"
+at = [38.451, 1, -9.525]
+facing = 112.0
+height = 17.4
+width = 1.3
+depth = 0.16
+order = "plain"
+
+[[element]]
+type = "pilaster"
+material = "rustic"
+at = [31.328, 1, -13.308]
+facing = 21.8
+height = 17.4
+width = 1.1
+depth = 0.16
+order = "plain"
+
+[[element]]
+type = "pilaster"
+material = "rustic"
+at = [37.968, 1, -10.655]
+facing = 21.8
+height = 17.4
+width = 1.3
+depth = 0.16
+order = "plain"
+
+# ------------------------------------------------------------ stone pilasters between the brick bays
+[[element]]
+type = "array"
+name = "pilasters_nw"
+mode = "points"
+points = [[-26.054, 1, -20.764], [-28.465, 1, -14.781], [-30.875, 1, -8.799], [-33.286, 1, -2.816]]
+facings = [292.0, 292.0, 292.0, 292.0]
+  [[element.children]]
+  type = "pilaster"
+  material = "stone"
+  at = [0, 0, 0]
+  facing = "s"
+  height = 17.4
+  width = 1.25
+  depth = 0.22
+  order = "tuscan"
+
+[[element]]
+type = "array"
+name = "pilasters_sw"
+mode = "points"
+points = [[-23.911, 1, 16.152], [-17.921, 1, 18.543], [-11.93, 1, 20.934], [-5.94, 1, 23.326], [0.051, 1, 25.717], [6.041, 1, 28.108]]
+facings = [201.8, 201.8, 201.8, 201.8, 201.8, 201.8]
+  [[element.children]]
+  type = "pilaster"
+  material = "stone"
+  at = [0, 0, 0]
+  facing = "s"
+  height = 17.4
+  width = 1.25
+  depth = 0.22
+  order = "tuscan"
+
+[[element]]
+type = "array"
+name = "pilasters_se"
+mode = "points"
+points = [[25.98, 1, 20.849], [28.39, 1, 14.866], [30.8, 1, 8.884], [33.21, 1, 2.901]]
+facings = [112.0, 112.0, 112.0, 112.0]
+  [[element.children]]
+  type = "pilaster"
+  material = "stone"
+  at = [0, 0, 0]
+  facing = "s"
+  height = 17.4
+  width = 1.25
+  depth = 0.22
+  order = "tuscan"
+
+[[element]]
+type = "array"
+name = "pilasters_ne"
+mode = "points"
+points = [[24.74, 1, -15.702], [18.797, 1, -18.076], [12.83, 1, -20.459], [4.89, 1, -23.631], [-1.077, 1, -26.014], [-7.02, 1, -28.388]]
+facings = [21.8, 21.8, 21.8, 21.8, 21.8, 21.8]
+  [[element.children]]
+  type = "pilaster"
+  material = "stone"
+  at = [0, 0, 0]
+  facing = "s"
+  height = 17.4
+  width = 1.25
+  depth = 0.22
+  order = "tuscan"
+
+# ------------------------------------------------------------ entablature, cornice and balustrade
+[[element]]
+type = "mass"
+name = "entablature"
+material = "stone"
+polygon = { ref = "outline:0", keep_holes = false, offset = 0.24 }
+y0 = 18.4
+y1 = 19.9
+top = false
+string_courses = [18.95]
+
+[[element]]
+type = "cornice"
+name = "cornice"
+material = "stone"
+polygon = { ref = "outline:0", keep_holes = false, offset = 0.24 }
+y = 19.9
+size = 1.1000000000000014
+projection = 0.85
+profile = "classical"
+dentils = true
+modillions = { spacing = 0.75, width = 0.16, height = 0.28, style = "block" }
+
+[[element]]
+type = "balustrade"
+name = "balustrade"
+material = "stone"
+polygon = { ref = "outline:0", keep_holes = false, offset = 0.1 }
+y = 21.0
+height = 1.8
+finials = "none"
+spacing = 0.42
+
+# pedestals with flame finials over the pilasters and corners (photos 01/04/10)
+[[element]]
+type = "array"
+name = "pedestals"
+mode = "points"
+points = [[-26.054, 21, -20.764], [-28.465, 21, -14.781], [-30.875, 21, -8.799], [-33.286, 21, -2.816], [-23.648, 21, -26.738], [-35.692, 21, 3.158], [-23.911, 21, 16.152], [-17.921, 21, 18.543], [-11.93, 21, 20.934], [-5.94, 21, 23.326], [0.051, 21, 25.717], [6.041, 21, 28.108], [-30.026, 21, 13.711], [12.156, 21, 30.549], [25.98, 21, 20.849], [28.39, 21, 14.866], [30.8, 21, 8.884], [33.21, 21, 2.901], [23.577, 21, 26.818], [35.613, 21, -3.068], [24.74, 21, -15.702], [18.797, 21, -18.076], [-1.077, 21, -26.014], [-7.02, 21, -28.388], [31.246, 21, -13.103], [-13.526, 21, -30.987], [14.246, 21, -19.894], [3.474, 21, -24.196], [-20.77, 21, -33.88], [-38.57, 21, 10.3], [20.7, 21, 33.96], [38.49, 21, -10.21]]
+  [[element.children]]
+  type = "box"
+  material = "stone"
+  min = [-0.4, 0, -0.4]
+  max = [0.4, 2.0499999999999994, 0.4]
+  [[element.children]]
+  type = "box"
+  material = "stone"
+  min = [-0.5, 2.0499999999999994, -0.5]
+  max = [0.5, 2.1999999999999993, 0.5]
+  [[element.children]]
+  type = "lathe"
+  material = "stone"
+  at = [0, 2.1999999999999993, 0]
+  segments = 12
+  profile = [[0.0, 0], [0.32, 0], [0.32, 0.12], [0.16, 0.3], [0.14, 0.7], [0.36, 1.05], [0.38, 1.25], [0.2, 1.45], [0.12, 1.55], [0.2, 1.75], [0.24, 2.05], [0.17, 2.5], [0.08, 2.9], [0.0, 3.1999999999999993]]
+
+# ------------------------------------------------------------ dormers: stone aedicules with arched niches on every axis;
+# their roofs run back 7 m to the ridge (perpendicular ridges on the PNOA orthophoto)
+[[element]]
+type = "mass"
+name = "dormer_nw0"
+material = "stone"
+polygon = [[-21.585, -30.92], [-22.183, -29.436], [-16.015, -26.951], [-15.417, -28.435]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:w", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_nw1"
+material = "stone"
+polygon = [[-24.226, -24.367], [-24.824, -22.883], [-18.655, -20.397], [-18.057, -21.881]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:w", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_nw2"
+material = "stone"
+polygon = [[-26.636, -18.384], [-27.234, -16.9], [-21.066, -14.415], [-20.468, -15.899]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:w", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_nw3"
+material = "stone"
+polygon = [[-29.046, -12.401], [-29.644, -10.917], [-23.476, -8.432], [-22.878, -9.916]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:w", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_nw4"
+material = "stone"
+polygon = [[-31.457, -6.419], [-32.055, -4.934], [-25.887, -2.449], [-25.289, -3.933]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:w", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_nw5"
+material = "stone"
+polygon = [[-33.867, -0.436], [-34.465, 1.048], [-28.297, 3.533], [-27.699, 2.049]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:w", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_nw6"
+material = "stone"
+polygon = [[-36.508, 6.118], [-37.106, 7.602], [-30.937, 10.087], [-30.339, 8.603]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:w", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_sw7"
+material = "stone"
+polygon = [[-34.911, 11.384], [-33.425, 11.977], [-30.96, 5.801], [-32.446, 5.208]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_sw8"
+material = "stone"
+polygon = [[-27.519, 14.334], [-26.033, 14.928], [-23.568, 8.752], [-25.054, 8.158]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_sw9"
+material = "stone"
+polygon = [[-21.529, 16.726], [-20.043, 17.319], [-17.578, 11.143], [-19.063, 10.55]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_sw10"
+material = "stone"
+polygon = [[-15.539, 19.117], [-14.053, 19.71], [-11.587, 13.534], [-13.073, 12.941]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_sw11"
+material = "stone"
+polygon = [[-9.548, 21.508], [-8.062, 22.102], [-5.597, 15.925], [-7.083, 15.332]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_sw12"
+material = "stone"
+polygon = [[-3.558, 23.9], [-2.072, 24.493], [0.394, 18.317], [-1.092, 17.724]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_sw13"
+material = "stone"
+polygon = [[2.432, 26.291], [3.918, 26.884], [6.384, 20.708], [4.898, 20.115]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_sw14"
+material = "stone"
+polygon = [[8.423, 28.682], [9.909, 29.275], [12.374, 23.099], [10.888, 22.506]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_sw15"
+material = "stone"
+polygon = [[15.815, 31.633], [17.301, 32.226], [19.766, 26.05], [18.28, 25.457]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_se16"
+material = "stone"
+polygon = [[21.515, 31], [22.113, 29.516], [15.944, 27.032], [15.346, 28.516]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:e", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_se17"
+material = "stone"
+polygon = [[24.152, 24.452], [24.75, 22.968], [18.581, 20.484], [17.984, 21.968]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:e", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_se18"
+material = "stone"
+polygon = [[26.562, 18.469], [27.16, 16.985], [20.991, 14.501], [20.393, 15.985]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:e", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_se19"
+material = "stone"
+polygon = [[28.971, 12.486], [29.569, 11.002], [23.401, 8.518], [22.803, 10.002]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:e", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_se20"
+material = "stone"
+polygon = [[31.381, 6.503], [31.979, 5.019], [25.81, 2.535], [25.213, 4.019]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:e", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_se21"
+material = "stone"
+polygon = [[33.791, 0.52], [34.389, -0.964], [28.22, -3.448], [27.622, -1.964]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:e", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_se22"
+material = "stone"
+polygon = [[36.428, -6.027], [37.026, -7.512], [30.857, -9.996], [30.26, -8.512]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:e", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_ne23"
+material = "stone"
+polygon = [[35.481, -11.035], [33.995, -11.628], [31.529, -5.453], [33.015, -4.859]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:n", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_ne24"
+material = "stone"
+polygon = [[28.325, -13.893], [26.839, -14.487], [24.372, -8.311], [25.858, -7.718]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:n", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_ne25"
+material = "stone"
+polygon = [[22.381, -16.267], [20.896, -16.861], [18.429, -10.685], [19.915, -10.092]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:n", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_ne26"
+material = "stone"
+polygon = [[16.438, -18.641], [14.952, -19.235], [12.486, -13.059], [13.971, -12.466]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:n", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_ne27"
+material = "stone"
+polygon = [[2.508, -24.205], [1.022, -24.799], [-1.444, -18.623], [0.041, -18.03]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:n", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_ne28"
+material = "stone"
+polygon = [[-3.435, -26.579], [-4.921, -27.173], [-7.388, -20.997], [-5.902, -20.404]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:n", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_ne29"
+material = "stone"
+polygon = [[-9.379, -28.953], [-10.865, -29.547], [-13.331, -23.371], [-11.845, -22.778]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:n", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+[[element]]
+type = "mass"
+name = "dormer_ne30"
+material = "stone"
+polygon = [[-16.535, -31.812], [-18.021, -32.405], [-20.488, -26.229], [-19.002, -25.636]]
+y0 = 20.7
+y1 = 23.5
+run_angle = 0
+cornice = { profile = "cyma", size = 0.18 }
+roof = { shape = "barrel", ridge = "long", height = 0.9, overhang = 0.12, material = "stone" }
+  [[element.openings]]
+  edges = ["facing:n", "not:inner"]
+  kind = "window"
+  arch = "round"
+  width = 0.75
+  height = 1.45
+  levels = [21.75]
+  bays = 1
+  infill = "dark"
+  depth = 0.3
+  surround = { width = 0.14, projection = 0.05 }
+
+# ------------------------------------------------------------ tiled roofs: a ring of double-pitched wings (ridge 7.8 m in from the eaves, PNOA)
+[[element]]
+type = "roof"
+name = "roof"
+material = "roof_tiles"
+polygon = { ref = "outline:0", keep_holes = false, inset = 0.5, subtract = [{ ref = "outline:0", keep_holes = false, inset = 15.1 }] }
+y = 21.0
+shape = "hip"
+pitch = 18
+overhang = 0.0
+ridge_cap = true
+
+[[element]]
+type = "slab"
+name = "skylight"
+material = "glass"
+polygon = "catastro:0"
+y = 21.6
+thickness = 0.15
+note = "glazed roof over the central covered courtyard (Catastro part 1, PNOA)"
+
+# ------------------------------------------------------------ frontispiece (imafronte) on the main NE facade, Carrer del Palau de Justícia
+[[element]]
+type = "mass"
+name = "frontispiece"
+material = "stone"
+polygon = [[13.949, -20.497], [4.105, -24.429], [2.825, -21.225], [12.669, -17.293]]
+y0 = 0
+height = 21.0
+run_angle = 0
+plinth = { profile = "plinth", size = 1.0, material = "rustic" }
+  [[element.openings]]
+  edges = "facing:n"
+  kind = "portal"
+  arch = "round"
+  width = 3.3
+  height = 5.8
+  bays = 1
+  orders = 1
+  infill = "door"
+  tympanum = false
+  surround = { width = 0.4, projection = 0.12 }
+  keystone = 0.5
+  [[element.openings]]
+  edges = "facing:n"
+  kind = "window"
+  arch = "round"
+  width = 1.9
+  height = 3.9
+  levels = [9.3]
+  bays = 1
+  infill = "glass"
+  frame = 0.08
+  mullions = 1
+  depth = 0.4
+  surround = { width = 0.3, projection = 0.1 }
+  keystone = 0.35
+  balcony = { depth = 0.9, railing = "iron" }
+
+[[element]]
+type = "array"
+name = "front_pilasters"
+mode = "points"
+points = [[12.927, 1, -20.905], [11.813, 1, -21.35], [6.241, 1, -23.576], [5.127, 1, -24.021]]
+facings = [21.8, 21.8, 21.8, 21.8]
+  [[element.children]]
+  type = "pilaster"
+  material = "stone"
+  at = [0, 0, 0]
+  facing = "s"
+  height = 17.4
+  width = 1.15
+  depth = 0.28
+  order = "tuscan"
+
+[[element]]
+type = "relief"
+name = "arms"
+material = "stone_fine"
+at = [9.027, 13.6, -22.463]
+facing = 21.8
+size = [2.6, 3.6]
+shape = "cartouche"
+depth = 0.3
+frame = 0.25
+relief = "boss"
+note = "royal arms of Charles III under a crown (photos 02, 09)"
+
+[[element]]
+type = "relief"
+name = "plaque"
+material = "stone_fine"
+at = [9.027, 6.3, -22.463]
+facing = 21.8
+size = [1.6, 0.9]
+shape = "rect"
+depth = 0.06
+frame = 0.08
+field_material = "dark_marble"
+
+[[element]]
+type = "box"
+name = "front_balcony"
+material = "stone"
+size = [8.8, 0.25, 0.9]
+center = [9.194, 9.18, -22.881]
+transform = { rotate_y = 158.2, pivot = [9.194, 9.18, -22.881] }
+
+[[element]]
+type = "wall"
+name = "front_balcony_rail"
+material = "iron"
+path = [[13.382, -21.639], [5.303, -24.866]]
+y0 = 9.3
+height = 1.0
+thickness = 0.05
+  [[element.openings]]
+  kind = "window"
+  arch = "flat"
+  width = 0.5
+  height = 0.75
+  levels = [9.42]
+  bays = { spacing = 0.62 }
+  infill = "void"
+
+[[element]]
+type = "wall"
+name = "pediment"
+material = "stone"
+path = [[14.209, -20.609], [3.993, -24.689]]
+y0 = 20.7
+top_profile = [[0, 21], [0.55, 21.629], [1.1, 22.13], [1.65, 22.537], [2.2, 22.867], [2.75, 23.133], [3.3, 23.343], [3.85, 23.501], [4.4, 23.612], [4.95, 23.678], [5.5, 23.7], [6.05, 23.678], [6.6, 23.612], [7.15, 23.501], [7.7, 23.343], [8.25, 23.133], [8.8, 22.867], [9.35, 22.537], [9.9, 22.13], [10.45, 21.629], [11, 21]]
+thickness = 1.0
+note = "segmental pediment, apex 23.7 m (photos 01/07)"
+
+[[element]]
+type = "sweep"
+name = "pediment_cornice"
+material = "stone"
+profile = [[0, 0], [0.5, 0], [0.5, 0.18], [0.3, 0.3], [0, 0.35]]
+path = { points = [[14.413, 20.95, -21.119], [13.902, 21.579, -21.323], [13.391, 22.08, -21.527], [12.88, 22.487, -21.731], [12.37, 22.817, -21.935], [11.859, 23.083, -22.139], [11.348, 23.293, -22.343], [10.837, 23.451, -22.547], [10.327, 23.562, -22.751], [9.816, 23.628, -22.955], [9.305, 23.65, -23.159], [8.794, 23.628, -23.363], [8.284, 23.562, -23.567], [7.773, 23.451, -23.771], [7.262, 23.293, -23.975], [6.751, 23.083, -24.179], [6.241, 22.817, -24.383], [5.73, 22.487, -24.587], [5.219, 22.08, -24.791], [4.708, 21.579, -24.996], [4.197, 20.95, -25.2]] }
+
+[[element]]
+type = "box"
+name = "statue_pedestal"
+material = "stone"
+size = [2.3, 4.4, 1.5]
+center = [8.953, 24.55, -22.277]
+transform = { rotate_y = 158.2, pivot = [8.953, 24.55, -22.277] }
+
+[[element]]
+type = "box"
+name = "statue_pedestal_cap"
+material = "stone"
+size = [2.6, 0.25, 1.8]
+center = [8.953, 26.85, -22.277]
+transform = { rotate_y = 158.2, pivot = [8.953, 26.85, -22.277] }
+
+[[element]]
+type = "statue"
+name = "charles_iii"
+material = "stone_fine"
+at = [8.953, 27.1, -22.277]
+facing = 21.8
+height = 3.4
+style = "figure"
+note = "Charles III by Ignacio Vergara; top 30.5 m (solver, photos 01/07/10)"
+
+[[element]]
+type = "box"
+material = "stone"
+size = [1.6, 1.0, 1.2]
+center = [11.683, 23.3, -21.294]
+transform = { rotate_y = 158.2, pivot = [11.683, 23.3, -21.294] }
+
+[[element]]
+type = "statue"
+material = "stone_fine"
+at = [11.683, 24.3, -21.294]
+facing = 21.8
+height = 2.1
+style = "seated"
+note = "virtue (Prudence / Justice) seated on the scroll"
+
+[[element]]
+type = "box"
+material = "stone"
+size = [1.6, 1.0, 1.2]
+center = [6.297, 23.3, -23.446]
+transform = { rotate_y = 158.2, pivot = [6.297, 23.3, -23.446] }
+
+[[element]]
+type = "statue"
+material = "stone_fine"
+at = [6.297, 24.3, -23.446]
+facing = 21.8
+height = 2.1
+style = "seated"
+note = "virtue (Prudence / Justice) seated on the scroll"
+
+[[view]]
+name = "p01_porta_de_la_mar"
+photo = "photos/01_Palau_de_justicia_valencia.jpg"
+note = "Canon S70 EXIF 9.9 mm (cropped frame), from Plaça de la Porta de la Mar (E corner); fov from the joint solve"
+fov_y = 25.2
+fix = ["fov"]
+eye_height = 1.6
+match = [
+  { px = [840, 777], world = [38.49, 0.00, -10.21] },
+  { px = [829, 264], world = [38.49, 21.00, -10.21] },
+  { px = [42, 389], world = [20.70, 21.00, 33.96] },
+  { px = [1222, 448], world = [-20.77, 21.00, -33.88] },
+  { px = [813, 148], world = [37.97, 26.40, -9.99] },
+  { px = [68, 297], world = [20.48, 26.40, 33.44] },
+  { px = [1207, 372], world = [-20.55, 26.40, -33.36] },
+  { px = [1054, 218], world = [8.86, 30.50, -22.05] },
+  { px = [1056, 277], world = [8.86, 27.10, -22.05] },
+]
+
+[[view]]
+name = "p10_fiscalia"
+photo = "photos/10_Fiscalia_valencia.jpg"
+note = "Canon S70 EXIF 11.4 mm, Porta de la Mar (E corner)"
+fov_y = 17.4
+fix = ["fov"]
+eye_height = 1.6
+match = [
+  { px = [850, 676], world = [38.49, 0.00, -10.21] },
+  { px = [840, 201], world = [38.49, 21.00, -10.21] },
+  { px = [827, 80], world = [37.97, 26.40, -9.99] },
+  { px = [42, 180], world = [20.48, 26.40, 33.44] },
+  { px = [1043, 126], world = [8.86, 30.50, -22.05] },
+  { px = [1045, 183], world = [8.86, 27.10, -22.05] },
+]
+
+[[view]]
+name = "p07_glorieta"
+photo = "photos/07_Palau_de_Justicia_DSCN2909.jpg"
+note = "Nikon Coolpix L16, EXIF 35 mm-eq, from the Glorieta (N corner)"
+focal_35mm = 35.0
+fix = ["fov"]
+eye_height = 1.6
+match = [
+  { px = [855, 733], world = [-20.77, 0.00, -33.88] },
+  { px = [497, 737], world = [8.86, 0.00, -22.05] },
+  { px = [818, 257], world = [-20.77, 21.00, -33.88] },
+  { px = [815, 152], world = [-20.55, 26.40, -33.36] },
+  { px = [494, 267], world = [8.86, 30.50, -22.05] },
+  { px = [495, 313], world = [8.86, 27.10, -22.05] },
+  { px = [785, 340], world = [-17.14, 17.60, -32.43] },
+  { px = [785, 528], world = [-17.14, 9.30, -32.43] },
+]
+
+[[view]]
+name = "p03_parterre_corner"
+photo = "photos/03_At_Valencia_2025_016.jpg"
+note = "Canon EOS 90D EXIF 17 mm (27 mm-eq), W corner from the Parterre"
+focal_35mm = 27.2
+fix = ["fov"]
+eye_height = 1.6
+match = [
+  { px = [826, 270], world = [-37.13, 12.40, 6.73] },
+  { px = [826, 393], world = [-37.13, 9.30, 6.73] },
+  { px = [826, 207], world = [-37.13, 14.50, 6.73] },
+  { px = [1042, 257], world = [-34.30, 12.40, 12.01] },
+  { px = [1042, 383], world = [-34.30, 9.30, 12.01] },
+  { px = [168, 392], world = [-21.33, 20.60, -35.18] },
+]
+
+[[view]]
+name = "p11_parterre"
+photo = "photos/11_Palacio_de_Justicia_de_Valencia_2_png.jpg"
+note = "W corner from the Parterre gardens (no EXIF)"
+eye_height = 1.6
+match = [
+  { px = [720, 201], world = [-39.93, 20.90, 10.88] },
+  { px = [701, 103], world = [-38.05, 26.40, 10.08] },
+  { px = [89, 386], world = [-21.35, 20.90, -35.25] },
+  { px = [132, 290], world = [-20.55, 26.40, -33.36] },
+  { px = [634, 408], world = [-37.13, 12.40, 6.73] },
+  { px = [634, 478], world = [-37.13, 9.30, 6.73] },
+  { px = [752, 414], world = [-34.30, 12.40, 12.01] },
+  { px = [752, 480], world = [-34.30, 9.30, 12.01] },
+]
+
+[[view]]
+name = "p04_corner_closeup"
+photo = "photos/04_At_Valencia_2025_018.jpg"
+note = "Canon EOS 90D EXIF 17 mm (27 mm-eq), portrait, W corner close-up"
+focal_35mm = 27.2
+fix = ["fov"]
+eye_height = 1.6
+match = [
+  { px = [596, 45], world = [-38.05, 26.40, 10.08] },
+  { px = [644, 222], world = [-39.93, 20.90, 10.88] },
+  { px = [368, 753], world = [-37.13, 12.40, 6.73] },
+  { px = [368, 930], world = [-37.13, 9.30, 6.73] },
+  { px = [368, 633], world = [-37.13, 14.50, 6.73] },
+  { px = [674, 813], world = [-34.30, 12.40, 12.01] },
+  { px = [674, 960], world = [-34.30, 9.30, 12.01] },
+  { px = [404, 480], world = [-37.13, 17.60, 6.73] },
+  { px = [404, 588], world = [-37.13, 15.40, 6.73] },
+]
+
+[[view]]
+name = "p05_along_main_facade"
+photo = "photos/05_Palau_de_Justicia_de_Valencia_facana.jpg"
+note = "Nikon D3100 EXIF 32 mm (48 mm-eq), N corner, looking along the main facade"
+eye_height = 1.6
+match = [
+  { px = [990, 1645], world = [-20.77, 0.00, -33.88] },
+  { px = [372, 1593], world = [9.03, 0.00, -22.46] },
+  { px = [415, 300], world = [8.86, 30.50, -22.05] },
+  { px = [1212, 680], world = [-22.21, 12.40, -30.31] },
+  { px = [1212, 935], world = [-22.21, 9.30, -30.31] },
+]
+
+[[view]]
+name = "catastro_main_facade"
+photo = "photos/catastro_6326401YJ2762E.jpg"
+note = "Catastro facade photo, Canon SX270 HS EXIF 4.5 mm (25 mm-eq), Carrer del Palau de Justícia"
+focal_35mm = 25.0
+fix = ["fov"]
+eye_height = 1.6
+match = [
+  { px = [497, 972], world = [9.03, 0.00, -22.46] },
+  { px = [790, 995], world = [-4.05, 0.00, -27.20] },
+  { px = [790, 855], world = [-4.05, 3.90, -27.20] },
+  { px = [795, 548], world = [-4.05, 12.40, -27.20] },
+  { px = [795, 640], world = [-4.05, 9.30, -27.20] },
+  { px = [790, 390], world = [-4.05, 17.60, -27.20] },
+  { px = [1225, 245], world = [-17.14, 17.60, -32.43] },
+  { px = [1228, 452], world = [-17.14, 12.40, -32.43] },
+  { px = [1228, 578], world = [-17.14, 9.30, -32.43] },
+]
+
+[[view]]
+name = "p06_frontispiece"
+photo = "photos/06_Palacio_de_Justicia_de_Valencia_1_png.jpg"
+note = "frontal view of the main facade under the Glorieta magnolias (no EXIF)"
+eye_height = 1.6
+match = [
+  { px = [410, 540], world = [15.82, 12.40, -19.26] },
+  { px = [215, 535], world = [21.77, 12.40, -16.89] },
+  { px = [840, 553], world = [1.90, 12.40, -24.83] },
+  { px = [1010, 555], world = [-4.05, 12.40, -27.20] },
+  { px = [420, 400], world = [15.82, 17.60, -19.26] },
+  { px = [830, 418], world = [1.90, 17.60, -24.83] },
+  { px = [1150, 430], world = [-9.99, 17.60, -29.57] },
+  { px = [410, 637], world = [15.82, 9.30, -19.26] },
+  { px = [840, 645], world = [1.90, 9.30, -24.83] },
+]
+
+[[view]]
+name = "p09_crown"
+photo = "photos/09_Duana1.jpg"
+note = "Kodak DC X720 EXIF 54 mm-eq, the crown of the frontispiece"
+focal_35mm = 54.0
+fix = ["fov"]
+eye_height = 1.6
+match = [
+  { px = [650, 100], world = [8.86, 30.50, -22.05] },
+  { px = [650, 225], world = [8.86, 27.10, -22.05] },
+  { px = [660, 345], world = [9.10, 23.70, -22.65] },
+  { px = [205, 640], world = [15.82, 17.60, -19.26] },
+  { px = [1100, 660], world = [1.90, 17.60, -24.83] },
+  { px = [205, 755], world = [15.82, 15.40, -19.26] },
+  { px = [1100, 785], world = [1.90, 15.40, -24.83] },
+]
+
