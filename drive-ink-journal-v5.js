@@ -17,7 +17,7 @@
             this.actor=host.actor||crypto.randomUUID();this.part=0;this.current=null;
             this.records=new Map();this.sources=new Map();this.seen=new Map();
             this.outboxReady=!!this.store.patchAndQueue;this.persistChain=Promise.resolve();this.stopped=false;this.writing=false;this.reading=false;
-            this.ticking=false;this.controllers=new Set();this.latestParts=new Map();this.lastWrite=0;this.nextDiscovery=0;this.timer=null;this.folder=null;this.lastError='';
+            this.nextOutboxCheck=0;this.announcements=new Map();this.announcing=false;this.controllers=new Set();this.latestParts=new Map();this.lastWrite=0;this.nextDiscovery=0;this.timer=null;this.folder=null;this.lastError='';
         }
         key(record){return `${PREFIX}${record.docId}:${record.actor}:${record.part}`;}
         async read(key){return this.store.read('settings',this.account,key);}
@@ -144,10 +144,28 @@
             await this.patch(OUTBOX,old=>{const pending={...old.pending};if((pending[key]||0)<=record.rev)delete pending[key];return {...old,pending};});
             this.hint(id);if(this.sources.has(id))this.sources.get(id).next=Infinity;
             this.lastError='';this.host.receipt?.({...receipt,docId:record.docId,version:record.version,actor:record.actor,part:record.part});
-            try{await this.host.announce?.(record.docId,id,record.actor);}catch(error){this.host.warning?.(error);}
+            this.notifyPeers(record.docId,id);
+        }
+        notifyPeers(docId,id,preview=false){
+            if(this.stopped||!this.host.announce)return;
+            // Discovery metadata is advisory. A slow hint must not hold the
+            // next confirmed write (or its cross-tab storage lease).
+            this.announcements.set(`${docId}:${preview}`,{docId,id,preview});
+            if(this.announcing)return;
+            this.announcing=true;
+            void (async()=>{
+                try{
+                    while(!this.stopped&&this.announcements.size){
+                        const [key,notice]=this.announcements.entries().next().value;
+                        this.announcements.delete(key);
+                        try{await this.host.announce(notice.docId,notice.id,this.actor,notice.preview);}
+                        catch(error){this.host.warning?.(error);}
+                    }
+                }finally{this.announcing=false;}
+            })();
         }
         async flush(){
-            if(this.stopped||this.writing||Date.now()-this.lastWrite<120)return;
+            if(this.stopped||this.writing||Date.now()-this.lastWrite<120||Date.now()<this.nextOutboxCheck)return;
             this.writing=true;
             try{
                 await this.persistChain;
@@ -163,6 +181,7 @@
                     }
                     const index=await this.read(OUTBOX);
                     const keys=Object.keys(index?.pending||{}).sort((a,b)=>(a.startsWith(`${PREFIX}${this.docId}:`)?0:1)-(b.startsWith(`${PREFIX}${this.docId}:`)?0:1));
+                    if(!keys.length)this.nextOutboxCheck=Date.now()+2000;
                     for(const key of keys){
                         const record=await this.read(key);
                         if(!record||record.rev<=(record.ack||0)){
@@ -238,7 +257,12 @@
             finally{this.reading=false;}
         }
         fail(error){if(error?.name!=='AbortError'){this.lastError=String(error?.message||error);this.host.error?.(error);}}
-        wake(){if(this.stopped||this.timer||this.ticking)return;this.timer=setTimeout(()=>{this.timer=null;void this.tick();},0);}
+        wake(){
+            if(this.stopped)return;
+            this.nextOutboxCheck=0;
+            clearTimeout(this.timer);
+            this.timer=setTimeout(()=>{this.timer=null;this.tick();},Math.max(0,this.lastWrite+120-Date.now()));
+        }
         tick(){
             if(this.stopped)return;
             // Receiving may wait for the local pen to lift. It must never hold
@@ -254,7 +278,7 @@
             this.wake();
         }
         start(){this.wake();return this;}
-        stop(){this.stopped=true;for(const controller of this.controllers)controller.abort();clearTimeout(this.timer);this.timer=null;}
+        stop(){this.stopped=true;this.announcements.clear();for(const controller of this.controllers)controller.abort();clearTimeout(this.timer);this.timer=null;}
     }
     return {Journal,KIND};
 });

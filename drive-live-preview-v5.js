@@ -68,7 +68,7 @@
                 }
                 const receipt=await response.json();if(receipt.id!==this.fileId)throw new Error('Live preview was not confirmed');
                 this.exists=true;this.sentFrame=frame;this.retryAt=0;
-                try{await this.host.announce?.(this.docId,this.fileId,this.actor,true);}catch(_){}
+                this.notifyPeers(this.docId,this.fileId,true);
             }catch(error){
                 if(error.status===404){this.exists=false;this.fileId='';this.folder=null;}
                 this.retryAt=Date.now()+(error.status===429?5000:1000);

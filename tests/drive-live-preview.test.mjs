@@ -62,3 +62,13 @@ test('a prewarmed preview delivers before stroke completion with bounded schedul
   const latency=frames[0].at-start;console.log('DRIVE_PREVIEW_SCHEDULING_MS',latency.toFixed(1));assert.ok(latency<350);
  }finally{writer.stop();reader.stop();}
 });
+
+test('a slow discovery hint cannot freeze unfinished stroke updates',async()=>{
+ const api=fakeInkDrive(),a=replica(api,'writer');let release;
+ a.live.host.announce=()=>new Promise(r=>release=r);
+ a.live.push(packet(1,0,[1,2]));
+ await Promise.race([a.live.flushFrame(),new Promise((_,reject)=>{const t=setTimeout(()=>reject(Error('hint blocked preview')),500);t.unref();})]);
+ a.live.push(packet(2,1,[2,3]));await a.live.flushFrame();
+ assert.equal(a.live.sentFrame,2);assert.equal(JSON.parse(api.files.get(a.live.fileId).raw).packets[0].points.length,3);
+ a.live.stop();release();
+});

@@ -86,3 +86,35 @@ test('a successor cannot seal a stale partial read of its predecessor',async()=>
  api.files.get(headId).raw=full;await poll(reader.j);
  assert.equal(reader.applied.length,129);assert.equal(new Set(reader.applied.map(v=>v.n)).size,129);
 });
+
+test('slow discovery hints cannot hold the write lease or delay the next durable revision',async()=>{
+ const api=fakeInkDrive(),a=replica(api,'a');let release;const gate=new Promise(r=>release=r),notices=[];
+ a.j.host.announce=async(doc,id)=>{notices.push(id);await gate;};
+ await a.j.enqueue({stroke:'first'},1);
+ await Promise.race([flush(a.j),new Promise((_,reject)=>{const t=setTimeout(()=>reject(Error('hint blocked upload')),500);t.unref();})]);
+ assert.equal(a.j.writing,false);assert.equal(a.receipts.length,1);
+ await a.j.enqueue({stroke:'second'},2);await flush(a.j);
+ assert.equal(a.j.status().pending,0);assert.equal(a.receipts[1].version,2);
+ assert.equal(notices.length,1);assert.equal(a.j.announcements.size,1);
+ release();await new Promise(r=>setTimeout(r,0));assert.equal(notices.length,2);a.j.stop();
+});
+test('an idle journal avoids storage churn but wakes immediately for new durable work',async()=>{
+ const api=fakeInkDrive(),store=memoryInkStore();let leases=0;
+ const lease=store.withLease;store.withLease=(...args)=>{leases++;return lease(...args);};
+ const j=new Journal({store,account:'a',actor:'writer',docId:'doc',fetch:api.fetch});
+ j.poll=async()=>{};j.start();
+ try{
+  await new Promise(r=>setTimeout(r,300));assert.equal(leases,1);
+  const start=performance.now();await j.enqueue({stroke:'wake'},1);
+  const deadline=Date.now()+1000;
+  while(j.status().pending&&Date.now()<deadline)await new Promise(r=>setTimeout(r,5));
+  assert.equal(j.status().pending,0);assert.ok(performance.now()-start<300);
+ }finally{j.stop();}
+});
+test('failed advisory hints never turn a confirmed save into an upload failure',async()=>{
+ const api=fakeInkDrive(),a=replica(api,'a');const warnings=[];
+ a.j.host.announce=async()=>{throw Error('hint unavailable');};a.j.host.warning=e=>warnings.push(e.message);
+ await a.j.enqueue({stroke:'safe'},1);await flush(a.j);await new Promise(r=>setTimeout(r,0));
+ assert.equal(a.j.status().pending,0);assert.equal(a.j.status().error,'');assert.equal(a.receipts.length,1);
+ assert.deepEqual(warnings,['hint unavailable']);a.j.stop();
+});
