@@ -20,6 +20,20 @@ catastro_built = { value = 1600, source = "https://www1.sedecatastro.gob.es/CYCB
 catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5829117&rc2=YJ2752H" }
 catastro_floor_area = { value = 1688.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5829117&rc2=YJ2752H", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 2, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 2 parts" }
+tower_height = { value = 56.6, unit = "m", source = "measured", note = "top of the iron cross. constrained bundle adjustment (scratch ba2.py: pinhole cameras with eye-height priors 1.6 +-0.3 m at street level, Micalet terrace eye 52.45 +-0.8 m with the far-plain horizon as a constraint, tower vertices from OSM fixed, heights as shared unknowns) of photos p145, p133, p146, p04 and p087: 56.9 +-1.0 m from the photos alone, 56.6 +-0.8 m with the published 56.12 m as a prior (+-0.6). Street photos with the base visible (p145, p04) give 57-58 m, the Micalet horizon (p087) 55.2 m" }
+tower_height_published = { value = 56.12, unit = "m", source = "https://es.wikipedia.org/wiki/Iglesia_de_Santa_Catalina_(Valencia)", note = "also OSM part 1286606508 height=56.12; OSM part 165580724 height=45 is not a measured level" }
+tower_plan = { value = "regular hexagon, circumradius 4.08 m (across flats 7.07 m, side 4.08 m), centre (8.95, 17.92), vertices at grid azimuths 3.6 + 60k deg", unit = "m", source = "OSM way 165580724 outer corner nodes (r 3.99-4.12 m), checked on PNOA", note = "the corners are notched (small recessed angles); the photos fit a regular hexagon within ~0.4 m (bundle adjustment with free vertices); slit windows sit ~0.35 m south of the E-face centre in 4 photos (stair)" }
+tower_levels = { value = [[0.0, "ground"], [7.25, "string course 1"], [13.83, "string course 2"], [20.45, "string course 3"], [28.52, "shaft top cornice"], [31.21, "belfry sill"], [35.31, "belfry arch crown"], [37.58, "main cornice bottom"], [38.50, "main cornice top / terrace"], [40.41, "balustrade top"], [43.51, "lantern base"], [47.83, "lantern cornice top"], [51.06, "cupola top / finial base"], [52.04, "ball centre"], [56.59, "cross top"]], unit = "m", source = "measured", note = "constrained bundle adjustment (scratch ba2.py: pinhole cameras with eye-height priors 1.6 +-0.3 m at street level, Micalet terrace eye 52.45 +-0.8 m with the far-plain horizon as a constraint, tower vertices from OSM fixed, heights as shared unknowns) of photos p145, p133, p146, p04 and p087; sd 0.2 m (string 1) to 0.8 m (cross); levels on the faces, cornices at their front edges" }
+tower_stages = { value = "4 storeys (pisos) with slit windows and Baroque cartouches, belfry with one round-arched opening per face and Solomonic columns on the edges, balustraded terrace on the main cornice, attic with volutes, hexagonal lantern with 6 arched openings, ribbed scale-carved cupola, ball and iron cross with vane", source = "https://es.wikipedia.org/wiki/Iglesia_de_Santa_Catalina_(Valencia) (cuatro pisos mas el cuerpo de campanas y un templete; columnas salomonicas; cupula de escamas) and photos" }
+tower_dates = { value = "1688-1705", source = "https://es.wikipedia.org/wiki/Iglesia_de_Santa_Catalina_(Valencia)", note = "first stone 5 Oct 1688; Valero Vines, then Juan Bautista Vines after 1693" }
+belfry_opening = { value = [1.55, 4.1], unit = "m (width, height)", source = "measured", note = "p133 (39 px/m at the tower, telephoto from c. de la Pau): 58 x 158 px" }
+lantern = { value = "hexagon r 2.05 m, openings 0.62 x 2.8 m", source = "OSM part 1286606508 (r 2.05) and p133/p087 widths (lantern 110 px vs shaft 216 px in p087)" }
+main_cornice_projection = { value = 0.9, unit = "m", source = "measured", note = "p133: 35 px beyond the shaft silhouette" }
+nave_eave = { value = 16.3, unit = "m", source = "measured", note = "rays of p087 through the solved camera on the apse eave corners (16.2 / 16.7 m)" }
+nave_ridge = { value = 21.0, unit = "m", source = "measured", note = "p087 ray on the hip apex at the ridge end (6.0, -0.5): 21.0 m; ridge line z -1.7..-0.2 on PNOA; one hip roof over nave and apse" }
+west_front = { value = "screen top 21.0 m at the bend (z 4.76), ~24 m at the north end; rose centre 16.15 m (z -3.6, outer moulding ~4.9 m); portal pediment 9.6 m (z -4.3); aisle front 16.1-16.8 m with the bell gable to 18.2 m; steps 13.6 m; chapel front 10.2 m; arcosolia apex 3.5 m at u 1.7 / 5.5 / 9.4 m along OSM edge 0; string course 4.5 m; small rose centre 7.9 m (z 7.0)", source = "measured", note = "bundle adjustment of photos 12 (Marianini) and 06 (PiotrMig, GPS camera), anchored on the facade ends (OSM) and the tower crown (levels above); rms 4.1 / 10.1 px; north-end height +-2.4 m" }
+plan = { value = "nave+aisles 15 m wide (z -9.2..6.0) from the west screen (x -21.6) to the polygonal apse (x 13.2); west screen block x -27.4..-21.6; north chapels z -13.4..-9.2; south aisle z 6..8.5 and chapels to z 16.7; ambulatory to x 22", source = "OSM building:parts 1286606509/10/11, PNOA 2024 (roof planes, ridge, buttress shadows at x -22.6, -17.5, -11, -6.5, -1.4, 4.1)" }
+footprint_iou = { value = 0.98, source = "landmark check", note = "model vs OSM outline (Catastro 0.98)" }
 
 [[photo]]
 file = "photos/01_Iglesia_de_Santa_Catarina_Valencia_Espana_2014_06_30_DD_143.jpg"
@@ -30,8 +44,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1059
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W front from the SW (Diego Delso, perspective-corrected: proportions only; view front_dd, rms ~20 px)"
 
 [[photo]]
 file = "photos/02_Torre_de_la_iglesia_de_Santa_Catalina_Valencia_Espana_2014_0.jpg"
@@ -42,8 +56,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 2719
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "tower from the E, stitched/perspective-corrected (detail only: verticals rescaled, measured 44 m)"
 
 [[photo]]
 file = "photos/03_Santa_caterina_vista.jpg"
@@ -54,8 +68,8 @@ license = "Public domain"
 width = 1280
 height = 1126
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NE aerial from the Micalet terrace: apse hip roof, nave roof, tower crown against the horizon (view micalet_wide, solved from tower points + horizon, rms 7 px)"
 
 [[photo]]
 file = "photos/04_Torre_Santa_Catalina_Francesco_Crippa.jpg"
@@ -66,8 +80,8 @@ license = "CC BY 2.0"
 width = 1280
 height = 1926
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "tower from the E (Plaça de Santa Caterina / c. de la Pau), base visible, wide angle (view tower_plaza, calibrated in the tower bundle adjustment, rms 6.5 px)"
 
 [[photo]]
 file = "photos/05_Busto_de_Santa_Catalina.jpg"
@@ -79,8 +93,8 @@ width = 1280
 height = 853
 camera = [40.58, -17.91]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "Baroque niche with the bust over the side portal (detail)"
 
 [[photo]]
 file = "photos/06_St_Catherine_Church_Valencia.jpg"
@@ -93,8 +107,8 @@ height = 960
 camera = [-38.11, 17.72]
 heading = 42.0
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W front from the SW, GPS camera (view front_sw, facade bundle adjustment, rms 10 px)"
 
 [[photo]]
 file = "photos/07_084_Esglesia_de_Santa_Caterina_Valencia_facana_oest_pl_Lope_.jpg"
@@ -118,8 +132,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 3008
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "tower from c. de la Pau, stitched vertorama (detail only, not metric)"
 
 [[photo]]
 file = "photos/09_Esglesia_de_Santa_Caterina_de_Valencia_facana_dels_peus.jpg"
@@ -130,8 +144,8 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W front north half from the NW (detail: north pier, rose)"
 
 [[photo]]
 file = "photos/10_Fachada_de_la_Iglesia_de_Santa_Catalina_Valencia_01.jpg"
@@ -142,8 +156,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W front from the SW incl. the NW plastered chapel (view front_dorieo, rms 5.7 px)"
 
 [[photo]]
 file = "photos/11_Iglesia_de_Santa_Catalina_Valencia_30.jpg"
@@ -166,8 +180,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W front from Plaça de Lope de Vega with the tower crown behind (view front_lope, facade bundle adjustment anchor, rms 4.1 px)"
 
 [[photo]]
 file = "photos/13_Esglesia_de_Santa_Catalina_de_Valencia_1_png.jpg"
@@ -178,8 +192,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W front, north half from below: rose, portal, NW chapel with blind oculus and ceramic altarpiece (detail)"
 
 [[photo]]
 file = "photos/14_Arcosolio_en_la_Iglesia_de_Santa_Catalina_Valencia_02.jpg"
@@ -202,8 +216,8 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "Baroque niche over the Gothic side portal (detail)"
 
 [[photo]]
 file = "photos/catastro_5829117YJ2752H.jpg"
@@ -214,8 +228,116 @@ license = "Catastro open data (attribution required)"
 width = 1200
 height = 1600
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "tower from the SE with the ground storey, the Gothic side portal and its Baroque niche (view tower_catastro, rms 15 px)"
+
+[[photo]]
+file = "photos/extra/p133.jpg"
+title = "File:Carrer de la Pau street and Església de Santa Caterina Mártir, Ciutat Vella, Valencia, Spain, 2024 January.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Carrer_de_la_Pau_street_and_Esgl%C3%A9sia_de_Santa_Caterina_M%C3%A1rtir,_Ciutat_Vella,_Valencia,_Spain,_2024_January.jpg"
+author = "Ximonic (Simo Räsänen)"
+license = "CC BY-SA 4.0"
+width = 1920
+height = 2880
+exterior = true
+selected = true
+side = "tower from the E down the Carrer de la Pau, telephoto 330 m (view tower_pau_far, calibrated, rms 3.6 px): stage proportions, belfry, lantern, cupola"
+
+[[photo]]
+file = "photos/extra/p145.jpg"
+title = "File:Valencia-Ciutat Vella, de toren van Església de Santa Caterina RI-51-0004484 IMG 2535 2026-08-22 11.54.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia-Ciutat_Vella,_de_toren_van_Esgl%C3%A9sia_de_Santa_Caterina_RI-51-0004484_IMG_2535_2026-08-22_11.54.jpg"
+author = "Michielverbeek"
+license = "CC BY-SA 4.0"
+width = 1920
+height = 3411
+exterior = true
+selected = true
+side = "tower from the E (c. de la Pau), base visible behind cafe tables (view tower_pau, calibrated, rms 4.3 px): height anchor"
+
+[[photo]]
+file = "photos/extra/p146.jpg"
+title = "File:Campanario de Santa Catalina near Catedral de Valencia in Valencia Spain.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Campanario_de_Santa_Catalina_near_Catedral_de_Valencia_in_Valencia_Spain.jpg"
+author = "MCAE Consulting"
+license = "CC0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "tower from the SE (Plaça de la Reina) (view tower_reina, calibrated, rms 5.5 px)"
+
+[[photo]]
+file = "photos/extra/p087.jpg"
+title = "File:Campanar de l'església de santa Caterina de València des del Micalet.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Campanar_de_l'esgl%C3%A9sia_de_santa_Caterina_de_Val%C3%A8ncia_des_del_Micalet.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1920
+exterior = true
+selected = true
+side = "NNE aerial from the Micalet terrace, telephoto: crown vs horizon, apse eave and hip apex (view micalet, calibrated, rms 6 px)"
+
+[[photo]]
+file = "photos/extra/p098.jpg"
+title = "File:Vue sur la ville depuis la Tour du Miguelete (8277293614).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Vue_sur_la_ville_depuis_la_Tour_du_Miguelete_(8277293614).jpg"
+author = "Nicolas Vollmer from Munich [Allemagne]"
+license = "CC BY 2.0"
+width = 1280
+height = 1933
+exterior = true
+selected = true
+side = "NNE aerial from the Micalet: crown, belfry, nave roof (view micalet_tele, rms 12 px)"
+
+[[photo]]
+file = "photos/extra/p011.jpg"
+title = "File:Santa caterina absis.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Santa_caterina_absis.jpg"
+author = "Felivet"
+license = "Public domain"
+width = 1280
+height = 1373
+exterior = true
+selected = true
+side = "E: polygonal apse with lancet, ambulatory ring with round windows, buttresses (detail)"
+
+[[photo]]
+file = "photos/extra/p016.jpg"
+title = "File:Església de Santa Caterina de València cobertes.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_de_Santa_Caterina_de_Val%C3%A8ncia_cobertes.JPG"
+author = "Joanbanjo"
+license = "Public domain"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "roofs and buttresses seen from the tower (detail)"
+
+[[photo]]
+file = "photos/extra/p142.jpg"
+title = "File:085 Carrer de la Sombrereria i torre de Santa Caterina (València), des de pl. Lope de Vega.jpg"
+url = "https://commons.wikimedia.org/wiki/File:085_Carrer_de_la_Sombrereria_i_torre_de_Santa_Caterina_(Val%C3%A8ncia),_des_de_pl._Lope_de_Vega.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1920
+height = 2560
+exterior = true
+selected = true
+side = "SW: tower crown over the Carrer de la Sombrereria (south side context)"
+
+[[photo]]
+file = "photos/extra/p144.jpg"
+title = "File:020 Plaça de Santa Caterina (València), amb la torre de l'església.jpg"
+url = "https://commons.wikimedia.org/wiki/File:020_Pla%C3%A7a_de_Santa_Caterina_(Val%C3%A8ncia),_amb_la_torre_de_l'esgl%C3%A9sia.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1920
+height = 2560
+exterior = true
+selected = true
+side = "S/SE close: tower ground storey with plaque and arms, the Baroque niche over the side portal"
 
 [[plan]]
 file = "plans/01_Valencia_Santa_Catalina_tower_c1850.jpg"
@@ -243,6 +365,15 @@ author = "Dirección General del Catastro"
 license = "Catastro open data (attribution required)"
 kind = "catastro"
 notes = "Cadastral map, EPSG:25830 bbox [725616.67, 4372625.28, 725731.25, 4372731.75], 0.080 m/px, north up; roman numerals = floors above ground; parcels 5829117YJ2752H"
+
+[[plan]]
+file = "plans/pnoa.jpg"
+title = "IGN PNOA orthophoto (WMS pnoa-ma), bbox E 725629-725719, N 4372632-4372722"
+url = "https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=OI.OrthoimageCoverage&CRS=EPSG:25830&BBOX=725629.06,4372632.28,725719.06,4372722.28&WIDTH=1200&HEIGHT=1200&FORMAT=image/jpeg"
+author = "Instituto Geografico Nacional"
+license = "CC BY 4.0"
+kind = "orthophoto"
+notes = "0.075 m/px request (native ~0.25 m); used for roof planes, ridge, buttress shadows, tower position; local frame x = E - 725674.055, z = 4372677.278 - N"
 
 [[reference]]
 url = "https://www.wikidata.org/wiki/Q2839013"
