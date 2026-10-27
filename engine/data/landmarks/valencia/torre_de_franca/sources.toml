@@ -107,19 +107,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Charlotte_Arter_Valencia.jpg"
-title = "File:Charlotte Arter Valencia.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Charlotte_Arter_Valencia.jpg"
-author = "ChiralJon"
-license = "CC BY 2.0"
-width = 1280
-height = 960
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Ciudad_del_las_Artes_y_las_Ciencias_de_Valencia.jpg"
+file = "photos/08_Ciudad_del_las_Artes_y_las_Ciencias_de_Valencia.jpg"
 title = "File:Ciudad del las Artes y las Ciencias de Valencia.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Ciudad_del_las_Artes_y_las_Ciencias_de_Valencia.jpg"
 author = "PhotoByKer"
@@ -131,7 +119,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/10_Valencia_park.jpg"
+file = "photos/09_Valencia_park.jpg"
 title = "File:Valencia, park.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia%2C_park.jpg"
 author = "I would appreciate being notified if you use my work outside Wikimedia. More of my work can be found in my personal gallery ."
@@ -145,7 +133,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/11_Torre_de_Franca_Valencia.jpg"
+file = "photos/10_Torre_de_Franca_Valencia.jpg"
 title = "File:Torre de França, València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Torre_de_Fran%C3%A7a%2C_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -157,7 +145,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_Valencia_Torre_de_Francia_3.jpg"
+file = "photos/11_Valencia_Torre_de_Francia_3.jpg"
 title = "File:Valencia - Torre de Francia 3.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Torre_de_Francia_3.jpg"
 author = "Zarateman"
@@ -169,7 +157,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Valencia_torre_de_Franca.jpg"
+file = "photos/12_Valencia_torre_de_Franca.jpg"
 title = "File:València, torre de França.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia%2C_torre_de_Fran%C3%A7a.JPG"
 author = "Joanbanjo"
@@ -181,7 +169,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_Miquel_Navarro_Ciudad_de_las_artes_y_de_las_ciencias.jpg"
+file = "photos/13_Miquel_Navarro_Ciudad_de_las_artes_y_de_las_ciencias.jpg"
 title = "File:Miquel Navarro Ciudad de las artes y de las ciencias.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Miquel_Navarro_Ciudad_de_las_artes_y_de_las_ciencias.jpg"
 author = "jmerelo"
@@ -193,7 +181,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Valencia_2006_panoramio_1.jpg"
+file = "photos/14_Valencia_2006_panoramio_1.jpg"
 title = "File:Valencia 2006 - panoramio (1).jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_2006_-_panoramio_%281%29.jpg"
 author = "Валерий Дед"
@@ -206,13 +194,26 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Valencia_Torre_de_Francia_4.jpg"
+file = "photos/15_Valencia_Torre_de_Francia_4.jpg"
 title = "File:Valencia - Torre de Francia 4.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Torre_de_Francia_4.jpg"
 author = "Zarateman"
 license = "CC0"
 width = 1280
 height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/16_Torre_de_Francia_panoramio.jpg"
+title = "File:Torre de Francia - panoramio.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Torre_de_Francia_-_panoramio.jpg"
+author = "Manuel Plaza"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1707
+camera = [-14.3, 351.66]
 exterior = true
 selected = false
 side = ""

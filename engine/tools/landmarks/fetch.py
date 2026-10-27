@@ -2339,6 +2339,13 @@ def process(lm, args, http):
     os.makedirs(raw, exist_ok=True)
     st = State(os.path.join(raw, "state.json"))
     forced = args.force_steps
+    if os.path.exists(os.path.join(data, "landmark.toml")):
+        # A modeling agent owns this landmark: its footprint.json, sources.toml and the photo/plan
+        # numbering it refers to must not change under it. Report the last summary and touch nothing.
+        LOG(f"[{slug}] modeled (landmark.toml present): skipped, data left as is")
+        row = dict(st.data.get("summary") or {"slug": slug})
+        row["warnings"] = ("modeled: not refetched | " + row.get("warnings", ""))[:600]
+        return row
 
     def force(step):
         return "all" in forced or step in forced

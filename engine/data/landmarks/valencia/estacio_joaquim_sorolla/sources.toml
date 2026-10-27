@@ -32,57 +32,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_J29_556_Cambiador_Valencia.jpg"
-title = "File:J29 556 Cambiador Valencia.jpg"
-url = "https://commons.wikimedia.org/wiki/File:J29_556_Cambiador_Valencia.jpg"
-author = "Falk2"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/03_J29_564_Bf_Valencia_Joaquin_Sorolla_91_30_047.jpg"
-title = "File:J29 564 Bf Valencia Joaquín Sorolla, 91-30 047.jpg"
-url = "https://commons.wikimedia.org/wiki/File:J29_564_Bf_Valencia_Joaqu%C3%ADn_Sorolla%2C_91-30_047.jpg"
-author = "Falk2"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/04_L04_336_Bf_Valencia_Baustelle_Sudkopf.jpg"
-title = "File:L04 336 Bf Valencia, Baustelle Südkopf.jpg"
-url = "https://commons.wikimedia.org/wiki/File:L04_336_Bf_Valencia%2C_Baustelle_S%C3%BCdkopf.jpg"
-author = "Falk2"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/05_Tren_AVE_en_la_estacion_de_Valencia_Espana_Serie_112_de_Renf.jpg"
-title = "File:Tren AVE, en la estación de Valencia, España, Serie 112 de Renfe.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Tren_AVE%2C_en_la_estaci%C3%B3n_de_Valencia%2C_Espa%C3%B1a%2C_Serie_112_de_Renfe.JPG"
-author = "CARLOS TEIXIDOR CADENAS"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-camera = [-45.32, 230.32]
-heading = 0.0
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/06_Valencia_Joaquin_Sorolla_Station_300416.jpg"
+file = "photos/02_Valencia_Joaquin_Sorolla_Station_300416.jpg"
 title = "File:Valencia-Joaquin-Sorolla-Station-300416.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Valencia-Joaquin-Sorolla-Station-300416.JPG"
 author = "FDV"
@@ -90,112 +40,12 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 camera = [-49.95, -44.2]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/07_Valencia_Joaquin_Sorolla_2023_1.jpg"
-title = "File:València Joaquín Sorolla 2023 1.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia_Joaqu%C3%ADn_Sorolla_2023_1.jpg"
-author = "Smiley.toerist"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-camera = [48.63, -2.01]
-heading = 90.0
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_L04_325_Bf_Valencia_Sudkopf.jpg"
-title = "File:L04 325 Bf Valencia, Südkopf.jpg"
-url = "https://commons.wikimedia.org/wiki/File:L04_325_Bf_Valencia%2C_S%C3%BCdkopf.jpg"
-author = "Falk2"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_Valencia_Sorolla_station_2015_II.jpg"
-title = "File:Valencia Sorolla station 2015 II.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_Sorolla_station_2015_II.jpg"
-author = "Smiley.toerist"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 720
-camera = [54.16, -47.2]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Tapa_de_Adif_en_Valencia.jpg"
-title = "File:Tapa de Adif en Valencia.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Tapa_de_Adif_en_Valencia.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_L04_327_Bf_Valencia_Joaquin_Sorolla_cambiador.jpg"
-title = "File:L04 327 Bf Valencia Joaquín Sorolla, cambiador.jpg"
-url = "https://commons.wikimedia.org/wiki/File:L04_327_Bf_Valencia_Joaqu%C3%ADn_Sorolla%2C_cambiador.jpg"
-author = "Falk2"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_Valencia_Joaquin_Sorolla_panoramio.jpg"
-title = "File:Valencia Joaquin Sorolla - panoramio.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_Joaquin_Sorolla_-_panoramio.jpg"
-author = "Mister No"
-license = "CC BY 3.0"
-width = 1280
-height = 960
-camera = [11.82, 44.95]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Valencia_Sorolla_station_2015_I.jpg"
-title = "File:Valencia Sorolla station 2015 I.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_Sorolla_station_2015_I.jpg"
-author = "Smiley.toerist"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 720
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_J29_565_Bf_Valencia_Joaquin_Sorolla_91_30_047.jpg"
-title = "File:J29 565 Bf Valencia Joaquín Sorolla, 91-30 047.jpg"
-url = "https://commons.wikimedia.org/wiki/File:J29_565_Bf_Valencia_Joaqu%C3%ADn_Sorolla%2C_91-30_047.jpg"
-author = "Falk2"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Valencia_Joaquin_Sorolla_panoramio_1.jpg"
+file = "photos/03_Valencia_Joaquin_Sorolla_panoramio_1.jpg"
 title = "File:Valencia Joaquin Sorolla - panoramio (1).jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_Joaquin_Sorolla_-_panoramio_%281%29.jpg"
 author = "Mister No"
@@ -203,15 +53,51 @@ license = "CC BY 3.0"
 width = 1280
 height = 960
 camera = [38.2, -81.47]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/04_L04_223_Bf_Valencia_Joaquin_Sorolla_Regelspurbahnsteiggleise.jpg"
+title = "File:L04 223 Bf Valencia Joaquín Sorolla, Regelspurbahnsteiggleise.jpg"
+url = "https://commons.wikimedia.org/wiki/File:L04_223_Bf_Valencia_Joaqu%C3%ADn_Sorolla%2C_Regelspurbahnsteiggleise.jpg"
+author = "Falk2"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
 exterior = "unknown"
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Valencia_Joaquin_Sorolla_station_2023_1.jpg"
-title = "File:València Joaquín Sorolla station 2023 1.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia_Joaqu%C3%ADn_Sorolla_station_2023_1.jpg"
-author = "Smiley.toerist"
+file = "photos/05_L04_224_Bf_Valencia_Joaquin_Sorolla_112_xxx.jpg"
+title = "File:L04 224 Bf Valencia Joaquín Sorolla, 112 xxx.jpg"
+url = "https://commons.wikimedia.org/wiki/File:L04_224_Bf_Valencia_Joaqu%C3%ADn_Sorolla%2C_112_xxx.jpg"
+author = "Falk2"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_L04_222_Bf_Valencia_Joaquin_Sorolla_Talgo_7_Endwagen.jpg"
+title = "File:L04 222 Bf Valencia Joaquín Sorolla, Talgo-7-Endwagen.jpg"
+url = "https://commons.wikimedia.org/wiki/File:L04_222_Bf_Valencia_Joaqu%C3%ADn_Sorolla%2C_Talgo-7-Endwagen.jpg"
+author = "Falk2"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_L04_225_Bf_Valencia_Joaquin_Sorolla_106_151.jpg"
+title = "File:L04 225 Bf Valencia Joaquín Sorolla, 106 151.jpg"
+url = "https://commons.wikimedia.org/wiki/File:L04_225_Bf_Valencia_Joaqu%C3%ADn_Sorolla%2C_106_151.jpg"
+author = "Falk2"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 853

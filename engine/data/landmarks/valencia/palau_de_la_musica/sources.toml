@@ -20,26 +20,26 @@ catastro_floor_area = { value = 14773.0, unit = "m2", source = "https://www1.sed
 catastro_floors_max = { value = 4, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 4 parts" }
 
 [[photo]]
-file = "photos/01_Palau_de_la_Musica_Valencia_backstage_1160830.jpg"
-title = "File:Palau de la Música, Valencia backstage 1160830.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_la_M%C3%BAsica%2C_Valencia_backstage_1160830.jpg"
-author = "Ermell"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/02_Valencia_Palau_de_la_Musica_20100203_RM_180045.jpg"
+file = "photos/01_Valencia_Palau_de_la_Musica_20100203_RM_180045.jpg"
 title = "File:Valencia Palau de la Música-20100203-RM-180045.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_Palau_de_la_M%C3%BAsica-20100203-RM-180045.jpg"
 author = "Ermell"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/02_Valencia_Palau_de_la_Musica_20100203_RM_195239.jpg"
+title = "File:Valencia Palau de la Música-20100203-RM-195239.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_Palau_de_la_M%C3%BAsica-20100203-RM-195239.jpg"
+author = "Ermell"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
 selected = false
 side = ""
 
@@ -56,19 +56,45 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Valencia_Palau_de_la_Musica_20100203_RM_195239.jpg"
-title = "File:Valencia Palau de la Música-20100203-RM-195239.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_Palau_de_la_M%C3%BAsica-20100203-RM-195239.jpg"
-author = "Ermell"
-license = "CC BY-SA 4.0"
+file = "photos/04_Palau_de_la_Musica_panoramio.jpg"
+title = "File:Palau de la Musica - panoramio.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_la_Musica_-_panoramio.jpg"
+author = "Mister No"
+license = "CC BY 3.0"
 width = 1280
 height = 960
-exterior = "unknown"
+camera = [-36.17, 79.73]
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Palau_de_la_Musica_de_Valencia_vista_lateral.jpg"
+file = "photos/05_Valencia_el_Pla_del_Rea_Palau_de_la_Musica_IMG_2892_2026_08_.jpg"
+title = "File:Valencia-el Pla del Rea, Palau de la Musica IMG 2892 2026-08-24 17.05.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia-el_Pla_del_Rea%2C_Palau_de_la_Musica_IMG_2892_2026-08-24_17.05.jpg"
+author = "Michielverbeek"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 779
+camera = [-127.83, 38.61]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Part_central_del_palau_de_la_Musica_de_Valencia.jpg"
+title = "File:Part central del palau de la Música de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Part_central_del_palau_de_la_M%C3%BAsica_de_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 837
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_Palau_de_la_Musica_de_Valencia_vista_lateral.jpg"
 title = "File:Palau de la Música de València, vista lateral.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Palau_de_la_M%C3%BAsica_de_Val%C3%A8ncia%2C_vista_lateral.JPG"
 author = "Joanbanjo"
@@ -80,19 +106,43 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_La_Unio_Musical_Contestana_al_Palau_de_la_Musica_de_Valencia.jpg"
-title = "File:La Unió Musical Contestana al Palau de la Música de Valéncia.jpg"
-url = "https://commons.wikimedia.org/wiki/File:La_Uni%C3%B3_Musical_Contestana_al_Palau_de_la_M%C3%BAsica_de_Val%C3%A9ncia.jpg"
-author = "Josik2005"
-license = "CC BY-SA 4.0"
+file = "photos/08_Palau_de_la_Musica_Valencia_2.jpg"
+title = "File:Palau de la Música València 2.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_la_M%C3%BAsica_Val%C3%A8ncia_2.jpg"
+author = "Coentor"
+license = "CC BY-SA 3.0"
 width = 1280
-height = 857
+height = 960
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Palau_musica.jpg"
+file = "photos/09_Palau_de_Musica.jpg"
+title = "File:Palau de Musica.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_Musica.jpg"
+author = "Pmk58"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/10_Valencia_2016_13.jpg"
+title = "File:Valencia, 2016 (13).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia%2C_2016_%2813%29.jpg"
+author = "Draceane"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/11_Palau_musica.jpg"
 title = "File:Palau musica.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Palau_musica.jpg"
 author = "Felivet"
@@ -104,57 +154,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Banda_de_Campanar_al_Palau.jpg"
-title = "File:Banda de Campanar al Palau.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Banda_de_Campanar_al_Palau.JPG"
-author = "Gabriel Sanchez Jimenez"
-license = "Public domain"
+file = "photos/12_Valencia_porxo_del_palau_de_la_Musica.jpg"
+title = "File:València, porxo del palau de la Música.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia%2C_porxo_del_palau_de_la_M%C3%BAsica.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
 width = 1280
-height = 1061
+height = 1929
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_Palau_de_la_Musica_panoramio.jpg"
-title = "File:Palau de la Musica - panoramio.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_la_Musica_-_panoramio.jpg"
-author = "Mister No"
-license = "CC BY 3.0"
-width = 1280
-height = 960
-camera = [-36.17, 79.73]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Valencia_El_Pla_del_Real_pilaren_bouwwerk_bij_Font_del_Palau.jpg"
-title = "File:Valencia-El Pla del Real, pilaren-bouwwerk bij Font del Palau de la Musica IMG 2789 2026-08-24 11.30.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia-El_Pla_del_Real%2C_pilaren-bouwwerk_bij_Font_del_Palau_de_la_Musica_IMG_2789_2026-08-24_11.30.jpg"
-author = "Michielverbeek"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 723
-camera = [-57.03, 5.67]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Banda_Palau_2007.jpg"
-title = "File:Banda Palau-2007.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Banda_Palau-2007.jpg"
-author = "Gabriel Sanchez (Me)"
-license = "Public domain"
-width = 1280
-height = 897
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_Entrada_al_Palau_de_la_Musica_de_Valencia.jpg"
+file = "photos/13_Entrada_al_Palau_de_la_Musica_de_Valencia.jpg"
 title = "File:Entrada al Palau de la Música de Valencia.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Entrada_al_Palau_de_la_M%C3%BAsica_de_Valencia.jpg"
 author = "Dorieo"
@@ -166,52 +178,40 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Premis_Ovidi_2015.jpg"
-title = "File:Premis Ovidi 2015.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Premis_Ovidi_2015.jpg"
-author = "Llapissera"
-license = "CC BY-SA 4.0"
+file = "photos/14_Palau_de_la_Musica_a_Valencia.jpg"
+title = "File:Palau de la Música a València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_la_M%C3%BAsica_a_Val%C3%A8ncia.jpg"
+author = "Sento from Valencia, Spain"
+license = "CC BY-SA 2.0"
 width = 1280
-height = 406
-camera = [16.39, -4.47]
-heading = 67.5
+height = 960
+camera = [-35.17, -6.96]
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_Part_central_del_palau_de_la_Musica_de_Valencia.jpg"
-title = "File:Part central del palau de la Música de València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Part_central_del_palau_de_la_M%C3%BAsica_de_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 837
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Palau_de_la_Musica_preseleccions.jpg"
-title = "File:Palau de la Música - preseleccions.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_la_M%C3%BAsica_-_preseleccions.jpg"
-author = "Coentor"
+file = "photos/15_Jardin_del_Turia_Tramo_XI_09.jpg"
+title = "File:Jardin del Turia -Tramo XI 09.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Jardin_del_Turia_-Tramo_XI_09.jpg"
+author = "Dorieo"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Palau_de_la_Musica_Valencia_2.jpg"
-title = "File:Palau de la Música València 2.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_la_M%C3%BAsica_Val%C3%A8ncia_2.jpg"
-author = "Coentor"
-license = "CC BY-SA 3.0"
+file = "photos/16_Valencia_Palau_de_la_Musica_002.jpg"
+title = "File:Valencia - Palau de la Música 002.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Palau_de_la_M%C3%BAsica_002.jpg"
+author = "Américo Toledano"
+license = "CC BY-SA 4.0"
 width = 1280
-height = 960
-exterior = "unknown"
+height = 720
+camera = [-108.2, -57.14]
+exterior = true
 selected = false
 side = ""
 

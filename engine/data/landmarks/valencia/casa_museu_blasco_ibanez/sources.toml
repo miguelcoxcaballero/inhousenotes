@@ -45,134 +45,24 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 919
 camera = [22.32, 4.29]
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_RI_51_0004451_3.jpg"
-title = "File:RI-51-0004451 3.JPG"
-url = "https://commons.wikimedia.org/wiki/File:RI-51-0004451_3.JPG"
-author = "NikyLovesMonuments"
-license = "CC BY-SA 3.0 es"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/04_Terrassa_de_la_casa_museu_Blasco_Ibanez_de_Valencia.jpg"
-title = "File:Terrassa de la casa-museu Blasco Ibáñez de València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Terrassa_de_la_casa-museu_Blasco_Ib%C3%A1%C3%B1ez_de_Val%C3%A8ncia.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/05_RI_51_0004451.jpg"
-title = "File:RI-51-0004451.JPG"
-url = "https://commons.wikimedia.org/wiki/File:RI-51-0004451.JPG"
-author = "NikyLovesMonuments"
-license = "CC BY-SA 3.0 es"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/06_Escritorio_de_Blasco_Ibanez.jpg"
-title = "File:Escritorio de Blasco Ibáñez.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Escritorio_de_Blasco_Ib%C3%A1%C3%B1ez.jpg"
-author = "Luis-utp"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/07_Mobiliario_de_Blasco_Ibanez.jpg"
-title = "File:Mobiliario de Blasco Ibáñez.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Mobiliario_de_Blasco_Ib%C3%A1%C3%B1ez.jpg"
-author = "Luis-utp"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Casa_de_Vicente_Blasco_Ibanez.jpg"
-title = "File:Casa de Vicente Blasco Ibañéz.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Casa_de_Vicente_Blasco_Iba%C3%B1%C3%A9z.jpg"
-author = "Algrise"
-license = "CC BY 4.0"
-width = 960
-height = 1280
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Casa_Museu_Vicent_Blaco_Ibanez_a_la_Malvarossa_2006.jpg"
-title = "File:Casa-Museu Vicent Blaco Ibáñez a la Malvarossa, 2006.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Casa-Museu_Vicent_Blaco_Ib%C3%A1%C3%B1ez_a_la_Malvarossa%2C_2006.JPG"
-author = "Carlesmari"
-license = "CC BY 3.0"
-width = 960
-height = 1280
-camera = [23.19, 2.42]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Casa_Museu_de_Blasco_Ibanez_de_Valencia.jpg"
-title = "File:Casa-Museu de Blasco Ibáñez de València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Casa-Museu_de_Blasco_Ib%C3%A1%C3%B1ez_de_Val%C3%A8ncia.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1063
-camera = [23.48, 27.71]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_RI_51_0004451_2.jpg"
+file = "photos/03_RI_51_0004451_2.jpg"
 title = "File:RI-51-0004451 2.JPG"
 url = "https://commons.wikimedia.org/wiki/File:RI-51-0004451_2.JPG"
 author = "NikyLovesMonuments"
 license = "CC BY-SA 3.0 es"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_1904_07_08_El_Grafico_Blasco_Ibanez_en_su_posesion_de_la_Mal.jpg"
-title = "File:1904-07-08, El Gráfico, Blasco Ibáñez en su posesión de la “Malvarrosa„ (Valencia), Galería pompeyana frente al mar, una de las piezas más hermosas de la finca.jpg"
-url = "https://commons.wikimedia.org/wiki/File:1904-07-08%2C_El_Gr%C3%A1fico%2C_Blasco_Ib%C3%A1%C3%B1ez_en_su_posesi%C3%B3n_de_la_%E2%80%9CMalvarrosa%E2%80%9E_%28Valencia%29%2C_Galer%C3%ADa_pompeyana_frente_al_mar%2C_una_de_las_piezas_m%C3%A1s_hermosas_de_la_finca.jpg"
-author = "Vicente Barberá Masip"
-license = "Public domain"
-width = 1280
-height = 1021
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Detall_de_la_casa_museu_de_Blasco_Ibanez.jpg"
+file = "photos/04_Detall_de_la_casa_museu_de_Blasco_Ibanez.jpg"
 title = "File:Detall de la casa-museu de Blasco Ibáñez.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Detall_de_la_casa-museu_de_Blasco_Ib%C3%A1%C3%B1ez.jpg"
 author = "Joanbanjo"
@@ -180,20 +70,57 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1707
 camera = [1.17, 7.68]
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_Detall_de_la_taula_de_la_terrassa_de_la_casa_museu_de_Blasco.jpg"
-title = "File:Detall de la taula de la terrassa de la casa-museu de Blasco Ibáñez.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Detall_de_la_taula_de_la_terrassa_de_la_casa-museu_de_Blasco_Ib%C3%A1%C3%B1ez.jpg"
+file = "photos/05_Casa_de_Vicente_Blasco_Ibanez.jpg"
+title = "File:Casa de Vicente Blasco Ibañéz.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Casa_de_Vicente_Blasco_Iba%C3%B1%C3%A9z.jpg"
+author = "Algrise"
+license = "CC BY 4.0"
+width = 960
+height = 1280
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Terrassa_de_la_casa_museu_Blasco_Ibanez_de_Valencia.jpg"
+title = "File:Terrassa de la casa-museu Blasco Ibáñez de València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Terrassa_de_la_casa-museu_Blasco_Ib%C3%A1%C3%B1ez_de_Val%C3%A8ncia.jpg"
 author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 960
-camera = [1.17, 7.68]
-exterior = "unknown"
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_Casa_Museu_Vicent_Blaco_Ibanez_a_la_Malvarossa_2006.jpg"
+title = "File:Casa-Museu Vicent Blaco Ibáñez a la Malvarossa, 2006.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Casa-Museu_Vicent_Blaco_Ib%C3%A1%C3%B1ez_a_la_Malvarossa%2C_2006.JPG"
+author = "Carlesmari"
+license = "CC BY 3.0"
+width = 960
+height = 1280
+camera = [23.19, 2.42]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/08_Casa_Museu_de_Blasco_Ibanez_de_Valencia.jpg"
+title = "File:Casa-Museu de Blasco Ibáñez de València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Casa-Museu_de_Blasco_Ib%C3%A1%C3%B1ez_de_Val%C3%A8ncia.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1063
+camera = [23.48, 27.71]
+exterior = true
 selected = false
 side = ""
 

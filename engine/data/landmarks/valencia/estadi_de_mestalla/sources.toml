@@ -21,51 +21,51 @@ catastro_floor_area = { value = 36516.0, unit = "m2", source = "https://www1.sed
 catastro_floors_max = { value = 4, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 17 parts" }
 
 [[photo]]
-file = "photos/01_CAMP_DE_MESTALLA_GRADA_DE_LA_MAR_2014.jpg"
-title = "File:CAMP DE MESTALLA GRADA DE LA MAR 2014.JPG"
-url = "https://commons.wikimedia.org/wiki/File:CAMP_DE_MESTALLA_GRADA_DE_LA_MAR_2014.JPG"
-author = "Valencia CF"
-license = "CC BY-SA 4.0"
+file = "photos/01_Mestalla_panoramio_1.jpg"
+title = "File:Mestalla - panoramio (1).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Mestalla_-_panoramio_%281%29.jpg"
+author = "Maxim Karpinskiy"
+license = "CC BY-SA 3.0"
 width = 1280
 height = 853
+camera = [-94.09, 64.01]
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Mestalla_des_de_Filocat.jpg"
-title = "File:Mestalla des de Filocat.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Mestalla_des_de_Filocat.jpg"
+file = "photos/02_Camp_de_Mestalla_2023.jpg"
+title = "File:Camp de Mestalla 2023.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Camp_de_Mestalla_2023.jpg"
 author = "Francesc Fort"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 1705
-camera = [-112.62, -224.41]
+height = 961
+camera = [-101.57, -12.32]
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Mestalla_Kill_em_all.jpg"
-title = "File:Mestalla Kill 'em all.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Mestalla_Kill_%27em_all.jpg"
-author = "Francesc Fort"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1705
-camera = [116.12, -108.14]
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/04_Rep_Argentina_Campoamor_Iecla.jpg"
-title = "File:Rep Argentina-Campoamor-Iecla.jpeg"
-url = "https://commons.wikimedia.org/wiki/File:Rep_Argentina-Campoamor-Iecla.jpeg"
-author = "User:Coentor"
+file = "photos/03_Estadi_del_Mestalla_Valencia.jpg"
+title = "File:Estadi del Mestalla, València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Estadi_del_Mestalla%2C_Val%C3%A8ncia.jpg"
+author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/04_Cues_a_Mestalla_1.jpg"
+title = "File:Cues a Mestalla - 1.jpeg"
+url = "https://commons.wikimedia.org/wiki/File:Cues_a_Mestalla_-_1.jpeg"
+author = "User:Coentor"
+license = "CC BY-SA 1.0"
+width = 1280
+height = 960
 exterior = true
 selected = false
 side = ""
@@ -95,7 +95,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Facana_de_l_estadi_de_Mestalla_a_l_avinguda_de_Suecia.jpg"
+file = "photos/07_VCF_LlUE_febrer_2013_2.jpg"
+title = "File:VCF-LlUE febrer 2013 - 2.jpeg"
+url = "https://commons.wikimedia.org/wiki/File:VCF-LlUE_febrer_2013_-_2.jpeg"
+author = "Coentor"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/08_Facana_de_l_estadi_de_Mestalla_a_l_avinguda_de_Suecia.jpg"
 title = "File:Façana de l'estadi de Mestalla a l'avinguda de Suècia.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_de_l%27estadi_de_Mestalla_a_l%27avinguda_de_Su%C3%A8cia.JPG"
 author = "Joanbanjo"
@@ -107,22 +119,22 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Mestalla_des_de_Vomitori.jpg"
-title = "File:Mestalla des de Vomitori.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Mestalla_des_de_Vomitori.jpg"
-author = "slayer from Hsin Chu, Taiwan"
-license = "CC BY 2.0"
+file = "photos/09_Estadio_Mestalla_2006.jpg"
+title = "File:Estadio Mestalla 2006.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Estadio_Mestalla_2006.jpg"
+author = "MiguelAlanCS"
+license = "CC BY-SA 4.0"
 width = 1280
-height = 854
+height = 853
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_Exterior_partido_Valencia_Barcelona_LaLiga_2023_2024.jpg"
-title = "File:Exterior partido Valencia-Barcelona LaLiga 2023-2024.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Exterior_partido_Valencia-Barcelona_LaLiga_2023-2024.jpg"
-author = "Anidae"
+file = "photos/10_MestallaValencia2024.jpg"
+title = "File:MestallaValencia2024.jpg"
+url = "https://commons.wikimedia.org/wiki/File:MestallaValencia2024.jpg"
+author = "Vysotsky"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 960
@@ -131,44 +143,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/10_Mestalla_panoramio_1.jpg"
-title = "File:Mestalla - panoramio (1).jpg"
-url = "https://commons.wikimedia.org/wiki/File:Mestalla_-_panoramio_%281%29.jpg"
-author = "Maxim Karpinskiy"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 853
-camera = [-94.09, 64.01]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_CAMP_DE_MESTALLA_GRADA_DE_LA_MAR_2014_2.jpg"
-title = "File:CAMP DE MESTALLA GRADA DE LA MAR 2014 (2).JPG"
-url = "https://commons.wikimedia.org/wiki/File:CAMP_DE_MESTALLA_GRADA_DE_LA_MAR_2014_%282%29.JPG"
-author = "Valencia CF"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 530
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_Mestallapanoramic4.jpg"
-title = "File:Mestallapanoramic4.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Mestallapanoramic4.jpg"
-author = "No machine-readable author provided. Skaller assumed (based on copyright claims)."
-license = "CC BY-SA 3.0"
-width = 1280
-height = 643
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Fachada_exterior_del_Mestalla_antes_del_partido_Valencia_Bar.jpg"
+file = "photos/11_Fachada_exterior_del_Mestalla_antes_del_partido_Valencia_Bar.jpg"
 title = "File:Fachada exterior del Mestalla antes del partido Valencia-Barcelona LaLiga 2023-2024.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Fachada_exterior_del_Mestalla_antes_del_partido_Valencia-Barcelona_LaLiga_2023-2024.jpg"
 author = "Anidae"
@@ -176,43 +151,6 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Cisco_Fran_Gol_de_Forment.jpg"
-title = "File:Cisco Fran - Gol de Forment.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Cisco_Fran_-_Gol_de_Forment.jpg"
-author = "Francesc Fort"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 961
-camera = [-99.74, -11.26]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Valencia_CF_supporters.jpg"
-title = "File:València CF supporters.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia_CF_supporters.jpg"
-author = "Víctor Gutiérrez Navarro"
-license = "CC BY 2.0"
-width = 960
-height = 600
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_Mestalla_trofeu_taronja_120811.jpg"
-title = "File:Mestalla trofeu taronja 120811.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Mestalla_trofeu_taronja_120811.jpg"
-author = "Tot-futbol"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-exterior = "unknown"
 selected = false
 side = ""
 

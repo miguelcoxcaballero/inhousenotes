@@ -48,7 +48,58 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Facana_de_l_esglesia_del_Temple_Valencia.jpg"
+file = "photos/03_Palacio_del_Temple_panoramio_1.jpg"
+title = "File:Palacio del Temple - panoramio (1).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palacio_del_Temple_-_panoramio_%281%29.jpg"
+author = "Mister No"
+license = "CC BY 3.0"
+width = 1280
+height = 1056
+camera = [67.95, -47.81]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/04_Valence_panoramio_10.jpg"
+title = "File:Valence - panoramio (10).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valence_-_panoramio_%2810%29.jpg"
+author = "chisloup"
+license = "CC BY 3.0"
+width = 1280
+height = 960
+camera = [-131.56, -189.86]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_At_Valencia_2025_069.jpg"
+title = "File:At Valencia 2025 069.jpg"
+url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_069.jpg"
+author = "Photograph by Mike Peel ( www.mikepeel.net )."
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1920
+camera = [68.84, -19.21]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Delegacio_del_Govern_al_Pais_Valencia.jpg"
+title = "File:Delegació del Govern al País Valencià.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Delegaci%C3%B3_del_Govern_al_Pa%C3%ADs_Valenci%C3%A0.JPG"
+author = "Carlesmari"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_Facana_de_l_esglesia_del_Temple_Valencia.jpg"
 title = "File:Façana de l'església del Temple, València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_de_l%27esgl%C3%A9sia_del_Temple%2C_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -60,7 +111,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_El_Temple_vist_des_de_l_altre_costat_del_riu_Valencia.jpg"
+file = "photos/08_El_Temple_vist_des_de_l_altre_costat_del_riu_Valencia.jpg"
 title = "File:El Temple vist des de l'altre costat del riu, València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:El_Temple_vist_des_de_l%27altre_costat_del_riu%2C_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -72,7 +123,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Monestir_del_Temple_P1140174.jpg"
+file = "photos/09_Monestir_del_Temple_P1140174.jpg"
 title = "File:Monestir del Temple P1140174.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Monestir_del_Temple_P1140174.JPG"
 author = "Pere López"
@@ -84,7 +135,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Facana_del_Palau_del_Temple_de_Valencia.jpg"
+file = "photos/10_Valencia_Spain_Temple_Church.jpg"
+title = "File:Valencia, Spain - Temple Church -.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia%2C_Spain_-_Temple_Church_-.jpg"
+author = "Y Anderson"
+license = "CC BY-SA 3.0 es"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/11_Facana_del_Palau_del_Temple_de_Valencia.jpg"
 title = "File:Façana del Palau del Temple de València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_del_Palau_del_Temple_de_Val%C3%A8ncia.JPG"
 author = "Pacopac"
@@ -96,7 +159,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Esglesia_i_Palau_del_Temple_facana.jpg"
+file = "photos/12_Iglesia_del_Temple_Valencia_01.jpg"
+title = "File:Iglesia del Temple, Valencia 01.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Iglesia_del_Temple%2C_Valencia_01.JPG"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/13_Esglesia_i_Palau_del_Temple_facana.jpg"
 title = "File:Església i Palau del Temple, façana.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_i_Palau_del_Temple%2C_fa%C3%A7ana.jpg"
 author = "Joanbanjo"
@@ -108,46 +183,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Palacio_del_Temple_panoramio_1.jpg"
-title = "File:Palacio del Temple - panoramio (1).jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palacio_del_Temple_-_panoramio_%281%29.jpg"
-author = "Mister No"
-license = "CC BY 3.0"
-width = 1280
-height = 1056
-camera = [67.95, -47.81]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Valence_panoramio_10.jpg"
-title = "File:Valence - panoramio (10).jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valence_-_panoramio_%2810%29.jpg"
-author = "chisloup"
-license = "CC BY 3.0"
-width = 1280
-height = 960
-camera = [-131.56, -189.86]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_At_Valencia_2025_069.jpg"
-title = "File:At Valencia 2025 069.jpg"
-url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_069.jpg"
-author = "Photograph by Mike Peel ( www.mikepeel.net )."
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1920
-camera = [68.84, -19.21]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Templevalencia1.jpg"
+file = "photos/14_Templevalencia1.jpg"
 title = "File:Templevalencia1.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Templevalencia1.JPG"
 author = "Un valencià"
@@ -159,61 +195,13 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_Esglesia_del_Temple_de_Valencia_vista_lateral.jpg"
+file = "photos/15_Esglesia_del_Temple_de_Valencia_vista_lateral.jpg"
 title = "File:Església del Temple de València, vista lateral.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_del_Temple_de_Val%C3%A8ncia%2C_vista_lateral.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 959
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Delegacio_del_Govern_al_Pais_Valencia.jpg"
-title = "File:Delegació del Govern al País Valencià.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Delegaci%C3%B3_del_Govern_al_Pa%C3%ADs_Valenci%C3%A0.JPG"
-author = "Carlesmari"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Valencia_Spain_Temple_Church.jpg"
-title = "File:Valencia, Spain - Temple Church -.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia%2C_Spain_-_Temple_Church_-.jpg"
-author = "Y Anderson"
-license = "CC BY-SA 3.0 es"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Iglesia_del_Temple_Valencia_01.jpg"
-title = "File:Iglesia del Temple, Valencia 01.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Iglesia_del_Temple%2C_Valencia_01.JPG"
-author = "Dorieo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_Placa_indicativa_del_sitio_donde_se_encontraba_la_Torre_puer.jpg"
-title = "File:Placa indicativa del sitio donde se encontraba la Torre puerta de Bab-El-Schadchar aa.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Placa_indicativa_del_sitio_donde_se_encontraba_la_Torre_puerta_de_Bab-El-Schadchar_aa.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
 exterior = true
 selected = false
 side = ""

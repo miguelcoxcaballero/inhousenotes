@@ -15,14 +15,40 @@ wikipedia = { es = "https://es.wikipedia.org/wiki/Edificio_del_Banco_de_Espa%C3%
 built = { value = 1917, source = "https://www.wikidata.org/wiki/Q28976650#P571" }
 architect = { value = "José de Astiz", source = "https://www.wikidata.org/wiki/Q28976650#P84" }
 heritage = { value = ["bien de interés cultural", "BIE", "BIE"], source = "https://www.wikidata.org/wiki/Q28976650#P1435", note = "BIE (inventory number: 322)" }
-catastro_refcat = { value = "6025508YJ2762C", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6025508&rc2=YJ2762C" }
-catastro_built = { value = 1930, source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6025508&rc2=YJ2762C", note = "Catastro dateOfConstruction (often the last major works)" }
-catastro_use = { value = "4_1_office", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6025508&rc2=YJ2762C" }
-catastro_floor_area = { value = 9801.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6025508&rc2=YJ2762C", note = "Catastro officialArea (gross floor area)" }
-catastro_floors_max = { value = 13, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 20 parts" }
+catastro_refcat = { value = "5924401YJ2752D", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5924401&rc2=YJ2752D" }
+catastro_built = { value = 1917, source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5924401&rc2=YJ2752D", note = "Catastro dateOfConstruction (often the last major works)" }
+catastro_use = { value = "1_residential", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5924401&rc2=YJ2752D" }
+catastro_floor_area = { value = 7475.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5924401&rc2=YJ2752D", note = "Catastro officialArea (gross floor area)" }
+catastro_floors_max = { value = 5, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 11 parts" }
 
 [[photo]]
-file = "photos/01_Valencia_facana_del_banc_d_Espanya.jpg"
+file = "photos/01_Edificio_del_Banco_de_Espana_Valencia_04_2025.jpg"
+title = "File:Edificio del Banco de España, Valencia, 04 2025.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_del_Banco_de_Espa%C3%B1a%2C_Valencia%2C_04_2025.jpg"
+author = "Artvill"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 961
+camera = [-13.38, -22.81]
+heading = 357.0
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/02_Porta_del_Banc_d_Espanya_Valencia.jpg"
+title = "File:Porta del Banc d'Espanya, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Porta_del_Banc_d%27Espanya%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1863
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/03_Valencia_facana_del_banc_d_Espanya.jpg"
 title = "File:València, façana del banc d'Espanya.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia%2C_fa%C3%A7ana_del_banc_d%27Espanya.JPG"
 author = "Joanbanjo"
@@ -34,7 +60,31 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Edificio_del_Banco_de_Espana_de_Jose_de_Astiz_Barcena_1917_e.jpg"
+file = "photos/04_Finestres_de_l_edifici_del_Banc_d_Espanya_Valencia.jpg"
+title = "File:Finestres de l'edifici del Banc d'Espanya, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Finestres_de_l%27edifici_del_Banc_d%27Espanya%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 861
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_Banc_d_Espanya_Valencia_02.jpg"
+title = "File:Banc d'Espanya, Valéncia 02.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Banc_d%27Espanya%2C_Val%C3%A9ncia_02.jpg"
+author = "Valencian"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 2276
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Edificio_del_Banco_de_Espana_de_Jose_de_Astiz_Barcena_1917_e.jpg"
 title = "File:Edificio del Banco de España de José de Astiz Bárcena (1917) en Valencia.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Edificio_del_Banco_de_Espa%C3%B1a_de_Jos%C3%A9_de_Astiz_B%C3%A1rcena_%281917%29_en_Valencia.jpg"
 author = "Juan Mayordomo"
@@ -46,7 +96,31 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Banco_de_Espana_en_Valencia.jpg"
+file = "photos/07_Valencia_Banco_de_Espana.jpg"
+title = "File:Valencia - Banco de España.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Banco_de_Espa%C3%B1a.jpg"
+author = "Zarateman"
+license = "CC0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/08_Valencia_edifici_del_banc_d_Espanya.jpg"
+title = "File:València, edifici del banc d'Espanya.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia%2C_edifici_del_banc_d%27Espanya.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/09_Banco_de_Espana_en_Valencia.jpg"
 title = "File:Banco de España en Valencia.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Banco_de_Espa%C3%B1a_en_Valencia.jpg"
 author = "19Tarrestnom65"
@@ -58,80 +132,6 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Edificio_del_Banco_de_Espana_Valencia_04_2025.jpg"
-title = "File:Edificio del Banco de España, Valencia, 04 2025.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Edificio_del_Banco_de_Espa%C3%B1a%2C_Valencia%2C_04_2025.jpg"
-author = "Artvill"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 961
-camera = [-107.96, 27.44]
-heading = 357.0
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/05_Finestres_de_l_edifici_del_Banc_d_Espanya_Valencia.jpg"
-title = "File:Finestres de l'edifici del Banc d'Espanya, València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Finestres_de_l%27edifici_del_Banc_d%27Espanya%2C_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 861
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/06_Valencia_edifici_del_banc_d_Espanya.jpg"
-title = "File:València, edifici del banc d'Espanya.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia%2C_edifici_del_banc_d%27Espanya.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/07_Banc_d_Espanya_Valencia_02.jpg"
-title = "File:Banc d'Espanya, Valéncia 02.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Banc_d%27Espanya%2C_Val%C3%A9ncia_02.jpg"
-author = "Valencian"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 2276
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Valencia_Banco_de_Espana.jpg"
-title = "File:Valencia - Banco de España.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Banco_de_Espa%C3%B1a.jpg"
-author = "Zarateman"
-license = "CC0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Cantonada_de_l_edifici_del_banc_d_Espanya_Valencia.jpg"
-title = "File:Cantonada de l'edifici del banc d'Espanya, València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Cantonada_de_l%27edifici_del_banc_d%27Espanya%2C_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 923
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
 file = "photos/10_Banc_d_Espanya_Valencia_01.jpg"
 title = "File:Banc d'Espanya, Valéncia 01.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Banc_d%27Espanya%2C_Val%C3%A9ncia_01.jpg"
@@ -139,31 +139,31 @@ author = "Valencian"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 2276
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/11_Banc_d_Espanya_Valencia_03.jpg"
+file = "photos/11_Cantonada_de_l_edifici_del_banc_d_Espanya_Valencia.jpg"
+title = "File:Cantonada de l'edifici del banc d'Espanya, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Cantonada_de_l%27edifici_del_banc_d%27Espanya%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 923
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/12_Banc_d_Espanya_Valencia_03.jpg"
 title = "File:Banc d'Espanya, Valéncia 03.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Banc_d%27Espanya%2C_Val%C3%A9ncia_03.jpg"
 author = "Valencian"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 720
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_Porta_del_Banc_d_Espanya_Valencia.jpg"
-title = "File:Porta del Banc d'Espanya, València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Porta_del_Banc_d%27Espanya%2C_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1863
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
@@ -175,18 +175,18 @@ author = "Valencian"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 720
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/catastro_6025508YJ2762C.jpg"
-title = "Catastro fachada 6025508YJ2762C"
-url = "http://ovc.catastro.meh.es/OVCServWeb/OVCWcfLibres/OVCFotoFachada.svc/RecuperarFotoFachadaGet?ReferenciaCatastral=6025508YJ2762C"
+file = "photos/catastro_5924401YJ2752D.jpg"
+title = "Catastro fachada 5924401YJ2752D"
+url = "http://ovc.catastro.meh.es/OVCServWeb/OVCWcfLibres/OVCFotoFachada.svc/RecuperarFotoFachadaGet?ReferenciaCatastral=5924401YJ2752D"
 author = "Dirección General del Catastro"
 license = "Catastro open data (attribution required)"
-width = 1200
-height = 1600
+width = 1600
+height = 1200
 exterior = true
 selected = false
 side = ""
@@ -194,11 +194,11 @@ side = ""
 [[plan]]
 file = "plans/catastro_wms.png"
 title = "Catastro WMS cadastral map"
-url = "http://ovc.catastro.meh.es/Cartografia/WMS/ServidorWMS.aspx?SERVICE=WMS&REQUEST=GetMap&LAYERS=Catastro&SRS=EPSG:25830&BBOX=725881.84,4372243.83,725985.79,4372338.45"
+url = "http://ovc.catastro.meh.es/Cartografia/WMS/ServidorWMS.aspx?SERVICE=WMS&REQUEST=GetMap&LAYERS=Catastro&SRS=EPSG:25830&BBOX=725792.84,4372182.31,725889.35,4372292.07"
 author = "Dirección General del Catastro"
 license = "Catastro open data (attribution required)"
 kind = "catastro"
-notes = "Cadastral map, EPSG:25830 bbox [725881.84, 4372243.83, 725985.79, 4372338.45], 0.080 m/px, north up; roman numerals = floors above ground; parcels 6025508YJ2762C"
+notes = "Cadastral map, EPSG:25830 bbox [725792.84, 4372182.31, 725889.35, 4372292.07], 0.080 m/px, north up; roman numerals = floors above ground; parcels 5924401YJ2752D"
 
 [[reference]]
 url = "https://www.wikidata.org/wiki/Q28976650"
@@ -216,11 +216,11 @@ title = "Category:Banc d'Espanya (València)"
 notes = "Commons category (photos listed above are a ranked subset)"
 
 [[reference]]
-url = "https://www.openstreetmap.org/way/492626775"
-title = "OSM way 492626775 (outline)"
-notes = "selection method: name"
+url = "https://www.openstreetmap.org/way/416487480"
+title = "OSM way 416487480 (outline)"
+notes = "selection method: list"
 
 [[reference]]
-url = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6025508&rc2=YJ2762C"
-title = "Catastro parcel 6025508YJ2762C"
-notes = "built=1930; use=4_1_office; area=9801; area_in_outline=859.2"
+url = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5924401&rc2=YJ2752D"
+title = "Catastro parcel 5924401YJ2752D"
+notes = "built=1917; use=1_residential; area=7475; area_in_outline=1519.5"

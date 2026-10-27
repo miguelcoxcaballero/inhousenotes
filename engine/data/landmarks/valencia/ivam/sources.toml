@@ -47,13 +47,14 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Vista_cap_a_l_exterior_des_de_l_Institut_Valencia_d_Art_Mode.jpg"
-title = "File:Vista cap a l'exterior des de l'Institut Valencià d'Art Modern.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Vista_cap_a_l%27exterior_des_de_l%27Institut_Valenci%C3%A0_d%27Art_Modern.JPG"
-author = "Joanbanjo"
+file = "photos/03_At_Valencia_2025_317.jpg"
+title = "File:At Valencia 2025 317.jpg"
+url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_317.jpg"
+author = "Photograph by Mike Peel ( www.mikepeel.net )."
 license = "CC BY-SA 4.0"
 width = 1280
-height = 870
+height = 1920
+camera = [-33.89, -54.11]
 exterior = true
 selected = false
 side = ""
@@ -95,56 +96,31 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Edifici_del_Mont_de_Pietat_centre_d_Art_d_Alcoi.jpg"
-title = "File:Edifici del Mont de Pietat, centre d'Art d'Alcoi.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Edifici_del_Mont_de_Pietat%2C_centre_d%27Art_d%27Alcoi.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Els_exilis_de_Renau_panoramica.jpg"
-title = "File:Els exilis de Renau - panoràmica.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Els_exilis_de_Renau_-_panor%C3%A0mica.jpg"
-author = "Miguel Lorenzo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 854
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Gente_en_la_calle_tif.jpg"
-title = "File:Gente en la calle.tif"
-url = "https://commons.wikimedia.org/wiki/File:Gente_en_la_calle.tif"
-author = "Ignacio Pinazo Camarlench"
+file = "photos/07_IVAMa.jpg"
+title = "File:IVAMa.jpg"
+url = "https://commons.wikimedia.org/wiki/File:IVAMa.jpg"
+author = "Felivet"
 license = "Public domain"
 width = 1280
-height = 743
+height = 986
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/10_At_Valencia_2025_317.jpg"
-title = "File:At Valencia 2025 317.jpg"
-url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_317.jpg"
-author = "Photograph by Mike Peel ( www.mikepeel.net )."
+file = "photos/08_180_Institut_Valencia_d_Art_Modern_IVAM_c_Guillem_de_Castro_.jpg"
+title = "File:180 Institut Valencià d'Art Modern (IVAM), c. Guillem de Castro 118 (València).jpg"
+url = "https://commons.wikimedia.org/wiki/File:180_Institut_Valenci%C3%A0_d%27Art_Modern_%28IVAM%29%2C_c._Guillem_de_Castro_118_%28Val%C3%A8ncia%29.jpg"
+author = "Enric"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 1920
-camera = [-33.89, -54.11]
-exterior = "unknown"
+height = 960
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/11_Anell_ciclista_a_la_ciutat_de_Valencia_02.jpg"
+file = "photos/09_Anell_ciclista_a_la_ciutat_de_Valencia_02.jpg"
 title = "File:Anell ciclista a la ciutat de València 02.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Anell_ciclista_a_la_ciutat_de_Val%C3%A8ncia_02.jpg"
 author = "Pacopac"
@@ -156,43 +132,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_Gente_a_la_entrada_de_un_edificio_tif.jpg"
-title = "File:Gente a la entrada de un edificio.tif"
-url = "https://commons.wikimedia.org/wiki/File:Gente_a_la_entrada_de_un_edificio.tif"
-author = "Ignacio Pinazo Camarlench"
-license = "Public domain"
-width = 1280
-height = 757
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Jardines_detras_del_Ivam_03.jpg"
-title = "File:Jardines detrás del Ivam 03.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Jardines_detr%C3%A1s_del_Ivam_03.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Escif_a_l_IVAM_04.jpg"
-title = "File:Escif a l'IVAM - 04.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Escif_a_l%27IVAM_-_04.jpg"
-author = "Juan García"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1391
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Ivam04.jpg"
+file = "photos/10_Ivam04.jpg"
 title = "File:Ivam04.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Ivam04.jpg"
 author = "Joanbanjo"
@@ -204,13 +144,25 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Placa_Ivam_carrer_Beneficiencia.jpg"
-title = "File:Placa Ivam carrer Beneficiència.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Placa_Ivam_carrer_Benefici%C3%A8ncia.jpg"
-author = "Coentor"
-license = "CC BY-SA 3.0"
+file = "photos/11_Jardines_detras_del_Ivam_03.jpg"
+title = "File:Jardines detrás del Ivam 03.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Jardines_detr%C3%A1s_del_Ivam_03.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
 width = 1280
 height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/12_Escif_a_l_IVAM_04.jpg"
+title = "File:Escif a l'IVAM - 04.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Escif_a_l%27IVAM_-_04.jpg"
+author = "Juan García"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1391
 exterior = true
 selected = false
 side = ""

@@ -34,82 +34,57 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Hemispheric_Twilight_Valencia_Spain_Jan_2007.jpg"
-title = "File:Hemispheric Twilight - Valencia, Spain - Jan 2007.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Hemispheric_Twilight_-_Valencia%2C_Spain_-_Jan_2007.jpg"
-author = "Diliff"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 683
-camera = [-50.17, -264.2]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/03_Umbraculo_Ciudad_de_las_Artes_y_las_Ciencias_Valencia_Espana.jpg"
+file = "photos/02_Umbraculo_Ciudad_de_las_Artes_y_las_Ciencias_Valencia_Espana.jpg"
 title = "File:Umbráculo, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 41.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Umbr%C3%A1culo%2C_Ciudad_de_las_Artes_y_las_Ciencias%2C_Valencia%2C_Espa%C3%B1a%2C_2014-06-29%2C_DD_41.JPG"
 author = "Diego Delso"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 1032
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/04_Ciudad_de_las_Artes_y_las_Ciencias_Valencia_Espana_2014_06_2.jpg"
-title = "File:Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 39.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Ciudad_de_las_Artes_y_las_Ciencias%2C_Valencia%2C_Espa%C3%B1a%2C_2014-06-29%2C_DD_39.JPG"
-author = "Diego Delso"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 760
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/05_Valencia_L_Umbracle_southern_entrance_seen_from_the_east.jpg"
-title = "File:Valencia L'Umbracle southern entrance seen from the east.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_L%27Umbracle_southern_entrance_seen_from_the_east.jpg"
-author = "Ymblanter"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 842
-camera = [315.65, 21.92]
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Valencia_Quartre_Carreres_la_Ciudad_de_las_Artes_y_las_Cienc.jpg"
-title = "File:Valencia-Quartre Carreres, la Ciudad de las Artes y las Ciencias vanaf de Pont de Montolivet IMG 3086 2026-08-25 17.50.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia-Quartre_Carreres%2C_la_Ciudad_de_las_Artes_y_las_Ciencias_vanaf_de_Pont_de_Montolivet_IMG_3086_2026-08-25_17.50.jpg"
-author = "Michielverbeek"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 754
-camera = [102.95, -182.29]
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/07_Umbraculo_Ciudad_de_las_Artes_y_las_Ciencias_Valencia_Espana_2.jpg"
+file = "photos/03_Umbraculo_Ciudad_de_las_Artes_y_las_Ciencias_Valencia_Espana_2.jpg"
 title = "File:Umbráculo, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 43.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Umbr%C3%A1culo%2C_Ciudad_de_las_Artes_y_las_Ciencias%2C_Valencia%2C_Espa%C3%B1a%2C_2014-06-29%2C_DD_43.JPG"
 author = "Diego Delso"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 853
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Valencia_L_Umbracle_seen_from_the_park.jpg"
+file = "photos/04_Lumbracle_valencia_2009_2.jpg"
+title = "File:Lumbracle-valencia-2009 (2).JPG"
+url = "https://commons.wikimedia.org/wiki/File:Lumbracle-valencia-2009_%282%29.JPG"
+author = "Alberto-g-rovi"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 850
+camera = [56.82, -83.11]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_Il_viale_panoramio_1.jpg"
+title = "File:Il viale - panoramio (1).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Il_viale_-_panoramio_%281%29.jpg"
+author = "renato agostini"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 857
+camera = [-187.58, -239.37]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Valencia_L_Umbracle_seen_from_the_park.jpg"
 title = "File:Valencia L'Umbracle seen from the park.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_L%27Umbracle_seen_from_the_park.jpg"
 author = "Ymblanter"
@@ -122,15 +97,39 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_Il_viale_panoramio_1.jpg"
-title = "File:Il viale - panoramio (1).jpg"
-url = "https://commons.wikimedia.org/wiki/File:Il_viale_-_panoramio_%281%29.jpg"
-author = "renato agostini"
+file = "photos/07_Valencia_L_Umbracle_southern_entrance_seen_from_the_east.jpg"
+title = "File:Valencia L'Umbracle southern entrance seen from the east.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_L%27Umbracle_southern_entrance_seen_from_the_east.jpg"
+author = "Ymblanter"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 842
+camera = [315.65, 21.92]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/08_The_Umbracle.jpg"
+title = "File:The Umbracle.JPG"
+url = "https://commons.wikimedia.org/wiki/File:The_Umbracle.JPG"
+author = "Bellavdg"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 857
-camera = [-187.58, -239.37]
-exterior = "unknown"
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/09_Stadstuinval.jpg"
+title = "File:Stadstuinval.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Stadstuinval.jpg"
+author = "Lauramarleen"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
 selected = false
 side = ""
 
@@ -147,19 +146,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/11_Noche_Ciudad_Artes_Ciencias.jpg"
-title = "File:Noche Ciudad Artes Ciencias.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Noche_Ciudad_Artes_Ciencias.jpg"
-author = "orvalrochefort from Belgium"
-license = "CC BY 2.0"
-width = 1280
-height = 854
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_Umbracle.jpg"
+file = "photos/11_Umbracle.jpg"
 title = "File:Umbracle.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Umbracle.jpg"
 author = "Pielleunipi"
@@ -171,19 +158,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Ciutat_de_les_Arts_i_les_Ciencies_Valencia_Spain_01.jpg"
-title = "File:Ciutat de les Arts i les Ciències (Valencia, Spain) 01.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Ciutat_de_les_Arts_i_les_Ci%C3%A8ncies_%28Valencia%2C_Spain%29_01.jpg"
-author = "Riverac"
-license = "CC BY 2.0"
-width = 1280
-height = 846
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Valencia10.jpg"
+file = "photos/12_Valencia10.jpg"
 title = "File:Valencia10.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia10.jpg"
 author = "Cabanyalvlc"
@@ -195,7 +170,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_P9150222.jpg"
+file = "photos/13_P9150222.jpg"
 title = "File:P9150222.JPG"
 url = "https://commons.wikimedia.org/wiki/File:P9150222.JPG"
 author = "Balky"
@@ -207,7 +182,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Umbraculo_Valencia.jpg"
+file = "photos/14_Umbraculo_Valencia.jpg"
 title = "File:Umbraculo Valencia.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Umbraculo_Valencia.jpg"
 author = "Balky"
