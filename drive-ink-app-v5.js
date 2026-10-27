@@ -34,13 +34,27 @@
                 if(!current(journal))throw createAbortError('Document changed');
                 // Materialize new page metadata before its small stroke packets.
                 const ordered=[...operations].sort((a,b)=>(a?.kind==='stroke'?1:0)-(b?.kind==='stroke'?1:0));
-                for(let op of ordered){
+                for(let operationIndex=0;operationIndex<ordered.length;operationIndex++){
+                    let op=ordered[operationIndex];
                     if(op?.v===1&&op.kind==='stroke'){
                         const local=state.pages.find(page=>page.pageId===op.pageId);
                         if(!local&&state.collabStructure?.tombstones?.[op.pageId])continue;
                         if(!local)throw new Error('Waiting for the journal page metadata');
                         if(!op.stroke?.id||!Array.isArray(op.stroke.points))throw new Error('Invalid ink stroke');
                         const patch=shell(local);patch.strokes=[op.stroke];
+                        const ids=new Set([op.stroke.id]);let pointCount=op.stroke.points.length;
+                        // Keep the same causal merge path, but amortize its
+                        // document metadata/checkpoint work across a bounded
+                        // run of distinct strokes on this page (also bounded by
+                        // point count). A repeated ID
+                        // stays a separate operation so revisions retain order.
+                        while(patch.strokes.length<32){
+                            const next=ordered[operationIndex+1];
+                            if(next?.v!==1||next.kind!=='stroke'||next.pageId!==op.pageId
+                                ||!next.stroke?.id||!Array.isArray(next.stroke.points)||ids.has(next.stroke.id)
+                                ||pointCount+next.stroke.points.length>8192)break;
+                            patch.strokes.push(next.stroke);ids.add(next.stroke.id);pointCount+=next.stroke.points.length;operationIndex++;
+                        }
                         op={v:1,...context(),pages:[patch]};
                     }
                     if(op?.v!==1||!Array.isArray(op.pages)||!op.structure||!op.fields)throw new Error('Invalid ink edit');
@@ -90,7 +104,7 @@
     function capture(){
         if(capturing)return capturing;
         const task=captureEdits();capturing=task;
-        return task.then(result=>{if(capturing===task){capturing=null;if(engine?.docId&&(pages.size||metadataDirty))schedule();}return result;},error=>{if(capturing===task)capturing=null;throw error;});
+        return task.then(result=>{if(capturing===task){capturing=null;if(engine?.docId&&(pages.size||metadataDirty))schedule();if(engine)refreshSaveIndicatorState();}return result;},error=>{if(capturing===task){capturing=null;if(engine)refreshSaveIndicatorState();}throw error;});
     }
     async function captureEdits(){
         const journal=engine||start();if(!journal||!journal.docId||!current(journal))return;
@@ -176,7 +190,7 @@
     }
     function hint(fileId,id,preview=false){if(fileId!==state.driveFileId)return;const journal=start();if(preview)live?.hint(id);else journal?.hint(id);}
     function hints(fileId,props){for(const [key,id]of Object.entries(props||{}))if(key.startsWith('ihn_ink_')||key.startsWith('ihn_live_'))hint(fileId,id,key.startsWith('ihn_live_'));}
-    function status(){return engine&&current(engine)?{...engine.status(),ackVersion,pendingCapture:!!pages.size||metadataDirty}:null;}
+    function status(){return engine&&current(engine)?{...engine.status(),ackVersion,pendingCapture:!!capturing||!!pages.size||metadataDirty}:null;}
     root.InhouseDriveInk=Object.freeze({start,stop,page,stroke,preview,change,hint,hints,status,capture});
     // Home also drains journals committed before a process exit. It never
     // replaces the PDF's local snapshot with journal upload acknowledgements.

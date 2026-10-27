@@ -16,6 +16,7 @@
             this.host=host;this.store=host.store;this.account=host.account;this.docId=host.docId||'';
             this.actor=host.actor||crypto.randomUUID();this.part=0;this.current=null;
             this.records=new Map();this.sources=new Map();this.seen=new Map();
+            this.readTasks=new Map();this.applyChain=Promise.resolve();
             this.outboxReady=!!this.store.patchAndQueue;this.persistChain=Promise.resolve();this.stopped=false;this.writing=false;this.reading=false;
             this.nextOutboxCheck=0;this.announcements=new Map();this.announcing=false;this.controllers=new Set();this.latestParts=new Map();this.lastWrite=0;this.nextDiscovery=0;this.timer=null;this.folder=null;this.lastError='';
         }
@@ -213,25 +214,25 @@
                 token=data.nextPageToken||'';
             }while(token&&!this.stopped);
         }
-        async poll(){
-            if(this.stopped||!this.docId||this.reading)return;
-            this.reading=true;
+        async readSource(id,source){
             try{
                 const now=Date.now();
-                if(now>=this.nextDiscovery&&!this.discovery){
-                    this.nextDiscovery=now+5000;
-                    this.discovery=this.discover().catch(error=>this.fail(error)).finally(()=>{this.discovery=null;});
-                    // Discovery can be slow or unavailable without delaying reads
-                    // from IDs already advertised by an active device.
-                    if(!this.sources.size)await this.discovery;
-                }
-                const due=[...this.sources.entries()].filter(([,source])=>source.next<=now).sort((a,b)=>(b[1].hotUntil>now?1:0)-(a[1].hotUntil>now?1:0)||a[1].next-b[1].next).slice(0,4);
-                for(const [id,source] of due){
-                    try {
-                    source.next=now+(source.hotUntil>now?120:1800);
-                    const response=await this.request(`${API}/${encodeURIComponent(id)}?alt=media`,{headers:{'Cache-Control':'no-cache'}});
-                    const raw=await response.text();if(raw.length>MAX_BODY)throw new Error('Ink journal is too large');
-                    if(raw===source.raw){source.idleReads++;source.next=now+(source.hotUntil>now?120:Math.min(30000,1800*2**Math.floor(source.idleReads/3)));continue;}
+                source.next=now+(source.hotUntil>now?120:1800);
+                const response=await this.request(`${API}/${encodeURIComponent(id)}?alt=media`,{
+                    headers:{'Cache-Control':'no-cache'},bufferResponse:true});
+                const raw=await response.text();
+                if(this.stopped)return;
+                if(raw.length>MAX_BODY)throw new Error('Ink journal is too large');
+                // Fetches are independent, but document mutation is still
+                // serialized. A pen-gated merge cannot race another merge.
+                const apply=this.applyChain.catch(()=>{}).then(async()=>{
+                    if(this.stopped)return;
+                    const receivedAt=Date.now();
+                    if(raw===source.raw){
+                        source.idleReads++;
+                        source.next=receivedAt+(source.hotUntil>receivedAt?120:Math.min(30000,1800*2**Math.floor(source.idleReads/3)));
+                        return;
+                    }
                     await this.host.idle?.();if(this.stopped)return;
                     const value=JSON.parse(raw);
                     if(value.v!==1||value.docId!==this.docId||typeof value.actor!=='string'||!Number.isSafeInteger(value.rev)
@@ -246,15 +247,44 @@
                     this.latestParts.set(value.actor,latest);
                     source.actor=value.actor;source.part=value.part;
                     const seen=this.seen.get(id)||0;
-                    if(value.rev<=seen)continue; // An out-of-order read cannot roll back the replica.
-                    if(value.rev>seen&&value.actor!==this.actor)await this.host.apply(value.ops.slice(seen),{id,actor:value.actor,rev:value.rev});
+                    if(value.rev<=seen)return; // An out-of-order read cannot roll back the replica.
+                    if(value.actor!==this.actor)await this.host.apply(value.ops.slice(seen),{id,actor:value.actor,rev:value.rev});
                     if(this.stopped)return;
-                    this.seen.set(id,value.rev);source.raw=raw;source.idleReads=0;source.rev=value.rev;source.hotUntil=now+6000;source.next=now+120;
+                    this.seen.set(id,value.rev);source.raw=raw;source.idleReads=0;source.rev=value.rev;
+                    source.hotUntil=Date.now()+6000;source.next=Date.now()+120;
                     for(const entry of this.sources.values())if(entry.actor===value.actor&&entry.part<latest&&entry.requiredRev&&entry.rev>=entry.requiredRev){entry.next=Infinity;delete entry.raw;}
-                    }catch(error){source.next=Date.now()+5000;this.fail(error);}
+                });
+                this.applyChain=apply;
+                await apply;
+            }catch(error){source.next=Date.now()+5000;this.fail(error);}
+        }
+        async poll(){
+            if(this.stopped||!this.docId||this.reading)return;
+            this.reading=true;
+            let started=[];
+            try{
+                const now=Date.now();
+                if(now>=this.nextDiscovery&&!this.discovery){
+                    this.nextDiscovery=now+5000;
+                    this.discovery=this.discover().catch(error=>this.fail(error)).finally(()=>{this.discovery=null;});
+                    // Discovery can be slow or unavailable without delaying reads
+                    // from IDs already advertised by an active device.
+                    if(!this.sources.size)await this.discovery;
                 }
+                if(this.stopped)return;
+                const due=[...this.sources.entries()]
+                    .filter(([id,source])=>!this.readTasks.has(id)&&source.next<=now)
+                    .sort((a,b)=>(b[1].hotUntil>now?1:0)-(a[1].hotUntil>now?1:0)||a[1].next-b[1].next)
+                    .slice(0,Math.max(0,4-this.readTasks.size));
+                started=due.map(([id,source])=>{
+                    const task=this.readSource(id,source).finally(()=>this.readTasks.delete(id));
+                    this.readTasks.set(id,task);return task;
+                });
             }catch(error){this.fail(error);}
             finally{this.reading=false;}
+            // Manual callers can await this batch, while the periodic scheduler
+            // may reuse free lanes without waiting for a slower remote device.
+            await Promise.allSettled(started);
         }
         fail(error){if(error?.name!=='AbortError'){this.lastError=String(error?.message||error);this.host.error?.(error);}}
         wake(){

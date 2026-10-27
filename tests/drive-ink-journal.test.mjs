@@ -118,3 +118,54 @@ test('failed advisory hints never turn a confirmed save into an upload failure',
  assert.equal(a.j.status().pending,0);assert.equal(a.j.status().error,'');assert.equal(a.receipts.length,1);
  assert.deepEqual(warnings,['hint unavailable']);a.j.stop();
 });
+
+test('a stalled writer cannot block consecutive edits from a responsive writer',async()=>{
+ const api=fakeInkDrive(),slow=replica(api,'slow'),fast=replica(api,'fast'),reader=replica(api,'reader');
+ await slow.j.enqueue({writer:'slow',n:1},1);await flush(slow.j);
+ await fast.j.enqueue({writer:'fast',n:1},1);await flush(fast.j);
+ reader.j.nextDiscovery=Infinity;reader.j.hint(slow.j.current.fileId);reader.j.hint(fast.j.current.fileId);
+ let release;const gate=new Promise(r=>release=r),fetch=reader.j.host.fetch;
+ reader.j.host.fetch=async(url,options)=>{if(url.includes(`/${slow.j.current.fileId}?alt=media`))await gate;return fetch(url,options);};
+ const first=reader.j.poll();
+ try{
+  const deadline=Date.now()+500;
+  while(reader.applied.length===0&&Date.now()<deadline)await new Promise(r=>setTimeout(r,2));
+  assert.deepEqual(reader.applied,[{writer:'fast',n:1}]);assert.equal(reader.j.readTasks.size,1);
+  await fast.j.enqueue({writer:'fast',n:2},2);await flush(fast.j);
+  reader.j.sources.get(fast.j.current.fileId).next=0;await reader.j.poll();
+  assert.deepEqual(reader.applied,[{writer:'fast',n:1},{writer:'fast',n:2}]);
+  assert.equal(reader.j.readTasks.size,1);assert.equal(reader.j.seen.has(slow.j.current.fileId),false);
+ }finally{release();await first;reader.j.stop();}
+ assert.deepEqual(reader.applied.at(-1),{writer:'slow',n:1});
+});
+
+test('journal reads have four global lanes and one request per source',async()=>{
+ const api=fakeInkDrive(),reader=replica(api,'reader');reader.j.nextDiscovery=Infinity;
+ const releases=[];let active=0,peak=0,requests=0;
+ reader.j.host.fetch=(url,{signal})=>new Promise((resolve,reject)=>{
+  const id=new URL(url).pathname.split('/').at(-1);requests++;active++;peak=Math.max(peak,active);
+  let done=false;const end=()=>{if(done)return false;done=true;active--;return true;};
+  signal.addEventListener('abort',()=>{if(end())reject(new DOMException('Closed','AbortError'));},{once:true});
+  releases.push(()=>{if(end())resolve(new Response(JSON.stringify({v:1,docId:'doc',actor:id,part:0,rev:1,ops:[{id}]})));});
+ });
+ for(let n=0;n<8;n++)reader.j.hint(`source-${n}`);
+ const first=reader.j.poll();await reader.j.poll();await reader.j.poll();
+ assert.equal(requests,4);assert.equal(peak,4);assert.equal(reader.j.readTasks.size,4);
+ releases[0]();await new Promise(r=>setTimeout(r,0));
+ const next=reader.j.poll();assert.equal(requests,5);assert.equal(peak,4);
+ reader.j.stop();await Promise.all([first,next]);
+ for(const release of releases)release();
+ assert.equal(reader.applied.length,1);assert.equal(reader.j.readTasks.size,0);
+});
+
+test('parallel responses serialize merges and a stopped journal never applies a queued response',async()=>{
+ const api=fakeInkDrive(),a=replica(api,'a'),b=replica(api,'b'),reader=replica(api,'reader');
+ await a.j.enqueue({writer:'a'},1);await flush(a.j);await b.j.enqueue({writer:'b'},1);await flush(b.j);
+ reader.j.nextDiscovery=Infinity;reader.j.hint(a.j.current.fileId);reader.j.hint(b.j.current.fileId);
+ let release,entered=0;const gate=new Promise(r=>release=r);
+ reader.j.host.idle=async()=>{entered++;await gate;};
+ const reading=reader.j.poll();await new Promise(r=>setTimeout(r,0));
+ assert.equal(reader.j.readTasks.size,2);assert.equal(entered,1);assert.equal(reader.applied.length,0);
+ reader.j.stop();release();await reading;
+ assert.equal(reader.applied.length,0);assert.equal(reader.j.seen.size,0);assert.equal(reader.j.readTasks.size,0);
+});
