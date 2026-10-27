@@ -16,8 +16,14 @@
 struct Quality {
     // x: PCSS cascades, y: SSR steps, z: contact steps, w: AO scale (1|2).
     params: vec4<f32>,
+    extra: vec4<f32>,
 };
 @group(1) @binding(3) var<uniform> quality: Quality;
+
+// Output: bent normal (world space, 0.5 + 0.5 n) in rgb, visibility in a.
+fn pack_ao(bent_world: vec3<f32>, vis: f32) -> vec4<f32> {
+    return vec4<f32>(bent_world * 0.5 + vec3<f32>(0.5), vis);
+}
 
 fn ao_scale() -> i32 {
     return max(i32(quality.params.w + 0.5), 1);
@@ -78,7 +84,7 @@ fn fs_gtao(in: FsIn) -> @location(0) vec4<f32> {
     let n = normalize((frame.view * vec4<f32>(nw, 0.0)).xyz);
     let radius = frame.ao_params.x;
     let screen_radius = radius * frame.proj_params.w / max(-p.z, 1e-3);
-    if (screen_radius < 1.5) { return vec4<f32>(1.0); }
+    if (screen_radius < 1.5) { return pack_ao(nw, 1.0); }
     // Clamp the footprint (cache friendliness up close); shrink the world
     // radius accordingly so the falloff stays consistent.
     let r_px = min(screen_radius, frame.screen.y * 0.18);
@@ -98,6 +104,9 @@ fn fs_gtao(in: FsIn) -> @location(0) vec4<f32> {
     const SLICES: i32 = 2;
     const STEPS: i32 = 6;
     var vis = 0.0;
+    // Bent normal (Jimenez et al. 2016, XeGTAO): the visibility-weighted
+    // mean direction of each slice's unoccluded arc, in view space.
+    var bent = vec3<f32>(0.0);
     for (var s = 0; s < SLICES; s++) {
         let phi = (f32(s) + noise_slice) * PI / f32(SLICES);
         let dir = vec3<f32>(cos(phi), sin(phi), 0.0);
@@ -134,9 +143,19 @@ fn fs_gtao(in: FsIn) -> @location(0) vec4<f32> {
         let a0 = (cos_n + 2.0 * h0 * sin_n - cos(2.0 * h0 - nang)) * 0.25;
         let a1 = (cos_n + 2.0 * h1 * sin_n - cos(2.0 * h1 - nang)) * 0.25;
         vis += pn_len * (a0 + a1);
+        // Arc integrals of the slice's visible directions (XeGTAO): along
+        // the slice direction (t0) and toward the viewer (t1).
+        let t0 = (6.0 * sin(h0 - nang) - sin(3.0 * h0 - nang) + 6.0 * sin(h1 - nang) - sin(3.0 * h1 - nang) + 16.0 * sin(nang) - 3.0 * (sin(h0 + nang) + sin(h1 + nang))) / 12.0;
+        let t1 = (-cos(3.0 * h0 - nang) - cos(3.0 * h1 - nang) + 8.0 * cos(nang) - 3.0 * (cos(h0 + nang) + cos(h1 + nang))) / 12.0;
+        let od = ortho / max(length(ortho), 1e-5);
+        bent += (od * t0 + v * t1) * pn_len;
     }
     vis = clamp(vis / f32(SLICES), 0.0, 1.0);
-    return vec4<f32>(vis, 0.0, 0.0, 1.0);
+    let bl = dot(bent, bent);
+    let bv = select(n, bent * inverseSqrt(max(bl, 1e-12)), bl > 1e-8);
+    // View space -> world (the view matrix is a rotation + translation).
+    let vm = mat3x3<f32>(frame.view[0].xyz, frame.view[1].xyz, frame.view[2].xyz);
+    return pack_ao(normalize(transpose(vm) * bv), vis);
 }
 
 // Edge-aware 4x4 average: depth (relative) and normal weights keep AO from
@@ -150,7 +169,7 @@ fn fs_ao_blur(in: FsIn) -> @location(0) vec4<f32> {
     let zc = linear_depth(dc);
     let nc = textureLoad(normal_tex, ip, 0).xyz;
     let amax = vec2<i32>(textureDimensions(aux_tex)) - vec2<i32>(1);
-    var sum = 0.0;
+    var sum = vec4<f32>(0.0);
     var wsum = 0.0;
     for (var y = -2; y < 2; y++) {
         for (var x = -2; x < 2; x++) {
@@ -161,11 +180,11 @@ fn fs_ao_blur(in: FsIn) -> @location(0) vec4<f32> {
             let wz = clamp(1.0 - abs(z - zc) / (zc * 0.03 + 0.02), 0.0, 1.0);
             let wn = pow(clamp(dot(ns, nc), 0.0, 1.0), 8.0);
             let w = wz * wn + 1e-4;
-            sum += textureLoad(aux_tex, qa, 0).r * w;
+            sum += textureLoad(aux_tex, qa, 0) * w;
             wsum += w;
         }
     }
-    return vec4<f32>(sum / wsum, 0.0, 0.0, 1.0);
+    return sum / wsum;
 }
 
 // Half-res AO back to full resolution: the four half-res texels around the
@@ -181,9 +200,9 @@ fn fs_ao_upsample(in: FsIn) -> @location(0) vec4<f32> {
     let off = ao_offset();
     let amax = vec2<i32>(textureDimensions(aux_tex)) - vec2<i32>(1);
     let base = (ip - off) / s;
-    var sum = 0.0;
+    var sum = vec4<f32>(0.0);
     var wsum = 0.0;
-    var best = 1.0;
+    var best = vec4<f32>(1.0);
     var best_dz = 1e9;
     for (var y = -1; y <= 1; y++) {
         for (var x = -1; x <= 1; x++) {
@@ -193,13 +212,13 @@ fn fs_ao_upsample(in: FsIn) -> @location(0) vec4<f32> {
             let wb = max(1.0 - abs(dp.x) / f32(s + 1), 0.0) * max(1.0 - abs(dp.y) / f32(s + 1), 0.0);
             let dz = abs(linear_depth(load_depth(q)) - zc);
             let wz = clamp(1.0 - dz / (zc * 0.02 + 0.01), 0.0, 1.0);
-            let a = textureLoad(aux_tex, qa, 0).r;
+            let a = textureLoad(aux_tex, qa, 0);
             sum += a * wb * wz;
             wsum += wb * wz;
             if (dz < best_dz) { best_dz = dz; best = a; }
         }
     }
     // No neighbor on this surface (thin geometry): nearest in depth.
-    if (wsum < 1e-3) { return vec4<f32>(best, 0.0, 0.0, 1.0); }
-    return vec4<f32>(sum / wsum, 0.0, 0.0, 1.0);
+    if (wsum < 1e-3) { return best; }
+    return sum / wsum;
 }

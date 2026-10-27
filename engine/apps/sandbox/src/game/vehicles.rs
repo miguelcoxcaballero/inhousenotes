@@ -243,7 +243,7 @@ fn render_vehicles(w: &mut forja_core::World) {
             let iso = body.interpolated_iso(alpha);
             let body_m = iso.to_mat4();
             let transform = body_m * vis.local;
-            let mut item = RenderItem::new(vis.model, transform);
+            let mut item = RenderItem::new(vis.model, transform).with_id(1 << 40 | i as u64);
             item.tint = vis.tint;
             if !vis.wheels.is_empty() {
                 // Spin and steer each wheel group about its own center, in

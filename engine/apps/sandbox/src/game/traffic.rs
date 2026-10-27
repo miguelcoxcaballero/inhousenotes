@@ -277,7 +277,7 @@ fn traffic_render(w: &mut forja_core::World) {
         let fwd = v.prev_fwd.lerp(v.fwd, alpha).normalize_or(v.fwd);
         let (y, rot) = car_pose(&ai.ground, pos, fwd, v.len);
         let body = Mat4::from_rotation_translation(rot, Vec3::new(pos.x, y, pos.y));
-        items.push(RenderItem::new(m.model, body * m.local(v.len)));
+        items.push(RenderItem::new(m.model, body * m.local(v.len)).with_id(2 << 40 | v.id));
         let f3 = rot * Vec3::Z;
         let back = Vec3::new(pos.x, y + 0.8, pos.y) - f3 * (v.len * 0.5 + 0.2);
         if v.braking && d < 70.0 {

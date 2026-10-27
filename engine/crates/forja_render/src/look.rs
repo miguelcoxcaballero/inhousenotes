@@ -289,6 +289,8 @@ mod tests {
 struct Params {
     a: [f32; 4],
     b: [f32; 4],
+    /// x: 1 = FSR 1 EASU upscaling in the camera pass.
+    c: [f32; 4],
 }
 
 /// Pipelines and resources of the camera stage (owned by the renderer).
@@ -302,6 +304,8 @@ pub(crate) struct CameraFx {
     look_buf: wgpu::Buffer,
     dof_buf: wgpu::Buffer,
     sampler: wgpu::Sampler,
+    /// FSR 1 EASU when the camera pass upsamples (render scale < 1).
+    pub fsr: bool,
 }
 
 /// Size-dependent bindings of the camera stage.
@@ -356,7 +360,7 @@ impl CameraFx {
                 cache: None,
             })
         };
-        let camera = crate::shader(device, "cinematic", include_str!("shaders/cinematic.wgsl"), false);
+        let camera = crate::shader(device, "cinematic (easu)", &format!("{}\n{}", crate::wgsl("cinematic", include_str!("shaders/cinematic.wgsl")), crate::wgsl("easu", include_str!("shaders/easu.wgsl"))), false);
         let dof = crate::shader(device, "dof", include_str!("shaders/dof.wgsl"), true);
         // A plain UNORM surface gets the sRGB encoding in this last pass.
         let camera_pipe = pipe(&camera, &layout(&[&look_bgl]), "fs_camera", output_format, &[("encode_srgb", (!output_format.is_srgb()) as u32 as f64)]);
@@ -373,14 +377,14 @@ impl CameraFx {
             view_formats: &[],
         });
         let lut_view = lut_tex.create_view(&Default::default());
-        let buf = |label| device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: 32, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let buf = |label| device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: 48, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("look"),
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
-        Self { look_bgl, camera_pipe, dof_pipe, lut_tex, lut_view, lut_grade: None, look_buf: buf("look"), dof_buf: buf("dof"), sampler }
+        Self { look_bgl, camera_pipe, dof_pipe, lut_tex, lut_view, lut_grade: None, look_buf: buf("look"), dof_buf: buf("dof"), sampler, fsr: true }
     }
 
     pub fn targets(
@@ -391,6 +395,7 @@ impl CameraFx {
         taa_bgl: &wgpu::BindGroupLayout,
         resolved: &wgpu::TextureView,
         depth: &wgpu::TextureView,
+        velocity: &wgpu::TextureView,
     ) -> CameraFxTargets {
         let ldr2 = device
             .create_texture(&wgpu::TextureDescriptor {
@@ -424,6 +429,7 @@ impl CameraFx {
                 tv(2, depth),
                 wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.sampler) },
                 wgpu::BindGroupEntry { binding: 4, resource: self.dof_buf.as_entire_binding() },
+                tv(5, velocity),
             ],
         });
         CameraFxTargets { ldr2, look_bind, dof_bind }
@@ -450,6 +456,7 @@ impl CameraFx {
             let p = Params {
                 a: [look.grade_strength, look.grain, look.grain_size, look.vignette],
                 b: [look.chromatic_aberration, (frame_index % 4096) as f32, 1.0 / width as f32, 1.0 / height as f32],
+                c: [self.fsr as u32 as f32, 0.0, 0.0, 0.0],
             };
             queue.write_buffer(&self.look_buf, 0, bytemuck::bytes_of(&p));
         }
@@ -462,7 +469,7 @@ impl CameraFx {
             if max_r >= 0.75 && k >= 0.1 {
                 // ~64 taps: the spiral's r^2 grows by 2 * step per tap.
                 let step = (max_r * max_r / 128.0).max(0.5);
-                let p = Params { a: [k, zf, max_r, step], b: [0.0; 4] };
+                let p = Params { a: [k, zf, max_r, step], b: [0.0; 4], c: [0.0; 4] };
                 queue.write_buffer(&self.dof_buf, 0, bytemuck::bytes_of(&p));
                 dof_on = true;
             }

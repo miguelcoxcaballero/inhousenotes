@@ -20,6 +20,9 @@ struct TaaParams {
 @group(1) @binding(2) var depth_tex: texture_depth_2d;
 @group(1) @binding(3) var lin_samp: sampler;
 @group(1) @binding(4) var<uniform> taa: TaaParams;
+// Prepass screen motion (px, camera + object): moving cars and people
+// reproject their own history instead of the static world's.
+@group(1) @binding(5) var velocity_tex: texture_2d<f32>;
 
 struct FsIn {
     @builtin(position) pos: vec4<f32>,
@@ -106,7 +109,11 @@ fn fs_taa(in: FsIn) -> @location(0) vec4<f32> {
     // not move the history, or a still camera would resample (and drift)
     // it every frame.
     let jitter_pix = frame.jitter.xy * vec2<f32>(0.5, -0.5) * frame.screen.xy;
-    let hist_pix = in.pos.xy + (prev_pix - (pc - jitter_pix));
+    var hist_pix = in.pos.xy + (prev_pix - (pc - jitter_pix));
+    if (best_d > 0.0) {
+        let q = clamp(ip + best, vec2<i32>(0), vec2<i32>(frame.screen.xy) - vec2<i32>(1));
+        hist_pix = in.pos.xy - textureLoad(velocity_tex, q, 0).xy;
+    }
     if (any(hist_pix < vec2<f32>(0.0)) || any(hist_pix > frame.screen.xy)) { return vec4<f32>(cur, 1.0); }
     // History rendered with last frame's pre-exposure (eye adaptation).
     let hist_scale = exposure_state.pre / max(exposure_state.prev_pre, 1e-8);

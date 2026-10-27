@@ -14,6 +14,8 @@ resolution absorbing the heavy views.
 | `sandbox --bench N [--preset P] [--csv f.csv]` | Headless: N real-time frames after warm-up; prints mean/p50/p95 frame time, per-system CPU, renderer scopes, GPU passes, counts and the heaviest scenes (camera and shadow). |
 | `FORJA_LEGACY_STATICS=1` | Sandbox: resubmit the whole world every frame as before the static grid (before/after comparisons). |
 | `FORJA_PRESET=low\|medium\|high\|ultra` | Any tool or example: render with that preset. |
+| `sandbox --smoke N [--window] [--adapter warp] [--preset P]` | The real game loop for N frames (headless offscreen, or in a window through the swapchain); prints per-frame times and GPU passes, saves `--screenshot` (default `smoke.png`) and exits non-zero on any wgpu validation error, lost device or blank image. The Windows release workflow runs it on D3D12 WARP. |
+| `--adapter auto\|warp\|dx12\|vulkan\|<name>` / `FORJA_ADAPTER` | Adapter choice (see `forja_render::gpu`): best GPU first, falling back adapter by adapter. |
 | `FORJA_PROFILE_CSV=f.csv` | Game: log every frame to a CSV from startup. |
 | `city` example: `CITY_STATIC=1`, `CITY_BENCH=N` | Static grid path and CPU timing per shot. |
 | `cargo run --release -p sandbox --example worldstats [map]` | Geometry and texture budget of a map without a GPU. |
@@ -37,7 +39,10 @@ spots).
 | 5 | TAA | internal | 1 pass + history copy. |
 | 5b | Eye adaptation (night) | 1/32 histogram | Two tiny compute passes. |
 | 6 | Bloom | 6 mips | 11 small passes. |
-| 7 | Tonemap, CAS/FXAA + upscale | internal -> output | The final pass upsamples when render scale < 1. |
+| 3c | Sky-view LUT (+ transmittance LUT once) | 192x108 | 30 steps per texel. |
+| 3d | Froxel fog: inject + integrate (compute) | 1/12 res x 64 slices | 1 shadow tap + cluster lights per froxel; 64-step column integration. |
+| 5a | Motion blur (tile max, neighbour max, gather) | internal | K^2 loads per tile, 2 x 10 samples per moving pixel; skipped when nothing moves. |
+| 7 | Tonemap, CAS/FXAA, camera stage + FSR 1 EASU upscale | internal -> output | The last pass upsamples with EASU when the internal resolution is below the output. |
 
 ## What was slow (measured)
 
@@ -153,18 +158,37 @@ when the GPU is over budget).
 | LOD detail | 0.5 | 0.75 | 1.0 | 1.5 |
 | Depth of field (cutscenes, photo mode) | off | off | on | on |
 | TAA, bloom, camera stage (grade, grain, aberration) | on | on | on | on |
+| Internal pixel budget (then FSR 1 EASU to the window) | 1.0 MP | 2.1 MP | 3.7 MP | 8.3 MP |
+| Motion blur (samples) | off | 6 | 10 | 16 |
+| Volumetric fog (froxels at 1080p, range) | off (analytic) | 120x68x48, 120 m | 160x90x64, 160 m | 240x135x96, 200 m |
+| GTAO bent normals (cone specular occlusion) | off | on | on | on |
 
-**Auto** (default `auto = true`): discrete GPUs get High, except old or
-entry-level ones (GTX 9xx/10xx, RX 4xx/5xx, MX, RX 6400/6500...) which get
-Medium; strong integrated GPUs (Radeon 780M/880M/890M, Arc, Apple M) get
-Medium, other integrated GPUs and software rasterizers Low.
+**Auto** (default `auto = true`, `GraphicsConfig::for_adapter`): discrete
+GPUs get High, except old, entry-level or small-VRAM ones (GTX 9xx/10xx/1650,
+RX 4xx/5xx, MX, RX 6400/6500, RTX 3050 laptop...) which get Medium; strong
+integrated GPUs (Radeon 780M/880M/890M, Apple M) get Medium, other
+integrated GPUs, WARP / lavapipe and unknown devices Low. **Intel integrated
+graphics** (vendor 0x8086: UHD, Iris Xe, the Arc Xe-LPG of Meteor/Lunar
+Lake laptops) get their own profile: the Medium look with a 1.2 MP internal
+budget, dynamic resolution down to 35%, 1536 shadow maps with one PCSS
+cascade and the far cascades every 4th frame, 12-step SSR, 2048 lights, one
+shadowed spot, no motion blur, no froxel fog (the analytic fog and lamp
+glow stay), bent normals on, FSR 1 on.
+
+**Internal pixel budget**: the render scale is now capped so the internal
+image never exceeds the preset's pixel budget, whatever the window: v0.1.2
+rendered a 2880x1800 laptop panel at 0.9 x native = 4.2 MP on Medium (2x
+the pixels of 1080p), which is the main reason it ran at ~10 FPS on an
+Intel Arc iGPU. The window keeps its native resolution (UI included) and
+the last pass upsamples with FSR 1 EASU.
 
 **Dynamic resolution**: the GPU frame time (timestamps; frame time when
 unsupported) is smoothed, and the internal scale drops (towards the
 pixel-count estimate, at most 15% at a time, in 5% steps) after ~0.25 s over
 90% of the frame budget, and rises 5% after ~1 s under 68% of it. TAA
-accumulates at the internal resolution and the final CAS pass upsamples, so
-0.75 still looks sharp.
+accumulates at the internal resolution, CAS sharpens it and the camera
+stage (or the final pass) upsamples with FSR 1 EASU, so 0.5-0.75 still
+looks sharp. The scale never exceeds the pixel budget above.
 
 ## Budget on a mid-range GPU (1080p, GTX 1660 / RX 580)
 
@@ -173,21 +197,48 @@ proportions measured on lavapipe and typical throughput of this class of GPU
 (~1.5-2 G depth-only triangles/s, ~5 TFLOPs). Check them with F11 on real
 hardware; the DRS keeps the frame on budget if they are optimistic.
 
-| Pass | Low (0.75) | Medium (0.9) | High (1.0) | Ultra (1.0) |
-|---|---|---|---|---|
-| Sun shadows (amortized) | 0.8 | 1.6 | 2.6 | 5.5 |
-| Spot shadows (night only) | 0 | 0.3 | 0.6 | 0.6 |
-| Prepass | 0.6 | 0.9 | 1.2 | 1.6 |
-| GTAO | 0.2 | 0.25 | 0.3 | 1.0 |
-| Light clusters | 0.05 | 0.05 | 0.05 | 0.1 |
-| Main + sky + sprites | 1.8 | 3.2 | 4.5 | 5.5 |
-| TAA | 0.15 | 0.25 | 0.3 | 0.3 |
-| Eye adaptation (night) | 0.05 | 0.05 | 0.05 | 0.05 |
-| Bloom | 0.2 | 0.3 | 0.35 | 0.35 |
-| Tonemap + final + camera stage | 0.3 | 0.4 | 0.45 | 0.45 |
-| Depth of field (only when a shot sets it) | 0 | 0 | 0.8 | 0.8 |
-| **Total day / night** (no DOF) | **~4.1 / 4.2** | **~7.2 / 7.6** | **~9.8 / 10.5** | **~14.8 / 15.5** |
-| FPS (GPU bound) | 200+ | 130+ | ~100 (60 with headroom) | ~65 on this class; for 3070+ |
+| Pass | Low (0.75) | Medium (0.9) | High (1.0) | Ultra (1.0) | Intel Arc iGPU, 2880x1800 (1.2 MP) |
+|---|---|---|---|---|---|
+| Sun shadows (amortized) | 0.8 | 1.6 | 2.6 | 5.5 | 2.2 |
+| Spot shadows (night only) | 0 | 0.3 | 0.6 | 0.6 | 0.4 |
+| Prepass | 0.6 | 0.9 | 1.2 | 1.6 | 1.0 |
+| GTAO | 0.2 | 0.25 | 0.3 | 1.0 | 0.3 |
+| Light clusters | 0.05 | 0.05 | 0.05 | 0.1 | 0.05 |
+| Main + sky + sprites | 1.8 | 3.2 | 4.5 | 5.5 | 3.2 |
+| TAA | 0.15 | 0.25 | 0.3 | 0.3 | 0.25 |
+| Eye adaptation (night) | 0.05 | 0.05 | 0.05 | 0.05 | 0.05 |
+| Bloom | 0.2 | 0.3 | 0.35 | 0.35 | 0.3 |
+| Tonemap + final + camera stage | 0.3 | 0.4 | 0.45 | 0.45 | 0.3 + 0.9 (camera stage + EASU at 5.2 MP output) |
+| Depth of field (only when a shot sets it) | 0 | 0 | 0.8 | 0.8 | 0 |
+| Sky-view LUT (replaces the per-pixel sky raymarch) | 0.02 | 0.02 | 0.02 | 0.02 | 0.03 |
+| Volumetric fog (inject + integrate) | 0 | 0.25 | 0.5 | 1.1 | 0 |
+| Motion blur (moving frames) | 0 | 0.3 | 0.45 | 0.7 | 0 |
+| UI (egui at native resolution) | 0.1 | 0.1 | 0.1 | 0.1 | 0.3 |
+| **Total day / night** (no DOF) | **~4.2 / 4.3** | **~7.8 / 8.2** | **~10.9 / 11.6** | **~16.7 / 17.4** | **~9.1 / 9.5** |
+| FPS (GPU bound) | 200+ | 120+ | ~90 (60 with headroom) | ~60 on this class; for 3070+ | ~100 GPU-bound; 60 with DRS headroom |
+
+The **Intel Arc iGPU column** (Meteor Lake Core Ultra 5/7, 7-8 Xe-LPG
+cores, ~4.5 FP32 TFLOPs but ~90-120 GB/s of LPDDR5X shared with the CPU)
+scales the per-pixel passes by the pixel count (1.2 MP vs 2.07 MP) and
+the bandwidth (x1.3-1.5 against a GTX 1660), keeps the geometry passes at
+Medium's triangle counts on a ~1.2 G triangles/s rasterizer, and adds the
+two passes that run at the 5.2 MP output (camera stage with EASU, egui).
+The ~2x margin under 16.6 ms is for the shared memory and thermal limits
+of a thin laptop; dynamic resolution (GPU timestamps, which Intel's DX12
+driver exposes) drops toward 0.35 x native before the frame time does.
+v0.1.2 on the same machine rendered ~4.2 MP (Medium at 0.9 of 2880x1800)
+with 2048 shadow-map-class costs: by the same model ~25-30 ms of GPU plus
+the CPU cost of ~9 k draws, consistent with the ~10 FPS reported. Whether
+the CPU side (draw submission, ~2 k camera + ~3-6 k shadow draws) also
+limits it on a 15-28 W laptop CPU must be read from F11 on the machine;
+world streaming / HLOD is being handled separately.
+
+Measured shares of the new passes (lavapipe, default map at dusk, 960x540
+fixed, 10 frames; only proportions are meaningful): sky LUT 0.2-0.5% of
+the GPU sum, volumetric fog 0.9% (Medium) / 0.7% (High) / 1.3% (Ultra),
+motion blur 0.4-0.8%. With High the `main+sky` pass went from 1288 ms
+(per-pixel sky raymarch) to 939 ms + 11 ms of LUT: -27% at dusk with open
+sky, the sky LUT being the largest win of this pass on every GPU.
 
 CPU per frame, measured on the shared 4-core VM (upper bounds for a
 desktop CPU): game systems 3-5 ms (player movement, physics, crowd),
@@ -265,6 +316,18 @@ submitted every frame. Night lights (`FrameDesc::local_lights`, city
 content lights within 600 m) are capped per preset ("lights per frame",
 closest first) before clustering.
 
+## Windows smoke test (D3D12 WARP)
+
+The release workflow (`.github/workflows/release.yml` in the
+Inhouse-Game-Engine repo; dispatch with `smoke_only = true` for a run
+without packaging) builds the game, fetches the content packs (cached),
+and runs `sandbox --smoke 100 --adapter warp --preset low --size 960x540`
+headless and `--smoke 30 --window` through a real swapchain, both on the
+D3D12 WARP software adapter of the runner; logs and screenshots are
+uploaded as the `Forja-Windows-smoke` artifact. First run (this branch):
+both passed, 0 GPU errors, DX12 pipeline compilation (FXC) 14 s, upload of
+the default map 122 s, ~2.4 s per WARP frame.
+
 ## Remaining risks for real-GPU testing
 
 - GPU estimates are not measurements: run the Windows build with F11 on a
@@ -278,6 +341,11 @@ closest first) before clustering.
   play), but DX12 compiles them on first load (FXC/DXC); a pipeline cache
   is not wired in yet.
 - No BC7/BC5 texture compression yet (see above).
+- DX12 compiles every pipeline with FXC at startup (14 s on WARP in CI,
+  a few seconds on a real driver); DXC (`Dx12Compiler::DynamicDxc`) or a
+  pipeline cache would shorten it.
+- Upscaling is spatial (FSR 1 EASU after TAA); a TAAU resolve at output
+  resolution would be sharper at 50% scale (research list item 16).
 - Facade windows are now the largest shadow cost (75 k instances,
   5.6 M triangles on High). Medium and Low cut them with the small-caster
   threshold; on High a merged per-building facade proxy for the far
