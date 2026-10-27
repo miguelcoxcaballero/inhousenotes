@@ -5,7 +5,7 @@
     const L=root.InhouseOfflineLibrary,S=root.InhouseOfflineStore;
     let live=null,previewRaf=null;const incomingPreviews=new Map();
     let engine=null,session=null,account='',timer=null,applying=0,ackVersion=-1;
-    let pages=new Set(),baseline=new Map(),metadataDirty=false,baselineReady=false,capturing=null;
+    let pages=new Set(),baseline=new Map(),metadataBaseline=new Map(),fieldBaseline=new Map(),contextBaseline=null,metadataDirty=false,baselineReady=false,capturing=null;
     const announced=new Map();
     const stamp=item=>`${item?.syncStamp?.clock||0}:${item?.syncStamp?.actor||''}`;
     const usable=()=>documentSessionActivated&&!driveOpenInProgress&&L.account()&&state.driveFileId&&!state.driveFileId.startsWith('local-');
@@ -14,10 +14,35 @@
     function context(){return {structure:getCollabStructureSnapshot(),fields:getCollabFieldSnapshot(),
         name:state.exportName,calendar:state.calendarPageConfig||null};}
     function shell(page){return buildTimelineSnapshotFromPages([{...page,strokes:[],images:[],legacyCoverStrokes:null}])[0];}
+    function metadataSnapshot(patch){
+        const {backgroundImage,...metadata}=patch;
+        // The immutable photo string is compared separately, never re-hashed
+        // or JSON-encoded merely to detect an unchanged page shell.
+        return {backgroundImage,key:JSON.stringify(metadata)};
+    }
+    function sameMetadata(left,right){return !!left&&left.backgroundImage===right.backgroundImage&&left.key===right.key;}
+    const pageFields=['background','template','size','sidePanel'];
+    function pageFieldsKey(pageId,metadata){
+        return JSON.stringify(pageFields.map(field=>metadata.fields?.[`page:${pageId}:${field}`]||null));
+    }
+    function contextForPage(value,pageId=null){
+        const allowed=new Set(pageId?pageFields.map(field=>`page:${pageId}:${field}`):[]);
+        const fields=Object.fromEntries(Object.entries(value.fields.fields||{}).filter(([key])=>!key.startsWith('page:')||allowed.has(key)));
+        // A winning photo register must arrive with that page's bytes. Sending
+        // another page's field early would make its later payload look stale.
+        return {...value,fields:{...value.fields,fields}};
+    }
+    function contextKey(value){
+        const documentContext=contextForPage(value);
+        // Page field records/stamps have their own baselines. Item stamps carry
+        // summary clocks; those alone are not a reorder or document field edit.
+        return JSON.stringify({...documentContext,structure:{...value.structure,clock:0},fields:{...documentContext.fields,clock:0}});
+    }
     function remember(page){
         baseline.set(page.pageId,new Map([...(page.strokes||[]),...(page.images||[])].map(item=>[item.id,stamp(item)])));
+        metadataBaseline.set(page.pageId,metadataSnapshot(shell(page)));
     }
-    function stop(){live?.stop();live=null;if(previewRaf)cancelAnimationFrame(previewRaf);previewRaf=null;incomingPreviews.clear();capturing=null;clearTimeout(timer);timer=null;engine?.stop();engine=null;baseline.clear();pages.clear();baselineReady=false;metadataDirty=false;ackVersion=-1;}
+    function stop(){live?.stop();live=null;if(previewRaf)cancelAnimationFrame(previewRaf);previewRaf=null;incomingPreviews.clear();capturing=null;clearTimeout(timer);timer=null;engine?.stop();engine=null;baseline.clear();metadataBaseline.clear();fieldBaseline.clear();contextBaseline=null;pages.clear();baselineReady=false;metadataDirty=false;ackVersion=-1;}
     function start(){
         if(!L.account())return null;
         if(engine&&current(engine))return engine;
@@ -111,40 +136,79 @@
         const token=session;
         await waitForHotInteractionToSettle({sessionToken:token,windowMs:getDocumentSaveIdleWindow()});
         if(!current(journal)||applying)return;
+        // A slow local transaction must finish before comparing item stamps;
+        // the immediate stroke path installs its immutable baseline on commit.
+        await journal.persistChain;
+        if(!current(journal)||applying)return;
+        const capturedDocument=context(),capturedDocumentKey=contextKey(capturedDocument);
         if(!baselineReady){
             const dirty=driveContentVersion!==driveUploadedContentVersion||driveDirty;
             for(let i=0;i<state.pages.length;i++){
-                if(dirty)pages.add(i);else if(!state.pages[i].unloaded)remember(state.pages[i]);
+                const page=state.pages[i];
+                if(dirty)pages.add(i);
+                else{
+                    fieldBaseline.set(page.pageId,pageFieldsKey(page.pageId,capturedDocument.fields));
+                    if(!page.unloaded)remember(page);
+                }
             }
+            if(!dirty)contextBaseline=capturedDocumentKey;
             baselineReady=true;
+        }
+        if(metadataDirty)for(let i=0;i<state.pages.length;i++){
+            const pageId=state.pages[i].pageId;
+            if(fieldBaseline.get(pageId)!==pageFieldsKey(pageId,capturedDocument.fields))pages.add(i);
         }
         const changed=[...pages];pages.clear();const includeMetadata=metadataDirty;metadataDirty=false;
         const version=driveContentVersion;
+        let capturedContext=contextBaseline;
+        const deferChangedCapture=()=>{
+            if(!current(journal))return true;
+            if(!applying&&driveContentVersion===version)return false;
+            for(const index of changed)pages.add(index);
+            metadataDirty=true;
+            return true;
+        };
         try{
             for(const index of changed){
                 await yieldProcessingForUi();
                 await waitForHotInteractionToSettle({sessionToken:token,windowMs:getDocumentSaveIdleWindow()});
-                if(!current(journal))return;
+                if(deferChangedCapture())return;
                 const page=await loadPageDataForExport(index);
-                if(!current(journal))return;
+                if(deferChangedCapture())return;
                 if(!page?.pageId)continue;
                 const known=baseline.get(page.pageId)||new Map();
                 const capturedStamps=new Map([...(page.strokes||[]),...(page.images||[])].map(item=>[item.id,stamp(item)]));
                 const strokes=(page.strokes||[]).filter(item=>known.get(item.id)!==stamp(item));
                 const images=(page.images||[]).filter(item=>known.get(item.id)!==stamp(item));
+                const pageShell=shell(page),capturedMetadata=metadataSnapshot(pageShell);
+                const capturedFields=pageFieldsKey(page.pageId,capturedDocument.fields);
+                if(!strokes.length&&!images.length&&sameMetadata(metadataBaseline.get(page.pageId),capturedMetadata)
+                    &&fieldBaseline.get(page.pageId)===capturedFields)continue;
                 // Bound each operation so receiving a long offline session does
                 // not decode the whole document in a single task.
                 const count=Math.max(1,Math.ceil(strokes.length/32),Math.ceil(images.length/4));
                 for(let part=0;part<count;part++){
-                    if(!current(journal))return;
-                    const patch=shell(page);patch.strokes=strokes.slice(part*32,(part+1)*32);patch.images=images.slice(part*4,(part+1)*4);
-                    await journal.enqueue({v:1,...context(),pages:[patch]},version);
+                    if(deferChangedCapture())return;
+                    const patch={...pageShell,strokes:strokes.slice(part*32,(part+1)*32),images:images.slice(part*4,(part+1)*4)};
+                    const operationContext=contextForPage(capturedDocument,page.pageId);
+                    await journal.enqueue({v:1,...operationContext,pages:[patch]},version);
+                    capturedContext=capturedDocumentKey;
                     await yieldProcessingForUi();
                 }
-                if(!current(journal))return;
+                if(deferChangedCapture())return;
                 baseline.set(page.pageId,capturedStamps);
+                metadataBaseline.set(page.pageId,capturedMetadata);
+                fieldBaseline.set(page.pageId,capturedFields);
             }
-            if(includeMetadata&&!changed.length)await journal.enqueue({v:1,...context(),pages:[]},version);
+            if(deferChangedCapture())return;
+            if(includeMetadata&&capturedDocumentKey!==capturedContext){
+                await journal.enqueue({v:1,...contextForPage(capturedDocument),pages:[]},version);
+                capturedContext=capturedDocumentKey;
+            }
+            if(deferChangedCapture())return;
+            contextBaseline=capturedContext;
+            const currentIds=new Set(state.pages.map(page=>page.pageId));
+            for(const map of [metadataBaseline,fieldBaseline,baseline])for(const id of map.keys())if(!currentIds.has(id))map.delete(id);
         }catch(error){if(current(journal)){for(const index of changed)pages.add(index);metadataDirty ||= includeMetadata;}throw error;}
     }
     function stroke(index,item){
