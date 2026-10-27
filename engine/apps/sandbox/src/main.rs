@@ -41,6 +41,13 @@ struct Args {
     preset: Option<forja_render::Preset>,
     bench: usize,
     csv: Option<PathBuf>,
+    /// `--adapter auto|warp|dx12|vulkan|<name>` (or `FORJA_ADAPTER`).
+    adapter: forja_render::gpu::AdapterChoice,
+    /// `--smoke N`: render N frames, save `--screenshot` (default
+    /// `smoke.png`), exit non-zero on a GPU error or a black image.
+    smoke: usize,
+    /// `--window`: run the smoke test in a window (swapchain path).
+    window: bool,
 }
 
 fn parse_vec3(s: &str) -> Option<Vec3> {
@@ -49,7 +56,7 @@ fn parse_vec3(s: &str) -> Option<Vec3> {
 }
 
 fn parse_args() -> Args {
-    let mut a = Args { map: MapKind::Spain, screenshot: None, script: "idle".into(), frames: 90, width: 1600, height: 900, hours: None, camera: None, preset: None, bench: 0, csv: None };
+    let mut a = Args { map: MapKind::Spain, screenshot: None, script: "idle".into(), frames: 90, width: 1600, height: 900, hours: None, camera: None, preset: None, bench: 0, csv: None, adapter: forja_render::gpu::AdapterChoice::from_env(), smoke: 0, window: false };
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
     let mut eye = None;
@@ -72,6 +79,13 @@ fn parse_args() -> Args {
             "--preset" => a.preset = Some(perf::parse_preset(&v).unwrap_or_else(|| panic!("unknown preset {v}"))),
             "--bench" => a.bench = v.parse().expect("bench frames"),
             "--csv" => a.csv = Some(v.into()),
+            "--adapter" => a.adapter = forja_render::gpu::AdapterChoice::parse(&v),
+            "--smoke" => a.smoke = v.parse().expect("smoke frames"),
+            "--window" => {
+                a.window = true;
+                i += 1;
+                continue;
+            }
             _ => {
                 eprintln!("unknown argument {}", args[i]);
                 std::process::exit(2);
@@ -209,7 +223,7 @@ impl Extract {
                 .iter()
                 .enumerate()
                 .filter(|(i, _)| rs.volatile_statics.binary_search(i).is_err())
-                .map(|(_, item)| DrawInstance { model: self.handles[item.model], transform: item.transform, nodes: item.nodes.clone(), joints: None, tint: item.tint, cast_shadows: true })
+                .map(|(_, item)| DrawInstance { model: self.handles[item.model], transform: item.transform, nodes: item.nodes.clone(), joints: None, tint: item.tint, cast_shadows: true, motion_id: 0 })
                 .collect();
             renderer.set_static_instances(&statics);
             self.statics_uploaded = Some(key);
@@ -230,7 +244,7 @@ impl Extract {
         let volatile = if self.legacy { &[][..] } else { &rs.volatile_statics[..] };
         frame.instances.reserve(rs.dynamic.len() + legacy_statics.len() + volatile.len());
         for item in legacy_statics.iter().chain(volatile.iter().filter_map(|&i| rs.statics.get(i))).chain(rs.dynamic.iter()) {
-            frame.instances.push(DrawInstance { model: self.handles[item.model], transform: item.transform, nodes: item.nodes.clone(), joints: item.joints.clone(), tint: item.tint, cast_shadows: true });
+            frame.instances.push(DrawInstance { model: self.handles[item.model], transform: item.transform, nodes: item.nodes.clone(), joints: item.joints.clone(), tint: item.tint, cast_shadows: true, motion_id: item.id });
         }
         frame
     }
@@ -369,7 +383,7 @@ fn print_bench(acc: &[FrameSample]) {
 
 fn run_headless(args: &Args) {
     let instance = forja_render::create_instance();
-    let mut renderer = Renderer::new(&instance, None).expect("GPU");
+    let mut renderer = Renderer::new_with(&instance, None, &args.adapter).expect("GPU");
     let t_build = Instant::now();
     let mut app = game::build_at(args.map, paths(), args.hours);
     log::info!("world built in {:.2?}, resident {:.0} MB", t_build.elapsed(), perf::resident_mb());
@@ -476,6 +490,114 @@ fn run_headless(args: &Args) {
     );
 }
 
+/// Mean luma (0..1) and the share of pixels that are neither black nor
+/// white: a smoke screenshot that rendered nothing fails the run.
+fn image_check(img: &image::RgbaImage) -> (f32, f32) {
+    let n = (img.width() * img.height()).max(1) as f32;
+    let mut sum = 0.0f32;
+    let mut mid = 0u32;
+    for p in img.pixels() {
+        let l = (0.2126 * p[0] as f32 + 0.7152 * p[1] as f32 + 0.0722 * p[2] as f32) / 255.0;
+        sum += l;
+        if l > 0.02 && l < 0.98 {
+            mid += 1;
+        }
+    }
+    (sum / n, mid as f32 / n)
+}
+
+/// Verdict of a smoke run: exits the process with 0 when every frame
+/// rendered without a GPU error and the image is not blank.
+fn smoke_verdict(frames: usize, img: &image::RgbaImage, out: &std::path::Path, ms: &[f32]) -> ! {
+    if let Some(dir) = out.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Err(e) = img.save(out) {
+        log::error!("smoke: saving {}: {e}", out.display());
+    }
+    let errors = forja_render::gpu::GPU_ERRORS.load(std::sync::atomic::Ordering::Relaxed);
+    let (luma, mid) = image_check(img);
+    let mut sorted = ms.to_vec();
+    sorted.sort_by(f32::total_cmp);
+    let mean = ms.iter().sum::<f32>() / ms.len().max(1) as f32;
+    let p95 = sorted.get(((sorted.len() as f32 - 1.0) * 0.95) as usize).copied().unwrap_or(0.0);
+    let ok = errors == 0 && frames > 0 && luma > 0.01 && mid > 0.05;
+    println!(
+        "SMOKE {}: {frames} frames, {errors} GPU errors, frame mean {mean:.1} ms p95 {p95:.1} ms, image luma {luma:.3} ({:.0}% mid-tones) -> {}",
+        if ok { "OK" } else { "FAILED" },
+        mid * 100.0,
+        out.display()
+    );
+    std::process::exit(if ok { 0 } else { 1 });
+}
+
+/// `--smoke N` headless: the real game loop (simulation, extraction,
+/// rendering into an offscreen target) for N frames on the chosen adapter.
+fn run_smoke(args: &Args) {
+    let instance = forja_render::create_instance();
+    let t_gpu = Instant::now();
+    let mut renderer = match Renderer::new_with(&instance, None, &args.adapter) {
+        Ok(r) => r,
+        Err(e) => {
+            println!("SMOKE FAILED: {e}");
+            std::process::exit(1);
+        }
+    };
+    log::info!("smoke: renderer (pipelines compiled) in {:.2?} on {} ({:?})", t_gpu.elapsed(), renderer.adapter_info.name, renderer.adapter_info.backend);
+    let t_build = Instant::now();
+    let mut app = game::build_at(args.map, paths(), args.hours);
+    log::info!("smoke: world built in {:.2?}, resident {:.0} MB", t_build.elapsed(), perf::resident_mb());
+    if let Some(h) = args.hours {
+        let t = app.world.res_mut::<game::env::TimeOfDay>();
+        t.hours = h;
+        t.photo_sky = false;
+    }
+    let mut perf_state = PerfState::load(&paths().data.join("graphics.toml"), &renderer);
+    perf_state.cfg.apply_preset(args.preset.unwrap_or(forja_render::Preset::Low));
+    renderer.apply_graphics(&perf_state.cfg);
+    if let Ok(fx) = std::env::var("FORJA_FX") {
+        renderer.settings.apply_fx(&fx);
+    }
+    let mut extract = Extract::new();
+    let (w, h) = (args.width, args.height);
+    renderer.resize(w, h);
+    let tex = renderer.device.create_texture(&forja_render::wgpu::TextureDescriptor {
+        label: Some("smoke"),
+        size: forja_render::wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: forja_render::wgpu::TextureDimension::D2,
+        format: renderer.output_format,
+        usage: forja_render::wgpu::TextureUsages::RENDER_ATTACHMENT | forja_render::wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let view = tex.create_view(&Default::default());
+    let mut ms = Vec::with_capacity(args.smoke);
+    for f in 0..args.smoke {
+        let t = Instant::now();
+        script_intent(&args.script, f, app.world.res_mut::<Intent>());
+        app.update_with_dt(1.0 / 60.0);
+        if let Some(cam) = args.camera {
+            app.world.res_mut::<game::camera::CameraRig>().fixed = Some(cam);
+        }
+        let frame = extract.frame(&mut renderer, &mut app);
+        renderer.render(&frame, &view);
+        let _ = renderer.device.poll(forja_render::wgpu::PollType::wait_indefinitely());
+        let dt = t.elapsed().as_secs_f32() * 1000.0;
+        if f > 0 {
+            ms.push(dt);
+        }
+        if f % 10 == 0 || f + 1 == args.smoke {
+            let st = renderer.stats;
+            log::info!("smoke frame {f}: {dt:.1} ms, gpu {:.1} ms, {} draws, {:.2} M tris, {} shadow draws, {} lights, GPU errors {}", renderer.profiler.total_ms, st.draw_calls, st.triangles as f64 / 1e6, st.shadow_draws, st.lights, forja_render::gpu::GPU_ERRORS.load(std::sync::atomic::Ordering::Relaxed));
+        }
+    }
+    println!("smoke: gpu passes: {}", renderer.profiler.last.iter().map(|(k, v)| format!("{k} {v:.2}")).collect::<Vec<_>>().join(", "));
+    let img = renderer.read_image(&tex);
+    let out = args.screenshot.clone().unwrap_or_else(|| PathBuf::from("smoke.png"));
+    smoke_verdict(args.smoke, &img, &out, &ms);
+}
+
 struct Gpu {
     window: Arc<Window>,
     surface: forja_render::wgpu::Surface<'static>,
@@ -499,6 +621,9 @@ struct Sandbox {
     fps_acc: (f32, u32),
     want_screenshot: bool,
     perf: Option<PerfState>,
+    /// Frames presented (windowed `--smoke`).
+    frames: usize,
+    smoke_ms: Vec<f32>,
 }
 
 impl Sandbox {
@@ -511,7 +636,7 @@ impl Sandbox {
         if let Some(h) = args.hours {
             app.world.res_mut::<game::env::TimeOfDay>().hours = h;
         }
-        Self { args, gpu: None, app, map, input, extract: Extract::new(), ui: ui::UiState::default(), captured: false, last: Instant::now(), fps_acc: (0.0, 0), want_screenshot: false, perf: None }
+        Self { args, gpu: None, app, map, input, extract: Extract::new(), ui: ui::UiState::default(), captured: false, last: Instant::now(), fps_acc: (0.0, 0), want_screenshot: false, perf: None, frames: 0, smoke_ms: Vec::new() }
     }
 
     fn capture(&mut self, on: bool) {
@@ -652,7 +777,7 @@ impl Sandbox {
         }
         // Internal resolution (dynamic resolution); the final pass
         // upsamples to the window.
-        let scale = perf_state.next_scale();
+        let scale = perf_state.next_scale(gpu.config.width, gpu.config.height);
         let iw = ((gpu.config.width as f32 * scale) as u32).max(64);
         let ih = ((gpu.config.height as f32 * scale) as u32).max(64);
         gpu.renderer.resize(iw, ih);
@@ -735,6 +860,20 @@ impl Sandbox {
                 heavy: if perf_state.overlay { gpu.renderer.heaviest_meshes(6, false) } else { Vec::new() },
             });
         }
+        self.frames += 1;
+        if self.args.smoke > 0 {
+            if self.frames > 1 {
+                self.smoke_ms.push(dt * 1000.0);
+            }
+            if self.frames % 10 == 0 {
+                log::info!("smoke frame {}: {:.1} ms, gpu {:.1} ms, GPU errors {}", self.frames, dt * 1000.0, gpu.renderer.profiler.total_ms, forja_render::gpu::GPU_ERRORS.load(std::sync::atomic::Ordering::Relaxed));
+            }
+            if self.frames >= self.args.smoke {
+                let img = gpu.renderer.render_live_to_image(&frame, gpu.config.width, gpu.config.height);
+                let out = self.args.screenshot.clone().unwrap_or_else(|| PathBuf::from("smoke.png"));
+                smoke_verdict(self.frames, &img, &out, &self.smoke_ms);
+            }
+        }
         if std::mem::take(&mut self.want_screenshot) {
             let img = gpu.renderer.render_to_image(&frame, gpu.config.width, gpu.config.height);
             gpu.renderer.resize(iw, ih);
@@ -758,14 +897,17 @@ impl ApplicationHandler for Sandbox {
         let window = Arc::new(event_loop.create_window(attrs).expect("window"));
         let instance = forja_render::create_instance_with_display(Box::new(event_loop.owned_display_handle()));
         let surface = instance.create_surface(window.clone()).expect("surface");
-        let mut renderer = Renderer::new(&instance, Some(&surface)).expect("GPU");
+        let mut renderer = match Renderer::new_with(&instance, Some(&surface), &self.args.adapter) {
+            Ok(r) => r,
+            Err(e) => {
+                // No usable GPU: say so instead of a bare panic.
+                log::error!("{e}");
+                eprintln!("Forja: no se pudo iniciar la GPU (DirectX 12 / Vulkan): {e}");
+                std::process::exit(3);
+            }
+        };
         let size = window.inner_size();
-        let adapter = pollster::block_on(instance.request_adapter(&forja_render::wgpu::RequestAdapterOptions {
-            power_preference: forja_render::wgpu::PowerPreference::HighPerformance,
-            compatible_surface: Some(&surface),
-            ..Default::default()
-        }))
-        .expect("adapter");
+        let adapter = renderer.adapter.clone().expect("adapter of a new renderer");
         let present_modes = surface.get_capabilities(&adapter).present_modes;
         let mut config = surface.get_default_config(&adapter, size.width.max(1), size.height.max(1)).expect("surface config");
         config.format = renderer.output_format;
@@ -892,10 +1034,14 @@ fn present_mode(modes: &[forja_render::wgpu::PresentMode], vsync: bool) -> forja
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,wgpu_core=warn,wgpu_hal=warn,naga=warn")).init();
     let args = parse_args();
-    if args.screenshot.is_none() {
+    if args.smoke > 0 && !args.window {
+        run_smoke(&args);
+        return;
+    }
+    if args.screenshot.is_none() && args.smoke == 0 {
         fetch_missing_assets();
     }
-    if args.screenshot.is_some() {
+    if args.screenshot.is_some() && args.smoke == 0 {
         run_headless(&args);
         return;
     }

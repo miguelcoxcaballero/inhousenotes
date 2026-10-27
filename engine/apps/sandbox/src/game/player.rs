@@ -318,13 +318,13 @@ fn player_render(w: &mut forja_core::World) {
         if let Some(hand) = player.avatar.hand {
             player.hand_world = transform * person.pose()[hand];
         }
-        let item = person.render_item(transform);
+        let item = person.render_item(transform).with_id(1);
         if !(driving.is_some() && !bike) {
             w.res_mut::<RenderScene>().dynamic.push(item);
         }
         return;
     }
-    let mut item = RenderItem::new(player.avatar.model, transform);
+    let mut item = RenderItem::new(player.avatar.model, transform).with_id(1);
     if let Some(h) = &player.avatar.human
         && let Some(anim) = &h.anim
     {

@@ -12,6 +12,18 @@ commons_category = "Torre de Francia"
 wikipedia = { es = "https://es.wikipedia.org/wiki/Torre_de_Francia", ca = "https://ca.wikipedia.org/wiki/Torre_de_Fran%C3%A7a", en = "https://en.wikipedia.org/wiki/Torre_de_Francia" }
 
 [facts]
+plan_frame = { value = "H-plan 25.08 x 28.64 m (u -18.25..6.83, v -11.74..16.90), axis bearing 103.9 deg (u) / 193.9 deg (v)", source = "OSM building:parts 1280057723-41 + relation 17563682 = Catastro INSPIRE parts 7913901YJ2771D, checked on the IGN PNOA orthophoto (WMS pnoa-ma, CC BY 4.0; roof displaced ~(-5, -12) m by lean at 107 m)", note = "u = x cos13.9 + z sin13.9, v = -x sin13.9 + z cos13.9 (landmark-local); wings v -11.74..-2.20 and 7.36..16.90; slots 9.56 m wide between them" }
+slots = { value = "WNW slot 3.9 m deep (u -18.25..-14.35), ESE slot 3.5 m deep (u 3.31..6.83), each with a deep channel ~2.4 m wide at the back", source = "PNOA-LiDAR: 104.7-105.9 m at u -12.4/-14.2 (filled), 48.1 m at u -13 v 0 and 70.9 m at u 2.2 v -1.1 (channels), 5.2 / 26.8 m in the slots (lobby roof); photos 09, 11, 15", note = "OSM/Catastro parts 5/6 (1 floor) show 8 m deep notches only at ground level" }
+wing_roof = { value = 98.8, unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building-height grid, EL.GridCoverage GetFeatureInfo, 2.5 m cells, CC BY 4.0): cells inside both 33-storey wings 98.1-99.8 m, median 98.8", note = "model: roof 98.3 m + 1.1 m parapet; registration offset of the grid not resolvable here (edge cells mix), < ~2 m" }
+core_roof = { value = 105.1, unit = "m", source = "PNOA-LiDAR: 104.8-105.4 m over the 35-storey core (Catastro 35 floors)", note = "core set back 3.6 m from the short faces (OSM part 0, u -14.35..3.31, v -8.12..13.23)" }
+plant_roof = { value = 107.2, unit = "m", source = "PNOA-LiDAR: 106.8-107.2 m over the plant floor (OSM part 4 / Catastro 36 floors)" }
+antenna_top = { value = 111, unit = "m", source = "photos 03, 14, 16: mast ~5-6 m above the core parapet (scaled by the 25.1 m face width and the camera solves)", note = "OSM height=115 and the published 115 m were not confirmed: the highest LiDAR roof is 107.2 m" }
+balcony_bays = { value = [86.6, 85.2], unit = "m", source = "PNOA-LiDAR: 29-storey bay 84.7-88.2 m, balcony stacks 84.7-85.2 m (NNE face); SSW cells 91-99 m mix the wing", note = "bays u -14.16..4.04, 2.2 m deep; stacks 6.75 m wide, fronts 3.16 m from the wing face; photos 02, 06, 16 show 4 ribbon storeys above the balconies on both short faces" }
+floor_pitch = { value = 2.93, unit = "m", source = "LiDAR wing roof 98.3 m (slab) = 4.6 m ground floor + 32 x 2.93; core +2 storeys = 104.2 m (LiDAR 105.1 incl. parapet); annex 4.6 + 12 x 2.93 = 39.8 m (LiDAR 40.8)", note = "balcony rows counted on photos 02, 06 (28 stacked balconies from floor 1), 4 ribbon storeys (photo 16)" }
+annex = { value = [40.8, 38.2], unit = "m", source = "PNOA-LiDAR: ESE wing roof 40.6-41.3 m (Catastro 13 floors), NNE front 37.7-38.8 m (12 floors)" }
+lobby_roof = { value = 5.2, unit = "m", source = "PNOA-LiDAR 5.2 m in the WNW slot (OSM part 5, 1 level)" }
+camera_bridge_sw = { value = "eye (-217, 6, 387), fov 19.9 deg, RMS 2.3 px", source = "match solve of photo 14 (6 points incl. the ESE wing corner)" }
+camera_park_w = { value = "eye (-285, 1.6, -11), fov 41.1 deg (EXIF 20 mm on APS-C = 32 mm), RMS 0.7 px", source = "match solve of photo 09; Commons camera (-375, -23)" }
 floors = { value = 35, source = "https://www.wikidata.org/wiki/Q7826984#P1101" }
 built = { value = 2002, source = "https://www.wikidata.org/wiki/Q7826984#P571" }
 catastro_refcat = { value = "7913901YJ2771D", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=7913901&rc2=YJ2771D" }
@@ -29,8 +41,8 @@ license = "CC BY 3.0"
 width = 1280
 height = 852
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/02_Penya_roja_Valencia_Valencia_Spain_panoramio.jpg"
@@ -42,8 +54,8 @@ width = 1280
 height = 1707
 camera = [7.65, 178.26]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/03_Pont_de_Montolivet_panoramio.jpg"
@@ -55,8 +67,8 @@ width = 1280
 height = 960
 camera = [-182.33, 205.06]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/04_Vista_del_districte_de_Camins_al_Grau_de_Valencia.jpg"
@@ -67,8 +79,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 967
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "wsw"
 
 [[photo]]
 file = "photos/05_Torre_de_Franca_de_Valencia.jpg"
@@ -79,8 +91,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1911
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "ne"
 
 [[photo]]
 file = "photos/06_Torre_de_Francia.jpg"
@@ -91,8 +103,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/07_Torre_de_Francia_Valencia.jpg"
@@ -103,8 +115,8 @@ license = "CC BY-SA 2.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "wsw"
 
 [[photo]]
 file = "photos/08_Ciudad_del_las_Artes_y_las_Ciencias_de_Valencia.jpg"
@@ -115,8 +127,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/09_Valencia_park.jpg"
@@ -129,8 +141,8 @@ height = 853
 camera = [-375.39, -23.49]
 heading = 90.0
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/10_Torre_de_Franca_Valencia.jpg"
@@ -141,8 +153,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1760
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "ne"
 
 [[photo]]
 file = "photos/11_Valencia_Torre_de_Francia_3.jpg"
@@ -153,8 +165,8 @@ license = "CC0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "ese"
 
 [[photo]]
 file = "photos/12_Valencia_torre_de_Franca.jpg"
@@ -165,8 +177,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1826
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/13_Miquel_Navarro_Ciudad_de_las_artes_y_de_las_ciencias.jpg"
@@ -190,8 +202,8 @@ width = 1280
 height = 850
 camera = [-197.75, 263.39]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/15_Valencia_Torre_de_Francia_4.jpg"
@@ -202,8 +214,8 @@ license = "CC0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "ese"
 
 [[photo]]
 file = "photos/16_Torre_de_Francia_panoramio.jpg"
@@ -215,8 +227,8 @@ width = 1280
 height = 1707
 camera = [-14.3, 351.66]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/catastro_7913901YJ2771D.jpg"
@@ -227,8 +239,8 @@ license = "Catastro open data (attribution required)"
 width = 1200
 height = 1600
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "ssw"
 
 [[plan]]
 file = "plans/catastro_wms.png"
