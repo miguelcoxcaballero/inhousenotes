@@ -49,7 +49,21 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_El_Patriarca_Valencia_2008.jpg"
+file = "photos/03_La_campana_de_la_Mitja_de_Valencia.jpg"
+title = "File:La campana de la Mitja de Valencia.jpg"
+url = "https://commons.wikimedia.org/wiki/File:La_campana_de_la_Mitja_de_Valencia.jpg"
+author = "Wearblacck"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+camera = [-29.54, 45.99]
+heading = 178.7
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/04_El_Patriarca_Valencia_2008.jpg"
 title = "File:El Patriarca - València 2008.JPG"
 url = "https://commons.wikimedia.org/wiki/File:El_Patriarca_-_Val%C3%A8ncia_2008.JPG"
 author = "Carlesmari"
@@ -61,7 +75,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Part_superior_del_campanar_del_Reial_Col_legi_del_Corpus_Chr.jpg"
+file = "photos/05_Part_superior_del_campanar_del_Reial_Col_legi_del_Corpus_Chr.jpg"
 title = "File:Part superior del campanar del Reial Col·legi del Corpus Christi de València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Part_superior_del_campanar_del_Reial_Col%C2%B7legi_del_Corpus_Christi_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -73,7 +87,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Espadanya_del_col_legi_del_Corpus_Christi_de_Valencia.jpg"
+file = "photos/06_Espadanya_del_col_legi_del_Corpus_Christi_de_Valencia.jpg"
 title = "File:Espadanya del col·legi del Corpus Christi de València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Espadanya_del_col%C2%B7legi_del_Corpus_Christi_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -85,7 +99,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Patriarca_darrere.jpg"
+file = "photos/07_Patriarca_darrere.jpg"
 title = "File:Patriarca darrere.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Patriarca_darrere.jpg"
 author = "Felivet"
@@ -97,7 +111,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Seminari_Corpus_Christi_DSCN2896.jpg"
+file = "photos/08_Seminari_Corpus_Christi_DSCN2896.jpg"
 title = "File:Seminari Corpus Christi DSCN2896.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Seminari_Corpus_Christi_DSCN2896.JPG"
 author = "Pere López"
@@ -109,7 +123,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Seminari_Corpus_Christi_P1400097.jpg"
+file = "photos/09_Seminari_Corpus_Christi_P1400097.jpg"
 title = "File:Seminari Corpus Christi P1400097.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Seminari_Corpus_Christi_P1400097.JPG"
 author = "Pere López"
@@ -121,69 +135,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_Reial_Col_legi_del_Corpus_Christi_de_Valencia_exterior.jpg"
-title = "File:Reial Col·legi del Corpus Christi de València - exterior.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Reial_Col%C2%B7legi_del_Corpus_Christi_de_Val%C3%A8ncia_-_exterior.jpg"
-author = "Millars"
-license = "CC BY-SA 3.0 es"
-width = 1280
-height = 960
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Relleu_de_la_tanca_posterior_del_col_legi_del_Patriarca_de_V.jpg"
-title = "File:Relleu de la tanca posterior del col·legi del Patriarca de València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Relleu_de_la_tanca_posterior_del_col%C2%B7legi_del_Patriarca_de_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 892
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Tanca_posterior_del_col_legi_del_Corpus_Christi_de_Valencia.jpg"
-title = "File:Tanca posterior del col·legi del Corpus Christi de València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Tanca_posterior_del_col%C2%B7legi_del_Corpus_Christi_de_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 853
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_La_campana_de_la_Mitja_de_Valencia.jpg"
-title = "File:La campana de la Mitja de Valencia.jpg"
-url = "https://commons.wikimedia.org/wiki/File:La_campana_de_la_Mitja_de_Valencia.jpg"
-author = "Wearblacck"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-camera = [-29.54, 45.99]
-heading = 178.7
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Seminari_Corpus_Christi_DSCN2905.jpg"
-title = "File:Seminari Corpus Christi DSCN2905.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Seminari_Corpus_Christi_DSCN2905.JPG"
-author = "Pere López"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1707
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Puerta_lateral_de_la_Iglesia_del_Patriarca.jpg"
+file = "photos/10_Puerta_lateral_de_la_Iglesia_del_Patriarca.jpg"
 title = "File:Puerta lateral de la Iglesia del Patriarca.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Puerta_lateral_de_la_Iglesia_del_Patriarca.jpg"
 author = "19Tarrestnom65"
@@ -195,7 +147,31 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Patriarc07.jpg"
+file = "photos/11_Reial_Col_legi_del_Corpus_Christi_de_Valencia_exterior.jpg"
+title = "File:Reial Col·legi del Corpus Christi de València - exterior.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Reial_Col%C2%B7legi_del_Corpus_Christi_de_Val%C3%A8ncia_-_exterior.jpg"
+author = "Millars"
+license = "CC BY-SA 3.0 es"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/12_Tanca_posterior_del_col_legi_del_Corpus_Christi_de_Valencia.jpg"
+title = "File:Tanca posterior del col·legi del Corpus Christi de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Tanca_posterior_del_col%C2%B7legi_del_Corpus_Christi_de_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/13_Patriarc07.jpg"
 title = "File:Patriarc07.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Patriarc07.jpg"
 author = "Joanbanjo"
@@ -207,13 +183,37 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Patriarca_cupula.jpg"
+file = "photos/14_Seminari_Corpus_Christi_DSCN2905.jpg"
+title = "File:Seminari Corpus Christi DSCN2905.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Seminari_Corpus_Christi_DSCN2905.JPG"
+author = "Pere López"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/15_Patriarca_cupula.jpg"
 title = "File:Patriarca cupula.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Patriarca_cupula.jpg"
 author = "Felivet"
 license = "Public domain"
 width = 960
 height = 762
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/16_Seminari_Corpus_Christi_P1400104.jpg"
+title = "File:Seminari Corpus Christi P1400104.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Seminari_Corpus_Christi_P1400104.JPG"
+author = "Pere López"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1707
 exterior = true
 selected = false
 side = ""

@@ -206,30 +206,6 @@ exterior = true
 selected = false
 side = ""
 
-[[photo]]
-file = "photos/16_Escala_que_dona_al_pati_nord.jpg"
-title = "File:Escala que dóna al pati nord.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Escala_que_d%C3%B3na_al_pati_nord.jpg"
-author = "Llig més"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/catastro_6256412YJ2765E.jpg"
-title = "Catastro fachada 6256412YJ2765E"
-url = "http://ovc.catastro.meh.es/OVCServWeb/OVCWcfLibres/OVCFotoFachada.svc/RecuperarFotoFachadaGet?ReferenciaCatastral=6256412YJ2765E"
-author = "Dirección General del Catastro"
-license = "Catastro open data (attribution required)"
-width = 2592
-height = 1944
-exterior = true
-selected = false
-side = ""
-
 [[plan]]
 file = "plans/01_Carnet_de_membre_de_la_Seccio_Filologica_de_l_Institut_d_Est.jpg"
 title = "File:Carnet de membre de la Secció Filològica de l'Institut d'Estudis Valencians de Manuel Sanchis Guarner.JPG"

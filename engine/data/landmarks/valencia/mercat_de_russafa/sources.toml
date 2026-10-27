@@ -35,19 +35,45 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Floristeria_a_l_exterior_del_mercat_de_Russafa.jpg"
-title = "File:Floristeria a l'exterior del mercat de Russafa.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Floristeria_a_l%27exterior_del_mercat_de_Russafa.JPG"
-author = "Joanbanjo"
+file = "photos/02_Mercat_de_Russafa_de_Valencia.jpg"
+title = "File:Mercat de Russafa de Valencia.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Mercat_de_Russafa_de_Valencia.jpg"
+author = "19Tarrestnom65"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 847
+height = 1707
+camera = [-6.66, 42.96]
+heading = 356.6
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Fachada_mercado_de_Ruzafa.jpg"
+file = "photos/03_Mercat_de_Russafa_i_campanar.jpg"
+title = "File:Mercat de Russafa i campanar.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Mercat_de_Russafa_i_campanar.JPG"
+author = "Joanbanjo"
+license = "Public domain"
+width = 1280
+height = 864
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/04_Mercat_de_Russafa.jpg"
+title = "File:Mercat de Russafa.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Mercat_de_Russafa.JPG"
+author = "Joanbanjo"
+license = "Public domain"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_Fachada_mercado_de_Ruzafa.jpg"
 title = "File:Fachada mercado de Ruzafa.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Fachada_mercado_de_Ruzafa.jpg"
 author = "19Tarrestnom65"
@@ -59,7 +85,31 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Mercat_de_Russafa_Valencia.jpg"
+file = "photos/06_MERCAT_RUSAFA_52582980402.jpg"
+title = "File:MERCAT RUSAFA - 52582980402.jpg"
+url = "https://commons.wikimedia.org/wiki/File:MERCAT_RUSAFA_-_52582980402.jpg"
+author = "Skaja Lee"
+license = "CC BY-SA 2.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_Mercat_de_Russafa_lateral_taronja.jpg"
+title = "File:Mercat de Russafa, lateral taronja.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Mercat_de_Russafa%2C_lateral_taronja.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 933
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/08_Mercat_de_Russafa_Valencia.jpg"
 title = "File:Mercat de Russafa (València).JPG"
 url = "https://commons.wikimedia.org/wiki/File:Mercat_de_Russafa_%28Val%C3%A8ncia%29.JPG"
 author = "Desesser"
@@ -72,148 +122,50 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Mercat_de_Russafa_de_Valencia.jpg"
-title = "File:Mercat de Russafa de Valencia.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Mercat_de_Russafa_de_Valencia.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-camera = [-6.66, 42.96]
-heading = 356.6
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/06_Mercat_de_Russafa_i_campanar.jpg"
-title = "File:Mercat de Russafa i campanar.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Mercat_de_Russafa_i_campanar.JPG"
-author = "Joanbanjo"
-license = "Public domain"
-width = 1280
-height = 864
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/07_MERCAT_RUSAFA_52582980402.jpg"
-title = "File:MERCAT RUSAFA - 52582980402.jpg"
-url = "https://commons.wikimedia.org/wiki/File:MERCAT_RUSAFA_-_52582980402.jpg"
-author = "Skaja Lee"
-license = "CC BY-SA 2.0"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Mercat_de_Russafa_lloc_de_Ana.jpg"
-title = "File:Mercat de Russafa lloc de Ana.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Mercat_de_Russafa_lloc_de_Ana.jpg"
-author = "Noapme"
-license = "CC BY 4.0"
-width = 1280
-height = 880
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Lloc_d_olives_al_mercat_de_Russafa.jpg"
-title = "File:Lloc d'olives al mercat de Russafa.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Lloc_d%27olives_al_mercat_de_Russafa.jpg"
-author = "Noapme"
-license = "CC BY 4.0"
-width = 1280
-height = 1920
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Mercat_de_Russafa.jpg"
-title = "File:Mercat de Russafa.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Mercat_de_Russafa.JPG"
-author = "Joanbanjo"
-license = "Public domain"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_VLC_20140501_16_14100252240.jpg"
+file = "photos/09_VLC_20140501_16_14100252240.jpg"
 title = "File:VLC - 20140501 - 16 (14100252240).jpg"
 url = "https://commons.wikimedia.org/wiki/File:VLC_-_20140501_-_16_%2814100252240%29.jpg"
 author = "r2hox from Madrid, Spain"
 license = "CC BY-SA 2.0"
 width = 1280
 height = 850
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_Mercat_de_Russafa_lateral_taronja.jpg"
-title = "File:Mercat de Russafa, lateral taronja.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Mercat_de_Russafa%2C_lateral_taronja.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 933
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Mercado_Ruzafa.jpg"
-title = "File:Mercado Ruzafa.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Mercado_Ruzafa.jpg"
-author = "Javisoar"
-license = "CC0"
-width = 960
-height = 720
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Campanar_i_mercat_Russafa.jpg"
+file = "photos/10_Campanar_i_mercat_Russafa.jpg"
 title = "File:Campanar i mercat, Russafa.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Campanar_i_mercat%2C_Russafa.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 945
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Mercat_de_Russafa_cantonada.jpg"
+file = "photos/11_Mercado_Ruzafa.jpg"
+title = "File:Mercado Ruzafa.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Mercado_Ruzafa.jpg"
+author = "Javisoar"
+license = "CC0"
+width = 960
+height = 720
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/12_Mercat_de_Russafa_cantonada.jpg"
 title = "File:Mercat de Russafa, cantonada.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Mercat_de_Russafa%2C_cantonada.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 856
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_Arros_al_forn_al_mercat_de_Russafa.jpg"
-title = "File:Arròs al forn al mercat de Russafa.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Arr%C3%B2s_al_forn_al_mercat_de_Russafa.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 963
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 

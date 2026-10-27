@@ -73,7 +73,43 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Campanar_des_del_carrer_del_baro_de_Barxeta_Campanar.jpg"
+file = "photos/05_Esglesia_de_la_Mare_de_Deu_de_la_Misericordia_Campanar.jpg"
+title = "File:Església de la Mare de Déu de la Misericòrdia, Campanar.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_de_la_Mare_de_D%C3%A9u_de_la_Miseric%C3%B2rdia%2C_Campanar.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 2048
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Porta_de_l_esglesia_de_la_Mare_de_Deu_de_la_Misericordia_Cam.jpg"
+title = "File:Porta de l'església de la Mare de Déu de la Misericòrdia, Campanar.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Porta_de_l%27esgl%C3%A9sia_de_la_Mare_de_D%C3%A9u_de_la_Miseric%C3%B2rdia%2C_Campanar.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 2134
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_Rellotge_del_campanar_esglesia_de_la_Mare_de_Deu_de_la_Miser.jpg"
+title = "File:Rellotge del campanar, església de la Mare de Déu de la Misericòrdia de Campanar.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Rellotge_del_campanar%2C_esgl%C3%A9sia_de_la_Mare_de_D%C3%A9u_de_la_Miseric%C3%B2rdia_de_Campanar.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/08_Campanar_des_del_carrer_del_baro_de_Barxeta_Campanar.jpg"
 title = "File:Campanar des del carrer del baró de Barxeta, Campanar.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Campanar_des_del_carrer_del_bar%C3%B3_de_Barxeta%2C_Campanar.JPG"
 author = "Joanbanjo"
@@ -85,7 +121,68 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Esglesia_de_la_Mare_de_Deu_de_la_Misericordia_de_Campanar_fa.jpg"
+file = "photos/09_Portalada_de_l_esglesia_de_la_Mare_de_Deu_de_la_Misericordia.jpg"
+title = "File:Portalada de l'església de la Mare de Déu de la Misericòrdia de Campanar.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Portalada_de_l%27esgl%C3%A9sia_de_la_Mare_de_D%C3%A9u_de_la_Miseric%C3%B2rdia_de_Campanar.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1947
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/10_Porta_lateral_esglesia_de_la_Mare_de_Deu_de_la_Misericordia_.jpg"
+title = "File:Porta lateral, església de la Mare de Déu de la Misericòrdia de Campanar.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Porta_lateral%2C_esgl%C3%A9sia_de_la_Mare_de_D%C3%A9u_de_la_Miseric%C3%B2rdia_de_Campanar.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 2135
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/11_Cupula_lateral_esglesia_de_la_mare_de_Deu_de_la_Misericordia.jpg"
+title = "File:Cúpula lateral, església de la mare de Déu de la Misericòrdia de Campanar.JPG"
+url = "https://commons.wikimedia.org/wiki/File:C%C3%BApula_lateral%2C_esgl%C3%A9sia_de_la_mare_de_D%C3%A9u_de_la_Miseric%C3%B2rdia_de_Campanar.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1814
+camera = [43.69, 7.24]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/12_Campanar_esglesia_de_la_Mare_de_Deu_de_la_Misericordia.jpg"
+title = "File:Campanar, església de la Mare de Déu de la Misericòrdia.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Campanar%2C_esgl%C3%A9sia_de_la_Mare_de_D%C3%A9u_de_la_Miseric%C3%B2rdia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 2008
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/13_Portalada_de_l_esglesia_de_la_Mare_de_Deu_de_la_Misericordia_2.jpg"
+title = "File:Portalada de l'església de la Mare de Déu de la Misericòrdia, Campanar.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Portalada_de_l%27esgl%C3%A9sia_de_la_Mare_de_D%C3%A9u_de_la_Miseric%C3%B2rdia%2C_Campanar.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 2037
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/14_Esglesia_de_la_Mare_de_Deu_de_la_Misericordia_de_Campanar_fa.jpg"
 title = "File:Església de la Mare de Déu de la Misericòrdia de Campanar, façana.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_de_la_Mare_de_D%C3%A9u_de_la_Miseric%C3%B2rdia_de_Campanar%2C_fa%C3%A7ana.JPG"
 author = "Joanbanjo"
@@ -97,7 +194,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Remat_del_campanar_esglesia_de_la_mare_de_Deu_de_la_Miserico.jpg"
+file = "photos/15_Remat_del_campanar_esglesia_de_la_mare_de_Deu_de_la_Miserico.jpg"
 title = "File:Remat del campanar, església de la mare de Déu de la Misericòrdia de Campanar.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Remat_del_campanar%2C_esgl%C3%A9sia_de_la_mare_de_D%C3%A9u_de_la_Miseric%C3%B2rdia_de_Campanar.JPG"
 author = "Joanbanjo"
@@ -110,19 +207,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Portalada_de_l_esglesia_de_la_Mare_de_Deu_de_la_Misericordia.jpg"
-title = "File:Portalada de l'església de la Mare de Déu de la Misericòrdia de Campanar.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Portalada_de_l%27esgl%C3%A9sia_de_la_Mare_de_D%C3%A9u_de_la_Miseric%C3%B2rdia_de_Campanar.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1947
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Esglesia_de_la_mare_de_Deu_de_la_Misericordia_de_Campanar_ca.jpg"
+file = "photos/16_Esglesia_de_la_mare_de_Deu_de_la_Misericordia_de_Campanar_ca.jpg"
 title = "File:Església de la mare de Déu de la Misericòrdia de Campanar, campanar.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_de_la_mare_de_D%C3%A9u_de_la_Miseric%C3%B2rdia_de_Campanar%2C_campanar.JPG"
 author = "Joanbanjo"
@@ -131,91 +216,6 @@ width = 1280
 height = 1906
 camera = [43.69, 7.24]
 exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Campanar_esglesia_de_la_Mare_de_Deu_de_la_Misericordia.jpg"
-title = "File:Campanar, església de la Mare de Déu de la Misericòrdia.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Campanar%2C_esgl%C3%A9sia_de_la_Mare_de_D%C3%A9u_de_la_Miseric%C3%B2rdia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 2008
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Portalada_de_l_esglesia_de_la_Mare_de_Deu_de_la_Misericordia_2.jpg"
-title = "File:Portalada de l'església de la Mare de Déu de la Misericòrdia, Campanar.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Portalada_de_l%27esgl%C3%A9sia_de_la_Mare_de_D%C3%A9u_de_la_Miseric%C3%B2rdia%2C_Campanar.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 2037
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_Porta_de_l_esglesia_de_la_Mare_de_Deu_de_la_Misericordia_Cam.jpg"
-title = "File:Porta de l'església de la Mare de Déu de la Misericòrdia, Campanar.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Porta_de_l%27esgl%C3%A9sia_de_la_Mare_de_D%C3%A9u_de_la_Miseric%C3%B2rdia%2C_Campanar.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 2134
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Rellotge_del_campanar_esglesia_de_la_Mare_de_Deu_de_la_Miser.jpg"
-title = "File:Rellotge del campanar, església de la Mare de Déu de la Misericòrdia de Campanar.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Rellotge_del_campanar%2C_esgl%C3%A9sia_de_la_Mare_de_D%C3%A9u_de_la_Miseric%C3%B2rdia_de_Campanar.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Porta_lateral_esglesia_de_la_Mare_de_Deu_de_la_Misericordia_.jpg"
-title = "File:Porta lateral, església de la Mare de Déu de la Misericòrdia de Campanar.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Porta_lateral%2C_esgl%C3%A9sia_de_la_Mare_de_D%C3%A9u_de_la_Miseric%C3%B2rdia_de_Campanar.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 2135
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Esglesia_de_la_Mare_de_Deu_de_la_Misericordia_Campanar.jpg"
-title = "File:Església de la Mare de Déu de la Misericòrdia, Campanar.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_de_la_Mare_de_D%C3%A9u_de_la_Miseric%C3%B2rdia%2C_Campanar.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 2048
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_Cupula_lateral_esglesia_de_la_mare_de_Deu_de_la_Misericordia.jpg"
-title = "File:Cúpula lateral, església de la mare de Déu de la Misericòrdia de Campanar.JPG"
-url = "https://commons.wikimedia.org/wiki/File:C%C3%BApula_lateral%2C_esgl%C3%A9sia_de_la_mare_de_D%C3%A9u_de_la_Miseric%C3%B2rdia_de_Campanar.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1814
-camera = [43.69, 7.24]
-exterior = "unknown"
 selected = false
 side = ""
 

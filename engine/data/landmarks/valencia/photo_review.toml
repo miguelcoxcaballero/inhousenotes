@@ -1,0 +1,2378 @@
+# Hand review of the Commons photos chosen by fetch.py, made by looking at each
+# landmark's photos/contact.jpg. fetch.py reads this file (next to list.toml) and
+# applies it after its text classification:
+#   exterior = files confirmed to show the building's exterior (ranked first)
+#   exclude  = interiors, objects, people, food, or another building (never selected)
+#   catastro_not_building = parcels whose Catastro facade photo shows a different building
+#   extra_categories / extra_files = more Commons sources found by hand
+#   max_photos = per-landmark override of --max-photos
+# Slugs with a modeling landmark.toml are not reviewed here.
+
+[agora]
+# all exterior
+max_photos = 16
+exterior = [
+  "File:Agora and El Puente de l'Assut de l'Or Bridge.jpg",
+  "File:Ágora, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 58.jpg",
+  "File:L'Àgora and Assut de l'Or bridge from the Turia gardens, Valencia.jpg",
+  "File:Agora y Pont de l'Assut de l'Or.jpg",
+  "File:Valencia Spain Bridge de l'Assut de l'Or.jpg",
+  "File:L'agora-valencia-2009.JPG",
+  "File:Valencia Ciudad de las Artes y las Ciencias-20100203-RM-173452.jpg",
+  "File:Phot.Valencia.CAC.Agora.101023.8413.jpg",
+  "File:Covered Plaza \"L'Àgora\" - 2013.07 - panoramio.jpg",
+  "File:Valencia L'Àgora from the bridge.jpg",
+  "File:Ágora, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 44.JPG",
+  "File:Valencia Ciudad de las Artes y las Ciencias-20100203-RM-174013.jpg",
+  "File:The City of Arts and Sciences complex by Santiago Calatrava and Félix Candela. Valencia, Spain, Southwestern Europe. September 28, 2014-6.jpg",
+  "File:DESDE EL PUENTE DE CALATRAVA - panoramio.jpg",
+  "File:Ágora, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 45.JPG",
+  "File:Valencia Ciudad de las Artes y las Ciencias-20100203-RM-174122.jpg",
+]
+
+[ajuntament_de_valencia]
+max_photos = 16
+exterior = [
+  "File:Ayuntamiento de Valencia, España, 2014-06-30, DD 121.JPG",
+  "File:Ayuntamiento de Valencia, España, 2014-06-30, DD 119.JPG",
+  "File:Ayuntamiento de Valencia, España, 2014-06-30, DD 120.JPG",
+  "File:Torre del ayuntamiento de Valencia.JPG",
+  "File:Ayuntamiento - panoramio (8).jpg",
+  "File:Cupulas del Ayuntamiento - panoramio.jpg",
+  "File:València ciutat refugi.jpg",
+  "File:L'ajuntament de València, des de baix, Setembre de 2008.JPG",
+  "File:Ayuntamiento Valencia.JPG",
+  "File:15-M València 19-J (2).JPG",
+  "File:Ajuntament de València, València city hall.JPG",
+  "File:Ayuntamiento de Valencia 1.JPG",
+  "File:Ajuntament de València 1.JPG",
+  "File:Townhall of Valencia.jpg",
+  "File:Balcó de l'Ajuntament amb gent.jpg",
+  "File:Валенсия. Здание мэрии города (Ayuntamiento de Valencia) - panoramio.jpg",
+]
+exclude = [
+  "File:Plaça del Quinze de Maig - Sento.jpg",
+]
+
+[almodi]
+max_photos = 16
+exterior = [
+  "File:L'almodí de València.JPG",
+  "File:Carrer de l'Almodi - panoramio.jpg",
+  "File:Almodí P1130824.JPG",
+  "File:Façana de l'Almodí a la Plaça de Sant Lluís Bertran.jpg",
+  "File:Plaça de l'Almoina des de la catedral, València.JPG",
+  "File:203 L'Almodí (València), façana est, pl. Sant Lluís Bertran.jpg",
+  "File:Almodí P1130828.JPG",
+  "File:Façana de l'Almodí a la Plaça de Sant Lluís Bertran 02.jpg",
+  "File:Almudín de Valencia - 001.jpg",
+  "File:204 L'Almodí (València), angle sud-est.jpg",
+  "File:Almodí de València, porxo.jpg",
+  "File:Palau de Colomina i Almodí, València 01.jpg",
+  "File:Valencia - Almodí 1.jpg",
+  "File:The Almudín and Fuente de San Lluis Bertran in Ciutat Vella, Valencia, Spain.jpg",
+  "File:206 Font de la pl. Sant Lluís Bertran (València), al fons l'Almodí.jpg",
+  "File:Porxo de l'Almodí, València.jpg",
+]
+
+[almoina]
+# 7 shows cathedral; rest interior/artifacts
+max_photos = 22
+exterior = [
+  "File:Centre arqueològic de l'Almoina de València, exterior.JPG",
+  "File:Plaza de la Reina, València, Valencia, Spain - panoramio (14).jpg",
+  "File:Museo de la Almoina.jpg",
+  "File:Centro Arqueológico de la Almoina, Valencia.jpg",
+  "File:At Valencia 2025 096.jpg",
+  "File:Exterior del centre arqueològic de l'Almoina de València.JPG",
+  "File:334 Centre arqueològic de l'Almoina (València).jpg",
+  "File:At Valencia 2025 097.jpg",
+]
+exclude = [
+  "File:Centro Arqueológico de la Almoina 08.jpg",
+  "File:Tumba colectiva del siglo VI de época visigoda. Centro Arqueológico de la Almoina.jpg",
+  "File:Centre Arqueològic Almoina.jpg",
+  "File:Cathédrale Saint-Apollinaire et Basilique Nostra Señora de los Desemparados (8276231733).jpg",
+  "File:Muros de adobe de las primeras construcciones de Valentia. Centro Arqueológico de la Almoina 01.jpg",
+  "File:Llàntia romana.jpg",
+  "File:Centre Arqueològic de l'Almoina, absis d'època visigòtica.JPG",
+  "File:Dama de la Boatella. Centro Arqueológico de la Almoina.jpg",
+  "File:Muros de adobe de las primeras construcciones de Valentia. Centro Arqueológico de la Almoina 02.jpg",
+  "File:Centro Arqueológico de la Almoina 01.jpg",
+  "File:Aras funerarias romanas. Centro Arqueológico de la Almoina.jpg",
+  "File:Sivella de cinturó del segle VII.jpg",
+  "File:Gran tomba col·lectiva representativa de la necròpoli de l'Almoina (València), segle VII.jpg",
+  "File:Ara funeraria romana. Centro Arqueológico de la Almoina.jpg",
+  "File:Jarrita visigoda del siglo VII. Centro Arqueológico de la Almoina.jpg",
+  "File:Museu de la Almoina.jpg",
+  "File:Llàntia amb jocs d'animals, centre arqueològic de l'Almoina de València.JPG",
+  "File:Centro Arqueológico de la Almoina 10.jpg",
+  "File:Escultura funeraria de león postrado. Centro Arqueológico de la Almoina.jpg",
+  "File:Armas romanas. Centro Arqueológico de la Almoina 03.jpg",
+  "File:Almoina.jpg",
+  "File:Gran tomba col·lectiva representativa de la necròpolis de l'Almoina de València, segle VII.jpg",
+]
+
+[alqueria_de_julia]
+# 6,10,11,12 detail closeups
+max_photos = 12
+exterior = [
+  "File:Alqueria de Julià de València.jpg",
+  "File:Torre de l'alqueria de Julià de València.JPG",
+  "File:Vista de la torre de l'alqueria de Julià, València.JPG",
+  "File:Alqueria de Julià de València, torre.jpg",
+  "File:Alqueria de Julià, València.jpg",
+  "File:Balcó de l'alqueria de Julià.jpg",
+  "File:València, alqueria de Julià.jpg",
+  "File:Alqueria o hort de Julià, València.JPG",
+  "File:Porta de l'alqueria de Julià, València.jpg",
+  "File:Detall de la finestra del balcó de l'alqueria de Julià, València.jpg",
+  "File:Frontó de la finestra del balcó de l'alqueria de Julià, València.JPG",
+  "File:Alqueria de Julià de València, balcó barroc.jpg",
+]
+
+[alqueria_del_moro]
+# 10 closeup
+max_photos = 10
+exterior = [
+  "File:Alqueria del Moro, Benicalap.JPG",
+  "File:Vista lateral de l'alqueria del Moro.JPG",
+  "File:Alqueria del Moro, carrer entre els edificis.JPG",
+  "File:Alqueria del Moro, vista lateral.JPG",
+  "File:Alqueria de la Torre i alqueria del Moro, Benicalap.JPG",
+  "File:L'alqueria del Moro, Benicalap.JPG",
+  "File:Benicalap, alqueria del Moro.JPG",
+  "File:Casa del senyor de l'alqueria del Moro.JPG",
+  "File:Alqueria del Moro i edifici auxiliar.JPG",
+  "File:Finestra gòtica tapiada de l'alqueria del Moro.JPG",
+]
+
+[antic_hospital]
+# archaeological garden columns; C catastro facade is a different (modern) building; 14,15 closeups
+max_photos = 11
+exterior = [
+  "File:Biblioteca Pública Pilar Faus, Valencia 01.jpg",
+  "File:Cúpula de l'Antic Hospital, ara Biblioteca Pública, València.JPG",
+  "File:Capitell adossat a la paret exterior de la Biblioteca Pública de València, antic Hospital.JPG",
+  "File:Valence(Espagne).JPG",
+  "File:Portal de la Biblioteca.JPG",
+  "File:Biblioteca de l'hospital.jpg",
+  "File:Hospital Vell P1400165.JPG",
+  "File:Biblioteca del carrer de l'Hospital, València 2022-10-22 11.10.39.jpg",
+  "File:Biblioteca del carrer de l'Hospital, València 2022-10-22 11.10.38.jpg",
+  "File:Antic hospital general de València, ara biblioteca pública.jpg",
+  "File:Hospital Vell P1400166.JPG",
+]
+exclude = [
+  "File:Hospital viejo Guillem de Castro 01.JPG",
+  "File:Entrada de l'antiga facultat de medicina de València.JPG",
+  "File:Bublioteca Pubica - panoramio (1).jpg",
+  "File:Hospital viejo Guillem de Castro 02.JPG",
+  "File:Biblioteca de Valencia (420922375).jpg",
+  "File:Valencia - Conjunto Arqueológico Antiguo Hospital General 2021-09-16 165540.jpg",
+  "File:Hospital de los Pobres Inocentes - Valencia - 20200811 001.jpg",
+  "File:Hospital viejo Guillem de Castro 03.JPG",
+  "File:Bublioteca Pubica - panoramio.jpg",
+  "File:Hospital de los Pobres Inocentes - Valencia - 20200811 010.jpg",
+  "File:171 Portal de l'antiga Facultat de Medicina, parc de l'Hospital (València).jpg",
+  "File:Hospital viejo Guillem de Castro 04.JPG",
+  "File:Bublioteca Pubica - panoramio (3).jpg",
+  "File:Valencia - Conjunto Arqueológico Antiguo Hospital General 2021-09-16 165819.jpg",
+  "File:Puerta de la antigua facultad de medicina - statue - Jardines del Hospital - Ciutat Vella, Valencia, Spain.jpg",
+  "File:Hospital de los Pobres Inocentes - Valencia - 20200811 002.jpg",
+]
+
+[art_major_de_la_seda]
+# museum objects
+max_photos = 11
+exterior = [
+  "File:Colegio del Arte Mayor de la Seda, Valencia 02.jpg",
+  "File:Col Arte Mayor de la Seda VLC a.jpg",
+  "File:Façana del Col·legi de l'Art Major de la Seda, València.jpg",
+  "File:Col·legi de l'Art Major de la Seda P1400156.JPG",
+  "File:Col Arte Mayor de la Seda VLC b.jpg",
+  "File:Col·legi de l'Art Major de la Seda P1400164.JPG",
+  "File:Façana del col·legi de l'Art Major de la Seda (València).JPG",
+  "File:Façana del col·legi de l'Art Major de la Seda (València) amb ciclista.JPG",
+  "File:Pati del col·legi de l'Art Major de la Seda, València.JPG",
+  "File:Col·legi de l'Art Major de la Seda (València).JPG",
+  "File:Cr Hospital (València).jpg",
+]
+exclude = [
+  "File:Museo y Colegio del Arte Mayor de la Seda, Valencia 02.jpg",
+  "File:Museo y Colegio del Arte Mayor de la Seda, Valencia 06.jpg",
+  "File:Col·legi de l'Art Major de la Seda de València, cotilla.jpg",
+  "File:Libro de Clavarios (de 1591 a 1592) . Colegio del Arte Mayor de la Seda, Valencia.jpg",
+  "File:Libro de los maestros del Arte Mayor de la Seda (siglo XVIII). Colegio del Arte Mayor de la Seda, Valencia.jpg",
+  "File:Pragmática Sanción de Felipe V (1736). Colegio del Arte Mayor de la Seda, Valencia.jpg",
+  "File:Màquina de Jacquard, col·legi de l'Art Major de la Seda de València.JPG",
+  "File:Museo y Colegio del Arte Mayor de la Seda, Valencia 03.jpg",
+  "File:Museo y Colegio del Arte Mayor de la Seda, Valencia 01.jpg",
+  "File:Museo y Colegio del Arte Mayor de la Seda, Valencia 07.jpg",
+  "File:Libro de Clavarios (de 1581 a 1582). Colegio del Arte Mayor de la Seda, Valencia.jpg",
+  "File:Teler manual de doble amplada amb màquina de Jacquard, col·legi de l'Art Major de la Seda, València.JPG",
+  "File:Dalmàtica, espolí en seda natural, col·legi de l'Art Major de la Seda, València.jpg",
+  "File:Urdidora francesa 02.jpg",
+  "File:Museo y Colegio del Arte Mayor de la Seda, Valencia 04.jpg",
+  "File:Telar de terciopelo 01.jpg",
+  "File:Historical loom.jpg",
+  "File:Passamaneria del segle XVIII, col·legi de l'Art Major de la Seda, València.JPG",
+  "File:Telar de terciopelo y urdidora francesa.jpg",
+]
+
+[ateneu_mercantil]
+# 5,16 roof finials closeups
+max_photos = 16
+exterior = [
+  "File:Edifici de l'Ateneu Mercantil de València.jpg",
+  "File:Plaça de l'Ajuntament de València, Ateneu Mercantil i el Rialto.jpg",
+  "File:Plaça de l'Ajuntament (Vinatea).jpg",
+  "File:016 Font de la plaça de l'Ajuntament (València), amb l'Ateneu Mercantil al fons.jpg",
+  "File:Remats de l'edifici de l'ateneu Mercantil des de la terrassa, València.jpg",
+  "File:Plaça de l'Ajuntament de València 2.JPG",
+  "File:Edifici de l'Ateneu Mercantil de València (cropped).jpg",
+  "File:Edificio Rialto y Ateneo mercantil de Valencia 1.JPG",
+  "File:014 Ateneu Mercantil, pl. de l'Ajuntament 18 (València).jpg",
+  "File:Plaça de l'Ajuntament de València 3.JPG",
+  "File:Valencia - Ateneo Mercantil 1.jpg",
+  "File:L'ateneu de València, 2006.JPG",
+  "File:Rialto Building and Ateneu Mercantil de València building, 04 2025.jpg",
+  "File:Edificio Rialto y Ateneo mercantil de Valencia 2.JPG",
+  "File:Plaça de l'Ajuntament de València 4.JPG",
+  "File:Remats decoratius de l'edifici de l'Ateneu Mercantil.jpg",
+]
+
+[banc_d_espanya]
+# OUTLINE WRONG: shares Banco de Valencia way/492626775
+max_photos = 13
+exterior = [
+  "File:València, façana del banc d'Espanya.JPG",
+  "File:Edificio del Banco de España de José de Astiz Bárcena (1917) en Valencia.jpg",
+  "File:Banco de España en Valencia.jpg",
+  "File:Edificio del Banco de España, Valencia, 04 2025.jpg",
+  "File:Finestres de l'edifici del Banc d'Espanya, València.JPG",
+  "File:València, edifici del banc d'Espanya.JPG",
+  "File:Banc d'Espanya, Valéncia 02.jpg",
+  "File:Valencia - Banco de España.jpg",
+  "File:Cantonada de l'edifici del banc d'Espanya, València.JPG",
+  "File:Banc d'Espanya, Valéncia 01.jpg",
+  "File:Banc d'Espanya, Valéncia 03.jpg",
+  "File:Porta del Banc d'Espanya, València.JPG",
+  "File:Banc d'Espanya, Valéncia 04.jpg",
+]
+
+[banc_de_valencia]
+max_photos = 16
+exterior = [
+  "File:Banco de Valencia, Valencia, España, 2014-06-30, DD 134.JPG",
+  "File:Banco de Valencia.jpg",
+  "File:Vista apartir do piso 3 do Hotel Reina Victoria - panoramio.jpg",
+  "File:Banco de Valencia, Valencia, España, 2014-06-30, DD 135.JPG",
+  "File:Valencia, Spain (26461339361).jpg",
+  "File:Bikes by Carrer de les Barques, Ciutat Vella, Valencia, Spain, 2024 January.jpg",
+  "File:Edificio Banco de Valencia - Ciutat Vella, Valencia, Spain.jpg",
+  "File:Valencia - Banco de Valencia 8.jpg",
+  "File:Intersection at Banco de Valencia, Ciutat Vella, Valencia, Spain, 2024 January.jpg",
+  "File:Banco de Valencia (199561337).jpg",
+  "File:Valencia - Calle de las Barcas.jpg",
+  "File:Edifici del Banc de València.JPG",
+  "File:Ciutat Vella - Banco de Valencia building, Valencia - 20220102170753.jpg",
+  "File:Valencia - Banco de Valencia 5.jpg",
+  "File:Banco de Valencia building, Valencia, avril 2025 2.jpg",
+  "File:Edifico del Banco de Valencia (Valencia) 03.jpg",
+]
+
+[banys_de_l_almirall]
+# interiors; exterior = roofs 4,5,10,16 + portal 11,12; small building enclosed
+max_photos = 20
+exterior = [
+  "File:Valencia - Baños del Almirante - 2025-09-28 - Puerta.jpg",
+  "File:Banys de l'Almirall, cobertes.JPG",
+  "File:Cobertes dels Banys de l'Almirall de València.JPG",
+  "File:Xemeneia, banys de l'Almirall de València.JPG",
+  "File:València, cobertes dels banys de l'Almirall.JPG",
+  "File:Edificios de Valencia ciudad H.jpg",
+  "File:Banys arabs4.jpg",
+]
+exclude = [
+  "File:Banys arabs3.jpg",
+  "File:Diversos vidrios en el Centro Arqueológico de la Almoina.jpg",
+  "File:Banyos Almirante.JPG",
+  "File:Baños del Almirante 01.JPG",
+  "File:Utensilis per al bany, banys de l'Almirall de València.JPG",
+  "File:Candil de piquera procedente de los Baños del Almirante. Centro Arqueológico de la Almoina.jpg",
+  "File:Banys arabs1.jpg",
+  "File:Escala d'accés a les cobertes dels banys de l'Almirall, València.JPG",
+  "File:Baños del Almirante 03.JPG",
+  "File:Banys arabs2.jpg",
+  "File:Baños del Almirante 02.JPG",
+  "File:Baños del Almirante 04.JPG",
+  "File:Columnes del vestíbul dels banys de l'Almirall, València.JPG",
+  "File:Baños del Almirante 05.JPG",
+  "File:Restes del paviment original dels banys de l'Almirall, València.JPG",
+  "File:Base d'una columna del vestíbul dels banys de l'Almirall, València.JPG",
+  "File:Banys de l'almirant.jpg",
+  "File:Banc amb sabons i esponges, banys de l'Almirall de València.JPG",
+  "File:Baños del Almirante 06.JPG",
+  "File:Poals, banys de l'Almirall de València.JPG",
+  "File:Latrina, banys de l'Almirall de València.JPG",
+  "File:Baños del Almirante 07.JPG",
+  "File:Magatzem dels banys de l'Almirall, València.JPG",
+]
+
+[barraca_genuina_pinedo]
+# Commons category has only 4 photos
+max_photos = 16
+extra_files = ["File:Barraca en Pinedo, Valencia 01.jpg", "File:Barraca en Pinedo, Valencia 02.jpg", "File:Barraca en Pinedo, Valencia 03.jpg"]
+exterior = [
+  "File:Barraca Genuina, Pinedo 01.jpg",
+  "File:Barraca Genuina, Pinedo 02.jpg",
+  "File:Barraca Genuina, Pinedo 03.jpg",
+  "File:Barraca Genuina, Pinedo 04.jpg",
+]
+exclude = [
+  "File:Barraca en Pinedo, Valencia 02.jpg",
+  "File:Barraca en Pinedo, Valencia 01.jpg",
+  "File:Barraca en Pinedo, Valencia 03.jpg",
+]
+
+[basilica_dels_desemparats]
+# 1 cathedral cimborio
+max_photos = 16
+exterior = [
+  "File:Basilica de los Desamparados - panoramio.jpg",
+  "File:Basílica de la Mare de Déu dels Desemparats.jpg",
+  "File:Valencia city center01.jpg",
+  "File:Basílica de Nuestra Sra. de los Desamparados - Reflejo sobre el agua.jpg",
+  "File:Plaza de la Virgen - Valencia.jpg",
+  "File:Vista de la Catedral y la Basílica de la Virgen de los Desamparados.jpg",
+  "File:Basílica Desamparats Cúpula.jpg",
+  "File:Cúpula de la basílica dels Desemparats, València.JPG",
+  "File:Mare de Déu dels Desemparats P1130832.JPG",
+  "File:Reial Basílica de la Mare de Déu dels Desemparats (València) - 1.jpg",
+  "File:Catedral de Valensia.JPG",
+  "File:Basilica desamparados.jpg",
+  "File:Basilica de la Virgen de los Desamparados 577.jpg",
+  "File:Plaça de l'Almoina, València 10.jpg",
+  "File:Exterior Basílica de la Mare de Déu dels Desamparats Valencia 2019 1.jpg",
+  "File:Cúpula azulada de los Desamparados, a la sombra del cimborrio de la catedral de Valencia, España, Spain.JPG",
+]
+exclude = [
+  "File:Cimborrio octogonal gótico, sobre el crucero de la catedral de Valencia, España, Spain.JPG",
+]
+
+[beneficencia]
+max_photos = 16
+exterior = [
+  "File:Centre cultural la Beneficència de València.jpg",
+  "File:Anell ciclista a la ciutat de València 01.jpg",
+  "File:Centre Cultural la Beneficència P1140259.JPG",
+  "File:Valencia - Centre Cultural La Beneficencia y Museo de Prehistoria 1.jpg",
+  "File:Beneficencia1.JPG",
+  "File:Benefiencia2.JPG",
+  "File:Centre Cultural la Beneficència P1140258.JPG",
+  "File:Valencia - Centre Cultural La Beneficencia y Museo de Prehistoria 3.jpg",
+  "File:Centre Cultural la Beneficència i asil del marqués de Campo, carrer Corona de València.JPG",
+  "File:Valencia - Centre Cultural La Beneficencia y Museo de Prehistoria 2.jpg",
+  "File:Centre Cultural la Beneficència 02.JPG",
+  "File:Centre Cultural la Beneficència 01.JPG",
+  "File:Centre Cultural la Beneficència 03.JPG",
+  "File:Centre cultural la Beneficència P1400016.JPG",
+  "File:Centre Cultural la Beneficència València Marcok 2023-09-2 f03.jpg",
+  "File:Centre Cultural la Beneficència P1140260.JPG",
+]
+exclude = [
+  "File:Patrimoni, museus i clubs de futbol.jpg",
+  "File:Periplos Irradiantes a L'Etno.jpg",
+]
+
+[bombas_gens]
+max_photos = 15
+exterior = [
+  "File:Bombas Gens 16.JPG",
+  "File:Vivienda anexa a Bombas Gens 02.JPG",
+  "File:Fàbrica de Bombes Gens, avinguda de Burjassot, València.JPG",
+  "File:Edificio Bombas Gens Centro de Arte 05.jpg",
+  "File:Bombas Gens 08.JPG",
+  "File:Remat de la façana de la fàbrica de Bombes Gens.JPG",
+  "File:Bombas Gens. Ramón Esteve Estudio.jpg",
+  "File:Edificio Bombas Gens Centro de Arte 04.jpg",
+  "File:Fàbrica de Bombes Hidràuliques Gens (València) 02.jpg",
+  "File:Bombas Gens 09.JPG",
+  "File:Entrada al refugi antiaeri de Bombas Gens, València.jpg",
+  "File:Fàbrica de Bombes Hidràuliques Gens (València) 01.jpg",
+  "File:Bombas Gens 10.JPG",
+  "File:Bombas Gens Centre d'Art, rètol.jpg",
+  "File:Edificio Bombas Gens Centro de Arte 06.jpg",
+]
+exclude = [
+  "File:Entrada al refugi des del centre d'art, Bombas Gens.jpg",
+  "File:Bombas Gens Centre d'Art. Ramón Esteve Estudio.jpg",
+  "File:Pilar del refugi antiaeri de Bombas Gens.jpg",
+  "File:Refugi antiaeri de Bombas Gens, València.jpg",
+]
+
+[casa_del_punt_de_ganxo]
+# 14 is Palau de Berbedel/Museu de la Ciutat portal
+max_photos = 15
+exterior = [
+  "File:Valencia, Casa Punt de Gantxo 1906, 01.jpg",
+  "File:La Seu, València, Valencia, Spain - panoramio (8).jpg",
+  "File:Valencia Casa del Punt de Ganxo from the southwest.jpg",
+  "File:Edificio de la Plaça de l'Almoina (325882528).jpg",
+  "File:Belle façade d'immeuble.JPG",
+  "File:Mènsula de la façana posterior de la casa del Punt de Ganxo, València.JPG",
+  "File:Façana posterior de la casa del Punt de Ganxo, València.JPG",
+  "File:Casa del Punt de Ganxo 02.jpg",
+  "File:Plaça de l'Arquebisbe, València 03.jpg",
+  "File:Edificio \"Punto de Gancho\". Valencia.jpg",
+  "File:292 Casa del Punt de Ganxo (València), façana que dóna a la plaça de l'Arquebisbe.jpg",
+  "File:Casa del Punt de Ganxo, Valencia 05.jpg",
+  "File:303 Casa del Punt de Ganxo (València), plaça de l'Almoina.jpg",
+  "File:València, Plaça de l'Almoina-PM 51922.jpg",
+  "File:Casa Sancho o del Punt de Gantxo de Manuel Peris Ferrando en la plaza de la Almoina, 4, 1906.jpg",
+]
+exclude = [
+  "File:València, Museo de la Ciudad-PM 51914.jpg",
+  "File:València - Valencia 23.jpg",
+]
+
+[casa_dels_dracs]
+# 5-8 dragon closeups
+max_photos = 16
+exterior = [
+  "File:Casa de los Dragones en Valencia.jpg",
+  "File:Casa de los Dragones, Valencia.jpg",
+  "File:Casa dels Dracs, avril 2025 (2).jpg",
+  "File:Casa de los Dragones, Valencia - Calle Sorní 4 (2).JPG",
+  "File:Drac alat al carrer Sorní de València.jpg",
+  "File:Casa dels Dracs de València, drac.JPG",
+  "File:Drac a la casa dels Dracs de València.JPG",
+  "File:Valencia - Casa del Dragón 2020-09-22.jpg",
+  "File:València 2024-09-18 - Casa del Drac.jpg",
+  "File:Casa de los Dragones, Valencia - Calle Sorní 4 (1).JPG",
+  "File:Casa dels Dracs, avril 2025.jpg",
+  "File:Edifici o casa dels Dracs, València.jpg",
+  "File:València Edifici del Nord.jpg",
+  "File:Casa de los Dragones, Valencia 01.JPG",
+  "File:Casa de los Dragones, Valencia 03.JPG",
+  "File:Casa de los Dragones, Valencia 04.JPG",
+]
+
+[casa_jueva]
+max_photos = 16
+exterior = [
+  "File:Casa Jueva, València.JPG",
+  "File:Casa jueva de València.JPG",
+  "File:Casa Judía en Valencia.jpg",
+  "File:Part superior de la casa jueva de València.JPG",
+  "File:Terrassa de la casa Jueva de València.JPG",
+  "File:Valencia 0060.jpg",
+  "File:Valencia 0070 - 2.jpg",
+  "File:Valencia - Casa Judía 1.jpg",
+  "File:Remat de la casa Jueva de València.JPG",
+  "File:Valencia - Casa Judía 2.jpg",
+  "File:Valencia 0087.jpg",
+  "File:Columna de la casa Jueva de València.JPG",
+  "File:Casa Jueva de València, part superior.JPG",
+  "File:Valencia - Casa Judía 3.jpg",
+  "File:Miradors de la casa Jueva de València.JPG",
+  "File:Casa Jueva de València, miradors.JPG",
+]
+
+[casa_museu_blasco_ibanez]
+# 12 historic print; small category
+max_photos = 20
+exterior = [
+  "File:Casa Museu de Blasco Ibáñez, València.JPG",
+  "File:Casamuseu de Vicent Blasco Ibáñez, Malva-rosa.JPG",
+  "File:Terrassa de la casa-museu Blasco Ibáñez de València.jpg",
+  "File:Casa de Vicente Blasco Ibañéz.jpg",
+  "File:Casa-Museu Vicent Blaco Ibáñez a la Malvarossa, 2006.JPG",
+  "File:Casa-Museu de Blasco Ibáñez de València.jpg",
+  "File:RI-51-0004451 2.JPG",
+  "File:Detall de la casa-museu de Blasco Ibáñez.jpg",
+]
+exclude = [
+  "File:RI-51-0004451 3.JPG",
+  "File:RI-51-0004451.JPG",
+  "File:Escritorio de Blasco Ibáñez.jpg",
+  "File:Mobiliario de Blasco Ibáñez.jpg",
+  "File:1904-07-08, El Gráfico, Blasco Ibáñez en su posesión de la “Malvarrosa„ (Valencia), Galería pompeyana frente al mar, una de las piezas más hermosas de la finca.jpg",
+  "File:Detall de la taula de la terrassa de la casa-museu de Blasco Ibáñez.jpg",
+]
+
+[casa_ortega]
+# many closeups; full facade 1,3,5,C only
+max_photos = 14
+exterior = [
+  "File:Casa Ortega de Manuel Peris Ferrando (1906) en la Gran Vía Marqués del Turia número 9 de Valencia.jpg",
+  "File:Casa Ortega, València.JPG",
+  "File:Casa Ortega de València.JPG",
+  "File:Atlant maculí de la Casa Ortega, València.JPG",
+  "File:Atlant femení de la Casa Ortega, València.JPG",
+  "File:Balcó i atlants, Casa Ortega de València.JPG",
+  "File:Balcó i atlants de la Casa Ortega de València.JPG",
+  "File:Balconet de la Casa Ortega, València.JPG",
+  "File:Façana (detall) de la casa Ortega de València.JPG",
+  "File:Casa Ortega de València, relleu de cara.JPG",
+  "File:Part superior de la façana de la casa Ortega de València.JPG",
+  "File:Mènsules metàl·liques d'un balcó de la casa Ortega, València.JPG",
+  "File:Part superior de la casa Ortega, València.JPG",
+  "File:Casa Ortega (València), atlants.jpg",
+]
+exclude = [
+  "File:Vestíbul de la Casa Ortega de València.JPG",
+  "File:Panell de fusta del vestíbul de la Casa Ortega, València.JPG",
+  "File:Detall de l'escala de la Casa Ortega, València.JPG",
+  "File:Detall del vestíbul, Casa Ortega, València.JPG",
+]
+
+[cases_xapa]
+max_photos = 16
+exterior = [
+  "File:Edifici Xapa, València 04.jpg",
+  "File:Edificio Chapa I-Plaza Cánovas 01.jpg",
+  "File:Edificio Chapa puerta principal nº65Gran vía Marqués del Turia.jpg",
+  "File:Mènsules dels balcons dels edificis Xapa, València.JPG",
+  "File:Edificis o cases Xapa de València.JPG",
+  "File:Casas Chapa, Valencia 05.JPG",
+  "File:Cases Xapa de València, reixa.JPG",
+  "File:Edifici Xapa i Plaça de Cánovas de Castillo, València 01.jpg",
+  "File:Edifico Chapa nº67GVMT.jpg",
+  "File:Façana de la Gran Via dels edificis Xapa, València.JPG",
+  "File:Edificios Chapa II-Plaza Cánovas 01.jpg",
+  "File:Casas Chapa, Valencia 06.JPG",
+  "File:Edifico Chapa nº36Grabador Esteve.jpg",
+  "File:Edificio Chapa nº 38Grabador Esteve.jpg",
+  "File:València Pl Cánovas de Castillo.jpg",
+  "File:València, cases Xapa.JPG",
+]
+exclude = [
+  "File:Escala dels edificis Xapa de València.JPG",
+]
+
+[centre_d_art_hortensia_herrero]
+# only 4 photos selected (71 files classified interior: classifier issue)
+max_photos = 10
+extra_categories = ["Category:Palau dels Valeriola"]
+exterior = [
+  "File:Centro de Arte Hortensia Herrero.jpg",
+  "File:117 Antiga papereria Regolf, c. Mar 22 (València), Centre d'Art Hortensia Herrero.jpg",
+  "File:Façana del palau dels Valeriola, València.JPG",
+  "File:Palau dels Valeriola de València.jpg",
+  "File:116 Palau dels Valeriola, actual Centre d'Art Hortensia Herrero, c. Mar 31 (València).jpg",
+  "File:Galeria d'arquets del palau dels Valeriola, València.JPG",
+  "File:Palau dels Valeriola amb bastida.JPG",
+  "File:Portalada del palau dels Valeriola, València.JPG",
+  "File:Palau dels Valeriola, València.JPG",
+  "File:Palau dels Valeriola de València, cornisa.JPG",
+]
+exclude = [
+  "File:Entrada al CAHH con obra de Jame Plensa.jpg",
+  "File:Centro de arte hortenisa herrero.jpg",
+  "File:Espillets i frontó, palau dels Valeriola de València.JPG",
+  "File:Palau dels Valeriola, balcó.JPG",
+  "File:Finestra de l'entresòl del palau dels Valeriola, València.JPG",
+]
+
+[convent_de_sant_domenec]
+# 16 silhouette
+max_photos = 16
+exterior = [
+  "File:Convento de Santo Domingo, Valencia, España, 2014-06-29, DD 13.JPG",
+  "File:Convento de Santo Domingo, Valencia, España, 2014-06-30, DD 85.JPG",
+  "File:Santdomenec claustre1.jpg",
+  "File:Convent de Sant Domenec - panoramio.jpg",
+  "File:Valencia-Ciutat Vella, toren van Convent de Sant Doménec RI-51-0000975 IMG 2562 2026-08-22 13.23.jpg",
+  "File:Convent Sant Doménec Campanar.JPG",
+  "File:Vista exterior de l'aula capitular de Sant Doménec.JPG",
+  "File:Capitanía general de Valencia.jpg",
+  "File:L04 320 Convento de Santo Domingo.jpg",
+  "File:Convent de Sant Domènec P1400019.JPG",
+  "File:Convent of Santo Domingo, Valencia, avril 2025.jpg",
+  "File:Last rays of 09 (4261488373).jpg",
+  "File:Convent de sant Doménec de València, cúpula.JPG",
+  "File:Convent de Sant Domènec P1400020.JPG",
+  "File:Convent de Sant Domenec - panoramio (1).jpg",
+  "File:Convento Santo Domingo Valencia.JPG",
+]
+exclude = [
+  "File:Valencia skyline sunset (4262234180).jpg",
+]
+
+[convent_del_carme]
+# 10 model
+max_photos = 13
+exterior = [
+  "File:Façana del Carme abans de la seua restauració.jpg",
+  "File:Iglesia del Carmen, Valencia.JPG",
+  "File:Columnes de la façana de l'església del Carme, València.JPG",
+  "File:Barrio del Carmen 21.A.jpg",
+  "File:Exterior de la Iglesia de la Santa Cruz, Valencia 02.jpg",
+  "File:Convent carme façana.jpg",
+  "File:Plaza de la Santísima Cruz, ubicada en la Plaza del Carmen.jpg",
+  "File:672 Església del Carme (València), façana sud, campanar de torre i cúpula.jpg",
+  "File:Façana i cúpula, convent del Carme de València.JPG",
+  "File:Valencia - Reial Monestir de Nostra Senyora del Carme (Centre del Carme) 04.jpg",
+  "File:Carmen1.JPG",
+  "File:673 Església del Carme (València), façana sud, campanar d'espadanya.jpg",
+  "File:Exterior de la Iglesia de la Santa Cruz, Valencia 06.jpg",
+]
+exclude = [
+  "File:Campanario iglesia Santa Cruz desde la calle Na Jordana.jpg",
+  "File:Maqueta de la façana de l'església del convent del Carme, València.jpg",
+  "File:Convent del Carme P1400009.JPG",
+  "File:Concentració suport a Pérez Pont 6.jpg",
+  "File:Convent del Carme P1400010.JPG",
+  "File:Concentració suport a Pérez Pont 8.jpg",
+  "File:Jose Luis Pérez Pont, després del cessament.jpg",
+]
+
+[drassanes_del_grau]
+max_photos = 14
+exterior = [
+  "File:El Grau, València, Valencia, Spain - panoramio (4).jpg",
+  "File:Drassanes del Grau, exterior.JPG",
+  "File:Drassanes de València, Grau.JPG",
+  "File:Atarazanas Reales.JPG",
+  "File:Atarazanas Derecha.jpg",
+  "File:Atarazanas Izquierda.jpg",
+  "File:Atarazanas del Grao, València 01.jpg",
+  "File:Parte trasera de las atarazanas de Valencia 01.jpg",
+  "File:Exterior de les drassanes del Grau (València).JPG",
+  "File:El Grau, València, Valencia, Spain - panoramio (6).jpg",
+  "File:Porxo de les drassanes del Grau.JPG",
+  "File:Atarazanas del Grao, València 02.jpg",
+  "File:Parte trasera de las atarazanas de Valencia 02.jpg",
+  "File:Exterior de les drassanes del Grau.JPG",
+]
+exclude = [
+  "File:Drassanes del Grau, València.JPG",
+  "File:Maqueta de les drassanes del Grau de València.JPG",
+  "File:Drassanes del Grau, arrancada d'arcs.JPG",
+  "File:Àncora a les drassanes del Grau.JPG",
+]
+
+[edifici_de_correus]
+# 3 city hall
+max_photos = 15
+exterior = [
+  "File:Edificio de Correos y Telégrafos, Valencia, España, 2014-06-30, DD 129.JPG",
+  "File:Edificio de correos - Valencia.JPG",
+  "File:Correos e Telégrafos Valencia 02.jpg",
+  "File:Edifici de Correus i Telègrafs de València.JPG",
+  "File:Torre (Palacio de Correos de Valencia).jpg",
+  "File:Torre de Correos. Valencia, España.jpg",
+  "File:009 Plaça de l'Ajuntament (València), amb l'edifici de Correus al fons.jpg",
+  "File:Mascleta Correos.jpg",
+  "File:Municipio di Valencia.jpg",
+  "File:Edifici Principal Correos València.JPG",
+  "File:Historic Facade - Valencia - Spain (14211442009).jpg",
+  "File:Plaça d'Emilio Castelar, actualment plaça de l'ajuntament (AFCEC GAUSACHS B 01783).jpeg",
+  "File:Palacio de correos y telegrafos de Valencia.jpg",
+  "File:Palacio de Correos ( Valencia).jpg",
+  "File:València - Valencia 08.jpg",
+]
+exclude = [
+  "File:Здание мэрии Валенсии, вид с плащади Мэрии. - panoramio.jpg",
+  "File:Sant Francesc, València, Valencia, Spain - panoramio (2).jpg",
+  "File:Mascleta 2015 - València (195519989).jpg",
+  "File:Valencia, poste centrali (del 1923), buche delle lettere con teste di leone in carrer de correus 01.jpg",
+  "File:Valencia, poste centrali (del 1923), buche delle lettere con teste di leone in carrer de correus 02.jpg",
+]
+
+[edifici_del_rellotge]
+max_photos = 16
+exterior = [
+  "File:Sede de la autoridad portuaria de Valencia.JPG",
+  "File:Edificio de la Autoridad Portuaria de Valencia 09.jpg",
+  "File:Façana de l'edifici del rellotge, port de València.JPG",
+  "File:Torre de l'edifici del rellotge des de baix.JPG",
+  "File:Valencia - Edificio del Reloj 2018-09-26.jpg",
+  "File:Port Authority Building-Valencia P1430339 - Flickr - ianpreston.jpg",
+  "File:Edifici del Rellotge València.jpg",
+  "File:València - Valencia 192.jpg",
+  "File:Façana de la seu de l'Autoritat Portuària, València.JPG",
+  "File:Edifici del Rellotge València (1).jpg",
+  "File:Edificio del Reloj del Puerto de Valencia - Spain.jpg",
+  "File:Edificio Reloj.jpg",
+  "File:Torre del rellotge, port de València.JPG",
+  "File:Torre de l'antiga estació marítima, port de València.JPG",
+  "File:Torre i lateral de l'edifici del rellotge del port de València.JPG",
+  "File:Edifici del Rellotge (Port de València), 04 2025 (1).jpg",
+]
+exclude = [
+  "File:Alinghi5 Valencia o.jpg",
+]
+
+[edifici_ferrer]
+max_photos = 15
+exterior = [
+  "File:Edificio Ferrer, Valencia.jpg",
+  "File:Edifici Ferrer, estat de l'exterior (setembre 2011).jpg",
+  "File:Remat de la façana de l'edifici Ferrer de València.JPG",
+  "File:Edificio calle Cirilo Amorós esquina Pizarro, Valencia 01.jpg",
+  "File:Edifici Ferrer de València, exterior.JPG",
+  "File:Edificio calle Cirilo Amorós esquina Pizarro, Valencia 03.jpg",
+  "File:Valencia - Edifici Ferrer 05.jpg",
+  "File:València, exterior de l'edifici Ferrer.JPG",
+  "File:Valencia - Edifici Ferrer 01.jpg",
+  "File:Edifici Ferrer, lateral.jpg",
+  "File:Edificio calle Cirilo Amorós esquina Pizarro, Valencia 02.jpg",
+  "File:Valencia - Edifici Ferrer 02.jpg",
+  "File:Edificio calle Cirilo Amorós esquina Pizarro, Valencia 04.jpg",
+  "File:Edificio calle Cirilo Amorós esquina Pizarro, Valencia 05.jpg",
+  "File:Edifici Ferrer, detall de la façana.jpg",
+]
+exclude = [
+  "File:Edifici Ferrer, detall de la porta.JPG",
+  "File:Mobles de l'edifici Ferrer.JPG",
+  "File:Vestíbul de l'edifici Ferrer, València.jpg",
+]
+
+[edifici_rialto]
+max_photos = 16
+exterior = [
+  "File:Edificio de la Filmoteca Rialto.jpg",
+  "File:Edifici Rialto de València, façana pantalla.JPG",
+  "File:Edifici Rialto, plaça de l'Ajuntament de València.JPG",
+  "File:Plaça de l'Ajuntament de València 6.JPG",
+  "File:Plaça de l'Ajuntament (Vinatea).jpg",
+  "File:105 Escultures a la façana del Teatre Rialto, pl. de l'Ajuntament 17 (València).jpg",
+  "File:Torreta del Rialto des de l'Ateneu Mercantil, València.jpg",
+  "File:Instituto Valenciano de Cultura (Valencia).jpg",
+  "File:Edifici Rialto darrere, Valéncia 02.jpg",
+  "File:Edifici Rialto, torre des de l'Ateneu, València.jpg",
+  "File:València, Plaça del Ajuntament-PM 52023.jpg",
+  "File:Edificio Rialto y Ateneo mercantil de Valencia 1.JPG",
+  "File:Rialto Teatre Filmoteca, Valencia.jpg",
+  "File:Cine Rialto en la 37 Mostra de València.jpg",
+  "File:104 Teatre i Filmoteca Rialto, pl. de l'Ajuntament 17 (València).jpg",
+  "File:Edifici Rialto darrere, Valéncia 01.jpg",
+]
+
+[el_patriarca]
+max_photos = 16
+exterior = [
+  "File:Patriarca façana.jpg",
+  "File:109 Plaça del Col·legi del Patriarca (València), amb el Col·legi del Corpus Christi i la Nau.jpg",
+  "File:La campana de la Mitja de Valencia.jpg",
+  "File:El Patriarca - València 2008.JPG",
+  "File:Part superior del campanar del Reial Col·legi del Corpus Christi de València.JPG",
+  "File:Espadanya del col·legi del Corpus Christi de València.JPG",
+  "File:Patriarca darrere.jpg",
+  "File:Seminari Corpus Christi DSCN2896.JPG",
+  "File:Seminari Corpus Christi P1400097.JPG",
+  "File:Puerta lateral de la Iglesia del Patriarca.jpg",
+  "File:Reial Col·legi del Corpus Christi de València - exterior.jpg",
+  "File:Tanca posterior del col·legi del Corpus Christi de València.JPG",
+  "File:Patriarc07.jpg",
+  "File:Seminari Corpus Christi DSCN2905.JPG",
+  "File:Patriarca cupula.jpg",
+  "File:Seminari Corpus Christi P1400104.JPG",
+]
+exclude = [
+  "File:Relleu de la tanca posterior del col·legi del Patriarca de València.JPG",
+]
+
+[escoles_pies]
+# 14 unknown title
+max_photos = 16
+exterior = [
+  "File:Escola pia.jpg",
+  "File:Exterior de las Escuelas Pías de València 02.jpg",
+  "File:Exterior de las Escuelas Pías de València 04.jpg",
+  "File:Escoles Pies de València cúpula.JPG",
+  "File:Església de les Escoles Pies de València des del carrer del Peu de la Creu.JPG",
+  "File:Carmen Arquitectura (48711981827).jpg",
+  "File:Escoles Pies de València, façana.JPG",
+  "File:Valencia - Iglesia de San Joaquín (Escuelas Pías) 2.jpg",
+  "File:Valencia - Real Colegio de las Escuelas Pías.jpg",
+  "File:Escuelaspias1.JPG",
+  "File:Façana de l'església de les Escoles Pies, València.jpg",
+  "File:Iglesia San Joaquin1.JPG",
+  "File:Vista cap les escoles Pies, València.JPG",
+  "File:Valencia - Iglesia de San Joaquín (Escuelas Pías) 5.jpg",
+  "File:Exterior de las Escuelas Pías de València 01.jpg",
+  "File:Campanar de l'església de les escoles pies des de baix, València.JPG",
+]
+exclude = [
+  "File:Exterior de las Escuelas Pías de València 03.jpg",
+  "File:Q108139901.jpg",
+]
+
+[esglesia_del_salvador]
+# 9 aerial
+max_photos = 16
+exterior = [
+  "File:Santíssim Crist del Salvador P1130818.JPG",
+  "File:Campanar de l'església del Salvador des de la facultat de Teologia, València.JPG",
+  "File:Façana de l'església del Salvador de València en restauració.JPG",
+  "File:Església del Salvador de València 12.jpg",
+  "File:Fachada de la Iglesia de El Salvador, Valencia.jpg",
+  "File:173 Església del Salvador (València), campanar.jpg",
+  "File:Església salvador.jpg",
+  "File:Façana i portalada lateral restaurada, església del Salvador de València.JPG",
+  "File:Valencia.Iglesia del Santísimo Cristo del Salvador.jpg",
+  "File:Façana dels peus de l'església del Salvador, València.JPG",
+  "File:Església del Salvador de València 11.jpg",
+  "File:Església del Salvador, València 02.jpg",
+  "File:Nínxol de la façana dels peus, església del Salvador de València.JPG",
+  "File:Santíssim Crist del Salvador P1130817.JPG",
+  "File:Església del Salvador, València 01.jpg",
+  "File:172 Església del Salvador (València), campanar i absis.jpg",
+]
+
+[esglesia_del_temple]
+# 16 plaque
+max_photos = 15
+exterior = [
+  "File:Iglesia y palacio del Temple en Valencia.jpg",
+  "File:Валенсия. Дворец и церковь на площади поэта Льоренте (Plaza del Poeta Llorente) - panoramio.jpg",
+  "File:Palacio del Temple - panoramio (1).jpg",
+  "File:Valence - panoramio (10).jpg",
+  "File:At Valencia 2025 069.jpg",
+  "File:Delegació del Govern al País Valencià.JPG",
+  "File:Façana de l'església del Temple, València.JPG",
+  "File:El Temple vist des de l'altre costat del riu, València.JPG",
+  "File:Monestir del Temple P1140174.JPG",
+  "File:Valencia, Spain - Temple Church -.jpg",
+  "File:Façana del Palau del Temple de València.JPG",
+  "File:Iglesia del Temple, Valencia 01.JPG",
+  "File:Església i Palau del Temple, façana.jpg",
+  "File:Templevalencia1.JPG",
+  "File:Església del Temple de València, vista lateral.JPG",
+]
+exclude = [
+  "File:Placa indicativa del sitio donde se encontraba la Torre puerta de Bab-El-Schadchar aa.jpg",
+  "File:Placa indicativa del sitio donde se encontraba la Torre puerta de Bab-El-Schadchar.jpg",
+]
+
+[estacio_joaquim_sorolla]
+# tracks/trains/platforms; Catastro facade photo C shows Estacio del Nord (wrong parcel)
+max_photos = 24
+exterior = [
+  "File:EstaciónAVEValenciaJoaquínSorolla.jpg",
+  "File:Valencia-Joaquin-Sorolla-Station-300416.JPG",
+  "File:Valencia Joaquin Sorolla - panoramio (1).jpg",
+]
+exclude = [
+  "File:J29 556 Cambiador Valencia.jpg",
+  "File:J29 564 Bf Valencia Joaquín Sorolla, 91-30 047.jpg",
+  "File:L04 336 Bf Valencia, Baustelle Südkopf.jpg",
+  "File:Tren AVE, en la estación de Valencia, España, Serie 112 de Renfe.JPG",
+  "File:València Joaquín Sorolla 2023 1.jpg",
+  "File:L04 325 Bf Valencia, Südkopf.jpg",
+  "File:Valencia Sorolla station 2015 II.jpg",
+  "File:Tapa de Adif en Valencia.jpg",
+  "File:L04 327 Bf Valencia Joaquín Sorolla, cambiador.jpg",
+  "File:Valencia Joaquin Sorolla - panoramio.jpg",
+  "File:Valencia Sorolla station 2015 I.jpg",
+  "File:J29 565 Bf Valencia Joaquín Sorolla, 91-30 047.jpg",
+  "File:València Joaquín Sorolla station 2023 1.jpg",
+  "File:L04 331 Bf Valencia, Baustelle Südkopf.jpg",
+  "File:L04 322 Bf Valencia Joaquín Sorolla, cambiador.jpg",
+  "File:L04 332 Bf Valencia, Baustelle Südkopf (Regelspur).jpg",
+  "File:València Joaquín Sorolla station 2023 2.jpg",
+  "File:Valencia Sorolla station 2015 III.jpg",
+  "File:J23 463 Bf Valencia Joaquín Sorolla.jpg",
+  "File:València Joaquín Sorolla station 2023 3.jpg",
+  "File:L04 219 Talgo 7, Umspursymbol.jpg",
+  "File:L04 333 Bf Valencia, Baustelle Südkopf (Regelspur).jpg",
+  "File:València Joaquín Sorolla station 2023 4.jpg",
+  "File:J29 584 Bf Valencia Joaquín Sorolla, 9-112 014.jpg",
+  "File:L04 220 Bf Valencia Joaquín Sorolla, 130 xxx.jpg",
+  "File:L04 334 Bf Valencia, Baustelle Südkopf (Regelspur), Anschwenkung.jpg",
+  "File:L04 221 Bf Valencia Joaquín Sorolla, 130 xxx.jpg",
+  "File:L04 335 Bf Valencia, Baustelle Südkopf (Regelspur).jpg",
+  "File:L04 218 Bf Valencia Joaquín Sorolla, Laufwerk Talgo 7.jpg",
+  "File:L04 328 Bf Valencia Joaquín Sorolla, 120 564.jpg",
+  "File:L04 329 Bf Valencia Joaquín Sorolla, 120 564.jpg",
+  "File:L04 324 Bf Valencia Joaquín Sorolla, 91-30 001.jpg",
+  "File:L04 323 Bf Valencia Joaquín Sorolla, 91-30 001.jpg",
+  "File:L04 226 Bf Valencia Joaquín Sorolla, 106 151.jpg",
+]
+
+[estadi_ciutat_de_valencia]
+# bowl interiors (stands useful for roof modeling)
+max_photos = 20
+extra_files = ["File:Estadio Azul Grana.jpg", "File:Estadi Ciutat de València - Vamos a subir.jpg"]
+exterior = [
+  "File:Estadio Azul Grana.jpg",
+  "File:Estadi Ciutat de València - Vamos a subir.jpg",
+  "File:Ciutat de València fuera.jpg",
+  "File:Estació del Camp de Llevant.JPG",
+  "File:Valencia84.jpg",
+  "File:Bus Alcorcón al Ciutat.jpg",
+  "File:Bus AD Alcorcón.jpg",
+]
+exclude = [
+  "File:Estadi Ciutat de València - nocturna.jpg",
+  "File:Caicedo fora joc.JPG",
+  "File:Het stadion van Levante, vanaf de noordtribune.JPG",
+  "File:Levante2-0Lega2018.jpg",
+  "File:Raconet de Raimon.JPG",
+  "File:2007-08-03 Txus 09.jpg",
+  "File:Ciutat de valencia.jpg",
+  "File:El raconet de Raimon.JPG",
+  "File:Entrenament al Ciutat.jpg",
+]
+
+[estadi_de_mestalla]
+# bowl interiors 1,11,12,16 useful for stands/roof
+max_photos = 11
+exterior = [
+  "File:Mestalla - panoramio (1).jpg",
+  "File:Mestalla - Plaça del València C.F. 01.JPG",
+  "File:Mestalla con autocares del Valencia CF y FC Barcelona el 3 sept 2013, antes del partido de Liga 02.JPG",
+  "File:Façana de l'estadi de Mestalla a l'avinguda de Suècia.JPG",
+  "File:Fachada exterior del Mestalla antes del partido Valencia-Barcelona LaLiga 2023-2024.jpg",
+  "File:Camp de Mestalla 2023.jpg",
+  "File:Estadi del Mestalla, València.jpg",
+  "File:Cues a Mestalla - 1.jpeg",
+  "File:VCF-LlUE febrer 2013 - 2.jpeg",
+  "File:Estadio Mestalla 2006.jpg",
+  "File:MestallaValencia2024.jpg",
+]
+exclude = [
+  "File:CAMP DE MESTALLA GRADA DE LA MAR 2014.JPG",
+  "File:Mestalla des de Filocat.jpg",
+  "File:Mestalla Kill 'em all.jpg",
+  "File:Rep Argentina-Campoamor-Iecla.jpeg",
+  "File:Mestalla des de Vomitori.jpg",
+  "File:Exterior partido Valencia-Barcelona LaLiga 2023-2024.jpg",
+  "File:CAMP DE MESTALLA GRADA DE LA MAR 2014 (2).JPG",
+  "File:Mestallapanoramic4.jpg",
+  "File:Cisco Fran - Gol de Forment.jpg",
+  "File:València CF supporters.jpg",
+  "File:Mestalla trofeu taronja 120811.jpg",
+  "File:Ofrena de flors a Espanyeta.jpg",
+  "File:Itmustbelove86 - Alegría.jpg",
+  "File:Grada Central Mestalla.JPG",
+  "File:Mestalla a mig pintar - 1.jpeg",
+  "File:Mestalla I.jpg",
+  "File:Algeciras CF Mestalla 2014 02.JPG",
+  "File:Tribuna de Mestalla.jpg",
+  "File:Eixida al Camp.jpg",
+  "File:Mestalla.jpg",
+  "File:Desfilis 05643-05730.jpg",
+  "File:Mestalla antes del partido Valencia-Barcelona LaLiga 2023-2024.jpg",
+  "File:Mestalla mar.jpg",
+  "File:Sentiment Valencianista.jpg",
+]
+
+[finca_roja]
+max_photos = 16
+exterior = [
+  "File:Finca Roja de Valencia, España.jpg",
+  "File:Finca Roja façana.JPG",
+  "File:Finca Roja exterior.JPG",
+  "File:Finca Roja, Valencia 02.jpg",
+  "File:Valencia - Finca Roja 2020-09-21 02.jpg",
+  "File:València 2024-09-22 - Finca Roja.jpg",
+  "File:Enrique Viedma Vidal- La Finca Roja (2591906339).jpg",
+  "File:Fica Roja verd roig.JPG",
+  "File:Finca Roja València 2006.JPG",
+  "File:Finca Roja Imagen 037.jpg",
+  "File:Finca Roja, Valencia 01.jpg",
+  "File:Finca Roja València País Valencià.JPG",
+  "File:Edificio de la Finca Roja.jpg",
+  "File:Valencia - Finca Roja 2020-09-21 01.jpg",
+  "File:Finca Roja torreta.JPG",
+  "File:Enrique Viedma Vidal- La Finca Roja (2592748144).jpg",
+]
+
+[ivam]
+# 7 is Mont de Pietat in Alcoi; 9,12 paintings
+max_photos = 12
+exterior = [
+  "File:Fachada del IVAM febrero 2018.jpg",
+  "File:IVAM Fiat 500.jpg",
+  "File:At Valencia 2025 317.jpg",
+  "File:Fachada IVAM 2018.jpg",
+  "File:Escif a l'IVAM - 05.jpg",
+  "File:Ivam.jpg",
+  "File:Anell ciclista a la ciutat de València 02.jpg",
+  "File:Ivam04.jpg",
+  "File:Jardines detrás del Ivam 03.jpg",
+  "File:Escif a l'IVAM - 04.jpg",
+  "File:IVAMa.jpg",
+  "File:180 Institut Valencià d'Art Modern (IVAM), c. Guillem de Castro 118 (València).jpg",
+]
+exclude = [
+  "File:Vista cap a l'exterior des de l'Institut Valencià d'Art Modern.JPG",
+  "File:Edifici del Mont de Pietat, centre d'Art d'Alcoi.JPG",
+  "File:Els exilis de Renau - panoràmica.jpg",
+  "File:Gente en la calle.tif",
+  "File:Gente a la entrada de un edificio.tif",
+  "File:Placa Ivam carrer Beneficiència.jpg",
+  "File:Una calle de Godella.tif",
+  "File:Enderrocaments per a l'ampliació de l'IVAM.jpg",
+  "File:Cristina Lucas.jpg",
+  "File:Biblioteca del IVAM IMG 1529.jpg",
+]
+
+[la_companyia]
+max_photos = 16
+exterior = [
+  "File:Façana del l'església del Sagrat Cor de Jesús o de la Companyia, València.JPG",
+  "File:Campanar de l'església de la Companyia o del Sagrat Cor, València.JPG",
+  "File:Església i residència del Sagrat Cor de la Companyia de Jesús.png",
+  "File:Església del Sagrat Cor de la Companyia de Jesús, façana.JPG",
+  "File:Església de la Companyia de València des de la torre de santa Caterina.JPG",
+  "File:València, Iglésia Compañia-PM 51983.jpg",
+  "File:Escultures de la façana de l'església de la Companyia, València.JPG",
+  "File:Església del Sagrat Cor de Jesús DSCN2883.JPG",
+  "File:Estàtua d'àngel amb creu a la façana de l'església de la Companyia, València.JPG",
+  "File:Pilastres de la façana de l'església de la Companyia, València.JPG",
+  "File:Església del Sagrat Cor de Jesús DSCN2876.JPG",
+  "File:Campanar de l'església de la Companyia, València.JPG",
+  "File:20211115.Valencia.-071.jpg",
+  "File:ES Valencia 1104 (99) (17059502218).jpg",
+  "File:Església de la Companyia vista des de la Llotja, València.jpg",
+  "File:Cúpula i absis de l'església de la Companyia de València.JPG",
+]
+
+[la_nau]
+# 9 cloister
+max_photos = 13
+exterior = [
+  "File:Edifici de La Nau des de la Plaça del Patriarca València.JPG",
+  "File:110 Font de la plaça del Col·legi del Patriarca (València), adossada a l'edifici de la Nau.jpg",
+  "File:109 Plaça del Col·legi del Patriarca (València), amb el Col·legi del Corpus Christi i la Nau.jpg",
+  "File:Finestres de la Nau, Universitat de València.JPG",
+  "File:Universitat de València P1130910.JPG",
+  "File:Universitat de València Carrer la Nau IMG 1553.jpg",
+  "File:Universitat Literària de Valencia.png",
+  "File:Façana de la Nau al carrer de la Universitat, València.JPG",
+  "File:Universitat de València P1130924.JPG",
+  "File:Frontó d'una finestra de l'edifici de La Nau, València.JPG",
+  "File:La Nau (Universitat de València) 6813 02.jpg",
+  "File:Universitat de València P1130925.JPG",
+  "File:Valencia-LA NAU4.JPG",
+]
+exclude = [
+  "File:Pictograma gegant - Adam Liu.jpg",
+  "File:Laura Pérez Verneti.jpg",
+  "File:La Nau (Universitat de València) 6813 04.jpg",
+  "File:La Nau (Universitat de València) 6813 05.jpg",
+  "File:Miguelanxo Prado en la Universitat de València - 1.jpg",
+  "File:Pontano, De oboedientia.jpg",
+  "File:Sacando barro esquina de cl Universidad y Pintor Sorolla a.jpg",
+  "File:La Nau (Universitat de València) 6813 08.jpg",
+  "File:Miguelanxo Prado en la Universitat de València - 3.jpg",
+  "File:Miguelanxo Prado en la Universitat de València - 2.jpg",
+  "File:Joan Ribó al XV aniversari de l'ICUV.jpg",
+  "File:Foto historica Gabinete Historia Natural.jpg",
+  "File:Col·legi del Corpus Christi de València, ca.1870, Laurent.jpg",
+  "File:Trànsit - Ball - Baile.jpg",
+]
+
+[la_union_y_el_fenix]
+# 8 historic 1930s
+max_photos = 15
+exterior = [
+  "File:Edificio de La Unión y el Fénix Español en Valencia.jpg",
+  "File:Edificis del carrer Xàtiva de València.jpg",
+  "File:Calle Játiva, ciudad de Valencia (España).jpg",
+  "File:Calle Xátiva, ciudad de Valencia, España.jpg",
+  "File:València, Plaça del Ajuntament-PM 52050.jpg",
+  "File:Remat de l'edifici La Unió i el Fènix, València.JPG",
+  "File:004 Edifici de La Unión y el Fénix Español, c. Marqués de Sotelo 15 - c. Xàtiva (València).jpg",
+  "File:Tram in Valencia 1930s.jpg",
+  "File:Edifici de La Unió i el Fènix (València).JPG",
+  "File:València, Plaça del Ajuntament-PM 52049.jpg",
+  "File:La Unión y el Fénix Español.JPG",
+  "File:Valencia - La Unión y el Fénix 5.jpg",
+  "File:La Unión y el Fénix building, València, avril 2025.jpg",
+  "File:Valencia - La Unión y el Fénix 3.jpg",
+  "File:Valencia - La Unión y el Fénix 1.jpg",
+]
+
+[llotja_de_peixcadors]
+# 7 neighbouring street
+max_photos = 16
+exterior = [
+  "File:Cabanya, llotja del Peix.jpg",
+  "File:Casa dels bous i llotja del peix, Cabanyal.JPG",
+  "File:773 Antiga Llotja del Peix del Cabanyal (València), habitatge a la façana oest.jpg",
+  "File:Llotja del Peix, Cabanyal.JPG",
+  "File:775 Antiga Llotja del Peix del Cabanyal (València), façana oest.jpg",
+  "File:Llotja del Peix del Cabanyal.JPG",
+  "File:Antigua lonja de pescado, Valencia.jpg",
+  "File:Vista lateral de la llotja del peix des del carrer d'Eugènia Viñes, Cabanyal.JPG",
+  "File:Antigua lonja de pescado, ValenciaAB.jpg",
+  "File:Façana de la llotja del Peix, Cabanyal.JPG",
+  "File:776 Antiga Llotja del Peix del Cabanyal (València), façana oest.jpg",
+  "File:Antigua lonja de pescado, ValenciaAA.jpg",
+  "File:Llotja del peix del Cabanyal, balconet.JPG",
+  "File:777 Antiga Llotja del Peix del Cabanyal (València), façana oest.jpg",
+  "File:794 Antiga Llotja del Peix del Cabanyal (València), façana sud.jpg",
+  "File:774 Antiga Llotja del Peix del Cabanyal (València), façana oest.jpg",
+]
+exclude = [
+  "File:Eugènia Vinyes - Dr Lluch.jpg",
+]
+
+[mercat_d_abastos]
+max_photos = 14
+exterior = [
+  "File:Antic Mercat d'Abastiments de València.JPG",
+  "File:Valencia - Mercado de Abastos 2026-09-13.jpg",
+  "File:Mercat d'Abastos de València des de l'exterior.jpg",
+  "File:Torre del mercat d'Abastos de València.JPG",
+  "File:Carril bici al carrer d'Ontinyent de València 1.jpg",
+  "File:Lateral del mercat d'Abastos, València.JPG",
+  "File:Abastos01.jpg",
+  "File:Mercat d'Abastos de València.jpg",
+  "File:Mercat d'Abastiments de València, lateral.JPG",
+  "File:Lateral del Mercat d'Abastos de València.JPG",
+  "File:Mercat d'Abastiments de València, exterior.JPG",
+  "File:Mercat d'Abastos de València, torre lateral.JPG",
+  "File:Mercat d'Abastos de València, 2012.jpg",
+  "File:València, antic mercat d'abastiments.JPG",
+]
+exclude = [
+  "File:Mercat d'Abastos de València, arc d'entrada.JPG",
+  "File:Homenatge Valentí González.jpg",
+  "File:Per la dignitat de l'escola pública, IES Abastos.JPG",
+  "File:Placavalentin.jpg",
+  "File:Tanca de l'antic mercat d'Abastiments de València.JPG",
+  "File:Escut de València al mercat d'Abastos, València.JPG",
+]
+
+[mercat_de_colom]
+max_photos = 15
+exterior = [
+  "File:Mercado de Colón, Valencia, España, 2014-06-29, DD 06.JPG",
+  "File:Mercado de Colon 106.JPG",
+  "File:Mercado de Colón, Valencia, España, 2014-06-29, DD 09.JPG",
+  "File:Mercado de Colón.jpg",
+  "File:Mercat-de-Colón Valencia.jpg",
+  "File:Valencia Mercado de Colón from the northwest.jpg",
+  "File:VLC Fachada N mercado colon.jpg",
+  "File:Torre del Mercado de Colón en Valencia.jpg",
+  "File:Fachada del Mercado de Colón en Valencia.jpg",
+  "File:Entrada al Mercado de Colon por la Calle Conde Salvatierra de Alava.JPG",
+  "File:Mercado de Colon - Entrada por la Calle Jorge Juan.JPG",
+  "File:Mercat colom coberta.jpg",
+  "File:Mercat colom jorgejuan.jpg",
+  "File:Mercado de Colón, Valencia, España, 2014-06-30, DD 165.JPG",
+  "File:VLC fachada Mercado Colon XMas.jpg",
+]
+exclude = [
+  "File:Ruta Marc - Versos per a Anna 4019.jpg",
+  "File:Mercado de Colón, Valencia, España, 2014-06-29, DD 08.JPG",
+  "File:Mercado de Colón (Valencia).jpg",
+  "File:Ruta Marc - Versos per a Anna 4020.jpg",
+]
+
+[mercat_de_russafa]
+max_photos = 12
+exterior = [
+  "File:Russafa. Mercat.png",
+  "File:Mercat de Russafa de Valencia.jpg",
+  "File:Mercat de Russafa i campanar.JPG",
+  "File:Mercat de Russafa.JPG",
+  "File:Fachada mercado de Ruzafa.jpg",
+  "File:MERCAT RUSAFA - 52582980402.jpg",
+  "File:Mercat de Russafa, lateral taronja.JPG",
+  "File:Mercat de Russafa (València).JPG",
+  "File:VLC - 20140501 - 16 (14100252240).jpg",
+  "File:Campanar i mercat, Russafa.JPG",
+  "File:Mercado Ruzafa.jpg",
+  "File:Mercat de Russafa, cantonada.JPG",
+]
+exclude = [
+  "File:Floristeria a l'exterior del mercat de Russafa.JPG",
+  "File:Mercat de Russafa lloc de Ana.jpg",
+  "File:Lloc d'olives al mercat de Russafa.jpg",
+  "File:Arròs al forn al mercat de Russafa.JPG",
+  "File:Embotits al mercat de Russafa.JPG",
+  "File:Llepolies al mercat de Russafa.JPG",
+  "File:Peixateries del mercat de Russafa.JPG",
+  "File:Font al mercat de Russafa.JPG",
+]
+
+[misericordia_de_campanar]
+max_photos = 16
+exterior = [
+  "File:Iglesia de Campanar.jpg",
+  "File:Campanar, església de la mare de Déu de la Misericòrdia de Campanar.JPG",
+  "File:Campanar de Campanar, València.JPG",
+  "File:Campanar, març 01.jpg",
+  "File:Campanar des del carrer del baró de Barxeta, Campanar.JPG",
+  "File:Església de la Mare de Déu de la Misericòrdia de Campanar, façana.JPG",
+  "File:Remat del campanar, església de la mare de Déu de la Misericòrdia de Campanar.JPG",
+  "File:Portalada de l'església de la Mare de Déu de la Misericòrdia de Campanar.JPG",
+  "File:Església de la mare de Déu de la Misericòrdia de Campanar, campanar.JPG",
+  "File:Campanar, església de la Mare de Déu de la Misericòrdia.JPG",
+  "File:Portalada de l'església de la Mare de Déu de la Misericòrdia, Campanar.JPG",
+  "File:Porta de l'església de la Mare de Déu de la Misericòrdia, Campanar.JPG",
+  "File:Rellotge del campanar, església de la Mare de Déu de la Misericòrdia de Campanar.JPG",
+  "File:Porta lateral, església de la Mare de Déu de la Misericòrdia de Campanar.JPG",
+  "File:Església de la Mare de Déu de la Misericòrdia, Campanar.JPG",
+  "File:Cúpula lateral, església de la mare de Déu de la Misericòrdia de Campanar.JPG",
+]
+
+[monestir_de_la_trinitat]
+max_photos = 16
+exterior = [
+  "File:Monestir de la Trinitat capçalera.JPG",
+  "File:Portadeta d'arc conopial, monestir de la Trinitat de València.JPG",
+  "File:Monasterio de la Trinidad - panoramio.jpg",
+  "File:Monestir de la Trinitat P1130798.JPG",
+  "File:Monestir de la Trinitat de València 01.JPG",
+  "File:09-03-1115-Valentia 072.jpg",
+  "File:161 Església de la Trinitat, des de l'altra banda del riu (València).jpg",
+  "File:167 L'església del monestir de la Trinitat, des del pont de la Trinitat (València).jpg",
+  "File:Monestir de la Trinitat.JPG",
+  "File:Monestir de la Trinitat P1130799.JPG",
+  "File:Monestir de la Trinitat de València 02.JPG",
+  "File:Real Monasterio de la Santísima Trinidad - Valencia Spain.jpg",
+  "File:Monestir de la Trinitat, capçalera.JPG",
+  "File:Monestir de la Trinitat P1130801.JPG",
+  "File:Monestir de la Trinitat de València 03.JPG",
+  "File:Monestir de la Trinitat façana.JPG",
+]
+exclude = [
+  "File:Monestir de la Trinitat òcul.JPG",
+]
+
+[museu_de_belles_arts]
+max_photos = 15
+exterior = [
+  "File:Museu belles arts valència2.jpg",
+  "File:Museo de Bellas artes, San Pio V. - panoramio.jpg",
+  "File:Valence - panoramio (7).jpg",
+  "File:Part superior de la façana del Sant Pius V, Museu de Belles Arts de València.JPG",
+  "File:Museu de Belles Arts P1130754.JPG",
+  "File:Museu de Belles Arts de València 14.JPG",
+  "File:Valencia, Spain (26461226731).jpg",
+  "File:Pius V i Universitat des de les Torres de Serrans (València) 2008.JPG",
+  "File:Jardins du turia.JPG",
+  "File:Museu pius1.jpg",
+  "File:Valencia-la Saïdia, Museu de Belles Arts de València IMG 2836 2026-08-24 13.49.jpg",
+  "File:151 Museu de Belles Arts de Sant Pius V (València), des del pont dels Serrans.jpg",
+  "File:162 Pont de la Trinitat (València), al fons el Museu de Belles Arts.jpg",
+  "File:Museo de Bellas Artes San Pio V de Valencia (2262044745).jpg",
+  "File:Exterior, Museu de Belles Arts de València.JPG",
+]
+exclude = [
+  "File:Luis de Madrazo y Kuntz - Retrato de dama - Museo de Bellas Artes de Valencia.JPG",
+  "File:Relleu amb la figura orant de Sant Pius V, Col·legi de Sant Pius V, Museu de Belles Arts de València.JPG",
+  "File:Escales de baixada al museu de Belles Arts de València.JPG",
+]
+
+[museu_de_les_ciencies]
+# those mainly show Hemisferic/Umbracle
+max_photos = 16
+exterior = [
+  "File:Museo Príncipe Felipe, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 56.JPG",
+  "File:Museo Príncipe Felipe, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 59.JPG",
+  "File:Museo principe felipe-valencia-2009 (6).JPG",
+  "File:Museo principe felipe-valencia-2009 (7).JPG",
+  "File:Sciences museum of valencia.jpg",
+  "File:Museo de las Ciencias Príncipe Felipe. Valencia.jpg",
+  "File:Museu de les Ciències Príncipe Felipe, Valencia, August 2026.jpg",
+  "File:Valencia-Quartre Carreres, de trap van het noordwestelijk deel van het Museu de les Ciències Príncep Felip IMG 3047 2026-08-25 16.43.jpg",
+  "File:Frontal del Museo de las Ciencias Príncipe Felipe (Valencia).jpg",
+  "File:07112008 0085Museo príncipe felipe.jpg",
+  "File:The City of Arts and Sciences complex by Santiago Calatrava and Félix Candela. Valencia, Spain, Southwestern Europe. September 28, 2014-5.jpg",
+  "File:Estanque del Museo de las Ciencias Príncipe Felipe, Valencia.jpg",
+  "File:Valencia Museo de las Ciencias Príncipe Felipe from the east.jpg",
+  "File:Valencia06 flickr.jpg",
+  "File:Ciutat de les Arts i les Ciències.jpg",
+  "File:Ciudad de las Artes y las Ciencias 07.jpg",
+]
+exclude = [
+  "File:Valencia Ciudad de las Artes y las Ciencias-20100203-RM-174013.jpg",
+  "File:Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 39.JPG",
+  "File:Valencia Pool southeast of Museo de las Ciencias Príncipe Felipe.jpg",
+  "File:Valencia L'Umbracle southern entrance seen from the east.jpg",
+]
+
+[muvim]
+max_photos = 15
+exterior = [
+  "File:Museu Valencià de la Il·lustració i de la Modernitat, València, País Valencià.JPG",
+  "File:Muvim - terrassa.jpg",
+  "File:MuVIM 2025 06.jpg",
+  "File:MuVIM MMXXVI.jpg",
+  "File:Muvim. - panoramio.jpg",
+  "File:Museu Valencià de la Il·lustració i de la Modernitat des del Centre d'Artesania.JPG",
+  "File:MuVIM exterior.jpg",
+  "File:Muvim parque.jpg",
+  "File:499 MuVIM, Museu Valencià de la Il·lustració i de la Modernitat.jpg",
+  "File:Muvim frontal.jpg",
+  "File:Exterior of the Museu Valencià de la Il·lustració i de la Modernitat.jpg",
+  "File:Valencia - Museu Valencià de la Il·lustració i de la Modernitat 01.jpg",
+  "File:Muvim5.jpg",
+  "File:501 MuVIM, Museu Valencià de la Il·lustració i de la Modernitat, porxo d'entrada.jpg",
+  "File:Valencia - Museu Valencià de la Il·lustració i de la Modernitat 04.jpg",
+]
+exclude = [
+  "File:MuVIM, Valencia 03.jpg",
+  "File:169 Mural al MuVIM, c. Guillem de Castro 8 (València).jpg",
+  "File:Roman de la Calle.jpg",
+  "File:Museu Valencià de la Il·lustració i de la Modernitat gener 2016 02.jpg",
+]
+
+[oceanografic]
+# animals
+max_photos = 13
+exterior = [
+  "File:L'Oceanografic, Valencia, Spain 1 - Jan 07.jpg",
+  "File:L'oceanografic-valencia-2009 (5).JPG",
+  "File:L'Oceanografic, Valencia, Spain 2 - Jan 07.jpg",
+  "File:\" l'oceanographic \" a valence - panoramio (5).jpg",
+  "File:Valencia Aviari L'Oceanogràfic from the bridge.jpg",
+  "File:Oceanarium \"L'Oceanogràfic\" - 2013.07 - panoramio.jpg",
+  "File:L´Oceanográfic - panoramio.jpg",
+  "File:L'Oceanografic (Valencia, Spain) 01.jpg",
+  "File:Oceanografic - Esterno.JPG",
+  "File:Oceanografic Valencia.JPG",
+  "File:Oceanogràfic 09032010.jpg",
+  "File:Oceanografico panoramica.jpg",
+  "File:Oceanografic Entrée.jpg",
+]
+exclude = [
+  "File:Animales del l'oceanografico-valencia-2009 (4).JPG",
+  "File:Gymnothorax funebris in Oceanogràfic Valencia.jpg",
+  "File:Pseudanthias sp., Oceanografic Valencia.jpg",
+  "File:Gymnothorax funebris in Oceanogràfic Valencia, full view.jpg",
+  "File:Animales del oceanografico-valencia-2009 (17).JPG",
+  "File:Dolphin (34194153163).jpg",
+]
+
+[palau_arquebisbal]
+# 5,15 rooftop views from cathedral/Micalet (palace in the distance); 14 shows cathedral
+max_photos = 16
+exterior = [
+  "File:Palacio Arzobispal de Valencia.jpg",
+  "File:Plaza de l'Almoina - panoramio.jpg",
+  "File:Valencia trip54.jpg",
+  "File:Valencia Palau Arquebisbal from Plaça de l'Almoina.jpg",
+  "File:Palau Arquebisbal de València des de la catedral.JPG",
+  "File:Columna de la façana del palau arquebisbal de València.JPG",
+  "File:Arxidiòcesi de València (52042736986).jpg",
+  "File:026 Palau Arquebisbal, c. del Palau 2 (València), des de la plaça de l'Almoina.jpg",
+  "File:La Seu, València, Valencia, Spain - panoramio (6).jpg",
+  "File:221 Carrer del Palau (València), amb el Palau Arquebisbal i la Catedral.jpg",
+  "File:Palacio Arzobispal de Valencia junio 2022 a.jpg",
+  "File:Valencia - Palacio Arzobispal 2.jpg",
+  "File:225 Palau Arquebisbal de València, façana del c. Palau.jpg",
+  "File:València, palau arquebisbal.JPG",
+  "File:Palau Arquebisbal de València 01.jpg",
+  "File:Arxidiòcesi de València (52042737726).jpg",
+]
+exclude = [
+  "File:Valencia city center04.jpg",
+  "File:Cúpula de la catedral de València i el palau arquebisbal.JPG",
+  "File:Palau Arquebisbal de València des del Micalet.JPG",
+]
+
+[palau_de_benicarlo]
+# 5 view from the building
+max_photos = 16
+exterior = [
+  "File:25.12.2021 in Valencia. 19.jpg",
+  "File:Palau de Benicarló, galeria d'arquets.JPG",
+  "File:Torre del palau de Benicarló, València.JPG",
+  "File:Valencia, palazzo bogia (de Benicarló) 01 m.jpg",
+  "File:Corts val.jpg",
+  "File:Palau de Benicarló P1390972.JPG",
+  "File:Les Corts del País Valencià 1.jpg",
+  "File:Façana de Les Corts del País Valencià.jpg",
+  "File:25.12.2021 in Valencia. 20.jpg",
+  "File:Valencia, palazzo bogia (de Benicarló) 02 m.jpg",
+  "File:Palau de Benicarló P1390971.JPG",
+  "File:Entrada a les Corts del País Valencià.jpg",
+  "File:525 Palau de Benicarló, pl. Sant Llorenç (València), seu de les Corts.jpg",
+  "File:Façana de Les Corts del País Valencià 2.jpg",
+  "File:Galeria d'arquets del palau de Benicarló, València.JPG",
+  "File:València. Palau de les Corts.JPG",
+]
+exclude = [
+  "File:València. Micalet des del Palau de les Corts.JPG",
+  "File:Placa commemorativa al Palau de Benicarló de València.JPG",
+]
+
+[palau_de_cervello]
+# 7 painting; 16 historic 1870
+max_photos = 13
+exterior = [
+  "File:Palau de Cervelló, València.JPG",
+  "File:At Valencia 2025 048.jpg",
+  "File:At Valencia 2025 418.jpg",
+  "File:Façana del Palau de Cervelló.JPG",
+  "File:Palau de Cervelló, a València.JPG",
+  "File:Palau de Cervelló - Plaza Tetuán, Ciutat Vella, Valencia Spain.jpg",
+  "File:Palau de Cervelló - Ciutat Vella, Valencia, Spain.jpg",
+  "File:Palau de Cervelló de València.jpg",
+  "File:Palau de Cervelló, façana.jpg",
+  "File:At Valencia 2025 051.jpg",
+  "File:València, palau de Cervelló.JPG",
+  "File:Palau de Cervelló, València. 1870, J. Laurent.jpg",
+  "File:Palau de Cervelló IMG 1537.jpg",
+]
+exclude = [
+  "File:Entrada triomfal de Ferran VII a València, 1815, Miquel Parra.jpg",
+  "File:Palau de Cervelló IMG 1536.jpg",
+  "File:Palau de Cervelló IMG 1535.jpg",
+  "File:Palau de Cervelló IMG 1534.jpg",
+]
+
+[palau_de_congressos]
+max_photos = 11
+exterior = [
+  "File:Palau del congres.jpg",
+  "File:Façana est del palau de congressos, València.jpg",
+  "File:Façana lateral del palau de congressos de València.jpg",
+  "File:Palacio-congresos-valencia-panoramica.jpg",
+  "File:Valencia - Palacio de Congresos.jpg",
+  "File:Palacio de Congresos de València.jpg",
+  "File:Palau de Congressos de València, 2006.JPG",
+  "File:Lateral del palau de congressos, València.jpg",
+  "File:Palau de Congressos de València, País Valencià.jpg",
+  "File:Palau de congressos de València, portes.jpg",
+  "File:Palau de congressos de València, coberta i pilars.jpg",
+]
+exclude = [
+  "File:Auditori 2 del palau de congressos de València.jpg",
+  "File:Vestíbul del palau de congressos, València.jpg",
+  "File:Palau de congressos de València, vestíbul.jpg",
+  "File:Palau de congressos de València, auditori 2.jpg",
+]
+
+[palau_de_justicia]
+max_photos = 15
+exterior = [
+  "File:Palau de justicia valència.jpg",
+  "File:Escut a la façana de l'antiga Duana, València.JPG",
+  "File:At Valencia 2025 016.jpg",
+  "File:At Valencia 2025 018.jpg",
+  "File:Palau de Justícia de València, façana.JPG",
+  "File:Palacio de Justicia de Valencia (1).png",
+  "File:Palau de Justícia DSCN2909.JPG",
+  "File:Palau de Justícia P1400027.JPG",
+  "File:Duana1.jpg",
+  "File:Fiscalia valencia.jpg",
+  "File:Palacio de Justicia de Valencia (2).png",
+  "File:Valencia - Palau de Justícia 3.jpg",
+  "File:PLAZA DEL PARTERRE.jpg",
+  "File:Palaciojusticia2.JPG",
+  "File:Palau de Justícia P1400034.JPG",
+]
+exclude = [
+  "File:Carlos III entre dos virtudes (1).JPG",
+  "File:Carlos III entre dos virtudes (2).JPG",
+  "File:Escala del palau de Justícia, València.JPG",
+]
+
+[palau_de_l_almirall]
+# 1,11,13,14,16 courtyard
+max_photos = 10
+exterior = [
+  "File:Exterior del palau de l'Almirall de València.JPG",
+  "File:Palau de l'Almirall de València, façana.jpg",
+  "File:Palau de l'Almirall P1140102.JPG",
+  "File:Palacio del Almirante en obras.jpg",
+  "File:213 Carrer del Palau (València), al fons el palau de l'Almirall.jpg",
+  "File:216 Palau de l'Almirall (València), Conselleria d'Hisenda de la Generalitat Valenciana.jpg",
+  "File:Palau de l'Almirall - façana.jpg",
+  "File:Palau de l'Almirall P1140103.JPG",
+  "File:Palau de l'Almirall - porta.jpg",
+  "File:Palau de l'Almirall P1140107.JPG",
+]
+exclude = [
+  "File:Palau de l'Almirall de València.jpg",
+  "File:Palau dels almirall02.jpg",
+  "File:Palau de l'Almirall 2015 06.JPG",
+  "File:Palau de l'Almirall - pati.jpg",
+  "File:Palau de l'Almirall 03.jpg",
+  "File:Celobert, palau de l'Almirall, València.JPG",
+  "File:Palau dels almirall01.jpg",
+  "File:Palau de l'Almirall 01.jpg",
+  "File:Palau de l'Almirall 2015 14.JPG",
+  "File:Galeria d'arquets del palau de l'Almirall de València.JPG",
+  "File:Palau de l'Almirall 02.jpg",
+  "File:Pati del palau de l'Almirall de València.JPG",
+  "File:Palau de l'Almirall 04.jpg",
+  "File:Pou al pati del palau de l'Almirall de València.JPG",
+  "File:Palau de l'Almirall P1140104.JPG",
+  "File:Oficines al palau de l'Almirall, València.jpg",
+  "File:Mènsula al pati del palau de l'Almirall, València.jpg",
+  "File:Palau de l'Almirall 05.jpg",
+  "File:Valencia.Casa del Almirante.jpg",
+  "File:Segon pis del pati del palau de l'Almirall, València.jpg",
+]
+
+[palau_de_la_batlia]
+# 9,10 closeups; only 10 photos in category
+max_photos = 19
+exterior = [
+  "File:Diputacion palau.jpg",
+  "File:Façana del palau de la Batlia de València.jpg",
+  "File:Palau de la Batlia - Bandera Ucraïnesa.jpg",
+  "File:Palau de la Batlia o Jàudenes, València.jpg",
+  "File:At Valencia 2025 179.jpg",
+  "File:412 Palau de la Batlia, pl. Manises (València), seu de la Diputació Provincial.jpg",
+  "File:València, palau de la Batlia.jpg",
+  "File:Per un finançament just, palau de la Batlia, València.jpg",
+  "File:Escut del palau de la Batlia, València.JPG",
+]
+exclude = [
+  "File:Edifcio de la ciudad.JPG",
+]
+
+[palau_de_la_generalitat]
+max_photos = 15
+exterior = [
+  "File:Palau de la Generalitat- Valencia.jpg",
+  "File:Valencia Palau de la Generalitat Valenciana from the southeast.jpg",
+  "File:029 Palau de la Generalitat, c. Cavallers 2 (València), des de la plaça de la Mare de Déu.jpg",
+  "File:Façana que recau a la plaça Manises del palau de la Generalitat Valenciana.jpg",
+  "File:Torre Nova del Palau de la Generalitat Valenciana.JPG",
+  "File:L04 316 Calle de los Caballeros, Palacio de la Generalidad Valenciana.jpg",
+  "File:Palacio de la Generalidad Valenciana. Torreón.jpg",
+  "File:Palau del la Generalitat P1390952.JPG",
+  "File:326 Palau de la Generalitat (València), torre antiga, des de la plaça de la Mare de Déu.jpg",
+  "File:Generalitat vista.jpg",
+  "File:Palau de la Generalitat del País Valencià 2.jpg",
+  "File:Generalitat alt.jpg",
+  "File:Palau de la Generalitat Valenciana 07.JPG",
+  "File:Palau del la Generalitat P1390956.JPG",
+  "File:L04 319 Plaza de la Virgen.jpg",
+]
+exclude = [
+  "File:Jardines de la Generalidad, refugio antiaéreo. Ruta Maria Beneyto 02.jpg",
+  "File:Jardines de la Generalidad, refugio antiaéreo. Ruta Maria Beneyto 03.jpg",
+]
+
+[palau_de_la_musica]
+# 7 distant; 10,15 Turia colonnade not the building
+max_photos = 16
+exterior = [
+  "File:Valencia Palau de la Música-20100203-RM-180045.jpg",
+  "File:Valencia Palau de la Música-20100203-RM-195239.jpg",
+  "File:València Palau de la Música.jpg",
+  "File:Palau de la Musica - panoramio.jpg",
+  "File:Part central del palau de la Música de València.JPG",
+  "File:Palau de la Música de València, vista lateral.JPG",
+  "File:Palau de la Música València 2.jpg",
+  "File:Palau musica.jpg",
+  "File:Entrada al Palau de la Música de Valencia.jpg",
+  "File:Valencia-el Pla del Rea, Palau de la Musica IMG 2892 2026-08-24 17.05.jpg",
+  "File:Palau de Musica.jpg",
+  "File:Valencia, 2016 (13).jpg",
+  "File:València, porxo del palau de la Música.JPG",
+  "File:Palau de la Música a València.jpg",
+  "File:Jardin del Turia -Tramo XI 09.jpg",
+  "File:Valencia - Palau de la Música 002.jpg",
+]
+exclude = [
+  "File:Palau de la Música, Valencia backstage 1160830.jpg",
+  "File:La Unió Musical Contestana al Palau de la Música de Valéncia.jpg",
+  "File:Banda de Campanar al Palau.JPG",
+  "File:Valencia-El Pla del Real, pilaren-bouwwerk bij Font del Palau de la Musica IMG 2789 2026-08-24 11.30.jpg",
+  "File:Banda Palau-2007.jpg",
+  "File:Premis Ovidi 2015.jpg",
+  "File:Palau de la Música - preseleccions.jpg",
+  "File:Pablo Nahual en el Palau Musica Valencia marzo 2016.jpg",
+  "File:Monument Nino Bravo, Bruno Lomas, Juan Camacho.jpg",
+  "File:800Ani5.jpg",
+  "File:Palau de la Música 2011.jpg",
+]
+
+[palau_de_les_arts]
+# 8 Museu Ciencies; 9,10,16 Hemisferic foreground
+max_photos = 16
+exterior = [
+  "File:El Palau de les Arts Reina Sofía, Valencia - Jan 2007.jpg",
+  "File:Palacio de las Artes Reina Sofía, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 34.JPG",
+  "File:Ciutat de les Arts i les Ciències, València, Valencia, Spain - panoramio (19).jpg",
+  "File:Palacio de las Artes Reina Sofía, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 35.JPG",
+  "File:Jardines del Turia. Valencia.jpg",
+  "File:Valencia Palau de les Arts Reina Sofia from the north.jpg",
+  "File:Valencia-Quatre Carreres, operahuis Palau de les Arts Reina Sofía vanaf de brug Pont de Montolivet IMG 27542026-08-24 10.08.jpg",
+  "File:Valencia-Quatre Carreres, operahuis Palau de les Arts Reina Sofía vanaf Avinguda del Professor López Piñero IMG 2905 2026-08-24 17.46.jpg",
+  "File:Palau de Les Arts Reina Sofía in Valencia in 2014.jpg",
+  "File:Òpera Gener 2014 - 2.jpeg",
+  "File:Òpera Febrer 2014.jpg",
+  "File:The City of Arts and Sciences complex by Santiago Calatrava and Félix Candela. Valencia, Spain, Southwestern Europe. September 28, 2014-4.jpg",
+  "File:Palau musica.jpg",
+  "File:Puente Cuidad de las ciencias y las artes en Valencia.jpg",
+  "File:Palacio de las Artes Reina Sofía, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 36.JPG",
+  "File:Valencia-Quartre Carreres, operahuis Palau de les Arts Reina Sofía vanaf de brug Pont de Montolivet IMG 2939 2026-08-25 09.56.jpg",
+]
+exclude = [
+  "File:Museo principe felipe-valencia-2009 (7).JPG",
+  "File:CiutatArts Navidad BlueHour.jpg",
+  "File:CiutatArts Navidad Night.jpg",
+  "File:El Hemisférico, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 60-62 HDR.JPG",
+]
+
+[palau_del_marques_de_campo]
+# courtyard/stairs; 16 aerial
+max_photos = 20
+exterior = [
+  "File:Palacio Marques de Campo1.JPG",
+  "File:Palau del marqués de Campo de València, torre de l'esquerra.JPG",
+  "File:Palacio del Marqués de Campo - panoramio.jpg",
+  "File:222 Palau del Marquès de Campo (València), pl. de l'Arquebisbe.jpg",
+  "File:293 Plaça de l'Arquebisbe (València), al fons el Palau del Marquès de Campo.jpg",
+  "File:Palau del marqués de Campo, València, vista lateral.JPG",
+  "File:Puerta museo de la ciudad - Valencia.jpg",
+  "File:Palau del Marqués de Campo de València 05.jpg",
+  "File:Palacio del Marqués de Campo.jpg",
+]
+exclude = [
+  "File:Palau del Marqués de Campo de València, pati des de l'escala.jpg",
+  "File:Arcs del pati del palau del marqués de Campo, València.JPG",
+  "File:Pati del palau del marqués de Campo de València.JPG",
+  "File:228 Palau del Marquès de Campo, Museu de la Ciutat (València).jpg",
+  "File:Bust de dona al final de l'escala del palau del marqués de Campo, València, PV.jpg",
+  "File:Palau del Marqués de Campo - escala vista cap a baix.jpg",
+  "File:Petxina de la cúpula de l'escala, palau del marqués de Campo de València.jpg",
+  "File:Finestres que miren al buit de l'escala del palau del Marques de Campo, València.jpg",
+  "File:Cúpula de l'escala del palau del Marqués de Campo de València, País Valencià.jpg",
+  "File:227 Palau del Marquès de Campo, Museu de la Ciutat (València), pati.jpg",
+  "File:Font del pati del palau del marqués de Campo, València.JPG",
+  "File:Palau del Marqués de Campo de València, cúpula 02.jpg",
+  "File:Bust de dona al final de l'escala del palau del marqués de Campo, València.jpg",
+  "File:229 Palau del Marquès de Campo, Museu de la Ciutat (València), font del pati.jpg",
+  "File:Palau del Marqués de Campo - escala.jpg",
+  "File:Palau del Marqués de Campo - escala a la part superior.jpg",
+  "File:Detall de la decoració d'una de les parets del palau del marqués de Campo, València.jpg",
+  "File:230 Palau del Marquès de Campo, Museu de la Ciutat (València), pati.jpg",
+]
+
+[palau_dels_catala_de_valeriola]
+# courtyard; 3 is a neighbour (Plaza de Nules); 13 aerial
+max_photos = 11
+exterior = [
+  "File:Palau dels Català de Valeriola, façana.jpg",
+  "File:Balcons del palau dels Català de Valeriola, València.jpg",
+  "File:Plaza de Nules de Valencia.jpg",
+  "File:341 Palau dels Català de Valeriola, pl. Nules (València).jpg",
+  "File:Balcó del palau dels Català de Valeriola de València.jpg",
+  "File:Palau dels Català de Valeriola 2015 02.JPG",
+  "File:Palacio de los Catalá de Valeriola.jpg",
+  "File:Palau dels Català de Valeriola.jpg",
+  "File:Palau dels Català de Valeriola, plaza Nules 2, Valencia. Vicepresidència Generalitat Valenciana.jpg",
+  "File:Palau dels Català de Valeriola P1390970.JPG",
+  "File:Portada del palau dels Català de Valeriola de València.jpg",
+]
+exclude = [
+  "File:Vista del pati del palau dels Català de Valeriola des de l'escala.JPG",
+  "File:Pati del palau dels Català de Valeriola des de l'entrada lateral.JPG",
+  "File:Palau dels Marquesos de Malferit (València) 25.jpg",
+  "File:Palau dels Català de Valeriola 2015 01.JPG",
+  "File:Palau dels Marquesos de Malferit (València) 26.jpg",
+  "File:Palau dels Català de Valeriola 2015 04.JPG",
+  "File:Escut del palau dels Català de Valeriola, València 01.jpg",
+  "File:Vestíbul i pati del palau dels Català de Valeriola, València.JPG",
+  "File:Palau dels Marquesos de Malferit (València) 27.jpg",
+  "File:Palau dels Marquesos de Malferit (València) 28.jpg",
+  "File:Palau dels Català de Valeriola, València 09.jpg",
+  "File:Mènsula del portal de l'escala, palau dels Català de Valeriola.JPG",
+  "File:Reixa del palau dels Català de Valeriola, València.JPG",
+  "File:Picaporta del palau dels Català de Valeriola, València.JPG",
+  "File:Portal de l'escala, palau dels Català de Valeriola.JPG",
+  "File:Detall de l'escut del palau dels Català de Valeriola, València.JPG",
+  "File:Palau dels Català de Valeriola, València 02.jpg",
+  "File:Escut del palau dels Català de Valeriola de València.JPG",
+  "File:Palau dels Català de Valeriola 2015 05.JPG",
+  "File:Mènsula del portal de l'escala, palau dels Català de Valeriola, València.JPG",
+]
+
+[palauet_d_aiora]
+# detail closeups
+max_photos = 14
+exterior = [
+  "File:València, palauet d'Aiora.JPG",
+  "File:Palauet d'Aiora, cantonada.JPG",
+  "File:València 2024-09-15 - Palauet d'Aiora 02.jpg",
+  "File:Palauet d'Ayora (1).png",
+  "File:Entrada al palauet d'Aiora, València.JPG",
+  "File:València 2024-09-15 - Palauet d'Aiora 01.jpg",
+  "File:Palauet d'Ayora (2).png",
+  "File:Palauet d'Aiora.jpg",
+  "File:Palauet d'Aiora, façana lateral.JPG",
+  "File:Palauet d'Aiora façana.jpg",
+  "File:Palauet d'Aiora, terrasseta.JPG",
+  "File:Palauet d'Aiora, terrassa.JPG",
+  "File:Cupulí del palauet d'Aiora, València.JPG",
+  "File:Palauet d'Aiora, València.JPG",
+]
+exclude = [
+  "File:Balcó del palauet d'Aiora.JPG",
+  "File:Balustrada del palauet d'Aiora.JPG",
+  "File:Frontó amb data del palauet d'Aiora.JPG",
+  "File:Rajoles del palauet d'Aiora.JPG",
+  "File:Palauet d'Aiora, cúpula.JPG",
+  "File:Palauet d'Aiora, inicials.JPG",
+  "File:Palauet d'Aiora, balcó.JPG",
+  "File:Palauet d'Aiora, finestres.JPG",
+]
+
+[portal_de_la_valldigna]
+# C Catastro facade is a neighbouring house
+max_photos = 15
+catastro_not_building = [
+  "5532102YJ2753D",
+]
+exterior = [
+  "File:Valencia - Portal de la Valldigna (364674027).jpg",
+  "File:Portal de Valldigna - panoramio.jpg",
+  "File:Portal de Valldigna de Valencia 02.jpg",
+  "File:València. Portal de la Valldigna.jpg",
+  "File:Portal de Valldigna de Valencia 01.jpg",
+  "File:Portal de la Valldigna de València.JPG",
+  "File:València, portal de la Valldigna.jpg",
+  "File:L04 313 Valencia, portal de la Valldigna.jpg",
+  "File:Barrio del Carmen de Valencia, Inscripción que dice \"Nostra Dona de la Bona Son, Pregueu per nós, Portal de Valldigna\".jpg",
+  "File:Portal de Valldigna. Barrio del Carmen, morería, ciudad de Valencia.jpg",
+  "File:Part posterior del portal de la Valldigna de València.jpg",
+  "File:Portal de la Valldigna - East Side - Muralla Árabe - Arab Wall - Ciutat Vella, Valencia, Spain.jpg",
+  "File:Portal de la Valldigna (València).JPG",
+  "File:Portal de la Valldigna de València, detall.JPG",
+  "File:Streets with History and Fallera tradition.jpg",
+]
+
+[preso_model]
+max_photos = 16
+exterior = [
+  "File:Complejo administrativo 9 d'Octubre (Valencia).jpg",
+  "File:Cárcel modelo de Valencia 01.jpg",
+  "File:Torre prisión Valencia (9 octubre).jpg",
+  "File:Presó model de València en obres.jpg",
+  "File:Antiga presó model de València, complex administratiu 9 d'Octubre.JPG",
+  "File:Finestres de l'antiga presó model de València.JPG",
+  "File:Valencia - Ciutat Administrativa 9 d'Octubre 14.jpg",
+  "File:Cárcel modelo de Valencia 03.jpg",
+  "File:València, antiga presó model.JPG",
+  "File:Valencia - Ciutat Administrativa 9 d'Octubre 12.jpg",
+  "File:Antiga presó model de València, futur complex administratiu 9 d'Octubre.JPG",
+  "File:Complejo administrativo 9 d'Octubre (Valencia) 093.jpg",
+  "File:Valencia - Antigua Cárcel Modelo (Ciutat Administrativa 9 d'Octubre) 4.jpg",
+  "File:Valencia - Ciutat Administrativa 9 d'Octubre 15.jpg",
+  "File:Valencia - Antigua Cárcel Modelo (Ciutat Administrativa 9 d'Octubre) 3.jpg",
+  "File:Cárcel modelo de Valencia 02.jpg",
+]
+exclude = [
+  "File:Grafiti en la modelo - panoramio.jpg",
+]
+
+[roig_arena]
+# 9 is Alqueria del Basket (neighbour)
+max_photos = 13
+exterior = [
+  "File:Roig Arena.jpg",
+  "File:Roig Arena 1492.jpg",
+  "File:Roig Arena y alrededores 03.jpg",
+  "File:Parke roig arena.jpg",
+  "File:Roig Arena Basket Court.jpg",
+  "File:Roig Arena Valencia Museo & Tienda.jpg",
+  "File:Roig Arena Valencia.jpg",
+  "File:Roig Arena y alrededores 02.jpg",
+  "File:Roig Arena (Valencia, ESP) 2025.jpg",
+  "File:Roig Arena y alrededores 01.jpg",
+  "File:Roig Arena01.jpg",
+  "File:Roig Arena y alrededores 05.jpg",
+  "File:Roig Arena y alrededores 06.jpg",
+]
+exclude = [
+  "File:Roig Arena WOW 29 Valencia 01.jpg",
+  "File:Nuevo parque frente Roig Arena 87.jpg",
+  "File:Roig Arena WOW 29 Valencia 02.jpg",
+  "File:L’Alqueria del Basket Roig Arena.jpg",
+  "File:Roig Arena 00.jpg",
+  "File:Roig Arena WOW 29 Valencia 03.jpg",
+  "File:Roig Arena WOW 29 Valencia 04.jpg",
+  "File:Roig Arena y alrededores 04.jpg",
+  "File:Roig Arena y alrededores 07.jpg",
+]
+
+[sant_agusti]
+# 2 ivy closeup; 3 Santa Caterina? statue corner
+max_photos = 16
+exterior = [
+  "File:Església de Sant Agustíde València.JPG",
+  "File:Iglesia San Agustin. - panoramio.jpg",
+  "File:Valencia-Ciutat Vella, Església de Sant Agustí RI-51-0012183 in straatzicht IMG 2600 2026-08-22 17.01.jpg",
+  "File:Iglesia de Santa Catalina y San Agustín - Valencia - 20200811 002.jpg",
+  "File:Església de sant Agustí, València a.JPG",
+  "File:Iglesia de San Agustin, Valencia 01.JPG",
+  "File:Iglesia de San Agustín, Valencia 02.jpg",
+  "File:Valencia - Iglesia de San Agustín 2017-04-05.jpg",
+  "File:Iglesia de San Agustin - panoramio (1).jpg",
+  "File:Església de Sant Agustí (València) - lateral.jpg",
+  "File:Església de sant Agustí de València, País Valencià.jpg",
+  "File:Plaça de sant Agustí i església de Sant Agustí.jpg",
+  "File:Valencia - Iglesia de Sant Agustí 08.jpg",
+  "File:Bell Tower of the Iglesia de San Agustin - Ciutat Vella, Valencia, Spain.jpg",
+  "File:Iglesia de Santa Catalina y San Agustín - Valencia - 20200811 006.jpg",
+  "File:Campanar de l'església de Sant Agustí de València.jpg",
+]
+exclude = [
+  "File:Heura i restes, església de sant Agustí de València.JPG",
+  "File:Iglesia de Santa Catalina y San Agustín - Valencia - 20200811 005.jpg",
+]
+
+[sant_esteve]
+# several gargoyle closeups
+max_photos = 16
+exterior = [
+  "File:Remat del campanar de l'església de sant Esteve, València.JPG",
+  "File:Campanar de l'església de sant Esteve, València.JPG",
+  "File:Campanar Sant Esteve - panoramio.jpg",
+  "File:096 Campanar de Sant Esteve (València).JPG",
+  "File:Cubiertas San Esteban.jpg",
+  "File:Església de Sant Esteve (València) - Façana i campanar - 1.jpg",
+  "File:Església de Sant Esteve P1140109.JPG",
+  "File:Església de Sant Esteve, València 02.jpg",
+  "File:Gàrgoles de l'església de Sant Esteve, València 02.jpg",
+  "File:Exterior of Church of Sant Esteve de València 03.jpg",
+  "File:San Esteban de Valencia4575.jpg",
+  "File:207 Sant Esteve des de la pl. Sant Lluís Bertran (València).jpg",
+  "File:210 Església de Sant Esteve (València), gàrgola de la façana nord.jpg",
+  "File:Església de Sant Esteve de València campanar.JPG",
+  "File:Campanar de l'esglesia de Sant Esteve, València 01.jpg",
+  "File:San Esteban de ValenciaDSCF4574.jpg",
+]
+
+[sant_joan_de_l_hospital]
+# courtyards 3,11,15 still exterior of church
+max_photos = 15
+exterior = [
+  "File:Santjoanhospital porta nord.jpg",
+  "File:Església de sant Joan de l'Hospital de València, campanar.JPG",
+  "File:Arcosolios do cemiterio de de Sant Joan de l'Hospital.jpg",
+  "File:Patio norte da igrexa de Sant Joan de l'Hospital.jpg",
+  "File:Merlets i capçalera de l'església de sant Joan de l'Hospital de València.JPG",
+  "File:Sant Joan de l'Hospital (Valencia) 05.JPG",
+  "File:Pared exterior del cementerio medieval.jpg",
+  "File:Exterior de San Juan del Hospital, Valencia 02.jpg",
+  "File:Exterior de la iglesia de San Juan del Hospital, Valencia 02.jpg",
+  "File:Capçalera de l'església de sant Joan de l'Hospital, València.JPG",
+  "File:Santjoanhospital testa exterior.jpg",
+  "File:Iglesia San Juan del Hospital - North Patio Entrance - Ciutat Vella, Valencia, Spain.jpg",
+  "File:Exterior de la iglesia de San Juan del Hospital, Valencia 03.jpg",
+  "File:Lateral del edificio de la Iglesia de San Juan del Hospital.jpg",
+  "File:Sant Joan de l'Hospital P1140090.JPG",
+]
+exclude = [
+  "File:Edificio de San Juan del Hospital de la calle de El Milagro de Valencia.jpg",
+  "File:Esglésies de Sant Tomàs i Sant Felip i de Sant Joan de l'Hospital des del Micalet, València.JPG",
+  "File:Sant Joan de l'Hospital P1140094.JPG",
+  "File:Esglésies de Sant Tomàs i Sant Felip i de Sant Joan de l'Hospital des del Miquelet, València.JPG",
+]
+
+[sant_joan_de_la_creu]
+# portal closeups; 16 historic 1870
+max_photos = 16
+exterior = [
+  "File:Iglesia de San Juan de la Cruz, Valencia, España, 2014-06-30, DD 137.JPG",
+  "File:Església de sant Joan de la Creu o de sant Andreu, campanar.JPG",
+  "File:107 Església de Sant Joan de la Creu (València), façana est, c. Vilaragut.jpg",
+  "File:Valencia-Ciutat Vella, de toren van Església de Sant Joan de la Creu RI-51-0001117 IMG 2556 2026-08-22 12.52.jpg",
+  "File:Església de Sant Andreu - Sant Joan de la Creu de València, exterior..JPG",
+  "File:Valencia (52043018229).jpg",
+  "File:Campanar de l'església de Sant Joan de la Creu València.JPG",
+  "File:Efectes dels bombardejos de la Guerra Civil, Església de Sant Joan de la Creu 02.jpg",
+  "File:Església de Sant Joan de la Creu P1130905.JPG",
+  "File:Iglesia de San Juan de la Cruz, Valencia 01.JPG",
+  "File:Portalada de l'església de sant Joan de la Creu de València.JPG",
+  "File:Efectes dels bombardejos de la Guerra Civil, Església de Sant Joan de la Creu 01.jpg",
+  "File:Puerta lateral de Sant Joan de la Creu.jpg",
+  "File:Església de Sant Joan de la Creu P1130907.JPG",
+  "File:Iglesia de San Juan de la Cruz, Valencia 02.JPG",
+  "File:Església de Sant Andreu de València, 1870, J. Laurent.jpg",
+]
+
+[sant_marti]
+# several sculpture closeups; 15 title says Sant Valero but shows Sant Marti portal
+max_photos = 16
+exterior = [
+  "File:Sant Martí Bisbe DSCN2890.JPG",
+  "File:Iglesia de San Martin - panoramio.jpg",
+  "File:2023 Valencia-SantMarti01.jpg",
+  "File:L'eglise san martin a valence - panoramio.jpg",
+  "File:Església de Sant Martí de València atlants renaixentistes.JPG",
+  "File:Gàrgola a l'església de Sant Martí de València.JPG",
+  "File:Església Parroquial de Sant Martí Bisbe i Sant Antoni Abat (València) - 1.jpg",
+  "File:Sant Martí Bisbe P1130866.JPG",
+  "File:Iglesia de San Martín de Valencia desde la torre de Santa Catalina.JPG",
+  "File:Iglesia de San Martín, Valencia 01.jpg",
+  "File:Valencia, santi martino antonio abate, esterno, mensola con tre atlanti, 1545 ca.jpg",
+  "File:Valence - panoramio (5).jpg",
+  "File:Valencia 03-14a San Martín.JPG",
+  "File:Església de Sant Martí (València) - portalada.jpg",
+  "File:Esglèsia de San Valero, València.JPG",
+  "File:Campanar de l'església de Sant Martí de València.JPG",
+]
+
+[sant_miquel_dels_reis]
+# C Catastro facade is the neighbouring barracks/prison; 1,8,9 cloisters
+max_photos = 15
+catastro_not_building = [
+  "6256412YJ2765E",
+]
+exterior = [
+  "File:Monestir de Sant Miquel dels Reis Monasterio de San Miguel de los Reyes.jpg",
+  "File:Fachada este del monasterio de San Miguel de los Reyes 01.jpg",
+  "File:Sant Miquel dels Reis (7151856743).jpg",
+  "File:Sant Miquel dels Reis (7151840387).jpg",
+  "File:Valencia - Monasterio de San Miguel de los Reyes 05 2017-05-01.jpg",
+  "File:Remat de la façana de l'església de Sant Miquel dels Reis.JPG",
+  "File:Sant Miquel a la façana de l'església de Sant Miquel dels Reis, València.JPG",
+  "File:San Miguel de los Reyes. Valencia. Claustro norte.jpg",
+  "File:051 Sant Miquel dels Reis (València), pati nord, arc de Sant Benet de Rascanya.jpg",
+  "File:Iglesia de San Miguel de los Reyes.jpg",
+  "File:Sanmigueldelosreyesvalencia.JPG",
+  "File:Cúpula de la iglesia de San Miguel de los Reyes 01.jpg",
+  "File:BVexterior20160116.jpg",
+  "File:016 Sant Miquel dels Reis vist des dels Orriols (València).jpg",
+  "File:Sant Miquel dels Reis, cel·les.JPG",
+]
+exclude = [
+  "File:Escala que dóna al pati nord.jpg",
+  "File:Viquimarató Dones en la Biblioteca Valenciana 7 de març de 2020 12.jpg",
+]
+
+[sant_miquel_i_sant_sebastia]
+max_photos = 16
+exterior = [
+  "File:Església de Sant Sebastià, torre i cúpula, València.JPG",
+  "File:Façana de l'església de Sant Sebastià de València.JPG",
+  "File:Exterior de la cúpula de l'església de Sant Sebastià, València.JPG",
+  "File:Paroquia San Sebastian - panoramio.jpg",
+  "File:València, església de sant Sebastià.JPG",
+  "File:Portalada de l'església de sant Sebastià, València.JPG",
+  "File:Campanar Real Parròquia Sant Miquel i Sant Sebastià de Valéncia.jpeg",
+  "File:Campanar Parrquial.jpeg",
+  "File:Campanar i cúpula de l'església de sant Sebastià de València.JPG",
+  "File:València, cúpula de l'església de sant Sebastià.JPG",
+  "File:Església de Sant Sebastià i Sant Miquel, València.JPG",
+  "File:Cúpula de l'església de Sant Sebastià des del Jardí Botànic, València.JPG",
+  "File:Portada de l'església de sant Sebastià de València, detall.JPG",
+  "File:Església de sant Sebastià des de les torres de Quart, València.JPG",
+  "File:Església de sant Sebastià i edificis, València.JPG",
+  "File:Campanar de l'església de sant Sebastià, València.JPG",
+]
+
+[sant_nicolau]
+# 2 interior; 9,12 tile panels
+max_photos = 16
+exterior = [
+  "File:Església de Sant Nicolau de València, rosassa i campanar.JPG",
+  "File:Iglesia de San Nicolás de Valencia 01.jpg",
+  "File:At Valencia 2025 508.jpg",
+  "File:Exterior de la iglesia de San Nicolás Bari y San Pedro Mártir de Valencia.jpg",
+  "File:Tanques antimicció Església de Sant Nicolau 4725.jpg",
+  "File:Façana neogòtica de l'església de Sant Nicolau de València.JPG",
+  "File:Campanario de la Iglesia de San Nicolás, Valencia 01.jpg",
+  "File:Church of Sant Nicolau Valencia 2019 1.jpg",
+  "File:Igrexa de San Nicolás de Bari e San Pedro Mártir.jpg",
+  "File:463 Església de Sant Nicolau i Sant Pere Màrtir (València), façana sud i campanar.jpg",
+  "File:Portades de l'església de Sant Nicolau de València.JPG",
+  "File:Església de Sant Nicolau (52043235255).jpg",
+  "File:Exterior of Church of Sant Nicolau, València 01.jpg",
+  "File:Plaza de San Nicolás, Valencia 04.jpg",
+  "File:Valencia - Iglesia de Sant Nicolau 02.jpg",
+  "File:464 Església de Sant Nicolau i Sant Pere Màrtir (València), campanar.jpg",
+]
+exclude = [
+  "File:Chiesa di san Nicola e san pietro martire Valencia (3).jpg",
+  "File:Exterior of Church of Sant Nicolau, València 03.jpg",
+  "File:Entrada a Sant Nicolau IMG 1574.jpg",
+  "File:Valencia 03-30a.JPG",
+]
+
+[sant_tomas_i_sant_felip_neri]
+# street lighting details
+max_photos = 15
+exterior = [
+  "File:Església de Sant Tomàs Apòstol i Sant Felip Neri P1400059.JPG",
+  "File:Igrexa de Sant Tomàs i Sant Felip Neri.jpg",
+  "File:St. Thomas and Filip Neri church in Valencia.jpg",
+  "File:Iglesia Santo Tomás Apóstol y Felipe Neri (Valencia).jpg",
+  "File:Fachada del edificio de la Universidad de valencia en la Plaza del Patriarca.JPG",
+  "File:Església de Sant Tomàs i Sant Felip Neri 01.jpg",
+  "File:L04 253 Santo Tomás y San Felipe Neri.jpg",
+  "File:Valencia-Ciutat Vella, sculptuur op het plein voor de Església de Sant Tomàs i Sant Felip Neri IMG 2684 2026-08-23 12.25.jpg",
+  "File:Valencia - Iglesia de Santo Tomás 2018-12-16 01.jpg",
+  "File:Esglésies de Sant Tomàs i Sant Felip i de Sant Joan de l'Hospital des del Micalet, València.JPG",
+  "File:Part superior de la façana i campanar de l'església de sant Felip Neri i sant Tomàs, València.JPG",
+  "File:Església de Sant Tomàs Apòstol i Sant Felip Neri P1140073.JPG",
+  "File:Església de Sant Tomàs i Sant Felip Neri 02.jpg",
+  "File:Fuente de los Patos - Iglesia de Sant Tomas y Sant Felipe - Valencia Spain.jpg",
+  "File:Iglesia de Santo Tomas Apostol y San Felipe Neri and Plaça de Sant Vicent Ferrer in Ciutat Vella, Valencia, Spain, 2024 January.jpg",
+]
+exclude = [
+  "File:Restes del primer enllumenat públic.jpg",
+  "File:Cable del primer llumenat públic de València.jpg",
+  "File:Esglésies de Sant Tomàs i Sant Felip i de Sant Joan de l'Hospital des del Miquelet, València.JPG",
+]
+
+[sant_valer]
+# 11 Mercat de Russafa foreground
+max_photos = 15
+exterior = [
+  "File:Russafa. Església.png",
+  "File:Valencia-l'Eixample, toren van Església parroquial de Sant Valeri Bisbe i Sant Vicent Màrtir ML46.15.250-018 IMG 2730 2026-08-23 15.40.jpg",
+  "File:Valencia, Spain 🇪🇸 - Street scene with pedestrians.jpg",
+  "File:Façana de l'església de sant Valeri i sant Vicent màrtir de Russafa.JPG",
+  "File:Campanar i façana de l'església de sant Valeri de Russafa.JPG",
+  "File:Església de sant Valeri de Russafa, cúpula a la capçalera.JPG",
+  "File:Valencia - Iglesia de Sant Valeri i Sant Vicent Màrtir 03.jpg",
+  "File:Cúpula de l'església de sant Valeri i sant Vicent, Russafa.JPG",
+  "File:Valencia - Iglesia de Sant Valeri i Sant Vicent Màrtir 06.jpg",
+  "File:Campanar i façana de l'església de sant Valeri des de baix, Russafa.JPG",
+  "File:Valencia - Iglesia de Sant Valeri i Sant Vicent Màrtir 07.jpg",
+  "File:Campanar de l'església de sant Valeri, Russafa.JPG",
+  "File:Russafa. Església. Portada.jpg",
+  "File:Part superior del campanar de l'església de sant Valeri i sant Vicent, Russafa.JPG",
+  "File:Façana de l'església de sant Valer de Russafa i arbre de Nadal.JPG",
+]
+exclude = [
+  "File:Russafa. Església. Sants.jpg",
+  "File:Campanar i mercat, Russafa.JPG",
+  "File:Nadal a Russafa.jpg",
+  "File:Russafa. Església. Placa commemorant l'annexió.jpg",
+  "File:Russafa. Església. Placa commemorant la conquesta.jpg",
+]
+
+[santa_caterina]
+# 9 roofs from inside a tower
+max_photos = 15
+exterior = [
+  "File:Iglesia de Santa Catarina, Valencia, España, 2014-06-30, DD 143.jpg",
+  "File:Torre de la iglesia de Santa Catalina, Valencia, España, 2014-06-29, DD 17.JPG",
+  "File:Santa caterina vista.jpg",
+  "File:Torre Santa Catalina - Francesco Crippa.jpg",
+  "File:Busto de Santa Catalina.jpg",
+  "File:St. Catherine Church, Valencia.jpg",
+  "File:084 Església de Santa Caterina (València), façana oest, pl. Lope de Vega.jpg",
+  "File:Torre de la iglesia de Santa Catalina, Valencia, España, 2014-06-29, DD 18.JPG",
+  "File:Fachada de la Iglesia de Santa Catalina, Valencia 01.JPG",
+  "File:Iglesia de Santa Catalina, Valencia 30.JPG",
+  "File:Valencia centro città (13).jpg",
+  "File:Església de Santa Catalina de Valencia (1).png",
+  "File:Arcosolio en la Iglesia de Santa Catalina, Valencia 02.jpg",
+  "File:Església de Santa Caterina de València façana dels peus.JPG",
+  "File:Església de Santa Caterina de València fornícula amb el bust de la titular sobre l'entrada.JPG",
+]
+exclude = [
+  "File:Església de Santa Caterina de València cobertes.JPG",
+  "File:Valencia, chiesa di santa catalina, frammenti scultorei reimpiegati nella muratura di una cappella sepolcrale esterna.jpg",
+  "File:Santa caterina arcosolis.jpg",
+  "File:Santa caterina arcosolis2.jpg",
+]
+
+[sants_joans]
+max_photos = 16
+exterior = [
+  "File:Iglesia de los Juanes, Valencia, España, 2014-06-29, DD 19.JPG",
+  "File:Valencia, chiesa dei Santos Juanes, 01,0.jpg",
+  "File:Iglesia de los Juanes, Valencia, España, 2014-06-30, DD 110.JPG",
+  "File:Sant Joan del Mercat Valencia Marcok f02.jpg",
+  "File:Fachada trasera de la Iglesia de los Santos Juanes.JPG",
+  "File:Església Parroquial dels Sants Joans 2.JPG",
+  "File:Iglesia de los Santos Juanes 01.jpg",
+  "File:Валенсия. Церковь Сан Хуан дель Меркадо (Iglesia de los Santos Juanes) - panoramio.jpg",
+  "File:Iglesia de los Juanes, Valencia, España, 2014-06-30, DD 109.JPG",
+  "File:Iglesia de los Santos Juanes 3.JPG",
+  "File:Sant Joan del Mercat i la Llotja, València.JPG",
+  "File:Lateral de l'església de Sant Joan del Mercat.JPG",
+  "File:Real Parroquia de los Santos Juanes.jpg",
+  "File:Iglesia Parroquial de los Santos Juanes.jpg",
+  "File:San Juan Valencia 02.JPG",
+  "File:Church Facade - Valencia - Spain (14397017394).jpg",
+]
+
+[tabacalera]
+max_photos = 14
+exterior = [
+  "File:Tabacalera de València.JPG",
+  "File:Fabrica de Tabacos - panoramio.jpg",
+  "File:Edificio de Tabacalera (431235203).jpg",
+  "File:Façana de l'antiga Tabacalera de València.JPG",
+  "File:Calle Amadeo de Saboya, Valencia 02.JPG",
+  "File:Edificio de Tabacalera, Valencia 01.JPG",
+  "File:Parte superior del Edificio de Tabacalera, Valencia.JPG",
+  "File:Façana principal del la Tabacalera de València.JPG",
+  "File:València, tabacalera.jpg",
+  "File:Edificio de Tabacalera (431232359).jpg",
+  "File:Edificio de Tabacalera, Valencia 02.JPG",
+  "File:Carilló de la Tabacalera, València.JPG",
+  "File:Puerta de la antigua Tabacalera de Valencia.JPG",
+  "File:Edifici de l'antiga Tabacalera de València, lluneta.JPG",
+]
+exclude = [
+  "File:Maqueta del mercat de Colom a la Tabacalera, València.JPG",
+  "File:Guarda-rodes de la Tabacalera, València.JPG",
+  "File:Tabacalera de València, claraboia.JPG",
+  "File:Maqueta del parc de la Rambleta a la Tabacalera, València.JPG",
+  "File:Maqueta del parc de Capçalera a la Tabacalera, València.JPG",
+]
+
+[teatre_olympia]
+# interior auditorium; facade 1,2,7,8,12,C
+max_photos = 20
+exterior = [
+  "File:Teatre Olympia.jpg",
+  "File:Edificio Olympia (Valencia).jpg",
+  "File:095 Edifici Olympia, c. Sant Vicent Màrtir 44 (València).jpg",
+  "File:096 Teatre Olympia, c. Sant Vicent Màrtir 44 (València).jpg",
+  "File:Olympia.JPG",
+]
+exclude = [
+  "File:Vista de les llotges del teatre Olympia, València.jpg",
+  "File:Teatre Olympia de València, butaques.jpg",
+  "File:Teatro Olympia Valencia.jpg",
+  "File:Tramolla del Teatro Olimpia de Valencia 01.jpg",
+  "File:Relleu de dansants al vestíbul del teatre Olympia, València.jpg",
+  "File:Taquilla del teatre Olympia de València.jpg",
+  "File:Tramolla del Teatro Olimpia de Valencia 02.jpg",
+  "File:Butaques del teatre Olympia de València.jpg",
+  "File:Seients del teatre Olympia de València.jpg",
+  "File:Tramolla del Teatro Olimpia de Valencia 03.jpg",
+  "File:Llotges del teatre Olympia de València.jpg",
+  "File:València, butaques del teatre Olympia.jpg",
+  "File:Teatre Olympia de València, llotges.jpg",
+  "File:Porta del teatre Olympia, València.jpg",
+  "File:Capitells al vestíbul del teatre Olympia, València.jpg",
+  "File:Detall de les llotges del teatre Olympia de València.jpg",
+  "File:Teatre Olympia de València, detall del balcó superior.jpg",
+]
+
+[teatre_principal]
+# 2,7 rooftop views not of theatre
+max_photos = 15
+exterior = [
+  "File:Teatro Principal en la calle de las Barcas número 15 de Valencia.jpg",
+  "File:Teatro Principal - panoramio.jpg",
+  "File:Teatro Principal de Valencia.jpg",
+  "File:Teatro Principal - panoramio (1).jpg",
+  "File:Teatre Principal de València, entrada.jpg",
+  "File:Columnes de la façana del teatre Principal de València.JPG",
+  "File:Teatre Principal València.jpg",
+  "File:Teatre principal.jpg",
+  "File:Teatre Principal (Valencia), 04 2025 1.jpg",
+  "File:Façana del teatre Principal de València.JPG",
+  "File:Teatre principal1.jpg",
+  "File:Valencia - Teatro Principal.jpg",
+  "File:Teatre Principal de València, columnes de la façana.JPG",
+  "File:Part posterior del teatre Principal de València.JPG",
+  "File:Teatre principal2.jpg",
+]
+exclude = [
+  "File:Vista apartir do piso 3 do Hotel Reina Victoria - panoramio.jpg",
+  "File:Vista del teatre Principal des de l'Ateneu Mercantil, València.jpg",
+  "File:Fabio Miano Jazz Pianist.jpg",
+  "File:Banquete celebrado en el Teatro Principal de Valencia, en Nuevo Mundo, 04-03-1909.jpg",
+]
+
+[tinglado_2_del_port]
+# reliefs/capitals closeups
+max_photos = 17
+exterior = [
+  "File:Tinglado nº 2.jpg",
+  "File:Tinglado nº 2 del Puerto de Valencia 02.jpg",
+  "File:Cobert n. 2 del Port de València, 04 2025.jpg",
+  "File:Cobert nº 2 del port de València, façana.JPG",
+  "File:Tinglat 2 Port de València.jpg",
+  "File:València - Valencia 191.jpg",
+  "File:Cobert - Tinglado n. 2, Port de València 02.jpg",
+  "File:Cobert - Tinglado n. 2, Port de València 01.jpg",
+  "File:Tinglado nº 2 del Puerto de Valencia 01.jpg",
+  "File:Tinglado nº 2 del Puerto de Valencia 03.jpg",
+  "File:Tinglado nº 2 del Puerto de Valencia 05.jpg",
+  "File:Tinglado nº 2 del Puerto de Valencia 04.jpg",
+  "File:Tinglado nº 2 del Puerto de Valencia 06.jpg",
+  "File:Tinglado nº 2 del Puerto de Valencia 07.jpg",
+  "File:Tinglado nº 2 del Puerto de Valencia 08.jpg",
+  "File:Tinglado nº 2 del Puerto de Valencia 09.jpg",
+  "File:Tinglado nº 2 del Puerto de Valencia 10.jpg",
+]
+exclude = [
+  "File:Alinghi5 Valencia o.jpg",
+  "File:Columna del cobert nº 2 del port de València.JPG",
+  "File:Relleu del cobert n. 2 del port de València.JPG",
+  "File:Relleu de Mercuri al cobert n. 2, port de València.JPG",
+  "File:Carcanyol amb relleus i fris ceràmic del cobert n. 2, port de València.jpg",
+  "File:Relleu del cobert n. 2 del port, València.JPG",
+  "File:Capitell del cobert nº 2 del port de València.JPG",
+  "File:Detall del fris del cobert n. 2 del port de València.JPG",
+  "File:Capitell d'una pilastra del cobert n. 2 del port de València.JPG",
+]
+
+[torre_de_franca]
+# 8 marathon runners; several distant views
+max_photos = 16
+exterior = [
+  "File:Edifici.JPG",
+  "File:Penya-roja, València, Valencia, Spain - panoramio.jpg",
+  "File:Pont de Montolivet - panoramio.jpg",
+  "File:Vista del districte de Camins al Grau de València.JPG",
+  "File:Torre de França de València.JPG",
+  "File:Torre de Francia.JPG",
+  "File:Torre de Francia, Valencia.jpg",
+  "File:Ciudad del las Artes y las Ciencias de Valencia.jpg",
+  "File:Valencia, park.jpg",
+  "File:Torre de França, València.JPG",
+  "File:Valencia - Torre de Francia 3.jpg",
+  "File:València, torre de França.JPG",
+  "File:Miquel Navarro Ciudad de las artes y de las ciencias.jpg",
+  "File:Valencia 2006 - panoramio (1).jpg",
+  "File:Valencia - Torre de Francia 4.jpg",
+  "File:Torre de Francia - panoramio.jpg",
+]
+exclude = [
+  "File:Charlotte Arter Valencia.jpg",
+]
+
+[torre_de_l_angel]
+# category has only 12 files
+max_photos = 12
+exterior = [
+  "File:Torre de l'Àngel, València.JPG",
+  "File:Torre Del Ángel.jpg",
+  "File:València, torre de l'Àngel.JPG",
+  "File:Torre del Ángel, Valencia 01.JPG",
+  "File:Torre del Ángel-Valencia (2).jpg",
+  "File:Restos torre y murallas árabes desde la plaza del Ángel.jpg",
+  "File:Parte trasera de la torre árabe de la plaza del Ángel.jpg",
+  "File:Restos torre y muralla árabes plaza del Angel visto desde atrás.jpg",
+  "File:Torre del Ángel, Valencia 02.JPG",
+  "File:Torre del Ángel-Valencia.jpg",
+  "File:Torre de l'Àngel, València, País Valencià.jpg",
+  "File:Muralla àrab torre àngel.jpg",
+]
+
+[torre_hilton]
+# distant skyline views (km away)
+max_photos = 16
+exterior = [
+  "File:Hotel Hilton Valencia 002.JPG",
+  "File:Hotel Hilton Valencia.JPG",
+  "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 02.jpg",
+  "File:L'hotel Hilton de València, 2006.JPG",
+  "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 06.jpg",
+  "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 07.jpg",
+  "File:Hilton Melia Valencia.jpg",
+  "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 10.jpg",
+  "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 09.jpg",
+  "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 11.jpg",
+  "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 12.jpg",
+  "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 05.jpg",
+  "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 03.jpg",
+  "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 08.jpg",
+  "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 04.jpg",
+  "File:Valencia - Hotel Meliá Valencia (Torre Hilton) 01.jpg",
+]
+exclude = [
+  "File:Gratacels de l'avinguda corts valencianes 1.JPG",
+  "File:Gratacels de l'avinguda corts valencianes 2.JPG",
+]
+
+[trinquet_de_pelayo]
+# ALL interior; no exterior photo; no Catastro facade photo
+max_photos = 20
+exclude = [
+  "File:Final individual 2005.jpg",
+  "File:Salva Palau a l'Escala.jpg",
+  "File:TrinquetPelaio.JPG",
+  "File:Entrepà de llonganissa i truita.jpg",
+  "File:Trinquet de Pelai, València.JPG",
+  "File:València, trinquet de Pelai.JPG",
+  "File:Trinquet de Pelayo (3).jpg",
+  "File:Guillermo Alandes Pilota Valenciana.jpg",
+  "File:Trinquete de Pelayo, Valencia, España, 2023-03-03, DD 03.jpg",
+  "File:Grades del trinquet de Pelaio, València.JPG",
+  "File:Oltra fent la Ferida.jpg",
+  "File:PalquetsPelayo.JPG",
+  "File:Trinquet de Pelayo (2).jpg",
+  "File:Trinquete de Pelayo, Valencia, España, 2023-03-03, DD 04.jpg",
+  "File:Trinquet de Pelayo de València.JPG",
+  "File:Va de Gol (3).jpg",
+  "File:Trofeu nadal Pelayo 2021.jpg",
+  "File:Entrepà de llonganissa i truita (64129).jpg",
+  "File:Trinquet de Pelayo, València.JPG",
+  "File:Trinquet de Pelayo (4).jpg",
+  "File:Va de Gol (1).jpg",
+  "File:Trinquet de Pelayo (5).jpg",
+  "File:XXXIV Individual d'Escala i Corda.jpg",
+  "File:Guillermo Alandes Final Lliga Bankia EiC.jpg",
+  "File:Homenatge a Soro II - 02.jpg",
+  "File:Monument a la porta de Pelayo.JPG",
+  "File:El bestiari valencià.jpg",
+  "File:Cremaet - Trinquet de Pelayo.jpg",
+  "File:Trinquet de Pelayo (6).jpg",
+  "File:XXXI Individual d'Escala i Corda.jpg",
+  "File:Va de Gol (2).jpg",
+  "File:Victòria Díez, final sub23 - 21 de febrer de 2019.jpg",
+  "File:Homenatge a Soro II - 03.jpg",
+  "File:Trinquet de Pelayo (7).jpg",
+  "File:Galeria de Pelayo.jpg",
+  "File:Trinquet de Pelai 2026.jpg",
+]
+
+[umbracle]
+# those show Hemisferic, not Umbracle
+max_photos = 14
+exterior = [
+  "File:L'Umbracle, Valencia, Spain - Jan 2007.jpg",
+  "File:Umbráculo, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 41.JPG",
+  "File:Umbráculo, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 43.JPG",
+  "File:Il viale - panoramio (1).jpg",
+  "File:Valencia L'Umbracle seen from the park.jpg",
+  "File:Valencia L'Umbracle southern entrance seen from the east.jpg",
+  "File:Umbracle and Cone - City of Arts and Sciences - Valencia Spain.jpg",
+  "File:Umbracle.jpg",
+  "File:Valencia10.jpg",
+  "File:P9150222.JPG",
+  "File:Umbraculo Valencia.jpg",
+  "File:Lumbracle-valencia-2009 (2).JPG",
+  "File:The Umbracle.JPG",
+  "File:Stadstuinval.jpg",
+]
+exclude = [
+  "File:Hemispheric Twilight - Valencia, Spain - Jan 2007.jpg",
+  "File:Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 39.JPG",
+  "File:Valencia-Quartre Carreres, la Ciudad de las Artes y las Ciencias vanaf de Pont de Montolivet IMG 3086 2026-08-25 17.50.jpg",
+  "File:Noche Ciudad Artes Ciencias.jpg",
+  "File:Ciutat de les Arts i les Ciències (Valencia, Spain) 01.jpg",
+  "File:Analema en el L'Umbracle.jpg",
+  "File:- panoramio (860).jpg",
+]
+
+[veles_e_vents]
+# C Catastro facade shows a different (port warehouse) building; 10 distant
+max_photos = 16
+exterior = [
+  "File:El Grau, València, Valencia, Spain - panoramio.jpg",
+  "File:Edificio en Valencia - panoramio.jpg",
+  "File:33rd America's Cup inauguration act (4339971114).jpg",
+  "File:Veles e Vents 2 (5211923659).jpg",
+  "File:Marina Real Juan Carlos I (17982763548).jpg",
+  "File:València - Valencia 190.jpg",
+  "File:Veles e Vents Valencia.jpg",
+  "File:Valencia Street Circuit GT Open.jpg",
+  "File:Veles e Vents puerto de valencia.jpg",
+  "File:Veles e vents (5211921753).jpg",
+  "File:Veles e vents from Alinghi's base (488076076).jpg",
+  "File:El Grau, València, Valencia, Spain - panoramio (1).jpg",
+  "File:Valencia Street Circuit GT Open2.jpg",
+  "File:Veles e Vents.jpg",
+  "File:Veles de Vents (4340061500).jpg",
+  "File:Sota l'escala (507544338).jpg",
+]
+exclude = [
+  "File:Victory Challenge Base (4367155465).jpg",
+  "File:Urban Design (23717408375).jpg",
+]

@@ -34,7 +34,67 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Torre_de_l_alqueria_de_Julia_de_Valencia.jpg"
+file = "photos/02_Alqueria_de_Julia_Valencia.jpg"
+title = "File:Alqueria de Julià, València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Alqueria_de_Juli%C3%A0%2C_Val%C3%A8ncia.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/03_Porta_de_l_alqueria_de_Julia_Valencia.jpg"
+title = "File:Porta de l'alqueria de Julià, València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Porta_de_l%27alqueria_de_Juli%C3%A0%2C_Val%C3%A8ncia.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/04_Balco_de_l_alqueria_de_Julia.jpg"
+title = "File:Balcó de l'alqueria de Julià.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Balc%C3%B3_de_l%27alqueria_de_Juli%C3%A0.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1722
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_Valencia_alqueria_de_Julia.jpg"
+title = "File:València, alqueria de Julià.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia%2C_alqueria_de_Juli%C3%A0.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Detall_de_la_finestra_del_balco_de_l_alqueria_de_Julia_Valen.jpg"
+title = "File:Detall de la finestra del balcó de l'alqueria de Julià, València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Detall_de_la_finestra_del_balc%C3%B3_de_l%27alqueria_de_Juli%C3%A0%2C_Val%C3%A8ncia.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_Torre_de_l_alqueria_de_Julia_de_Valencia.jpg"
 title = "File:Torre de l'alqueria de Julià de València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Torre_de_l%27alqueria_de_Juli%C3%A0_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -46,7 +106,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Vista_de_la_torre_de_l_alqueria_de_Julia_Valencia.jpg"
+file = "photos/08_Fronto_de_la_finestra_del_balco_de_l_alqueria_de_Julia_Valen.jpg"
+title = "File:Frontó de la finestra del balcó de l'alqueria de Julià, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Front%C3%B3_de_la_finestra_del_balc%C3%B3_de_l%27alqueria_de_Juli%C3%A0%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 863
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/09_Vista_de_la_torre_de_l_alqueria_de_Julia_Valencia.jpg"
 title = "File:Vista de la torre de l'alqueria de Julià, València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Vista_de_la_torre_de_l%27alqueria_de_Juli%C3%A0%2C_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -58,7 +130,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Alqueria_de_Julia_de_Valencia_torre.jpg"
+file = "photos/10_Alqueria_o_hort_de_Julia_Valencia.jpg"
+title = "File:Alqueria o hort de Julià, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Alqueria_o_hort_de_Juli%C3%A0%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 939
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/11_Alqueria_de_Julia_de_Valencia_torre.jpg"
 title = "File:Alqueria de Julià de València, torre.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Alqueria_de_Juli%C3%A0_de_Val%C3%A8ncia%2C_torre.jpg"
 author = "Joanbanjo"
@@ -70,90 +154,6 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Alqueria_de_Julia_Valencia.jpg"
-title = "File:Alqueria de Julià, València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Alqueria_de_Juli%C3%A0%2C_Val%C3%A8ncia.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/06_Balco_de_l_alqueria_de_Julia.jpg"
-title = "File:Balcó de l'alqueria de Julià.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Balc%C3%B3_de_l%27alqueria_de_Juli%C3%A0.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1722
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/07_Valencia_alqueria_de_Julia.jpg"
-title = "File:València, alqueria de Julià.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia%2C_alqueria_de_Juli%C3%A0.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Alqueria_o_hort_de_Julia_Valencia.jpg"
-title = "File:Alqueria o hort de Julià, València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Alqueria_o_hort_de_Juli%C3%A0%2C_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 939
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Porta_de_l_alqueria_de_Julia_Valencia.jpg"
-title = "File:Porta de l'alqueria de Julià, València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Porta_de_l%27alqueria_de_Juli%C3%A0%2C_Val%C3%A8ncia.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Detall_de_la_finestra_del_balco_de_l_alqueria_de_Julia_Valen.jpg"
-title = "File:Detall de la finestra del balcó de l'alqueria de Julià, València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Detall_de_la_finestra_del_balc%C3%B3_de_l%27alqueria_de_Juli%C3%A0%2C_Val%C3%A8ncia.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Fronto_de_la_finestra_del_balco_de_l_alqueria_de_Julia_Valen.jpg"
-title = "File:Frontó de la finestra del balcó de l'alqueria de Julià, València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Front%C3%B3_de_la_finestra_del_balc%C3%B3_de_l%27alqueria_de_Juli%C3%A0%2C_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 863
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
 file = "photos/12_Alqueria_de_Julia_de_Valencia_balco_barroc.jpg"
 title = "File:Alqueria de Julià de València, balcó barroc.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Alqueria_de_Juli%C3%A0_de_Val%C3%A8ncia%2C_balc%C3%B3_barroc.jpg"
@@ -161,7 +161,7 @@ author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 1707
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 

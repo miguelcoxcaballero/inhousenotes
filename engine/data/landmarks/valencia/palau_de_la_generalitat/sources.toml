@@ -146,21 +146,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/11_Jardines_de_la_Generalidad_refugio_antiaereo_Ruta_Maria_Bene.jpg"
-title = "File:Jardines de la Generalidad, refugio antiaéreo. Ruta Maria Beneyto 02.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Jardines_de_la_Generalidad%2C_refugio_antia%C3%A9reo._Ruta_Maria_Beneyto_02.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-camera = [61.73, 10.78]
-heading = 209.7
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_Palau_de_la_Generalitat_del_Pais_Valencia_2.jpg"
+file = "photos/11_Palau_de_la_Generalitat_del_Pais_Valencia_2.jpg"
 title = "File:Palau de la Generalitat del País Valencià 2.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Palau_de_la_Generalitat_del_Pa%C3%ADs_Valenci%C3%A0_2.jpg"
 author = "Martorell"
@@ -172,7 +158,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Generalitat_alt.jpg"
+file = "photos/12_Generalitat_alt.jpg"
 title = "File:Generalitat alt.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Generalitat_alt.jpg"
 author = "Joanbanjo"
@@ -184,7 +170,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_Palau_de_la_Generalitat_Valenciana_07.jpg"
+file = "photos/13_Palau_de_la_Generalitat_Valenciana_07.jpg"
 title = "File:Palau de la Generalitat Valenciana 07.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Palau_de_la_Generalitat_Valenciana_07.JPG"
 author = "Dorieo"
@@ -196,7 +182,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Palau_del_la_Generalitat_P1390956.jpg"
+file = "photos/14_Palau_del_la_Generalitat_P1390956.jpg"
 title = "File:Palau del la Generalitat P1390956.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Palau_del_la_Generalitat_P1390956.JPG"
 author = "Pere López"
@@ -208,7 +194,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_L04_319_Plaza_de_la_Virgen.jpg"
+file = "photos/15_L04_319_Plaza_de_la_Virgen.jpg"
 title = "File:L04 319 Plaza de la Virgen.jpg"
 url = "https://commons.wikimedia.org/wiki/File:L04_319_Plaza_de_la_Virgen.jpg"
 author = "Falk2"

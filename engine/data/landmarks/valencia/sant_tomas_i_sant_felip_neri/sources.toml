@@ -138,20 +138,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/10_Restes_del_primer_enllumenat_public.jpg"
-title = "File:Restes del primer enllumenat públic.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Restes_del_primer_enllumenat_p%C3%BAblic.jpg"
-author = "Francesc Fort"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 961
-camera = [-25.18, 25.68]
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Esglesies_de_Sant_Tomas_i_Sant_Felip_i_de_Sant_Joan_de_l_Hos.jpg"
+file = "photos/10_Esglesies_de_Sant_Tomas_i_Sant_Felip_i_de_Sant_Joan_de_l_Hos.jpg"
 title = "File:Esglésies de Sant Tomàs i Sant Felip i de Sant Joan de l'Hospital des del Micalet, València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sies_de_Sant_Tom%C3%A0s_i_Sant_Felip_i_de_Sant_Joan_de_l%27Hospital_des_del_Micalet%2C_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -163,7 +150,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_Part_superior_de_la_facana_i_campanar_de_l_esglesia_de_sant_.jpg"
+file = "photos/11_Part_superior_de_la_facana_i_campanar_de_l_esglesia_de_sant_.jpg"
 title = "File:Part superior de la façana i campanar de l'església de sant Felip Neri i sant Tomàs, València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Part_superior_de_la_fa%C3%A7ana_i_campanar_de_l%27esgl%C3%A9sia_de_sant_Felip_Neri_i_sant_Tom%C3%A0s%2C_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -175,7 +162,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Esglesia_de_Sant_Tomas_Apostol_i_Sant_Felip_Neri_P1140073.jpg"
+file = "photos/12_Esglesia_de_Sant_Tomas_Apostol_i_Sant_Felip_Neri_P1140073.jpg"
 title = "File:Església de Sant Tomàs Apòstol i Sant Felip Neri P1140073.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_de_Sant_Tom%C3%A0s_Ap%C3%B2stol_i_Sant_Felip_Neri_P1140073.JPG"
 author = "Pere López"
@@ -187,7 +174,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_Esglesia_de_Sant_Tomas_i_Sant_Felip_Neri_02.jpg"
+file = "photos/13_Esglesia_de_Sant_Tomas_i_Sant_Felip_Neri_02.jpg"
 title = "File:Església de Sant Tomàs i Sant Felip Neri 02.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_de_Sant_Tom%C3%A0s_i_Sant_Felip_Neri_02.jpg"
 author = "Dorieo"
@@ -199,7 +186,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Fuente_de_los_Patos_Iglesia_de_Sant_Tomas_y_Sant_Felipe_Vale.jpg"
+file = "photos/14_Fuente_de_los_Patos_Iglesia_de_Sant_Tomas_y_Sant_Felipe_Vale.jpg"
 title = "File:Fuente de los Patos - Iglesia de Sant Tomas y Sant Felipe - Valencia Spain.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Fuente_de_los_Patos_-_Iglesia_de_Sant_Tomas_y_Sant_Felipe_-_Valencia_Spain.jpg"
 author = "MCAE Consulting"
@@ -211,14 +198,14 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Cable_del_primer_llumenat_public_de_Valencia.jpg"
-title = "File:Cable del primer llumenat públic de València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Cable_del_primer_llumenat_p%C3%BAblic_de_Val%C3%A8ncia.jpg"
-author = "Francesc Fort"
+file = "photos/15_Iglesia_de_Santo_Tomas_Apostol_y_San_Felipe_Neri_and_Placa_d.jpg"
+title = "File:Iglesia de Santo Tomas Apostol y San Felipe Neri and Plaça de Sant Vicent Ferrer in Ciutat Vella, Valencia, Spain, 2024 January.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Iglesia_de_Santo_Tomas_Apostol_y_San_Felipe_Neri_and_Pla%C3%A7a_de_Sant_Vicent_Ferrer_in_Ciutat_Vella%2C_Valencia%2C_Spain%2C_2024_January.jpg"
+author = "Ximonic (Simo Räsänen)"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 1705
-camera = [-22.88, 24.73]
+height = 853
+camera = [14.5, 51.85]
 exterior = true
 selected = false
 side = ""

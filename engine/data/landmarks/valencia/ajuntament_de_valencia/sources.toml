@@ -23,6 +23,31 @@ catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatast
 catastro_floor_area = { value = 18062.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5724701&rc2=YJ2752D", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 5, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 36 parts" }
 
+# ---- measured dimensions used by landmark.toml (added by the modeler)
+plan_source = { value = "OSM relation 11174923 + 52 building:parts", source = "https://www.openstreetmap.org/relation/11174923", note = "checked on the IGN PNOA orthophoto (WMS pnoa-ma, CC BY 4.0) at 0.1 m/px: plaza facade line x 32.4, pavilions x 34.5, balcony x 39.0, corner towers r 4.35 within ~0.5 m" }
+plaza_front_length = { value = 88.6, unit = "m", source = "OSM relation 11174923 (z -36.2 .. 52.4)", note = "between the outer faces of the two round corner towers" }
+south_front_length = { value = 70.0, unit = "m", source = "OSM relation 11174923 edges 2-6 (Periodista Azzati)" }
+west_front_length = { value = 79.0, unit = "m", source = "OSM relation 11174923 edge 8 (Casa de Ensenanza side)" }
+corner_tower_radius = { value = 4.35, unit = "m", source = "OSM parts 17/19 + PNOA orthophoto" }
+balcony_projection = { value = 6.6, unit = "m", source = "OSM part 16 (x 32.4 .. 39.0, z 2.2 .. 13.6, 11.4 m wide)" }
+portico_columns = { value = "4 Tuscan columns, centres x 38.5, z 3.7 / 5.0 / 10.9 / 12.1, 5.0 m high", source = "OSM parts 48-51 (round, r 0.38) + photo 16 / cn18 solves (column top 4.6-5.0 m)" }
+ground_floor_top = { value = 5.6, unit = "m", source = "photo cn22 camera solve (string course 5.4-5.9 m)" }
+main_cornice = { value = [17.2, 18.3], unit = "m", source = "photo cn22 camera solve (cornice band bottom/top on the plaza wings)" }
+street_balustrade_top = { value = 19.8, unit = "m", source = "photo cn22 camera solve" }
+balustrade_pinnacles_top = { value = 21.9, unit = "m", source = "photo cn22 camera solve" }
+pavilion_cornice = { value = 26.0, unit = "m", source = "photo cn22 solve 26.4 m, photos 13 and 10 (pinnacles 30.6 m) -> scaled 0.985" }
+pavilion_balustrade_top = { value = 28.6, unit = "m", source = "photos cn22 / 13 solves" }
+pavilion_pinnacles_top = { value = 31.0, unit = "m", source = "photo 13 solve 30.6 +- 0.2 m, photo cn22 31.8 m (mean)" }
+clock_tower_plan = { value = "6.0 x 6.0 m, centre x 26.9 z 7.9", source = "OSM part 23 (5.8 x 5.9 m) + photo cn22 (tower width 6.9 m incl. cornice)" }
+clock_tower_cornice = { value = 45.0, unit = "m", source = "photo cn22 camera solve (top cornice 45.0-45.7 m)" }
+clock_centre = { value = 38.4, unit = "m", source = "photo 13 solve 37.9 +- 0.2, cn22 38.8, n18 37.5-41 (mean)" }
+bell_cage = { value = [47.0, 51.8], unit = "m", source = "photo cn22 solve (cage base 47.1), photo 13 solve (cage top 51.7 +- 0.2 m), cn22 51.9 m" }
+lightning_rod_top = { value = 55.3, unit = "m", source = "photo cn22 camera solve" }
+corner_dome = { value = "drum 19.2-25.3 m, dome 26.9-32.4 m, lantern to 36.3 m, finial 38.2 m", source = "photo cn22 solve (finials 38.6 +- 1.9), photo 13 solve (37.7 +- 0.2), drum/dome base from cn22" }
+casa_ensenanza_eaves = { value = 16.5, unit = "m", source = "Catastro 4 floors above ground (5724701YJ2752D part 12) + photos cn01/cn03 (4 storeys, eaves just below the plaza cornice)" }
+osm_heights_note = { value = "OSM building:levels x 3.2 m underestimate this building (storeys are 5-6 m)", source = "measured above", note = "check() 'model too high' warnings against OSM tags are expected" }
+camera_solver = { value = "constrained bundle adjustment, eye height prior 1.6 m, EXIF focal where uncropped", source = "scratchpad aj/tools/ba.py", note = "cn22: 13 matches 3.0 px rms (free focal, near-orthographic telephoto); photo 13: 12 matches 3.6 px; photo 10: 1.2 px; cn07 aerial 4.1 px; cn18 EXIF 25 mm-eq 8 px" }
+
 [[photo]]
 file = "photos/01_Ayuntamiento_de_Valencia_Espana_2014_06_30_DD_121.jpg"
 title = "File:Ayuntamiento de Valencia, España, 2014-06-30, DD 121.JPG"
@@ -32,8 +57,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 962
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
 
 [[photo]]
 file = "photos/02_Ayuntamiento_de_Valencia_Espana_2014_06_30_DD_119.jpg"
@@ -56,24 +81,11 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 887
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
-file = "photos/04_Placa_del_Quinze_de_Maig_Sento.jpg"
-title = "File:Plaça del Quinze de Maig - Sento.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Pla%C3%A7a_del_Quinze_de_Maig_-_Sento.jpg"
-author = "Sento from Valencia, Spain"
-license = "CC BY 2.0"
-width = 1280
-height = 853
-camera = [83.38, 26.7]
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/05_Torre_del_ayuntamiento_de_Valencia.jpg"
+file = "photos/04_Torre_del_ayuntamiento_de_Valencia.jpg"
 title = "File:Torre del ayuntamiento de Valencia.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Torre_del_ayuntamiento_de_Valencia.JPG"
 author = "Frnevado"
@@ -86,7 +98,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Ayuntamiento_panoramio_8.jpg"
+file = "photos/05_Ayuntamiento_panoramio_8.jpg"
 title = "File:Ayuntamiento - panoramio (8).jpg"
 url = "https://commons.wikimedia.org/wiki/File:Ayuntamiento_-_panoramio_%288%29.jpg"
 author = "carlos corzo"
@@ -99,7 +111,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Cupulas_del_Ayuntamiento_panoramio.jpg"
+file = "photos/06_Cupulas_del_Ayuntamiento_panoramio.jpg"
 title = "File:Cupulas del Ayuntamiento - panoramio.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Cupulas_del_Ayuntamiento_-_panoramio.jpg"
 author = "carlos corzo"
@@ -112,6 +124,19 @@ selected = false
 side = ""
 
 [[photo]]
+file = "photos/07_Ayuntamiento_de_Valencia_panoramio.jpg"
+title = "File:Валенсия. Здание мэрии города (Ayuntamiento de Valencia) - panoramio.jpg"
+url = "https://commons.wikimedia.org/wiki/File:%D0%92%D0%B0%D0%BB%D0%B5%D0%BD%D1%81%D0%B8%D1%8F._%D0%97%D0%B4%D0%B0%D0%BD%D0%B8%D0%B5_%D0%BC%D1%8D%D1%80%D0%B8%D0%B8_%D0%B3%D0%BE%D1%80%D0%BE%D0%B4%D0%B0_%28Ayuntamiento_de_Valencia%29_-_panoramio.jpg"
+author = "tiger rus"
+license = "CC BY 3.0"
+width = 1280
+height = 1920
+camera = [83.31, 6.81]
+exterior = true
+selected = true
+side = "e"
+
+[[photo]]
 file = "photos/08_Valencia_ciutat_refugi.jpg"
 title = "File:València ciutat refugi.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia_ciutat_refugi.jpg"
@@ -121,8 +146,8 @@ width = 1280
 height = 840
 camera = [-155.19, 13.2]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/09_L_ajuntament_de_Valencia_des_de_baix_Setembre_de_2008.jpg"
@@ -145,8 +170,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/11_15_M_Valencia_19_J_2.jpg"
@@ -181,8 +206,8 @@ license = "CC BY-SA 3.0 es"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/14_Ajuntament_de_Valencia_1.jpg"
@@ -193,8 +218,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1920
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
 
 [[photo]]
 file = "photos/15_Townhall_of_Valencia.jpg"
@@ -217,8 +242,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/catastro_5724701YJ2752D.jpg"
@@ -231,6 +256,201 @@ height = 1200
 exterior = true
 selected = false
 side = ""
+
+[[photo]]
+file = "photos/cn01_Ajuntament_de_Val_ncia_per_darrere.jpg"
+title = "File:Ajuntament de València per darrere.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Ajuntament_de_Val%C3%A8ncia_per_darrere.jpg"
+author = "Joanbanjo"
+license = "Public domain"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "nw"
+notes = "rooftops from the NW, Casa de Ensenanza roofs, tower back; original 3072x2304, DC X720, focal 62/10 mm (35 mm-eq 37)"
+
+[[photo]]
+file = "photos/cn03_098_Antic_Grup_Escolar_de_l_Ajuntament_de_Val_ncia_c_Arquebi.jpg"
+title = "File:098 Antic Grup Escolar de l'Ajuntament de València, c. Arquebisbe Mayoral 1.jpg"
+url = "https://commons.wikimedia.org/wiki/File:098_Antic_Grup_Escolar_de_l%27Ajuntament_de_Val%C3%A8ncia%2C_c._Arquebisbe_Mayoral_1.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "nw"
+notes = "Casa de Ensenanza front on c/ Arquebisbe Mayoral; original 3120x4160, OPPO A53s, focal 3462/1000 mm (35 mm-eq 3)"
+
+[[photo]]
+file = "photos/cn04_Puerta_lateral_del_Ayuntamiento_de_Valencia.jpg"
+title = "File:Puerta lateral del Ayuntamiento de Valencia.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Puerta_lateral_del_Ayuntamiento_de_Valencia.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = "n"
+notes = "side door, north street; original 3456x4608, FinePix S1, focal 430/100 mm (35 mm-eq None)"
+
+[[photo]]
+file = "photos/cn06_Ajuntament_de_Val_ncia_vist_des_de_l_Ateneu_Mercantil.jpg"
+title = "File:Ajuntament de València vist des de l'Ateneu Mercantil.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Ajuntament_de_Val%C3%A8ncia_vist_des_de_l%27Ateneu_Mercantil.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "ne"
+notes = "aerial telephoto from the Ateneu Mercantil; original 4608x3072, NIKON D3100, focal 420/10 mm (35 mm-eq 63)"
+
+[[photo]]
+file = "photos/cn07_Vista_de_l_ajuntament_de_Val_ncia_vist_des_de_l_Ateneu_Merca.jpg"
+title = "File:Vista de l'ajuntament de València vist des de l'Ateneu Mercantil.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Vista_de_l%27ajuntament_de_Val%C3%A8ncia_vist_des_de_l%27Ateneu_Mercantil.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "ne"
+notes = "aerial from the Ateneu Mercantil; original 4608x3072, NIKON D3100, focal 280/10 mm (35 mm-eq 42)"
+
+[[photo]]
+file = "photos/cn08_Pla_a_de_l_Ajuntament_des_del_Rialto_1_.jpg"
+title = "File:Plaça de l'Ajuntament des del Rialto (1).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Pla%C3%A7a_de_l%27Ajuntament_des_del_Rialto_%281%29.jpg"
+author = "Francesc Fort"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = "e"
+notes = "plaza from the Rialto; original 4608x3456, Moto G (4), focal 468/100 mm (35 mm-eq None)"
+
+[[photo]]
+file = "photos/cn10_Valencia_Casa_consistorial_001.jpg"
+title = "File:Valencia - Casa consistorial 001.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Casa_consistorial_001.jpg"
+author = "Américo Toledano"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 720
+exterior = true
+selected = true
+side = "e"
+notes = "plaza front; original 4208x2368, Mi 9T, focal 2040/1000 mm (35 mm-eq 52)"
+
+[[photo]]
+file = "photos/cn15_Ajuntament_de_Val_ncia_04.jpg"
+title = "File:Ajuntament de València 04.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Ajuntament_de_Val%C3%A8ncia_04.jpg"
+author = "Simon Burchell"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = "e"
+notes = "night, plaza; original 4000x3000, SM-A326B, focal 4600/1000 mm (35 mm-eq 25)"
+
+[[photo]]
+file = "photos/cn17_Ajuntament_de_Val_ncia_06.jpg"
+title = "File:Ajuntament de València 06.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Ajuntament_de_Val%C3%A8ncia_06.jpg"
+author = "Simon Burchell"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "s"
+notes = "SE corner tower from Periodista Azzati; original 3000x4000, SM-A326B, focal 460/100 mm (35 mm-eq 25)"
+
+[[photo]]
+file = "photos/cn18_Ajuntament_de_Val_ncia_07.jpg"
+title = "File:Ajuntament de València 07.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Ajuntament_de_Val%C3%A8ncia_07.jpg"
+author = "Simon Burchell"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "ne"
+notes = "NE pavilion and portico, EXIF 25 mm-eq; original 4000x3000, SM-A326B, focal 460/100 mm (35 mm-eq 25)"
+
+[[photo]]
+file = "photos/cn20_Ajuntament_de_Val_ncia_avril_2025_1.jpg"
+title = "File:Ajuntament de València, avril 2025 1.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Ajuntament_de_Val%C3%A8ncia%2C_avril_2025_1.jpg"
+author = "Artvill"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 961
+exterior = true
+selected = true
+side = "ne"
+notes = "from the NE, EXIF 51 mm-eq; original 4624x3472, Pixel 8a, focal 5430/1000 mm (35 mm-eq 51)"
+
+[[photo]]
+file = "photos/cn21_Ajuntament_de_Val_ncia_avril_2025_2.jpg"
+title = "File:Ajuntament de València, avril 2025 2.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Ajuntament_de_Val%C3%A8ncia%2C_avril_2025_2.jpg"
+author = "Artvill"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 961
+exterior = true
+selected = true
+side = "e"
+notes = "wide plaza front, EXIF 14 mm-eq; original 4624x3472, Pixel 8a, focal 1835/1000 mm (35 mm-eq 14)"
+
+[[photo]]
+file = "photos/cn22_Valencia_Ciutat_Vella_stadhuis_van_Valencia_ML46_15_250_401_.jpg"
+title = "File:Valencia-Ciutat Vella, stadhuis van Valencia ML46.15.250-401 IMG 2492 2026-08-22 10.17.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia-Ciutat_Vella%2C_stadhuis_van_Valencia_ML46.15.250-401_IMG_2492_2026-08-22_10.17.jpg"
+author = "Michielverbeek"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 710
+exterior = true
+selected = true
+side = "e"
+notes = "distant frontal telephoto, used for the height solve; original 4543x2520, Canon PowerShot G3 X, focal 10791/1000 mm (35 mm-eq None)"
+
+[[photo]]
+file = "photos/cn23_2023_Valencia_Ajuntament.jpg"
+title = "File:2023 Valencia-Ajuntament.jpg"
+url = "https://commons.wikimedia.org/wiki/File:2023_Valencia-Ajuntament.jpg"
+author = "CésarOP"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = "e"
+notes = "plaza, kiosk; original 4896x3672, DSC-WX350, focal 430/100 mm (35 mm-eq None)"
+
+[[photo]]
+file = "photos/cn27_Valencia_Ayuntamiento_2020_06_02_01.jpg"
+title = "File:Valencia - Ayuntamiento 2020-06-02 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Ayuntamiento_2020-06-02_01.jpg"
+author = "Rafa Esteve"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "e"
+notes = "pavilions and tower, close-up; original 5938x3959, X-T20, focal 1800/100 mm (35 mm-eq 27)"
 
 [[plan]]
 file = "plans/01_1_05_Ficha_Ayuntamiento_Valencia_firmado.jpg"

@@ -35,6 +35,10 @@ pub struct SpanishCity {
     pub styles: Option<PathBuf>,
     pub config: CityConfig,
     pub trees: CityTrees,
+    /// Clock hour the content is built for: at night lamps, windows, shops
+    /// and signs are lit and their lights fill
+    /// [`WorldDescription::night_lights`]. `None` builds the daytime city.
+    pub hour: Option<f32>,
 }
 
 impl SpanishCity {
@@ -47,6 +51,7 @@ impl SpanishCity {
             styles: Some(styles),
             config: CityConfig::default(),
             trees: CityTrees::Procedural { variants: 3, season: forja_flora::Season::Summer, species },
+            hour: None,
         }
     }
 }
@@ -57,7 +62,10 @@ impl WorldSource for SpanishCity {
     }
 
     fn build(&self) -> Result<WorldDescription, WorldError> {
-        let kit = Kit::load(self.downloaded.as_deref());
+        let mut kit = Kit::load(self.downloaded.as_deref());
+        if let Some(h) = self.hour {
+            kit.set_hour(h);
+        }
         let styles = StyleLibrary::load(self.styles.as_deref());
         let city = build_city(&kit, &styles, &self.config);
         let mut world = WorldDescription::new("Ciudad española");
@@ -117,6 +125,7 @@ impl WorldSource for SpanishCity {
             world.spawns.push(SpawnPoint { kind: if s.vehicle { SpawnKind::Vehicle } else { SpawnKind::Player }, iso: Iso::new(s.pos, Quat::from_rotation_y(s.yaw)) });
         }
         world.lights = out.lights;
+        world.night_lights = out.city_lights;
         world.extent = ext;
         let mut stats = city.stats;
         stats.append(&mut world.stats);

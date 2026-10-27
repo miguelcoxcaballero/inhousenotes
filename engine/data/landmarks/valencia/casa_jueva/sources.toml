@@ -58,7 +58,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Part_superior_de_la_casa_jueva_de_Valencia.jpg"
+file = "photos/04_Valencia_0060.jpg"
+title = "File:Valencia 0060.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_0060.jpg"
+author = "T meltzer"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1918
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_Part_superior_de_la_casa_jueva_de_Valencia.jpg"
 title = "File:Part superior de la casa jueva de València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Part_superior_de_la_casa_jueva_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -70,62 +82,50 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Terrassa_de_la_casa_Jueva_de_Valencia.jpg"
-title = "File:Terrassa de la casa Jueva de València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Terrassa_de_la_casa_Jueva_de_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 879
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/06_Valencia_0060.jpg"
-title = "File:Valencia 0060.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_0060.jpg"
-author = "T meltzer"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1918
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/07_Valencia_0070_2.jpg"
+file = "photos/06_Valencia_0070_2.jpg"
 title = "File:Valencia 0070 - 2.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_0070_-_2.jpg"
 author = "T meltzer"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 1280
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Valencia_Casa_Judia_1.jpg"
+file = "photos/07_Valencia_Casa_Judia_1.jpg"
 title = "File:Valencia - Casa Judía 1.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Casa_Jud%C3%ADa_1.jpg"
 author = "Zarateman"
 license = "CC0"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_Remat_de_la_casa_Jueva_de_Valencia.jpg"
+file = "photos/08_Remat_de_la_casa_Jueva_de_Valencia.jpg"
 title = "File:Remat de la casa Jueva de València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Remat_de_la_casa_Jueva_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 865
-exterior = "unknown"
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/09_Columna_de_la_casa_Jueva_de_Valencia.jpg"
+title = "File:Columna de la casa Jueva de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Columna_de_la_casa_Jueva_de_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1950
+exterior = true
 selected = false
 side = ""
 
@@ -137,7 +137,7 @@ author = "Zarateman"
 license = "CC0"
 width = 960
 height = 1280
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
@@ -149,31 +149,31 @@ author = "T meltzer"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 1280
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_Columna_de_la_casa_Jueva_de_Valencia.jpg"
-title = "File:Columna de la casa Jueva de València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Columna_de_la_casa_Jueva_de_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1950
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Casa_Jueva_de_Valencia_part_superior.jpg"
+file = "photos/12_Casa_Jueva_de_Valencia_part_superior.jpg"
 title = "File:Casa Jueva de València, part superior.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Casa_Jueva_de_Val%C3%A8ncia%2C_part_superior.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 936
-exterior = "unknown"
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/13_Miradors_de_la_casa_Jueva_de_Valencia.jpg"
+title = "File:Miradors de la casa Jueva de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Miradors_de_la_casa_Jueva_de_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 870
+exterior = true
 selected = false
 side = ""
 
@@ -185,31 +185,31 @@ author = "Zarateman"
 license = "CC0"
 width = 960
 height = 1256
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Miradors_de_la_casa_Jueva_de_Valencia.jpg"
-title = "File:Miradors de la casa Jueva de València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Miradors_de_la_casa_Jueva_de_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 870
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_Casa_Jueva_de_Valencia_miradors.jpg"
+file = "photos/15_Casa_Jueva_de_Valencia_miradors.jpg"
 title = "File:Casa Jueva de València, miradors.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Casa_Jueva_de_Val%C3%A8ncia%2C_miradors.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 869
-exterior = "unknown"
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/16_Terrassa_de_la_casa_Jueva_de_Valencia.jpg"
+title = "File:Terrassa de la casa Jueva de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Terrassa_de_la_casa_Jueva_de_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 879
+exterior = true
 selected = false
 side = ""
 

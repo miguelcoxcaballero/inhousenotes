@@ -34,7 +34,20 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_L_Oceanografic_Valencia_Spain_2_Jan_07.jpg"
+file = "photos/02_L_oceanografic_valencia_2009_5.jpg"
+title = "File:L'oceanografic-valencia-2009 (5).JPG"
+url = "https://commons.wikimedia.org/wiki/File:L%27oceanografic-valencia-2009_%285%29.JPG"
+author = "Alberto-g-rovi"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1927
+camera = [-123.65, 10.5]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/03_L_Oceanografic_Valencia_Spain_2_Jan_07.jpg"
 title = "File:L'Oceanografic, Valencia, Spain 2 - Jan 07.jpg"
 url = "https://commons.wikimedia.org/wiki/File:L%27Oceanografic%2C_Valencia%2C_Spain_2_-_Jan_07.jpg"
 author = "Diliff"
@@ -46,28 +59,15 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_L_oceanografic_valencia_2009_5.jpg"
-title = "File:L'oceanografic-valencia-2009 (5).JPG"
-url = "https://commons.wikimedia.org/wiki/File:L%27oceanografic-valencia-2009_%285%29.JPG"
-author = "Alberto-g-rovi"
-license = "CC BY-SA 3.0"
+file = "photos/04_l_oceanographic_a_valence_panoramio_5.jpg"
+title = "File:\" l'oceanographic \" a valence - panoramio (5).jpg"
+url = "https://commons.wikimedia.org/wiki/File:%22_l%27oceanographic_%22_a_valence_-_panoramio_%285%29.jpg"
+author = "chisloup"
+license = "CC BY 3.0"
 width = 1280
-height = 1927
-camera = [-123.65, 10.5]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/04_Animales_del_l_oceanografico_valencia_2009_4.jpg"
-title = "File:Animales del l'oceanografico-valencia-2009 (4).JPG"
-url = "https://commons.wikimedia.org/wiki/File:Animales_del_l%27oceanografico-valencia-2009_%284%29.JPG"
-author = "Alberto-g-rovi"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 883
-camera = [70.13, 91.51]
-exterior = "unknown"
+height = 960
+camera = [71.7, -9.87]
+exterior = true
 selected = false
 side = ""
 
@@ -98,7 +98,20 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_L_Oceanografic_Valencia_Spain_01.jpg"
+file = "photos/07_L_Oceanografic_panoramio.jpg"
+title = "File:L´Oceanográfic - panoramio.jpg"
+url = "https://commons.wikimedia.org/wiki/File:L%C2%B4Oceanogr%C3%A1fic_-_panoramio.jpg"
+author = "Pablo Costa Tirado (…"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+camera = [0.24, 76.0]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/08_L_Oceanografic_Valencia_Spain_01.jpg"
 title = "File:L'Oceanografic (Valencia, Spain) 01.jpg"
 url = "https://commons.wikimedia.org/wiki/File:L%27Oceanografic_%28Valencia%2C_Spain%29_01.jpg"
 author = "Felipe Gabaldón from Spain"
@@ -110,31 +123,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Gymnothorax_funebris_in_Oceanografic_Valencia.jpg"
-title = "File:Gymnothorax funebris in Oceanogràfic Valencia.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Gymnothorax_funebris_in_Oceanogr%C3%A0fic_Valencia.jpg"
-author = "Anidae"
-license = "CC BY 4.0"
-width = 1280
-height = 960
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Pseudanthias_sp_Oceanografic_Valencia.jpg"
-title = "File:Pseudanthias sp., Oceanografic Valencia.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Pseudanthias_sp.%2C_Oceanografic_Valencia.jpg"
-author = "Esniom"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 854
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Oceanografic_Esterno.jpg"
+file = "photos/09_Oceanografic_Esterno.jpg"
 title = "File:Oceanografic - Esterno.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Oceanografic_-_Esterno.JPG"
 author = "Bultro"
@@ -146,7 +135,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/11_Oceanografic_Valencia.jpg"
+file = "photos/10_Oceanografic_Valencia.jpg"
 title = "File:Oceanografic Valencia.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Oceanografic_Valencia.JPG"
 author = "Ángel Plaza Simón"
@@ -158,20 +147,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_l_oceanographic_a_valence_panoramio_5.jpg"
-title = "File:\" l'oceanographic \" a valence - panoramio (5).jpg"
-url = "https://commons.wikimedia.org/wiki/File:%22_l%27oceanographic_%22_a_valence_-_panoramio_%285%29.jpg"
-author = "chisloup"
-license = "CC BY 3.0"
-width = 1280
-height = 960
-camera = [71.7, -9.87]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Oceanografic_09032010.jpg"
+file = "photos/11_Oceanografic_09032010.jpg"
 title = "File:Oceanogràfic 09032010.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Oceanogr%C3%A0fic_09032010.jpg"
 author = "Javier Yaya Tur / CIUDAD DE LAS ARTES Y LAS CIENCIAS from Valencia, España"
@@ -183,7 +159,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_Oceanografico_panoramica.jpg"
+file = "photos/12_Oceanografico_panoramica.jpg"
 title = "File:Oceanografico panoramica.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Oceanografico_panoramica.jpg"
 author = "Carquinyol from Badalona, Catalunya"
@@ -195,7 +171,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Oceanografic_Entree.jpg"
+file = "photos/13_Oceanografic_Entree.jpg"
 title = "File:Oceanografic Entrée.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Oceanografic_Entr%C3%A9e.jpg"
 author = "Léodras"
@@ -203,19 +179,6 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_L_Oceanografic_panoramio.jpg"
-title = "File:L´Oceanográfic - panoramio.jpg"
-url = "https://commons.wikimedia.org/wiki/File:L%C2%B4Oceanogr%C3%A1fic_-_panoramio.jpg"
-author = "Pablo Costa Tirado (…"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-camera = [0.24, 76.0]
-exterior = "unknown"
 selected = false
 side = ""
 
