@@ -10,6 +10,7 @@ pub mod humans;
 pub mod people;
 pub mod player;
 pub mod props;
+pub mod traffic;
 pub mod vehicles;
 pub mod walkable;
 pub mod world;
@@ -206,6 +207,7 @@ pub fn build(map: MapKind, paths: Paths) -> App {
         .add_plugin(vehicles::VehiclesPlugin)
         .add_plugin(player::PlayerPlugin)
         .add_plugin(combat::CombatPlugin)
+        .add_plugin(traffic::TrafficPlugin)
         .add_plugin(crowd::CrowdPlugin)
         .add_plugin(camera::CameraPlugin);
     app.add_system(Stage::PreUpdate, "clear_frame", |w| {

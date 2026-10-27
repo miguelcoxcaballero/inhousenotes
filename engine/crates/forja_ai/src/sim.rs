@@ -40,6 +40,9 @@ pub struct SimConfig {
     /// Vehicles closer than this to the focus steer with pure pursuit;
     /// the others ride their lanes.
     pub near: f32,
+    /// Pedestrians live within this distance of the focus (0: the vehicle
+    /// spawn ring); new ones appear beyond 65% of it.
+    pub ped_radius: f32,
     /// Probability that a pedestrian at a red man crosses anyway when no
     /// car is near.
     pub jaywalk: f32,
@@ -60,6 +63,7 @@ impl Default for SimConfig {
             spawn_max: 180.0,
             despawn: 210.0,
             near: 90.0,
+            ped_radius: 0.0,
             jaywalk: 0.03,
             parked_fill: 0.55,
         }
@@ -424,7 +428,8 @@ impl TrafficSim {
         });
         self.stats.stuck_removed += stuck;
         self.stats.despawned_vehicles += (before - self.vehicles.len()) as u32;
-        self.peds.retain(|p| p.pos.distance(focus) < despawn);
+        let (ped_min, ped_max, ped_out) = if self.cfg.ped_radius > 0.0 { (self.cfg.ped_radius * 0.65, self.cfg.ped_radius, self.cfg.ped_radius + 15.0) } else { (self.cfg.spawn_min, self.cfg.spawn_max, despawn) };
+        self.peds.retain(|p| p.pos.distance(focus) < ped_out);
         // Density budget from the lanes in reach.
         let (rmin, rmax) = (self.cfg.spawn_min, self.cfg.spawn_max);
         let first = self.stats.steps == 0;
@@ -451,12 +456,12 @@ impl TrafficSim {
             }
             self.spawn_vehicle(lane, s);
         }
-        let walk_km: f32 = self.net.ped.edges.iter().filter(|e| matches!(e.kind, crate::network::WalkKind::Sidewalk { .. })).filter(|e| self.net.ped.nodes[e.a as usize].pos.distance(focus) < rmax).map(|e| e.len).sum::<f32>() / 1000.0;
+        let walk_km: f32 = self.net.ped.edges.iter().filter(|e| matches!(e.kind, crate::network::WalkKind::Sidewalk { .. })).filter(|e| self.net.ped.nodes[e.a as usize].pos.distance(focus) < ped_max).map(|e| e.len).sum::<f32>() / 1000.0;
         let want_p = ((walk_km * self.cfg.ped_density) as usize).min(self.cfg.max_peds);
         let mut tries = if first { want_p * 3 } else { 6 };
         while self.peds.len() < want_p && tries > 0 {
             tries -= 1;
-            self.spawn_ped_random(if first { 0.0 } else { rmin }, rmax);
+            self.spawn_ped_random(if first { 0.0 } else { ped_min }, ped_max);
         }
     }
 

@@ -155,7 +155,7 @@ pub struct Street {
 }
 
 /// What a visible signal head shows: the approach it faces and the
-/// crosswalk its pedestrian head serves.
+/// crosswalk its pedestrian head serves (across that approach's street).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct HeadBinding {
     pub approach: Option<u32>,
@@ -358,7 +358,7 @@ impl RoadNetwork {
         let medians: Vec<(Vec2, Vec2)> = node
             .ends
             .iter()
-            .filter(|(si, _)| spec.streets[*si as usize].median_half > 0.0)
+            .filter(|(si, e)| spec.streets[*si as usize].median_half > 0.0 && !spec.streets[*si as usize].ends[*e as usize].median_open)
             .map(|(si, _)| (node.pos, self.streets[*si as usize].center.start_dir()))
             .collect();
         for &a in &node.approaches {
@@ -513,10 +513,14 @@ impl RoadNetwork {
         if signalled.is_empty() {
             return;
         }
-        // Every approach of a signalled junction follows the lights.
+        // Approaches without a sign follow the lights; one with a STOP or
+        // give-way plate keeps it and gives way to everyone with green.
         let mut phases: Vec<Phase> = Vec::new();
         let mut axes: Vec<Vec2> = Vec::new();
         for &a in &node.approaches {
+            if matches!(self.approaches[a as usize].control, Control::Stop | Control::Yield) {
+                continue;
+            }
             self.approaches[a as usize].control = Control::Signal;
             let d = self.approaches[a as usize].dir;
             let p = match axes.iter().position(|x| x.dot(d).abs() > 0.7) {
@@ -533,6 +537,11 @@ impl RoadNetwork {
         let mut ped_only: Option<usize> = None;
         for &cw in &node.crosswalks {
             let c = &self.crosswalks[cw as usize];
+            // Only zebras with a pedestrian head: those across a street
+            // whose traffic arrives here under the lights.
+            if !node.approaches.iter().any(|&a| self.approaches[a as usize].street == c.street && self.approaches[a as usize].control == Control::Signal) {
+                continue;
+            }
             let street_dir = self.streets[c.street as usize].center.start_dir();
             let p = match axes.iter().position(|x| x.dot(street_dir).abs() < 0.7) {
                 Some(p) => p,
@@ -699,7 +708,7 @@ impl RoadNetwork {
     }
 
     /// Binds visible heads `(position, plate normal)` to approaches and the
-    /// crosswalk of their pedestrian head (parallel to the traffic).
+    /// crosswalk of their pedestrian head (across the approach's street).
     pub fn bind_heads(&self, heads: &[(Vec2, Vec2)]) -> Vec<HeadBinding> {
         heads
             .iter()
@@ -712,21 +721,10 @@ impl RoadNetwork {
                     .filter(|(_, a)| a.signal.is_some() && a.dir.dot(travel) > 0.8 && a.stop_pos.distance(*p) < 20.0)
                     .min_by(|a, b| a.1.stop_pos.distance(*p).total_cmp(&b.1.stop_pos.distance(*p)))
                     .map(|(i, _)| i as u32);
+                // The pedestrian head serves the zebra across the same street.
                 let crosswalk = approach.and_then(|a| {
                     let ap = &self.approaches[a as usize];
-                    self.nodes[ap.node as usize]
-                        .crosswalks
-                        .iter()
-                        .copied()
-                        .filter(|&c| {
-                            let cw = &self.crosswalks[c as usize];
-                            (cw.b - cw.a).normalize_or_zero().dot(ap.dir).abs() > 0.7
-                        })
-                        .min_by(|&a, &b| {
-                            let da = self.crosswalks[a as usize].a.min(self.crosswalks[a as usize].b).distance(*p).min(self.crosswalks[a as usize].b.distance(*p)).min(self.crosswalks[a as usize].a.distance(*p));
-                            let db = self.crosswalks[b as usize].a.distance(*p).min(self.crosswalks[b as usize].b.distance(*p));
-                            da.total_cmp(&db)
-                        })
+                    self.nodes[ap.node as usize].crosswalks.iter().copied().find(|&c| self.crosswalks[c as usize].street == ap.street)
                 });
                 HeadBinding { approach, crosswalk }
             })
