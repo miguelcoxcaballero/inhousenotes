@@ -342,6 +342,15 @@ impl Environment {
         let ev = self.ev100.unwrap_or_else(|| exposure::incident_ev100(meter_illuminance));
         exposure::exposure_from_ev100(ev - self.exposure_compensation)
     }
+
+    /// Manual camera from a plain linear exposure multiplier (the units of
+    /// the old fixed camera, whose daylight value was 0.55). Night scenes
+    /// tuned against such a value keep it: the incident meter would expose
+    /// a moonlit street like daylight.
+    pub fn set_linear_exposure(&mut self, exposure: f32) {
+        self.ev100 = Some((exposure::exposure_from_ev100(0.0) / exposure.max(1e-6)).log2());
+        self.exposure_compensation = 0.0;
+    }
 }
 
 #[derive(Clone, Debug, Default)]

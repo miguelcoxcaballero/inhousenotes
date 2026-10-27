@@ -19,6 +19,10 @@
 //! repairs, stains, cracks and gum ([`macrotex`]), and every street facade
 //! gets dirt decals (rising damp, sill streaks, cornice soot,
 //! [`weathering`]).
+//!
+//! At night ([`Kit::set_hour`]) lamps, lit windows, shops, signs, neon and
+//! floodlit civic facades emit light: see [`nightlight`] for the light
+//! records, the reusable floodlight fixtures and the per-frame budget.
 
 pub mod building;
 pub mod furniture;
@@ -28,6 +32,7 @@ pub mod kit;
 pub mod landmark;
 pub mod macrotex;
 pub mod modules;
+pub mod nightlight;
 pub mod noise;
 pub mod style;
 pub mod texgen;
@@ -35,4 +40,5 @@ pub mod weathering;
 
 pub use building::{CityOut, EdgeKind, Frontage, Lot, ModuleLib};
 pub use kit::{Kit, Mat};
+pub use nightlight::{CityLight, LightKind, NightState, Spot};
 pub use style::{Style, StyleLibrary};

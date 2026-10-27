@@ -37,16 +37,22 @@ fn id_string(v: &Value) -> String {
     }
 }
 
+/// `null` (common from Python writers) reads as the default.
+fn nullable<'de, D: serde::Deserializer<'de>, T: Default + Deserialize<'de>>(d: D) -> std::result::Result<T, D::Error> {
+    Ok(Option::<T>::deserialize(d)?.unwrap_or_default())
+}
+
 #[derive(Clone, Debug, Default, Deserialize)]
 struct RawPoly {
     #[serde(default)]
     id: Value,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable")]
     tags: BTreeMap<String, Value>,
+    /// Points as raw JSON: non-numeric points are skipped with a warning.
     #[serde(default)]
-    outer: Vec<[f32; 2]>,
+    outer: Value,
     #[serde(default)]
-    inners: Vec<Vec<[f32; 2]>>,
+    inners: Value,
     #[serde(default)]
     refcat: Value,
     #[serde(default)]
@@ -64,17 +70,44 @@ struct RawFootprint {
     #[serde(default)]
     frame: Option<String>,
     #[serde(default)]
-    anchor: Option<[f32; 2]>,
+    anchor: Value,
     #[serde(default)]
     attribution: Value,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable")]
     outlines: Vec<RawPoly>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable")]
     parts: Vec<RawPoly>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable")]
     catastro: Vec<RawPoly>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable")]
     context: Vec<RawPoly>,
+}
+
+/// `[x, z]` from JSON (numbers or numeric strings).
+fn point(v: &Value) -> Option<Vec2> {
+    let a = v.as_array()?;
+    let x = lenient_f32(a.first()?)?;
+    let z = lenient_f32(a.get(1)?)?;
+    (x.is_finite() && z.is_finite()).then(|| Vec2::new(x, z))
+}
+
+/// A ring from JSON, skipping (and counting) unusable points.
+fn ring(v: &Value, bad: &mut usize) -> Vec<Vec2> {
+    let Some(list) = v.as_array() else {
+        if !v.is_null() {
+            *bad += 1;
+        }
+        return Vec::new();
+    };
+    list.iter()
+        .filter_map(|p| {
+            let q = point(p);
+            if q.is_none() {
+                *bad += 1;
+            }
+            q
+        })
+        .collect()
 }
 
 /// One polygon from the footprint file, normalised.
@@ -94,14 +127,23 @@ impl FpPoly {
         self.tags.get(k).map(|s| s.as_str())
     }
 
-    /// Height from OSM tags: `height`, else `building:levels` x 3.2 m
-    /// (+ roof height).
+    /// Top height from OSM tags (Simple 3D Buildings): `height`, else
+    /// `building:levels` x 3.2 m + `roof:height`. Levels count from the
+    /// ground, skipped ones included, so `building:min_level` only moves
+    /// the bottom ([`Self::tag_min_height`]), never the top.
     pub fn tag_height(&self) -> Option<f32> {
         if let Some(h) = self.tag("height").and_then(parse_measure) {
             return Some(h);
         }
         let levels = self.tag("building:levels").and_then(parse_measure).filter(|l| *l > 0.0)?;
-        Some(self.tag_min_height().unwrap_or(0.0).max(0.0) + levels * 3.2 + self.tag("roof:height").and_then(parse_measure).unwrap_or(0.0))
+        let roof = self.tag("roof:height").and_then(parse_measure).unwrap_or(0.0);
+        let top = levels * 3.2 + roof;
+        // A `min_height` in metres with only a level count above it means
+        // those levels stand on it.
+        match (self.tag("min_height").and_then(parse_measure), self.tag("building:min_level")) {
+            (Some(mh), None) if mh >= top => Some(mh + top),
+            _ => Some(top),
+        }
     }
 
     pub fn tag_min_height(&self) -> Option<f32> {
@@ -126,8 +168,15 @@ pub struct Footprint {
 }
 
 fn convert(raw: &RawPoly, what: &str, i: usize, warnings: &mut Vec<String>) -> Option<FpPoly> {
-    let outer: Vec<Vec2> = raw.outer.iter().map(|p| Vec2::new(p[0], p[1])).collect();
-    let holes = raw.inners.iter().map(|h| h.iter().map(|p| Vec2::new(p[0], p[1])).collect()).collect();
+    let mut bad = 0;
+    let outer = ring(&raw.outer, &mut bad);
+    let holes: Vec<Vec<Vec2>> = raw.inners.as_array().map(|l| l.iter().map(|h| ring(h, &mut bad)).collect()).unwrap_or_default();
+    if bad > 0 {
+        warnings.push(format!("footprint {what}[{i}] ({}): {bad} point(s) or ring(s) are not [x, z] numbers; skipped", id_string(&raw.id)));
+    }
+    if let Some((a, b)) = poly::self_intersection(&outer) {
+        warnings.push(format!("footprint {what}[{i}] ({}): the outer ring crosses itself (edges {a} and {b}); fix the polygon or simplify it", id_string(&raw.id)));
+    }
     let Some(shape) = (Shape { outer, holes }).normalized() else {
         warnings.push(format!("footprint {what}[{i}] ({}) has a degenerate outer ring; ignored", id_string(&raw.id)));
         return None;
@@ -163,8 +212,8 @@ impl Footprint {
             Value::Null => Vec::new(),
             v => vec![v.to_string()],
         };
-        let anchor = raw.anchor.map(|a| Vec2::new(a[0], a[1])).unwrap_or_else(|| {
-            warnings.push("footprint has no anchor; using [0, 0]".into());
+        let anchor = point(&raw.anchor).unwrap_or_else(|| {
+            warnings.push("footprint has no usable anchor; using [0, 0]".into());
             Vec2::ZERO
         });
         Ok(Footprint { slug: raw.slug, frame: raw.frame, anchor, attribution, outlines, parts, catastro, context, warnings })
@@ -319,6 +368,23 @@ mod tests {
         assert_eq!(f.resolve("catastro:1234567YJ2713D").unwrap().len(), 1);
         assert!(f.resolve("outline:3").unwrap_err().contains("1 outline"));
         assert!(f.resolve("outlin:0").unwrap_err().contains("did you mean `outline`"));
+    }
+
+    #[test]
+    fn nulls_and_bad_points_are_tolerated() {
+        let t = r#"{"anchor":[1,2],"outlines":[{"id":"w","tags":null,"outer":[[0,0],[10,0],[10,"8"],[null,3],[0,8]],"inners":null}],"parts":null}"#;
+        let f = Footprint::parse(t, "fp").unwrap();
+        assert_eq!(f.outlines.len(), 1);
+        assert_eq!(f.outlines[0].shape.outer.len(), 4);
+        assert!(f.warnings.iter().any(|w| w.contains("1 point")), "{:?}", f.warnings);
+    }
+
+    #[test]
+    fn levels_count_from_the_ground() {
+        let t = r#"{"anchor":[0,0],"parts":[{"id":"p","tags":{"building:levels":"5","building:min_level":"3"},"outer":[[0,0],[4,0],[4,4],[0,4]]}]}"#;
+        let f = Footprint::parse(t, "fp").unwrap();
+        assert_eq!(f.parts[0].tag_height(), Some(16.0));
+        assert_eq!(f.parts[0].tag_min_height(), Some(9.6));
     }
 
     #[test]

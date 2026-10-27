@@ -1,5 +1,6 @@
 //! Street of procedural Spanish buildings, one per style, rendered at eye
 //! level: `cargo run --release -p forja_render --example street -- out_prefix`
+//! (`NIGHT=1` or `HOUR=<h>` for a night street with candelabras).
 
 use std::path::PathBuf;
 
@@ -16,7 +17,12 @@ fn main() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let dl = root.join("assets/downloaded");
     let t0 = std::time::Instant::now();
-    let kit = Kit::load(Some(&dl));
+    let mut kit = Kit::load(Some(&dl));
+    let hour = std::env::var("HOUR").ok().and_then(|v| v.parse::<f32>().ok()).or_else(|| std::env::var("NIGHT").ok().filter(|v| v != "0").map(|_| 22.5));
+    if let Some(h) = hour {
+        kit.set_hour(h);
+    }
+    let night = kit.night.is_night();
     let styles = StyleLibrary::load(Some(&root.join("data/city/styles.toml")));
     let mut lib = ModuleLib::new(&kit);
     let mut out = CityOut::default();
@@ -49,6 +55,20 @@ fn main() {
     }
     let street = out.add_scene(assemble(&kit, "street", p, None));
     out.placements.push((street, Mat4::IDENTITY));
+    if night {
+        // Valencian candelabras along the kerb, every 18 m.
+        let mut x = x0 + 20.0;
+        while x < x1 - 20.0 {
+            let base = Vec3::new(x, 0.15, 3.9);
+            let bulb = base + Vec3::Y * forja_city::furniture::street_lamp_bulb(true);
+            let (color, _) = forja_city::nightlight::street_lamp_color(bulb, false);
+            let g = forja_city::nightlight::to_rgb(color);
+            let m = lib.named(&mut out, &format!("lamp_{g:?}"), || forja_city::furniture::street_lamp_lit(true, g));
+            out.placements.push((m, Mat4::from_translation(base)));
+            out.city_lights.push(forja_city::nightlight::street_lamp(bulb, color, true));
+            x += 18.0;
+        }
+    }
     let tris: usize = out.placements.iter().map(|(s, _)| out.scenes[*s].triangle_count()).sum();
     println!("built {} buildings, {} scenes, {} placements, {} tris in {:.2}s", out.buildings, out.scenes.len(), out.placements.len(), tris, t0.elapsed().as_secs_f32());
 
@@ -65,6 +85,14 @@ fn main() {
         frame.instances.push(DrawInstance::new(handles[*s], flip * *m));
     }
     frame.env.shadow_distance = 80.0;
+    if night {
+        frame.env.use_ibl = false;
+        frame.env.sun_dir = Vec3::new(-0.35, 0.72, -0.55).normalize();
+        frame.env.sun_illuminance = 0.025;
+        frame.env.set_linear_exposure(0.55 + 3.0 * kit.night.dark);
+        frame.env.bloom = 0.08;
+        println!("night at {:.1} h: {} city lights", kit.night.hour, out.city_lights.len());
+    }
     let mut shots: Vec<(String, Vec3, Vec3)> = vec![("wide".into(), Vec3::new(-30.0, 1.7, 22.0), Vec3::new(10.0, 9.0, 0.0))];
     for (id, cx, h) in centers.iter().step_by(2) {
         shots.push((id.clone(), Vec3::new(cx + 6.0, 1.7, 13.0), Vec3::new(*cx + 2.0, h * 0.55, 0.0)));
@@ -72,6 +100,15 @@ fn main() {
     for (name, eye, at) in shots {
         frame.camera = Camera::look_at(flip.transform_point3(eye), flip.transform_point3(at));
         frame.camera.fov_y = 62f32.to_radians();
+        if night {
+            frame.lights = forja_city::nightlight::select(&out.city_lights, eye, at - eye, MAX_LIGHTS)
+                .into_iter()
+                .map(|i| {
+                    let (position, color, intensity, radius) = out.city_lights[i].as_point();
+                    PointLight { position: flip.transform_point3(position), radius, color, intensity }
+                })
+                .collect();
+        }
         let img = r.render_to_image(&frame, 1280, 720);
         let path = format!("{prefix}_{name}.png");
         img.save(&path).unwrap();

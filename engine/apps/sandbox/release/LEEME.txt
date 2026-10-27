@@ -1,0 +1,56 @@
+FORJA - version jugable (Windows)
+=================================
+
+Mundo abierto en una ciudad procedural de Madrid y Valencia: camina, corre,
+conduce coches y usa armas e inventario.
+
+PROXIMAMENTE: una version con un casco antiguo organico (callejones
+estrechos e irregulares con cuestas) junto a grandes avenidas. Cada nueva
+version publicada incluye el mapa por defecto mas reciente del motor.
+
+COMO JUGAR
+  1. Descomprime Forja-Windows.zip en cualquier carpeta (no hace falta instalar).
+  2. Haz doble clic en Jugar.bat (o en Forja.exe).
+  3. La PRIMERA vez se descarga el contenido libre (texturas Poly Haven y
+     ambientCG, cielos HDRI, captura de movimiento CMU, avatares Microsoft
+     Rocketbox, kits de Kenney...): unos 0,8-1 GB, varios minutos segun la
+     conexion. El progreso se ve en la ventana negra. Las siguientes veces
+     arranca directamente. Si algun paquete falla, el juego usa sustitutos y
+     Jugar.bat lo reintenta en el siguiente arranque.
+
+REQUISITOS
+  - Windows 10 u 11 de 64 bits.
+  - Tarjeta grafica compatible con DirectX 12 (o Vulkan) y drivers recientes.
+    Recomendado: 4 GB de VRAM, 8 GB de RAM.
+  - Unos 1,5 GB libres en disco y conexion a Internet en el primer arranque.
+
+CONTROLES
+  Clic izquierdo en la ventana  capturar el raton
+  W A S D / flechas             moverse / acelerar, frenar y girar
+  Raton                         mirar
+  Shift                         correr
+  Espacio                       saltar / freno de mano
+  F                             subir o bajar de un vehiculo
+  Clic derecho                  apuntar
+  Clic izquierdo                disparar
+  R                             recargar
+  1-6                           cuerpo a cuerpo, pistola, subfusil, escopeta,
+                                rifle, francotirador
+  H                             guardar el arma
+  Tab                           inventario      E  usar objeto
+  V                             cambiar camara
+  F2                            siguiente mapa  F3  hora del dia
+  F10                           ayuda           F12 captura de pantalla
+  Esc                           soltar el raton / salir
+
+  Los controles se pueden cambiar en data\input.toml.
+
+OPCIONES (desde una consola)
+  Forja.exe --map spain|kit|osm|track|terrain   elegir mapa
+  Forja.exe --size 1920x1080                     tamano de ventana
+
+LICENCIAS
+  El codigo de Forja es MIT o Apache-2.0. El contenido descargado es de
+  terceros con licencias libres (CC0, CC-BY, MIT...): la lista completa con
+  autores y licencias se genera en assets\downloaded\ATTRIBUTION.md y esta
+  en LICENCIAS.txt. Las fuentes de cada paquete estan en data\assets.toml.

@@ -25,7 +25,17 @@ pub struct Out {
 impl Out {
     pub fn append(&mut self, other: &Out, m: &Mat4) {
         self.geo.append(&other.geo, m);
-        self.col.extend(other.col.iter().map(|t| [m.transform_point3(t[0]), m.transform_point3(t[1]), m.transform_point3(t[2])]));
+        // Mirrors and negative scales flip winding: re-wind so the
+        // collider stays outward (as `Prim::append` does for the mesh).
+        let flip = m.determinant() < 0.0;
+        self.col.extend(other.col.iter().map(|t| {
+            let (a, b, c) = (m.transform_point3(t[0]), m.transform_point3(t[1]), m.transform_point3(t[2]));
+            if flip { [a, c, b] } else { [a, b, c] }
+        }));
+    }
+
+    pub fn tris(&self) -> usize {
+        self.geo.tri_count()
     }
 
     /// Copies all triangles of `geo` into the collider.
@@ -82,9 +92,17 @@ pub struct Builder<'a> {
     pub default_mat: MatId,
     /// Collider triangle ranges of each top-level element.
     pub col_groups: Vec<(usize, usize)>,
+    /// Triangles already built by finished top-level elements.
+    pub built_tris: usize,
     depth: u32,
     line: Option<usize>,
 }
+
+/// Hard limit on the triangles of one landmark (the cathedral needs about
+/// 400k; anything near this is a runaway array or resolution).
+pub const MAX_TRIANGLES: usize = 2_000_000;
+/// Hard limit on array instances (after nesting is multiplied out).
+pub const MAX_INSTANCES: usize = 20_000;
 
 pub fn transform_matrix(t: &Transform) -> Mat4 {
     let p = Vec3::from_array(t.pivot);
@@ -158,6 +176,7 @@ impl<'a> Builder<'a> {
             detail: spec.defaults.detail.unwrap_or(1.0).clamp(0.25, 4.0),
             default_mat,
             col_groups: Vec::new(),
+            built_tris: 0,
             depth: 0,
             line: None,
         })
@@ -215,6 +234,24 @@ impl<'a> Builder<'a> {
     /// Curve segments for a circle of radius `r`.
     pub fn segs(&self, r: f32, min: usize, max: usize) -> usize {
         (((r.abs() * 8.0 + 8.0) * self.detail) as usize).clamp(min, max)
+    }
+
+    /// A user-given resolution, checked against `min..=max`.
+    pub fn user_segs(&self, v: Option<u32>, auto: usize, min: usize, max: usize, what: &str) -> Result<usize> {
+        match v {
+            None => Ok(auto.clamp(min, max)),
+            Some(n) if (min..=max).contains(&(n as usize)) => Ok(n as usize),
+            Some(n) => Err(Error::msg(format!("{what} = {n} is out of range ({min}..={max})"))),
+        }
+    }
+
+    /// Fails when `extra` more triangles would pass [`MAX_TRIANGLES`].
+    pub fn budget(&self, extra: usize, what: &str) -> Result<()> {
+        let total = self.built_tris.saturating_add(extra);
+        if total > MAX_TRIANGLES {
+            return Err(Error::msg(format!("{what} would make the landmark {total} triangles (limit {MAX_TRIANGLES}); lower counts or segments")));
+        }
+        Ok(())
     }
 
     pub fn poly(&self, spec: &PolySpec, sc: &Scope) -> Result<Vec<Shape>> {
@@ -283,7 +320,7 @@ impl<'a> Builder<'a> {
                 if let Some(p) = &t.polygon
                     && let Ok(shapes) = self.poly(p, sc)
                 {
-                    let stages = masses::tower_stage_plans(self, t, &shapes[0], sc);
+                    let stages = masses::tower_stage_plans(self, t, &shapes[0], sc).unwrap_or_default();
                     let mut top = t.y;
                     for (st, (shape, y0, y1)) in t.stages.iter().zip(stages) {
                         if let Some(n) = &st.name {
@@ -325,6 +362,7 @@ impl<'a> Builder<'a> {
             if out.col.len() > start {
                 self.col_groups.push((start, out.col.len()));
             }
+            self.built_tris = out.tris();
         }
         self.line = None;
         Ok(())
@@ -351,6 +389,8 @@ impl<'a> Builder<'a> {
         let r = self.dispatch(e, &scope, &mut o);
         self.depth -= 1;
         r?;
+        let mirrors_n = c.mirror.map(mirror_matrices).map(|m| m.len()).unwrap_or(0);
+        self.budget(o.tris().saturating_mul(1 + mirrors_n), &format!("{} ({})", c.name.unwrap_or("element"), e.type_name()))?;
         if c.collide.unwrap_or_else(|| default_collide(e)) {
             if o.col.is_empty() && !matches!(e, Element::Group(_) | Element::Array(_) | Element::Instance(_)) {
                 o.collide_all();
@@ -472,13 +512,10 @@ impl<'a> Builder<'a> {
     }
 
     fn array(&mut self, a: &Array, sc: &Scope, o: &mut Out) -> Result<()> {
-        let mats = self.array_placements(a, sc)?;
-        if mats.len() > 20_000 {
-            return Err(Error::msg(format!("array makes {} instances (max 20000)", mats.len())));
-        }
         if a.children.is_empty() && a.component.is_none() {
             return Err(Error::msg("array needs `children` or `component`"));
         }
+        let mats = self.array_placements(a, sc)?;
         // Build the item once, then place copies.
         let mut item = Out::default();
         let item_scope = Scope { xf: sc.xf, ..sc.clone() };
@@ -486,11 +523,32 @@ impl<'a> Builder<'a> {
         if let Some(c) = &a.component {
             self.component(c, &item_scope, Mat4::IDENTITY, &mut item)?;
         }
+        let n = mats.len();
+        self.budget(item.tris().saturating_mul(n), &format!("array of {n} x {} triangles", item.tris()))?;
+        // Without `rotate`, copies keep their orientation and only move to
+        // where the layout would carry their reference point (the item's
+        // centre for radial arrays around a centre, else its origin).
+        let pivot = if a.mode == ArrayMode::Radial && a.radius.is_none() { mesh::bounds(&item.geo).map(|(mn, mx)| (mn + mx) * 0.5).unwrap_or(Vec3::ZERO) } else { Vec3::ZERO };
+        let rotate = a.rotate || matches!(a.mode, ArrayMode::Linear | ArrayMode::Grid | ArrayMode::Points);
+        let scale_end = a.scale_end.as_ref().map(|s| Vec3::from_array(s.0));
         for (k, m) in mats.iter().enumerate() {
-            if a.skip.iter().any(|s| s.rem_euclid(mats.len() as i64) as usize == k) {
+            if a.skip.iter().any(|s| s.rem_euclid(n as i64) as usize == k) {
                 continue;
             }
-            o.append(&item, m);
+            let base = if rotate { *m } else { Mat4::from_translation(m.transform_point3(pivot) - pivot) };
+            // Per-instance ramps in the instance frame.
+            let f = if n > 1 { k as f32 / (n - 1) as f32 } else { 0.0 };
+            let mut local = Mat4::IDENTITY;
+            if let Some(off) = a.offset_step {
+                local *= Mat4::from_translation(Vec3::from_array(off) * k as f32);
+            }
+            if a.rotate_step != 0.0 {
+                local *= Mat4::from_rotation_y((a.rotate_step * k as f32).to_radians());
+            }
+            if let Some(se) = scale_end {
+                local *= Mat4::from_scale(Vec3::ONE.lerp(se, f));
+            }
+            o.append(&item, &(base * local));
         }
         Ok(())
     }
@@ -501,6 +559,7 @@ impl<'a> Builder<'a> {
         match a.mode {
             ArrayMode::Linear => {
                 let n = a.count.ok_or_else(|| Error::msg("linear array needs `count`"))?;
+                check_instances(n as u64, "linear array `count`")?;
                 let step = Vec3::from_array(a.step.ok_or_else(|| Error::msg("linear array needs `step = [dx, dy, dz]`"))?);
                 for k in 0..n {
                     v.push(Mat4::from_translation(step * k as f32));
@@ -513,6 +572,7 @@ impl<'a> Builder<'a> {
                     return Err(Error::msg("grid `counts` and `steps` need 2 or 3 matching entries"));
                 }
                 let (nx, ny, nz, sx, sy, sz) = if counts.len() == 2 { (counts[0], 1, counts[1], steps[0], 0.0, steps[1]) } else { (counts[0], counts[1], counts[2], steps[0], steps[1], steps[2]) };
+                check_instances(nx as u64 * ny as u64 * nz as u64, "grid array `counts`")?;
                 for i in 0..nx {
                     for j in 0..ny {
                         for k in 0..nz {
@@ -523,6 +583,7 @@ impl<'a> Builder<'a> {
             }
             ArrayMode::Radial => {
                 let n = a.count.ok_or_else(|| Error::msg("radial array needs `count`"))?.max(1);
+                check_instances(n as u64, "radial array `count`")?;
                 let c = Vec3::from_array(a.center.unwrap_or([0.0; 3]));
                 let axis = Vec3::from_array(a.axis.unwrap_or([0.0, 1.0, 0.0])).normalize_or(Vec3::Y);
                 let sweep = a.sweep.unwrap_or(360.0);
@@ -535,10 +596,6 @@ impl<'a> Builder<'a> {
                     if let Some(r) = a.radius {
                         // Offset along the local +z (then rotated).
                         m *= Mat4::from_translation(Vec3::new(0.0, 0.0, r));
-                    }
-                    if !a.rotate {
-                        let p = m.transform_point3(Vec3::ZERO);
-                        m = Mat4::from_translation(p);
                     }
                     if a.radius.is_none() {
                         m *= Mat4::from_translation(-c);
@@ -583,6 +640,7 @@ impl<'a> Builder<'a> {
                             (None, Some(sp)) => ((usable / sp.max(0.05)).floor() as usize + 1).max(1),
                             (None, None) => return Err(Error::msg("edge array needs `spacing` or `count`")),
                         };
+                        check_instances((v.len() + count) as u64, "edge array")?;
                         let dir = (p1 - p0) / len;
                         for k in 0..count {
                             let t = if count == 1 { 0.5 } else if corners == CornerMode::Include && a.margin == 0.0 { (k as f32 + 0.5) / count as f32 } else { k as f32 / (count - 1) as f32 };
@@ -611,6 +669,7 @@ impl<'a> Builder<'a> {
                     (None, Some(s)) => (total / s.max(0.05)).floor() as usize + if closed { 0 } else { 1 },
                     _ => return Err(Error::msg("path array needs `spacing` or `count`")),
                 };
+                check_instances(n as u64, "path array")?;
                 for k in 0..n {
                     let d = if closed { total * k as f32 / n as f32 } else if n > 1 { total * k as f32 / (n - 1) as f32 } else { 0.0 };
                     let mut j = 0;
@@ -634,6 +693,7 @@ impl<'a> Builder<'a> {
             }
             ArrayMode::Points => {
                 let pts = a.points.as_ref().ok_or_else(|| Error::msg("points array needs `points`"))?;
+                check_instances(pts.len() as u64, "points array")?;
                 for (k, p) in pts.iter().enumerate() {
                     let f = a.facings.as_ref().and_then(|f| f.get(k)).copied();
                     v.push(match f {
@@ -647,6 +707,13 @@ impl<'a> Builder<'a> {
     }
 }
 
+fn check_instances(n: u64, what: &str) -> Result<()> {
+    if n > MAX_INSTANCES as u64 {
+        return Err(Error::msg(format!("{what} makes {n} instances (max {MAX_INSTANCES})")));
+    }
+    Ok(())
+}
+
 /// Built geometry of a whole landmark (before materials).
 pub struct Model {
     pub geo: Geo,
@@ -656,6 +723,13 @@ pub struct Model {
     pub palette: Palette,
     pub stats: Vec<ElemStat>,
     pub warnings: Vec<String>,
+}
+
+impl Model {
+    /// Material id of a palette name used by the model.
+    pub fn palette_id(&self, name: &str) -> Option<MatId> {
+        self.palette.find(name)
+    }
 }
 
 /// Builds every element of `spec`.

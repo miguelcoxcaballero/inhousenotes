@@ -1,0 +1,1292 @@
+# Torres de Quart (Porta de Quart), Valencia. Late Gothic city gate of the
+# 14th-century Christian wall, built 1441-1460 by Pere Bonfill with Francesc
+# Baldomar, Pere Compte, Tomas Oller and Jaume Perez (Wikipedia ca/es).
+#
+# Frame: landmark-local metres, x east, z south. The gate axis runs almost
+# exactly west-east: the outer (field) face looks west to Carrer de Guillem
+# de Castro, the inner face looks east up Carrer de Quart to the old town.
+# Seen from outside (west) the NORTH tower is on the left; seen from the
+# city (east) it is on the right.
+#
+# Plan (OSM building:parts, identical to the Catastro parts to 5 cm):
+#   * two towers, semicircular to the field (fitted circles: north centre
+#     (-3.77, -6.01) r 7.34, south (-3.46, 17.17) r 7.52) and rectangular to
+#     the city, ending in a flat east face at x = 5.8-6.1 (the "planta
+#     rectangular modificada"); OSM parts 0 and 1;
+#   * the gate body between them: the outer wall plane runs (-2.44, 1.30) to
+#     (-1.69, 9.50) (az 265, 5 deg off the grid, "ligeramente oblicua"),
+#     OSM part 4 (1.5 m strip) + part 2, which projects 4 m east of the
+#     towers as the inner gate block (x 9.1-10.0);
+#   * round spiral-stair turrets inside each tower near the gate (parts 5, 6,
+#     r 1.55) that rise above the tower terraces;
+#   * the surviving stretch of the medieval wall running north (part 3) and a
+#     small spur (part 7).
+#
+# Heights, from camera fits of the photos against the plan (see the [[view]]
+# notes; tools: least squares of camera + unknown heights on photo pixels):
+#   * photo 32 (130 m south, almost orthographic): merlon tops 35.9 m,
+#     parapet 34.6, machicolation arch crowns 32.6, corbel heads 31.0, crown
+#     string course (bocel) 29.5 - OSM gives 34 m;
+#   * photo 17 (inner face): tower east-face parapet 33.6-34.1 m, ground
+#     storey string 10.6, first-floor arch apex 19.6, second-floor sill 22.0,
+#     second arch apex 31.0; inner gate block parapet 20.9, its string 10.5,
+#     its first-floor arch apex 18.5, inner gate arch apex 7.7;
+#   * photo 39 (outer face): gate arch 4.8 m wide, apex 7.7 m (round,
+#     "arco de medio punto"), string course 12.9, gallery corbels from 18.6,
+#     gallery parapet 22.4, gallery merlons 23.9, upper wall merlons 27.4.
+#
+# Construction (Wikipedia es): towers of lime-and-rubble tapial covered with
+# a smooth render; ashlar only at the arrises, arches, vaults, base and
+# crown. Hence: rendered round faces pitted by the French artillery of
+# Moncey (June 1808) with patches where the render has fallen and the rubble
+# shows; ashlar inner faces open "a gola oberta" in great pointed arches
+# onto vaulted halls; ochre-plastered infill on the inner ground storeys.
+
+[landmark]
+name = "Torres de Quart"
+slug = "torres_de_quart"
+main_facade = "40..42"   # the gate face between the towers (az 265)
+notes = "Two semicylindrical towers with arcuated machicolations and merlons flanking a gate body with a round arch, a machicolated balcony and a crenellated upper wall; inner face open in tall pointed arches on two storeys over ochre-plastered ground storeys, inner gate block with stair; 1808 cannonball pitting on the outer render. Heights from photo camera fits (header)."
+
+[landmark.info]
+architect = "Pere Bonfill (with Francesc Baldomar, Pere Compte, Tomas Oller, Jaume Perez)"
+built = "1441-1460"
+style = "Valencian late Gothic military"
+heritage = "BIC RI-51-0000970"
+
+[defaults]
+material = "ashlar"
+detail = 1.0
+
+[render]
+sun = [235, 40]
+paving = 75
+
+# ------------------------------------------------------------- materials
+
+# Smooth lime render of the towers' outer faces (photos 02, 04, 11, 13):
+# warm sand beige in the sun, streaked, patchy.
+[material.render]
+kind = "render"
+tint = "#cfb593"
+uv_scale = 4.0
+normal_strength = 1.5
+weathering = 0.7
+seed = 21
+
+# Exposed lime-and-rubble core where the render has fallen (darker, rough).
+[material.rubble]
+kind = "ashlar"
+tint = "#7d6650"
+block = [0.35, 0.22]
+normal_strength = 2.0
+weathering = 0.6
+seed = 4
+
+# Grey-beige ashlar of the inner faces, crowns and arrises (photos 01, 17).
+[material.ashlar]
+kind = "ashlar"
+tint = "#e2caa6"
+block = [0.9, 0.42]
+weathering = 0.3
+seed = 11
+
+[material.ashlar_fine]
+kind = "limestone"
+tint = "#e6d3b4"
+weathering = 0.2
+
+# The gate wall on the field side reads darker and redder (photos 04, 12,
+# 39): weathered render over tapial with ashlar voussoirs.
+[material.gate_wall]
+kind = "render"
+tint = "#a3836a"
+uv_scale = 3.0
+normal_strength = 1.3
+weathering = 0.6
+seed = 3
+
+# Ochre plaster of the inner ground storeys and of the hall walls (photos 01, 17).
+[material.ochre]
+kind = "plaster"
+tint = "#ecb64a"
+weathering = 0.25
+
+# Cannonball impact: a dark, rough hollow.
+[material.pit]
+kind = "flat"
+color = "#33281f"
+roughness = 1.0
+
+# Lime lines between the tapial lifts (photos 28, 30): the shafts read as
+# horizontal bands about 0.9 m apart where the render has weathered.
+[material.lime]
+kind = "plaster"
+tint = "#ddcdb2"
+weathering = 0.6
+
+[material.terrace]
+kind = "terracotta"
+tint = "#a58471"
+uv_scale = 1.5
+
+[material.timber]
+kind = "wood"
+tint = "#5a4330"
+
+[material.plaque]
+kind = "bronze"
+tint = "#3e4a40"
+
+# ------------------------------------------------------------ components
+
+# Impact pits, local frame: x along the wall, z out of it (half buried).
+[component.pit_s]
+material = "pit"
+[[component.pit_s.children]]
+type = "sphere"
+center = [0, 0, -0.02]
+radii = [0.12, 0.11, 0.06]
+segments = 6
+
+[component.pit_m]
+material = "pit"
+[[component.pit_m.children]]
+type = "sphere"
+center = [0, 0, -0.02]
+radii = [0.2, 0.18, 0.07]
+segments = 8
+
+[component.pit_l]
+material = "pit"
+[[component.pit_l.children]]
+type = "sphere"
+center = [0, 0, -0.03]
+radii = [0.34, 0.3, 0.08]
+segments = 8
+[[component.pit_l.children]]
+type = "sphere"
+center = [0.0, 0.0, -0.03]
+radii = [0.45, 0.4, 0.05]
+segments = 8
+material = "rubble"
+
+# Patches where the render has fallen (broad, low, slightly proud).
+[component.patch_a]
+material = "rubble"
+[[component.patch_a.children]]
+type = "sphere"
+center = [0, 0, -0.04]
+radii = [1.6, 0.9, 0.08]
+segments = 10
+
+[component.patch_b]
+material = "rubble"
+[[component.patch_b.children]]
+type = "sphere"
+center = [0, 0, -0.04]
+radii = [0.8, 1.4, 0.08]
+segments = 10
+
+# Shield on the gate wall (local frame: x along, z out).
+[component.shield]
+material = "ashlar_fine"
+[[component.shield.children]]
+type = "extrude"
+plane = "xy"
+profile = [[-0.35, 0.3], [-0.3, 0.1], [-0.15, -0.05], [0.0, -0.12], [0.15, -0.05], [0.3, 0.1], [0.35, 0.3], [0.35, 0.8], [-0.35, 0.8]]
+origin = [0, 0, 0]
+length = 0.18
+[[component.shield.children]]
+type = "box"
+min = [-0.3, 0.8, 0.0]
+max = [0.3, 1.0, 0.16]
+
+# ------------------------------------------------------------ talus & base
+# Sloping stone talus round the field side of both towers, finished by a
+# torus moulding at 1.5 m (photos 02, 12, 39: "motllura ... en forma de
+# talus inclinat"). Not on the flat inner faces (photo 17).
+[[element]]
+type = "mass"
+name = "talus"
+polygon = { ref = "part:0", union = ["part:1"], keep_holes = false, offset = 0.45, clip = [[-14, -18], [4.5, -18], [4.5, 27], [-14, 27]] }
+y0 = 0
+y1 = 1.5
+batter = 0.4
+top = false
+material = "ashlar_fine"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:0", keep_holes = false, inset = 0.35, union = [{ ref = "part:0", keep_holes = false, clip = [[0.6, -18], [8, -18], [8, 3], [0.6, 3]] }] }
+edges = "not:facing:e"
+y = 1.45
+profile = "torus"
+size = 0.38
+material = "ashlar_fine"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:1", keep_holes = false, inset = 0.35, union = [{ ref = "part:1", keep_holes = false, clip = [[0.6, 6], [8, 6], [8, 27], [0.6, 27]] }] }
+edges = "not:facing:e"
+y = 1.45
+profile = "torus"
+size = 0.38
+material = "ashlar_fine"
+
+# ------------------------------------------------------------ north tower
+# Rendered round shaft (field side) up to the crown; the city half (x > 0)
+# is ashlar and carries the open arches.
+[[element]]
+type = "mass"
+name = "tower_n_round"
+polygon = { ref = "part:0", keep_holes = false, inset = 0.35, clip = [[-14, -18], [0.6, -18], [0.6, 3], [-14, 3]] }
+y0 = 0
+y1 = 33.0
+material = "render"
+top_material = "terrace"
+
+[[element]]
+type = "mass"
+name = "tower_n_back"
+polygon = { ref = "part:0", keep_holes = false, clip = [[0.0, -18], [8, -18], [8, 3], [0.0, 3]] }
+y0 = 0
+y1 = 33.0
+material = "ashlar"
+top_material = "terrace"
+
+  # First floor: tall pointed arch open onto the vaulted hall.
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "arch"
+  arch = "pointed"
+  width = 8.0
+  height = 9.0
+  rise = 4.6
+  levels = [10.6]
+  bays = { at = [8.4] }
+  depth = 7.5
+  infill = "blind"
+  stone_material = "ashlar"
+
+  # Second floor, over a sill ledge at 22 m.
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "arch"
+  arch = "pointed"
+  width = 7.6
+  height = 9.0
+  rise = 4.4
+  levels = [22.0]
+  bays = { at = [8.4] }
+  depth = 7.0
+  infill = "blind"
+  stone_material = "ashlar"
+
+[[element]]
+type = "string_course"
+on = "tower_n_back"
+edges = "facing:e"
+y = 10.45
+profile = "string"
+size = 0.3
+material = "ashlar_fine"
+
+[[element]]
+type = "string_course"
+on = "tower_n_back"
+edges = "facing:e"
+y = 21.85
+profile = "string"
+size = 0.3
+material = "ashlar_fine"
+
+[[element]]
+type = "parapet"
+on = "tower_n_back"
+edges = "facing:e"
+y = 33.0
+height = 0.8
+thickness = 0.5
+material = "ashlar"
+
+# The flanks of the rectangular city half are rendered tapial like the round
+# shaft (photos 04, 28): a 6 cm render skin on the north and south faces,
+# stopping 0.8 m short of the ashlar inner corner.
+[[element]]
+type = "mass"
+name = "tower_n_flank"
+polygon = { ref = "part:0", keep_holes = false, offset = 0.06, subtract = [{ ref = "part:0", keep_holes = false }], clip = [[0.0, -18], [5.0, -18], [5.0, 3], [0.0, 3]] }
+y0 = 1.5
+y1 = 28.8
+material = "render"
+top = false
+
+# Ochre-plastered infill closing the ground storey, with a lancet window and
+# a pointed door in jagged ashlar frames (photo 17).
+[[element]]
+type = "mass"
+name = "tower_n_ochre"
+polygon = { ref = "part:0", keep_holes = false, offset = 0.07, subtract = [{ ref = "part:0", keep_holes = false }], clip = [[5.0, -15.5], [7.0, -15.5], [7.0, -2.1], [5.0, -2.1]] }
+y0 = 0
+y1 = 10.45
+material = "ochre"
+
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "window"
+  arch = "pointed"
+  width = 0.45
+  height = 2.2
+  levels = [4.6]
+  bays = { at = [4.3] }
+  infill = "dark"
+  surround = { width = 0.45, projection = 0.04 }
+  material = "ashlar"
+
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "door"
+  arch = "pointed"
+  width = 1.3
+  height = 2.6
+  levels = [0.0]
+  bays = { at = [4.3] }
+  infill = "door"
+  surround = { width = 0.4, projection = 0.04 }
+  material = "ashlar"
+
+# Crown: torus string, arcuated machicolations and merlons round the field
+# side and both flanks, up to the inner corners (photos 02, 03, 14, 32).
+[[element]]
+type = "moulding"
+polygon = { ref = "part:0", keep_holes = false, inset = 0.35, union = [{ ref = "part:0", keep_holes = false, clip = [[0.6, -18], [8, -18], [8, 3], [0.6, 3]] }] }
+edges = "not:facing:e"
+y = 28.8
+profile = "torus"
+size = 0.35
+material = "ashlar_fine"
+
+[[element]]
+type = "machicolations"
+polygon = { ref = "part:0", keep_holes = false, inset = 0.35, union = [{ ref = "part:0", keep_holes = false, clip = [[0.6, -18], [8, -18], [8, 3], [0.6, 3]] }] }
+edges = "not:facing:e"
+y = 29.1
+projection = 0.9
+spacing = 1.85
+corbel_height = 1.5
+corbel_courses = 4
+corbel_width = 0.42
+arches = true
+arch = "round"
+parapet = 2.2
+thickness = 0.5
+merlons = { shape = "rect", width = 1.15, gap = 0.85, height = 1.3, thickness = 0.6 }
+material = "ashlar"
+
+# ------------------------------------------------------------ south tower
+[[element]]
+type = "mass"
+name = "tower_s_round"
+polygon = { ref = "part:1", keep_holes = false, inset = 0.35, clip = [[-14, 6], [0.6, 6], [0.6, 27], [-14, 27]] }
+y0 = 0
+y1 = 33.0
+material = "render"
+top_material = "terrace"
+
+[[element]]
+type = "mass"
+name = "tower_s_back"
+polygon = { ref = "part:1", keep_holes = false, clip = [[0.0, 6], [8, 6], [8, 27], [0.0, 27]] }
+y0 = 0
+y1 = 33.0
+material = "ashlar"
+top_material = "terrace"
+
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "arch"
+  arch = "pointed"
+  width = 8.0
+  height = 9.0
+  rise = 4.6
+  levels = [10.6]
+  bays = { at = [5.9] }
+  depth = 7.5
+  infill = "blind"
+  stone_material = "ashlar"
+
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "arch"
+  arch = "pointed"
+  width = 7.6
+  height = 9.0
+  rise = 4.4
+  levels = [22.0]
+  bays = { at = [5.9] }
+  depth = 7.0
+  infill = "blind"
+  stone_material = "ashlar"
+
+[[element]]
+type = "string_course"
+on = "tower_s_back"
+edges = "facing:e"
+y = 10.45
+profile = "string"
+size = 0.3
+material = "ashlar_fine"
+
+[[element]]
+type = "string_course"
+on = "tower_s_back"
+edges = "facing:e"
+y = 21.85
+profile = "string"
+size = 0.3
+material = "ashlar_fine"
+
+[[element]]
+type = "parapet"
+on = "tower_s_back"
+edges = "facing:e"
+y = 33.0
+height = 0.8
+thickness = 0.5
+material = "ashlar"
+
+# The flanks of the rectangular city half are rendered tapial like the round
+# shaft (photos 04, 28): a 6 cm render skin on the north and south faces,
+# stopping 0.8 m short of the ashlar inner corner.
+[[element]]
+type = "mass"
+name = "tower_s_flank"
+polygon = { ref = "part:1", keep_holes = false, offset = 0.06, subtract = [{ ref = "part:1", keep_holes = false }], clip = [[0.0, 6], [5.0, 6], [5.0, 27], [0.0, 27]] }
+y0 = 1.5
+y1 = 28.8
+material = "render"
+top = false
+
+[[element]]
+type = "mass"
+name = "tower_s_ochre"
+polygon = { ref = "part:1", keep_holes = false, offset = 0.07, subtract = [{ ref = "part:1", keep_holes = false }], clip = [[5.0, 8.95], [7.0, 8.95], [7.0, 23.0], [5.0, 23.0]] }
+y0 = 0
+y1 = 10.45
+material = "ochre"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:1", keep_holes = false, inset = 0.35, union = [{ ref = "part:1", keep_holes = false, clip = [[0.6, 6], [8, 6], [8, 27], [0.6, 27]] }] }
+edges = "not:facing:e"
+y = 28.8
+profile = "torus"
+size = 0.35
+material = "ashlar_fine"
+
+[[element]]
+type = "machicolations"
+polygon = { ref = "part:1", keep_holes = false, inset = 0.35, union = [{ ref = "part:1", keep_holes = false, clip = [[0.6, 6], [8, 6], [8, 27], [0.6, 27]] }] }
+edges = "not:facing:e"
+y = 29.1
+projection = 0.9
+spacing = 1.85
+corbel_height = 1.5
+corbel_courses = 4
+corbel_width = 0.42
+arches = true
+arch = "round"
+parapet = 2.2
+thickness = 0.5
+merlons = { shape = "rect", width = 1.15, gap = 0.85, height = 1.3, thickness = 0.6 }
+material = "ashlar"
+
+# Corner merlons on the inner (east) corners of both towers (photo 17).
+[[element]]
+type = "group"
+name = "inner_corner_merlons"
+material = "ashlar"
+  [[element.children]]
+  type = "box"
+  min = [5.0, 33.8, -14.85]
+  max = [5.9, 35.0, -14.0]
+  [[element.children]]
+  type = "box"
+  min = [5.2, 33.8, -0.8]
+  max = [6.1, 35.0, 0.05]
+  [[element.children]]
+  type = "box"
+  min = [5.0, 33.8, 8.9]
+  max = [5.9, 35.0, 9.75]
+  [[element.children]]
+  type = "box"
+  min = [5.0, 33.8, 21.6]
+  max = [5.9, 35.0, 22.45]
+
+# Water spouts under the inner parapets and the second-floor sills.
+[[element]]
+type = "gargoyles"
+on = "tower_n_back"
+edges = "facing:e"
+y = 32.3
+spacing = 4.5
+length = 0.9
+size = 0.28
+corners = false
+
+[[element]]
+type = "gargoyles"
+on = "tower_s_back"
+edges = "facing:e"
+y = 32.3
+spacing = 4.5
+length = 0.9
+size = 0.28
+corners = false
+
+# Spiral-stair turrets rising above the tower terraces with low stone domes
+# (photos 21, 26).
+[[element]]
+type = "cylinder"
+name = "turret_n"
+at = [-1.63, 33.0, -1.39]
+height = 2.3
+radius = 1.55
+segments = 24
+material = "ashlar_fine"
+[[element]]
+type = "sphere"
+center = [-1.63, 35.3, -1.39]
+radii = [1.6, 0.85, 1.6]
+lat = [0, 90]
+segments = 24
+material = "ashlar_fine"
+
+[[element]]
+type = "cylinder"
+name = "turret_s"
+at = [0.0, 33.0, 11.64]
+height = 2.3
+radius = 1.55
+segments = 24
+material = "ashlar_fine"
+[[element]]
+type = "sphere"
+center = [0.0, 35.3, 11.64]
+radii = [1.6, 0.85, 1.6]
+lat = [0, 90]
+segments = 24
+material = "ashlar_fine"
+
+# ------------------------------------------------------------ gate body
+# The gate body up to the terrace at 20 m, pierced west-east by the
+# round-arched passage (4.8 x 7.7 m).
+[[element]]
+type = "mass"
+name = "gate"
+polygon = { ref = "part:2", union = ["part:4"] }
+y0 = 0
+y1 = 20.0
+material = "ashlar"
+top_material = "terrace"
+
+  [[element.openings]]
+  edges = "facing:265:8"
+  kind = "passage"
+  arch = "round"
+  width = 4.8
+  height = 7.7
+  bays = { at = [3.71] }
+
+  # Inner gate block: first-floor hall behind a pointed arch (photos 01, 17).
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "arch"
+  arch = "pointed"
+  width = 6.0
+  height = 7.6
+  rise = 3.4
+  levels = [10.8]
+  bays = { at = [4.2] }
+  depth = 5.5
+  infill = "blind"
+
+  # Door at the head of the stair on the block's south side (photos 03, 11).
+  [[element.openings]]
+  edges = "facing:165:12"
+  kind = "window"
+  arch = "pointed"
+  width = 1.4
+  height = 2.8
+  levels = [10.6]
+  bays = 1
+  infill = "door"
+  surround = { width = 0.3, projection = 0.05 }
+
+[[element]]
+type = "string_course"
+polygon = "part:2"
+edges = ["facing:e", "facing:350:15", "facing:165:12"]
+y = 10.5
+profile = "string"
+size = 0.3
+material = "ashlar_fine"
+
+[[element]]
+type = "parapet"
+polygon = "part:2"
+edges = ["facing:e", "facing:350:15", "facing:165:12"]
+y = 20.0
+height = 1.0
+thickness = 0.4
+material = "ashlar"
+
+# The field face of the gate: a 6 cm skin of the darker gate-wall render
+# over the whole face up to the upper wall-walk, with the arch, the two
+# vertical shot-holes over it and the string course.
+[[element]]
+type = "mass"
+name = "gate_face"
+polygon = [[-2.476, 0.902], [-1.654, 9.898], [-1.713, 9.904], [-2.536, 0.907]]
+y0 = 0
+y1 = 26.6
+material = "gate_wall"
+top = false
+
+  [[element.openings]]
+  edges = "facing:w"
+  kind = "arch"
+  arch = "round"
+  width = 4.8
+  height = 7.7
+  levels = [0.0]
+  bays = { at = [4.12] }
+  infill = "void"
+  voussoirs = { count = 19, width = 0.95, projection = 0.03 }
+  material = "ashlar"
+
+  [[element.openings]]
+  edges = "facing:w"
+  kind = "slit"
+  width = 0.14
+  height = 1.0
+  levels = [8.3]
+  bays = { at = [3.62, 4.62] }
+  depth = 0.6
+
+[[element]]
+type = "string_course"
+on = "gate_face"
+edges = "facing:w"
+y = 12.9
+profile = "string"
+size = 0.22
+material = "ashlar"
+
+# Shields over the arch: the city arms either side, the royal arms above
+# (photos 04, 13, 39).
+[[element]]
+type = "array"
+name = "gate_shields"
+mode = "points"
+component = "shield"
+points = [[-2.62, 9.3, 3.1], [-2.43, 9.3, 5.2], [-2.53, 10.3, 4.12]]
+facings = [264.8, 264.8, 264.8]
+
+# Inscription plaque right of the arch (photos 04, 39).
+[[element]]
+type = "box"
+name = "plaque"
+material = "plaque"
+transform = { rotate_y = -5.2, pivot = [-2.25, 0, 7.7] }
+min = [-2.62, 2.6, 7.2]
+max = [-2.52, 3.3, 8.3]
+
+# Upper wall over the gate: wall-walk at 26 m behind merlons with
+# loopholes, a door at 21.9 m into the machicolated balcony (photos 07, 20,
+# 23), the balcony on five arches on six corbels on the field side.
+[[element]]
+type = "mass"
+name = "upper_wall"
+polygon = [[-2.476, 0.902], [-1.654, 9.898], [0.836, 9.671], [0.013, 0.674]]
+y0 = 20.0
+y1 = 26.6
+material = "ashlar"
+
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "window"
+  arch = "pointed"
+  width = 1.1
+  height = 2.5
+  levels = [21.9]
+  bays = 1
+  infill = "door"
+
+[[element]]
+type = "crenellations"
+on = "upper_wall"
+edges = "facing:w"
+y = 26.6
+shape = "rect"
+width = 1.05
+gap = 0.8
+height = 1.4
+thickness = 0.55
+wall = 0.0
+loopholes = true
+
+[[element]]
+type = "machicolations"
+polygon = [[-2.536, 0.907], [-1.713, 9.904], [0.836, 9.671], [0.013, 0.674]]
+edges = "facing:w"
+y = 19.0
+projection = 1.0
+spacing = 1.75
+corbel_height = 2.4
+corbel_courses = 5
+corbel_width = 0.38
+arches = true
+arch = "round"
+parapet = 1.5
+thickness = 0.45
+merlons = { shape = "rect", width = 0.95, gap = 0.85, height = 1.5, thickness = 0.5 }
+material = "ashlar"
+
+# Terrace stairs: steps up to the balcony door, then two steep flights up
+# the wall to the wall-walk (photo 07).
+[[element]]
+type = "stairs"
+from = [2.7, 5.33]
+to = [0.95, 5.29]
+y = 20.0
+width = 1.4
+rise = 1.9
+riser = 0.19
+cheeks = true
+
+[[element]]
+type = "stairs"
+from = [1.2, 4.4]
+to = [0.9, 1.1]
+y = 21.9
+width = 0.9
+rise = 4.7
+riser = 0.2
+
+[[element]]
+type = "stairs"
+from = [1.4, 6.2]
+to = [1.7, 9.4]
+y = 21.9
+width = 0.9
+rise = 4.7
+riser = 0.2
+
+# Grand stair up the inner face of the south tower to the door of the gate
+# block (Emilio Rieta, 1976-1982; photos 01, 03, 11, 17, 37).
+[[element]]
+type = "stairs"
+name = "inner_stair"
+from = [7.2, 22.4]
+to = [7.2, 9.35]
+width = 2.2
+rise = 10.6
+riser = 0.2
+cheeks = true
+
+# ------------------------------------------------------------ city wall
+# Surviving stretch of the 14th-century wall running north from the north
+# tower (OSM part 3) and a small spur (part 7).
+[[element]]
+type = "mass"
+name = "city_wall"
+polygon = "part:3"
+y0 = 0
+y1 = 9.0
+material = "rubble"
+
+[[element]]
+type = "mass"
+name = "wall_spur"
+polygon = "part:7"
+y0 = 0
+y1 = 3.0
+material = "rubble"
+
+# ------------------------------------------------------------ tapial lifts
+# Flush lime bands at every second tapial lift joint (about 1.8 m apart), round the field
+# side and flanks of both towers (photos 07, 28, 30: horizontal banding).
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:0", keep_holes = false, inset = 0.35, union = [{ ref = "part:0", keep_holes = false, offset = 0.06, clip = [[0.6, -18], [8, -18], [8, 3], [0.6, 3]] }] }
+edges = "not:facing:e"
+y = 2.40
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:0", keep_holes = false, inset = 0.35, union = [{ ref = "part:0", keep_holes = false, offset = 0.06, clip = [[0.6, -18], [8, -18], [8, 3], [0.6, 3]] }] }
+edges = "not:facing:e"
+y = 4.45
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:0", keep_holes = false, inset = 0.35, union = [{ ref = "part:0", keep_holes = false, offset = 0.06, clip = [[0.6, -18], [8, -18], [8, 3], [0.6, 3]] }] }
+edges = "not:facing:e"
+y = 5.80
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:0", keep_holes = false, inset = 0.35, union = [{ ref = "part:0", keep_holes = false, offset = 0.06, clip = [[0.6, -18], [8, -18], [8, 3], [0.6, 3]] }] }
+edges = "not:facing:e"
+y = 7.95
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:0", keep_holes = false, inset = 0.35, union = [{ ref = "part:0", keep_holes = false, offset = 0.06, clip = [[0.6, -18], [8, -18], [8, 3], [0.6, 3]] }] }
+edges = "not:facing:e"
+y = 9.50
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:0", keep_holes = false, inset = 0.35, union = [{ ref = "part:0", keep_holes = false, offset = 0.06, clip = [[0.6, -18], [8, -18], [8, 3], [0.6, 3]] }] }
+edges = "not:facing:e"
+y = 11.70
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:0", keep_holes = false, inset = 0.35, union = [{ ref = "part:0", keep_holes = false, offset = 0.06, clip = [[0.6, -18], [8, -18], [8, 3], [0.6, 3]] }] }
+edges = "not:facing:e"
+y = 12.95
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:0", keep_holes = false, inset = 0.35, union = [{ ref = "part:0", keep_holes = false, offset = 0.06, clip = [[0.6, -18], [8, -18], [8, 3], [0.6, 3]] }] }
+edges = "not:facing:e"
+y = 15.10
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:0", keep_holes = false, inset = 0.35, union = [{ ref = "part:0", keep_holes = false, offset = 0.06, clip = [[0.6, -18], [8, -18], [8, 3], [0.6, 3]] }] }
+edges = "not:facing:e"
+y = 16.80
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:0", keep_holes = false, inset = 0.35, union = [{ ref = "part:0", keep_holes = false, offset = 0.06, clip = [[0.6, -18], [8, -18], [8, 3], [0.6, 3]] }] }
+edges = "not:facing:e"
+y = 18.85
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:0", keep_holes = false, inset = 0.35, union = [{ ref = "part:0", keep_holes = false, offset = 0.06, clip = [[0.6, -18], [8, -18], [8, 3], [0.6, 3]] }] }
+edges = "not:facing:e"
+y = 20.20
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:0", keep_holes = false, inset = 0.35, union = [{ ref = "part:0", keep_holes = false, offset = 0.06, clip = [[0.6, -18], [8, -18], [8, 3], [0.6, 3]] }] }
+edges = "not:facing:e"
+y = 22.35
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:0", keep_holes = false, inset = 0.35, union = [{ ref = "part:0", keep_holes = false, offset = 0.06, clip = [[0.6, -18], [8, -18], [8, 3], [0.6, 3]] }] }
+edges = "not:facing:e"
+y = 23.90
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:0", keep_holes = false, inset = 0.35, union = [{ ref = "part:0", keep_holes = false, offset = 0.06, clip = [[0.6, -18], [8, -18], [8, 3], [0.6, 3]] }] }
+edges = "not:facing:e"
+y = 26.10
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:0", keep_holes = false, inset = 0.35, union = [{ ref = "part:0", keep_holes = false, offset = 0.06, clip = [[0.6, -18], [8, -18], [8, 3], [0.6, 3]] }] }
+edges = "not:facing:e"
+y = 27.35
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:1", keep_holes = false, inset = 0.35, union = [{ ref = "part:1", keep_holes = false, offset = 0.06, clip = [[0.6, 6], [8, 6], [8, 27], [0.6, 27]] }] }
+edges = "not:facing:e"
+y = 2.40
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:1", keep_holes = false, inset = 0.35, union = [{ ref = "part:1", keep_holes = false, offset = 0.06, clip = [[0.6, 6], [8, 6], [8, 27], [0.6, 27]] }] }
+edges = "not:facing:e"
+y = 4.45
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:1", keep_holes = false, inset = 0.35, union = [{ ref = "part:1", keep_holes = false, offset = 0.06, clip = [[0.6, 6], [8, 6], [8, 27], [0.6, 27]] }] }
+edges = "not:facing:e"
+y = 5.80
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:1", keep_holes = false, inset = 0.35, union = [{ ref = "part:1", keep_holes = false, offset = 0.06, clip = [[0.6, 6], [8, 6], [8, 27], [0.6, 27]] }] }
+edges = "not:facing:e"
+y = 7.95
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:1", keep_holes = false, inset = 0.35, union = [{ ref = "part:1", keep_holes = false, offset = 0.06, clip = [[0.6, 6], [8, 6], [8, 27], [0.6, 27]] }] }
+edges = "not:facing:e"
+y = 9.50
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:1", keep_holes = false, inset = 0.35, union = [{ ref = "part:1", keep_holes = false, offset = 0.06, clip = [[0.6, 6], [8, 6], [8, 27], [0.6, 27]] }] }
+edges = "not:facing:e"
+y = 11.70
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:1", keep_holes = false, inset = 0.35, union = [{ ref = "part:1", keep_holes = false, offset = 0.06, clip = [[0.6, 6], [8, 6], [8, 27], [0.6, 27]] }] }
+edges = "not:facing:e"
+y = 12.95
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:1", keep_holes = false, inset = 0.35, union = [{ ref = "part:1", keep_holes = false, offset = 0.06, clip = [[0.6, 6], [8, 6], [8, 27], [0.6, 27]] }] }
+edges = "not:facing:e"
+y = 15.10
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:1", keep_holes = false, inset = 0.35, union = [{ ref = "part:1", keep_holes = false, offset = 0.06, clip = [[0.6, 6], [8, 6], [8, 27], [0.6, 27]] }] }
+edges = "not:facing:e"
+y = 16.80
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:1", keep_holes = false, inset = 0.35, union = [{ ref = "part:1", keep_holes = false, offset = 0.06, clip = [[0.6, 6], [8, 6], [8, 27], [0.6, 27]] }] }
+edges = "not:facing:e"
+y = 18.85
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:1", keep_holes = false, inset = 0.35, union = [{ ref = "part:1", keep_holes = false, offset = 0.06, clip = [[0.6, 6], [8, 6], [8, 27], [0.6, 27]] }] }
+edges = "not:facing:e"
+y = 20.20
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:1", keep_holes = false, inset = 0.35, union = [{ ref = "part:1", keep_holes = false, offset = 0.06, clip = [[0.6, 6], [8, 6], [8, 27], [0.6, 27]] }] }
+edges = "not:facing:e"
+y = 22.35
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:1", keep_holes = false, inset = 0.35, union = [{ ref = "part:1", keep_holes = false, offset = 0.06, clip = [[0.6, 6], [8, 6], [8, 27], [0.6, 27]] }] }
+edges = "not:facing:e"
+y = 23.90
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:1", keep_holes = false, inset = 0.35, union = [{ ref = "part:1", keep_holes = false, offset = 0.06, clip = [[0.6, 6], [8, 6], [8, 27], [0.6, 27]] }] }
+edges = "not:facing:e"
+y = 26.10
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+[[element]]
+type = "moulding"
+polygon = { ref = "part:1", keep_holes = false, inset = 0.35, union = [{ ref = "part:1", keep_holes = false, offset = 0.06, clip = [[0.6, 6], [8, 6], [8, 27], [0.6, 27]] }] }
+edges = "not:facing:e"
+y = 27.35
+profile = [[0.0, 0.0], [0.025, 0.02], [0.025, 0.1], [0.0, 0.12]]
+material = "lime"
+
+# ------------------------------------------------------------ 1808 impacts
+# Cannonball pits and render losses on the field faces, generated by a fixed
+# seed and weighted to the west (field) side, 3-29 m, as in photos 02, 04,
+# 11, 13, 14 and 39. Points lie on the plan circles (r 7.34 / 7.52).
+[[element]]
+type = "array"
+name = "pits_n_s"
+mode = "points"
+component = "pit_s"
+points = [[-5.85, 21.79, 0.66], [-10.21, 14.26, -8.74], [-7.57, 4.79, -11.88], [-8.23, 4.25, -11.39], [-8.11, 8.78, -11.49], [-8.37, 8.09, -0.74], [-8.88, 20.51, -10.77], [-10.58, 26.38, -7.59], [-10.76, 26.26, -5.99], [-3.95, 24.53, -13.0], [-10.76, 25.56, -6.23], [-10.7, 16.58, -6.89], [-10.18, 6.67, -8.81], [-9.64, 19.89, -2.21], [-8.24, 12.7, -11.38], [-10.19, 14.45, -8.77], [-8.82, 14.72, -1.18], [-8.78, 25.03, -1.13], [-7.93, 12.3, -11.62], [-7.57, 17.3, -11.88], [-10.22, 14.97, -8.7], [-5.06, 19.38, -12.88], [-9.33, 9.92, -1.77], [-6.08, 6.2, -12.61], [-6.56, 12.34, 0.4], [-9.21, 21.79, -1.63], [-10.36, 10.09, -3.69], [-9.62, 22.96, -2.18], [-10.74, 6.33, -5.47], [-7.17, 17.59, 0.09], [-8.62, 6.53, -0.97], [-4.49, 3.13, -12.96], [-10.61, 26.38, -4.58], [-10.75, 3.43, -5.75], [-7.66, 27.24, -11.81], [-9.38, 18.89, -1.83], [-10.73, 16.91, -6.66], [-10.2, 21.26, -8.76], [-10.72, 14.76, -5.24], [-7.61, 6.56, -11.85], [-9.12, 3.69, -1.52], [-3.85, 17.15, -13.0], [-7.44, 12.47, -11.96], [-10.69, 7.04, -6.99], [-6.88, 19.65, -12.27], [-5.92, 23.25, -12.66], [-10.64, 18.52, -7.3], [-9.97, 8.41, -2.79], [-7.18, 22.65, 0.09], [-9.39, 14.49, -10.17], [-10.73, 20.71, -5.39], [-9.42, 8.62, -1.89], [-9.78, 4.02, -2.44], [-10.69, 15.22, -6.98], [-9.84, 14.53, -2.55], [-7.28, 10.59, -12.06], [-10.36, 14.5, -3.68], [-10.61, 7.92, -4.56], [-10.28, 15.84, -8.56], [-10.07, 19.88, -2.99], [-10.21, 11.84, -8.73], [-10.62, 4.7, -4.62], [-4.81, 20.77, -12.92], [-10.62, 5.25, -4.62], [-9.55, 7.17, -9.93], [-9.77, 15.43, -9.6], [-9.19, 8.97, -10.42], [-7.96, 27.54, -0.42], [-10.13, 6.24, -8.91], [-10.71, 11.36, -6.81]]
+facings = [197.3, 292.9, 327.1, 320.4, 321.6, 221.1, 313.0, 283.1, 269.8, 358.5, 271.8, 277.3, 293.6, 237.1, 320.2, 293.2, 226.3, 225.8, 323.4, 327.0, 292.6, 349.3, 232.7, 340.7, 203.5, 231.2, 250.6, 236.8, 265.6, 209.1, 223.9, 354.1, 258.2, 267.8, 326.1, 233.3, 275.4, 293.2, 263.7, 326.7, 230.0, 359.4, 328.4, 278.0, 333.5, 342.1, 280.6, 242.5, 209.2, 306.5, 264.9, 233.9, 239.3, 278.0, 240.3, 329.9, 250.5, 258.0, 291.4, 244.4, 292.9, 258.6, 351.4, 258.5, 304.2, 300.9, 309.2, 216.8, 294.5, 276.6]
+
+[[element]]
+type = "array"
+name = "pits_n_m"
+mode = "points"
+component = "pit_m"
+points = [[-4.93, 17.88, -12.9], [-10.04, 19.74, -2.93], [-9.41, 11.86, -10.14], [-3.84, 14.75, -13.0], [-8.18, 7.05, -11.43], [-9.39, 16.73, -1.85], [-9.08, 19.39, -10.56], [-7.39, 27.33, -0.03], [-6.31, 13.83, -12.52], [-7.93, 15.37, -0.39], [-8.39, 21.5, -11.26], [-10.76, 3.36, -5.98], [-9.84, 11.89, -9.48], [-10.54, 4.44, -4.27], [-9.56, 26.06, -2.09], [-10.63, 6.54, -4.69], [-9.27, 23.95, -10.32], [-6.88, 3.42, 0.25], [-10.75, 13.73, -6.41], [-10.12, 18.29, -3.09], [-7.64, 27.21, -11.83], [-10.73, 23.09, -6.6], [-10.54, 5.95, -4.27], [-9.92, 11.8, -2.69], [-9.12, 24.27, -10.51], [-10.0, 6.6, -9.19], [-10.71, 13.7, -5.15], [-10.61, 17.15, -7.47], [-6.11, 12.02, -12.6], [-8.19, 3.33, -0.6], [-6.77, 4.04, 0.3], [-7.87, 27.73, -11.67], [-4.11, 25.98, -12.99], [-7.81, 26.79, -11.71]]
+facings = [350.4, 243.9, 306.2, 359.5, 320.9, 233.5, 310.6, 211.2, 338.7, 216.5, 318.7, 269.8, 299.8, 255.6, 235.9, 259.1, 308.1, 206.4, 273.3, 245.3, 326.4, 274.9, 255.5, 241.6, 310.0, 297.0, 263.0, 282.1, 340.5, 219.3, 205.4, 324.0, 357.2, 324.6]
+
+[[element]]
+type = "array"
+name = "pits_n_l"
+mode = "points"
+component = "pit_l"
+points = [[-4.36, 7.07, -12.98], [-10.46, 7.99, -3.97], [-9.97, 25.32, -9.24], [-8.55, 24.77, -0.91], [-10.04, 17.35, -9.1], [-7.94, 16.18, -11.62], [-10.7, 12.96, -5.07], [-10.75, 10.53, -6.45], [-10.01, 13.27, -2.87], [-4.34, 12.55, -12.98], [-10.67, 17.74, -4.89], [-9.85, 25.18, -9.45]]
+facings = [355.2, 253.0, 297.5, 223.1, 296.2, 323.4, 262.2, 273.6, 243.3, 355.3, 260.8, 299.5]
+
+[[element]]
+type = "array"
+name = "rubble_n_low"
+mode = "points"
+component = "patch_a"
+note = "render lost low down: exposed lime-and-rubble tapial (photos 02, 11, 13)"
+points = [[-8.5, 7.38, -0.86], [-10.39, 3.49, -8.25], [-8.68, 3.92, -10.98], [-9.95, 2.65, -2.74], [-8.68, 3.51, -10.98], [-9.45, 4.26, -10.08], [-10.75, 5.77, -6.29], [-10.66, 3.99, -7.22], [-10.72, 2.88, -6.72]]
+facings = [222.6, 288.7, 315.3, 242.1, 315.3, 305.7, 272.3, 279.9, 275.9]
+
+[[element]]
+type = "array"
+name = "rubble_n_high"
+mode = "points"
+component = "patch_b"
+points = [[-8.07, 17.04, -0.5], [-9.7, 7.39, -9.7], [-7.81, 21.0, -11.71], [-10.24, 7.81, -8.65], [-10.1, 18.69, -3.05], [-9.49, 19.59, -10.03]]
+facings = [218.0, 301.9, 324.7, 292.2, 244.9, 305.1]
+
+[[element]]
+type = "array"
+name = "pits_s_s"
+mode = "points"
+component = "pit_s"
+points = [[-9.87, 8.14, 20.37], [-5.79, 3.37, 10.39], [-8.41, 26.98, 11.98], [-6.62, 26.06, 10.74], [-6.66, 23.09, 10.75], [-7.92, 11.49, 22.79], [-10.62, 20.03, 16.83], [-10.21, 20.54, 14.74], [-3.46, 22.87, 24.34], [-10.46, 16.24, 15.61], [-10.59, 9.1, 17.92], [-8.82, 16.1, 21.93], [-9.56, 23.44, 20.95], [-10.39, 19.91, 18.99], [-10.61, 23.11, 17.73], [-9.61, 3.43, 20.85], [-9.76, 6.0, 20.59], [-10.21, 19.96, 19.59], [-10.22, 16.97, 19.57], [-10.62, 21.55, 17.45], [-5.0, 5.83, 24.17], [-6.8, 24.6, 23.52], [-7.8, 26.89, 22.88], [-8.97, 5.37, 21.76], [-8.98, 21.77, 21.74], [-7.39, 19.5, 23.17], [-7.57, 13.98, 23.05], [-10.07, 7.51, 14.39], [-6.54, 5.16, 23.64], [-8.24, 12.43, 22.51], [-8.16, 21.73, 11.75], [-10.54, 27.18, 16.02], [-7.54, 17.3, 23.07], [-10.14, 17.74, 14.56], [-8.3, 7.01, 11.88], [-10.53, 14.8, 18.34], [-3.43, 12.36, 24.34], [-6.29, 12.1, 10.58], [-9.35, 26.12, 13.08], [-8.34, 26.1, 22.42], [-6.67, 20.88, 10.76], [-10.61, 16.54, 16.7], [-10.46, 10.47, 15.61], [-8.48, 9.63, 12.05], [-9.72, 8.61, 13.67], [-9.62, 18.76, 13.49], [-10.47, 24.52, 15.66], [-6.56, 27.72, 23.63], [-9.4, 15.52, 13.15], [-9.55, 17.04, 13.38], [-10.63, 17.4, 17.25], [-9.37, 21.05, 13.11], [-5.16, 26.19, 24.14], [-7.01, 21.88, 23.4], [-6.67, 27.34, 23.58], [-5.68, 21.42, 10.35], [-10.37, 13.17, 15.25], [-8.04, 27.36, 22.69], [-10.6, 15.88, 16.51], [-10.48, 17.41, 18.62], [-10.07, 6.13, 14.38], [-10.46, 17.95, 18.71], [-10.62, 10.84, 17.45], [-9.89, 24.74, 14.01], [-6.94, 8.57, 23.44], [-10.19, 7.7, 14.7], [-10.39, 23.92, 15.35], [-9.31, 10.73, 13.02], [-10.14, 4.7, 19.77], [-5.33, 25.9, 24.09]]
+facings = [243.5, 341.0, 316.3, 333.8, 333.5, 218.4, 272.8, 289.8, 180.0, 282.6, 264.0, 228.4, 238.2, 255.3, 265.5, 239.1, 241.5, 250.3, 250.4, 267.8, 192.4, 207.7, 217.2, 230.2, 230.4, 213.3, 215.0, 292.8, 205.5, 221.8, 319.1, 279.2, 214.7, 291.3, 317.6, 260.6, 179.7, 336.7, 304.8, 222.9, 333.4, 273.8, 282.6, 315.6, 299.2, 300.9, 282.2, 205.6, 304.1, 301.9, 269.4, 304.5, 193.7, 209.6, 206.6, 342.0, 285.5, 219.7, 275.3, 258.3, 292.9, 257.6, 267.8, 296.2, 209.1, 290.1, 284.7, 305.4, 248.7, 195.2]
+
+[[element]]
+type = "array"
+name = "pits_s_m"
+mode = "points"
+component = "pit_m"
+points = [[-6.08, 17.82, 23.85], [-8.29, 13.02, 22.47], [-7.73, 12.15, 22.93], [-10.58, 26.52, 17.99], [-9.46, 18.94, 13.24], [-9.72, 19.6, 20.67], [-8.8, 27.09, 12.39], [-10.17, 7.65, 14.63], [-9.52, 4.44, 21.01], [-9.15, 18.16, 12.81], [-10.48, 24.24, 18.61], [-10.53, 13.44, 18.38], [-10.34, 9.37, 15.15], [-10.11, 7.23, 14.5], [-10.6, 3.75, 16.47], [-4.35, 9.73, 24.28], [-10.48, 6.97, 18.61], [-10.35, 26.48, 15.17], [-9.56, 14.51, 13.4], [-10.12, 17.39, 14.51], [-9.94, 27.23, 14.11], [-10.62, 18.05, 16.76], [-10.63, 27.83, 17.11], [-10.4, 20.46, 15.36], [-9.55, 11.16, 13.38], [-7.57, 23.85, 11.29], [-10.56, 11.17, 16.19], [-9.93, 4.88, 14.07], [-10.27, 23.26, 19.42], [-8.27, 25.11, 22.49], [-9.77, 22.96, 13.76], [-10.01, 5.25, 14.26], [-8.64, 22.62, 12.21], [-8.41, 19.79, 11.98]]
+facings = [201.4, 222.4, 216.5, 263.4, 303.2, 240.8, 311.8, 290.7, 237.6, 307.5, 258.5, 260.3, 286.4, 291.9, 275.6, 187.1, 258.4, 286.2, 301.7, 291.8, 295.3, 273.3, 270.5, 284.6, 301.9, 325.1, 277.8, 295.6, 251.7, 222.1, 298.4, 293.9, 313.8, 316.4]
+
+[[element]]
+type = "array"
+name = "pits_s_l"
+mode = "points"
+component = "pit_l"
+points = [[-9.25, 22.65, 21.4], [-9.08, 24.51, 21.62], [-10.19, 17.94, 19.64], [-9.97, 22.37, 14.17], [-6.44, 16.78, 10.65], [-7.85, 7.21, 22.84], [-6.73, 14.32, 23.55], [-10.54, 23.72, 18.29], [-9.83, 18.59, 20.47], [-8.67, 17.66, 12.25], [-9.55, 12.4, 20.96], [-9.29, 8.53, 21.35]]
+facings = [233.9, 231.7, 249.9, 294.7, 335.4, 217.8, 207.2, 261.0, 242.6, 313.4, 238.1, 234.4]
+
+[[element]]
+type = "array"
+name = "rubble_s_low"
+mode = "points"
+component = "patch_a"
+note = "render lost low down: exposed lime-and-rubble tapial (photos 02, 11, 13)"
+points = [[-7.85, 6.34, 11.5], [-6.94, 3.24, 10.9], [-7.56, 5.95, 23.05], [-10.59, 5.69, 16.42], [-9.02, 5.24, 12.64], [-8.68, 4.8, 12.26], [-8.37, 3.61, 22.4], [-10.53, 4.0, 18.37], [-9.73, 4.09, 20.64]]
+facings = [322.2, 331.0, 214.9, 276.0, 309.2, 313.3, 223.2, 260.4, 241.1]
+
+[[element]]
+type = "array"
+name = "rubble_s_high"
+mode = "points"
+component = "patch_b"
+points = [[-7.03, 8.33, 10.95], [-10.25, 7.73, 19.49], [-10.28, 8.87, 19.38], [-10.5, 6.68, 18.53], [-10.57, 12.7, 18.13], [-5.98, 19.63, 23.88]]
+facings = [330.1, 251.2, 252.0, 259.1, 262.3, 200.6]
+
+[[element]]
+type = "array"
+name = "pits_c_s"
+mode = "points"
+component = "pit_s"
+points = [[-2.05, 18.58, 6.15], [-2.28, 23.03, 3.65], [-2.04, 23.89, 6.26], [-1.83, 9.01, 8.5], [-2.37, 19.31, 2.65], [-2.4, 9.89, 2.37], [-2.02, 10.26, 6.5], [-1.83, 11.59, 8.57], [-2.39, 16.94, 2.51], [-2.23, 21.99, 4.21], [-1.83, 9.23, 8.6], [-2.05, 16.32, 6.17], [-1.82, 21.2, 8.61], [-1.97, 21.26, 7.0], [-2.13, 19.19, 5.27], [-2.45, 16.57, 1.8], [-2.27, 15.2, 3.8], [-1.94, 11.08, 7.33], [-2.16, 25.03, 4.95], [-2.01, 16.87, 6.62], [-2.1, 12.49, 5.64], [-1.9, 12.65, 7.8]]
+facings = [264.8, 264.8, 264.8, 264.8, 264.8, 264.8, 264.8, 264.8, 264.8, 264.8, 264.8, 264.8, 264.8, 264.8, 264.8, 264.8, 264.8, 264.8, 264.8, 264.8, 264.8, 264.8]
+
+[[element]]
+type = "array"
+name = "pits_c_m"
+mode = "points"
+component = "pit_m"
+points = [[-2.0, 25.49, 6.73], [-1.8, 16.95, 8.85], [-1.97, 14.62, 6.98], [-2.13, 18.19, 5.27], [-2.46, 22.53, 1.75], [-1.89, 21.3, 7.92], [-2.03, 18.69, 6.33], [-1.94, 24.46, 7.4], [-1.79, 14.94, 8.95], [-2.4, 12.27, 2.35]]
+facings = [264.8, 264.8, 264.8, 264.8, 264.8, 264.8, 264.8, 264.8, 264.8, 264.8]
+
+
+# ----------------------------------------------------------------- views
+# Cameras: `match` points solved by the tool, or eye/target/fov_y pasted
+# from a least-squares fit (camera + eye at ~1.6 m) of plan corners, the
+# gate arch and tower silhouettes measured on the photo; rms in the notes.
+# Photos 02, 03 (Diego Delso stitched panoramas) and 38 (ultra-wide) do not
+# fit a pinhole camera and stay as references in sources.toml.
+
+[[view]]
+name = "inner face from Placa de Santa Ursula (NE)"
+photo = "photos/17_2023_Valencia_TorresDeQuart01.jpg"
+sun = [150, 60]
+match = [
+  { px = [290, 1392], world = [9.98, 0.0, 7.73] },
+  { px = [610, 1392], world = [9.1, 0.0, -2.04] },
+  { px = [660, 1390], world = [6.03, 0.0, -1.48] },
+  { px = [612, 322], world = [6.07, 33.8, 0.07] },
+  { px = [1037, 147], world = [5.77, 33.8, -14.87] },
+  { px = [605, 595], world = [9.1, 21.0, -2.04] },
+  { px = [650, 650], world = [6.03, 21.0, -1.48] },
+  { px = [1150, 900], world = [5.77, 10.45, -14.87] },
+  { px = [430, 405], world = [5.85, 33.8, 8.85] },
+  { px = [195, 540], world = [5.88, 33.8, 22.5] },
+]
+
+[[view]]
+name = "inner face, evening (NE)"
+photo = "photos/01_Torres_de_Quart_panoramio.jpg"
+note = "least-squares fit of 10 points (block corners, tower corners, inner arch): 22 px rms"
+eye = [35.64, 1.56, -24.11]
+target = [12.48, 14.16, -9.80]
+fov_y = 50.38
+sun = [120, 20]
+time = "evening"
+
+[[view]]
+name = "outer face from Guillem de Castro (W)"
+photo = "photos/12_Torres_de_Quart_de_Valencia.jpg"
+sun = [240, 30]
+context = false
+note = "least-squares fit of 14 points (arch, string, corbels, merlons, tower silhouettes, eye at 1.6 m): 17.8 px rms; a coplanar `match` on the gate face put the camera underground"
+eye = [-47.64, 1.50, 12.72]
+target = [-19.52, 11.29, 9.09]
+fov_y = 44.87
+roll = 1.33
+
+[[view]]
+name = "outer face, low sun (W)"
+photo = "photos/39_TorresDeQuart.jpg"
+sun = [200, 30]
+context = false
+note = "least-squares fit of 17 points (arch, string, corbels, merlons, tower silhouettes, eye at 1.6 m): 14.8 px rms"
+eye = [-71.02, 1.59, 26.68]
+target = [-43.40, 9.30, 17.85]
+fov_y = 36.42
+roll = 0.16
+
+[[view]]
+name = "south tower and inner stair from Carrer de Quart (SSE)"
+photo = "photos/11_At_Valencia_2025_368.jpg"
+note = "least-squares fit of 7 points: 10.8 px rms (the Commons coordinate of this photo is wrong)"
+eye = [13.90, 1.60, 66.09]
+target = [8.11, 10.79, 38.13]
+fov_y = 50.80
+sun = [200, 45]
+context = false
+
+[[view]]
+name = "south tower from Carrer de Quart, further (SSE)"
+photo = "photos/18_2023_Valencia_TorresDeQuart02.jpg"
+note = "least-squares fit of 7 points: 18.5 px rms"
+eye = [8.26, 1.64, 85.64]
+target = [3.80, 7.17, 56.49]
+fov_y = 48.28
+sun = [160, 55]
+context = false
+
+[[view]]
+name = "south side from Guillem de Castro, 220 m (S)"
+photo = "photos/32_Torres_de_Quart_Valencia_001.jpg"
+note = "least-squares fit of 7 points incl. silhouettes: 24 px rms; zoomed phone photo"
+eye = [-4.41, 1.61, 227.39]
+target = [-3.68, 2.90, 197.42]
+fov_y = 27.36
+sun = [200, 40]
+context = false
+
+[[view]]
+name = "north tower from the garden (N)"
+photo = "photos/28_At_Valencia_2025_346.jpg"
+note = "least-squares fit of 6 points (inner corner, silhouettes, crown): 9.5 px rms"
+eye = [-13.51, 1.60, -63.66]
+target = [-7.17, 8.16, -35.08]
+fov_y = 57.52
+sun = [300, 35]   # overcast photo; light the north face
+
+[[view]]
+name = "both towers from the south-west (SW)"
+photo = "photos/31_Torres_quart_frontal.jpg"
+note = "least-squares fit of 8 points incl. silhouettes: 33 px rms"
+eye = [-29.62, 1.62, 52.00]
+target = [-14.02, 13.83, 29.47]
+fov_y = 59.49
+sun = [210, 35]
+context = false
+
+[[view]]
+name = "gallery and crowns from below (W)"
+photo = "photos/14_Quart1.jpg"
+note = "least-squares fit of 8 points incl. silhouettes: 35 px rms"
+eye = [-45.64, 1.59, 6.39]
+target = [-20.50, 17.89, 4.96]
+fov_y = 33.62
+sun = [230, 40]
+context = false
+
+[[view]]
+name = "aerial from the north-west"
+eye = [-60.0, 55.0, -45.0]
+target = [0.0, 18.0, 4.0]
+fov_y = 40
+sun = [215, 45]
+
+[[view]]
+name = "aerial over the inner face (E)"
+eye = [55.0, 45.0, 25.0]
+target = [2.0, 18.0, 4.0]
+fov_y = 42
+sun = [150, 50]
