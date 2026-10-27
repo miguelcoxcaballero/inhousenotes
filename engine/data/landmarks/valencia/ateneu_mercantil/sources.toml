@@ -22,6 +22,24 @@ catastro_use = { value = "4_2_retail", source = "https://www1.sedecatastro.gob.e
 catastro_floor_area = { value = 9421.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5825705&rc2=YJ2752F", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 10, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 15 parts" }
 
+# ---- measured dimensions used by landmark.toml (scratchpad ate/gen.py) ----
+plaza_front_length = { value = 35.16, unit = "m", source = "OSM way 416210407 edges 30-34 (= Catastro 5825705YJ2752F), checked on the IGN PNOA orthophoto (WMS pnoa-ma, CC BY 4.0)", note = "straight front between the party walls of the Rialto (north) and the ABC office tower (south)" }
+plaza_front_azimuth = { value = 241, unit = "deg", source = "OSM way 416210407" }
+pavilion_width = { value = 7.2, unit = "m", source = "OSM building:parts 730979337 (7.20 m) and 730979347 (7.09 m)", note = "photo 10: 6.7-7.0 m" }
+loggia_depth = { value = 2.05, unit = "m", source = "OSM building:part 730979348 / Catastro 4-floor strip along the front", note = "the five-arch screen stands in front of the central body (double facade)" }
+photo10_scale = { value = 29.52, unit = "px/m", source = "photo 10 (upright, frontal): facade 160-1198 px = 35.16 m" }
+ground_floor_cornice = { value = 8.5, unit = "m", source = "projective (cross-ratio) fit along both pavilion edges of the Catastro photo (8.1 / 8.7 m) and upright photo 02 (8.85 m)", note = "+-0.4 m; ground floor + mezzanine" }
+string_course = { value = 12.6, unit = "m", source = "photo 10 (+4.07 m over the ground-floor cornice)", note = "loggia floor, balcony line; pavilion balcony slabs 12.8 m" }
+arch_crown = { value = 23.3, unit = "m", source = "photo 10", note = "five round arches, span 3.15 m, centres 4.18 m apart about the facade axis" }
+screen_top = { value = 25.3, unit = "m", source = "photo 10", note = "paired finials on top" }
+pavilion_cornice = { value = 28.9, unit = "m", source = "photo 10 (soffit 28.4 m); Catastro-photo cross-ratio" }
+pavilion_crest = { value = 30.3, unit = "m", source = "photo 10", note = "flat block 29.7 m with a segmental crest" }
+setback_storey = { value = 32.2, unit = "m", source = "photo 10, setback-corrected", note = "terrace balustrade top 33.5 m, urn finials" }
+attic_cornice = { value = 33.9, unit = "m", source = "photo 10 in-plane 33.0 m, corrected for its 2.05 m setback at a ~70 m camera distance (fits views 02, 07, 10 best between 55 and 80 m)", note = "+-0.6 m; nine attic windows 30.8-32.5 m at 2.07 m centres" }
+attic_balustrade = { value = 35.1, unit = "m", source = "photo 10, setback-corrected" }
+corner_pinnacles = { value = 38.4, unit = "m", source = "photo 10 in-plane 37.1 m, setback-corrected", note = "+-0.8 m" }
+rear_wings = { value = 31.0, unit = "m", source = "Catastro floor counts 7-9 (estimate)", note = "hall wing 22 m with glazed roof (PNOA); 10-floor south-east wing kept at 33 m as it does not show above the attic in photos 10 / 01" }
+
 [[photo]]
 file = "photos/01_Edifici_de_l_Ateneu_Mercantil_de_Valencia.jpg"
 title = "File:Edifici de l'Ateneu Mercantil de València.jpg"
@@ -30,9 +48,11 @@ author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 960
+camera = [-57.3, 39.9]
+heading = 59.0
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/02_Rialto_Building_and_Ateneu_Mercantil_de_Valencia_building_04.jpg"
@@ -42,11 +62,11 @@ author = "Artvill"
 license = "CC BY 4.0"
 width = 1280
 height = 1705
-camera = [-6.59, -3.53]
-heading = 260.0
+camera = [-70.2, 19.8]
+heading = 78.8
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/03_Placa_de_l_Ajuntament_de_Valencia_Ateneu_Mercantil_i_el_Rial.jpg"
@@ -56,9 +76,11 @@ author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 966
+camera = [-54.6, 41.8]
+heading = 55.3
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/04_Edificio_Rialto_y_Ateneo_mercantil_de_Valencia_1.jpg"
@@ -68,9 +90,11 @@ author = "Dorieo"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 853
+camera = [-128.1, 193.4]
+heading = 33.6
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/05_Placa_de_l_Ajuntament_Vinatea.jpg"
@@ -81,8 +105,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/06_014_Ateneu_Mercantil_pl_de_l_Ajuntament_18_Valencia.jpg"
@@ -93,8 +117,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/07_016_Font_de_la_placa_de_l_Ajuntament_Valencia_amb_l_Ateneu_M.jpg"
@@ -104,9 +128,11 @@ author = "Enric"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 960
+camera = [-59.0, 44.7]
+heading = 63.5
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/08_Remats_decoratius_de_l_edifici_de_l_Ateneu_Mercantil.jpg"
@@ -128,9 +154,11 @@ author = "Dorieo"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 853
+camera = [-111.1, 192.8]
+heading = 31.1
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/10_Edifici_de_l_Ateneu_Mercantil_de_Valencia_cropped.jpg"
@@ -140,9 +168,11 @@ author = "Rafael Zink"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 1067
+camera = [-60.5, 36.0]
+heading = 62.5
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/11_Valencia_Ateneo_Mercantil_1.jpg"
@@ -153,8 +183,8 @@ license = "CC0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/12_L_ateneu_de_Valencia_2006.jpg"
@@ -165,8 +195,8 @@ license = "CC BY 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/13_Remats_de_l_edifici_de_l_ateneu_Mercantil_des_de_la_terrassa.jpg"
@@ -189,8 +219,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/15_Placa_de_l_Ajuntament_de_Valencia_3.jpg"
@@ -200,9 +230,11 @@ author = "Dorieo"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 853
+camera = [-97.0, 170.6]
+heading = 32.0
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/16_Placa_de_l_Ajuntament_de_Valencia_4.jpg"
@@ -212,9 +244,11 @@ author = "Dorieo"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 853
+camera = [-78.4, 91.7]
+heading = 62.6
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/catastro_5825705YJ2752F.jpg"
@@ -224,9 +258,11 @@ author = "Dirección General del Catastro"
 license = "Catastro open data (attribution required)"
 width = 1200
 height = 1600
+camera = [-84.5, 22.4]
+heading = 80.6
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[plan]]
 file = "plans/catastro_wms.png"
