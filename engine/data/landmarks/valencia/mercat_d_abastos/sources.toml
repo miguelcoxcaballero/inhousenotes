@@ -39,7 +39,20 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Mercat_d_Abastos_de_Valencia_des_de_l_exterior.jpg"
+file = "photos/02_Valencia_Mercado_de_Abastos_2026_09_13.jpg"
+title = "File:Valencia - Mercado de Abastos 2026-09-13.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Mercado_de_Abastos_2026-09-13.jpg"
+author = "Rafa Esteve"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+camera = [-2.18, 0.63]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/03_Mercat_d_Abastos_de_Valencia_des_de_l_exterior.jpg"
 title = "File:Mercat d'Abastos de València des de l'exterior.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Mercat_d%27Abastos_de_Val%C3%A8ncia_des_de_l%27exterior.jpg"
 author = "Joanbanjo"
@@ -51,7 +64,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Torre_del_mercat_d_Abastos_de_Valencia.jpg"
+file = "photos/04_Torre_del_mercat_d_Abastos_de_Valencia.jpg"
 title = "File:Torre del mercat d'Abastos de València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Torre_del_mercat_d%27Abastos_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -63,7 +76,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Carril_bici_al_carrer_d_Ontinyent_de_Valencia_1.jpg"
+file = "photos/05_Carril_bici_al_carrer_d_Ontinyent_de_Valencia_1.jpg"
 title = "File:Carril bici al carrer d'Ontinyent de València 1.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Carril_bici_al_carrer_d%27Ontinyent_de_Val%C3%A8ncia_1.jpg"
 author = "Pacopac"
@@ -75,7 +88,67 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Mercat_d_Abastiments_de_Valencia_exterior.jpg"
+file = "photos/06_Lateral_del_mercat_d_Abastos_Valencia.jpg"
+title = "File:Lateral del mercat d'Abastos, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Lateral_del_mercat_d%27Abastos%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1975
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_Abastos01.jpg"
+title = "File:Abastos01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Abastos01.jpg"
+author = "Manube"
+license = "CC BY-SA 4.0"
+width = 960
+height = 724
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/08_Mercat_d_Abastos_de_Valencia.jpg"
+title = "File:Mercat d'Abastos de València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Mercat_d%27Abastos_de_Val%C3%A8ncia.jpg"
+author = "Pacopac"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 768
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/09_Mercat_d_Abastiments_de_Valencia_lateral.jpg"
+title = "File:Mercat d'Abastiments de València, lateral.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Mercat_d%27Abastiments_de_Val%C3%A8ncia%2C_lateral.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/10_Lateral_del_Mercat_d_Abastos_de_Valencia.jpg"
+title = "File:Lateral del Mercat d'Abastos de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Lateral_del_Mercat_d%27Abastos_de_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1928
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/11_Mercat_d_Abastiments_de_Valencia_exterior.jpg"
 title = "File:Mercat d'Abastiments de València, exterior.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Mercat_d%27Abastiments_de_Val%C3%A8ncia%2C_exterior.JPG"
 author = "Joanbanjo"
@@ -87,128 +160,31 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Mercat_d_Abastos_de_Valencia_arc_d_entrada.jpg"
-title = "File:Mercat d'Abastos de València, arc d'entrada.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Mercat_d%27Abastos_de_Val%C3%A8ncia%2C_arc_d%27entrada.JPG"
+file = "photos/12_Valencia_antic_mercat_d_abastiments.jpg"
+title = "File:València, antic mercat d'abastiments.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia%2C_antic_mercat_d%27abastiments.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 1975
+height = 1963
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Valencia_Mercado_de_Abastos_2026_09_13.jpg"
-title = "File:Valencia - Mercado de Abastos 2026-09-13.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Mercado_de_Abastos_2026-09-13.jpg"
-author = "Rafa Esteve"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-camera = [-2.18, 0.63]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Abastos01.jpg"
-title = "File:Abastos01.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Abastos01.jpg"
-author = "Manube"
-license = "CC BY-SA 4.0"
-width = 960
-height = 724
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Homenatge_Valenti_Gonzalez.jpg"
-title = "File:Homenatge Valentí González.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Homenatge_Valent%C3%AD_Gonz%C3%A1lez.jpg"
-author = "Muixerangavalencia"
-license = "CC BY-SA 4.0"
-width = 960
-height = 639
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Mercat_d_Abastos_de_Valencia.jpg"
-title = "File:Mercat d'Abastos de València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Mercat_d%27Abastos_de_Val%C3%A8ncia.jpg"
-author = "Pacopac"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 768
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Lateral_del_mercat_d_Abastos_Valencia.jpg"
-title = "File:Lateral del mercat d'Abastos, València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Lateral_del_mercat_d%27Abastos%2C_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1975
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_Per_la_dignitat_de_l_escola_publica_IES_Abastos.jpg"
-title = "File:Per la dignitat de l'escola pública, IES Abastos.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Per_la_dignitat_de_l%27escola_p%C3%BAblica%2C_IES_Abastos.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 777
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Lateral_del_Mercat_d_Abastos_de_Valencia.jpg"
-title = "File:Lateral del Mercat d'Abastos de València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Lateral_del_Mercat_d%27Abastos_de_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1928
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Placavalentin.jpg"
-title = "File:Placavalentin.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Placavalentin.jpg"
-author = "Mamfe"
+file = "photos/13_Mercat_d_Abastos_de_Valencia_2012.jpg"
+title = "File:Mercat d'Abastos de València, 2012.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Mercat_d%27Abastos_de_Val%C3%A8ncia%2C_2012.jpg"
+author = "Eddie Stricker"
 license = "CC BY-SA 3.0"
 width = 500
-height = 341
+height = 377
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Mercat_d_Abastiments_de_Valencia_lateral.jpg"
-title = "File:Mercat d'Abastiments de València, lateral.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Mercat_d%27Abastiments_de_Val%C3%A8ncia%2C_lateral.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_Mercat_d_Abastos_de_Valencia_torre_lateral.jpg"
+file = "photos/14_Mercat_d_Abastos_de_Valencia_torre_lateral.jpg"
 title = "File:Mercat d'Abastos de València, torre lateral.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Mercat_d%27Abastos_de_Val%C3%A8ncia%2C_torre_lateral.JPG"
 author = "Joanbanjo"

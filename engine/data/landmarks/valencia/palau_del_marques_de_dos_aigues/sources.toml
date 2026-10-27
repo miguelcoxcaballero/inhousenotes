@@ -23,6 +23,19 @@ catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatast
 catastro_floor_area = { value = 6934.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5927703&rc2=YJ2752F", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 5, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 11 parts" }
 
+height_wall = { value = 18.9, unit = "m", source = "photo 02 camera solve (Canon 6D EXIF 24 mm; eye on Carrer dels Llibrers) x K = 0.90", note = "top of the street walls; rocaille crest to about 19.7 m; photo 02 alone gives 21.0 m" }
+height_ground_floor = { value = 5.8, unit = "m", source = "photo 02 x K", note = "top of the grey-banded ground floor = piano nobile balcony line" }
+height_piano_nobile = { value = "6.2-10.3 m", source = "photo 02 x K", note = "window opening; 2nd floor 13.1-16.5 m; frieze oculi centre 18.5 m" }
+height_tower_cornice = { value = 24.8, unit = "m", source = "photo 02 at the corner (26.6) + 1.0 m tower set-back, checked against the tower/wall ratio on photo 23, x K", note = "sculpture groups up to about 27.5 m" }
+height_portal = { value = 12.1, unit = "m", source = "photos 02/21/23 x K", note = "top of the crowning angel; door 3.0 m wide (photo 21 aspect) x 4.4 m high" }
+height_scale_K = { value = 0.90, source = "door height from the visitors standing at it (photos 23 and 34, about 4.3 m) and the independent photo-14 solve (Nikon EXIF 27 mm-eq)", note = "all heights are K x the photo-02 values; uncertainty about +-8 %" }
+main_facade_length = { value = 25.0, unit = "m", source = "osm:way/515082661 edge 20 (Carrer de la Cultura / Rinconada de Garcia Sanchiz), checked on the PNOA 2024 orthophoto" }
+poeta_querol_facade_length = { value = 34.2, unit = "m", source = "osm:way/515082661 edge 21" }
+portal_position = { value = 13.2, unit = "m", source = "photo 02 solve: portal axis 13.2 m west of the NE corner along edge 20", note = "window bays from the NE corner 2.7, 7.9, 18.3, 22.9 m (main facade) and 3.8, 12.1, 17.7 (side door), 23.2, 30.5 m (Poeta Querol)" }
+towers_plan = { value = "NE 7.3 x 5.1 m, NW 4.5 x 4.5 m, SE 8 x 7 m", source = "Catastro INSPIRE BuildingParts 10, 6, 7 (5 floors above ground)" }
+se_tower_and_wing = { value = "1969-1972", source = "https://ca.wikipedia.org/wiki/Palau_del_Marqu%C3%A9s_de_Dosaig%C3%BCes", note = "new wing along Poeta Querol towards Sant Joan de la Creu with a corner tower like those of the main facade" }
+pnoa_date = { value = "2024-05", source = "IGN PNOA WMS GetFeatureInfo, layer OI.MosaicElement", note = "0.25 m GSD; not a true orthophoto (tall parts lean)" }
+
 [[photo]]
 file = "photos/01_Museo_Nacional_de_Ceramica_Valencia_Espana_2014_06_30_DD_139.jpg"
 title = "File:Museo Nacional de Cerámica, Valencia, España, 2014-06-30, DD 139.JPG"
@@ -44,8 +57,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1085
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n+e"
 
 [[photo]]
 file = "photos/03_Museo_Nacional_de_Ceramica_Valencia_Espana_2014_06_30_DD_140.jpg"
@@ -56,8 +69,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 2251
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/04_Marques_de_Dos_Aguas_panoramio.jpg"
@@ -95,8 +108,8 @@ width = 1280
 height = 960
 camera = [26.83, -19.85]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/07_Palace_of_the_Marquis_of_Dos_Aguas_in_Ciutat_Vella_Valencia_.jpg"
@@ -108,8 +121,8 @@ width = 1280
 height = 924
 camera = [46.49, -15.87]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n+e"
 
 [[photo]]
 file = "photos/08_Palacio_del_Marques_de_Dos_Aguas_Valencia_Fachada.jpg"
@@ -121,8 +134,8 @@ width = 1280
 height = 1706
 camera = [-9.96, -36.34]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/09_Marques_de_Dos_Aguas_6.jpg"
@@ -157,8 +170,8 @@ license = "CC BY-SA 2.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n+e"
 
 [[photo]]
 file = "photos/12_Valencia_Spain_Ceramic_Museum_Palau_del_Marques_de_Dosaigues.jpg"
@@ -193,8 +206,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 848
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n+e"
 
 [[photo]]
 file = "photos/15_Valencia_Palacio_Marques_de_Dos_Aguas_okno_II.jpg"
@@ -219,6 +232,175 @@ height = 1920
 exterior = true
 selected = false
 side = ""
+
+[[photo]]
+file = "extra/21_portal_Bini_01.jpg"
+title = "File:Ignacio Vergara Gimeno su dis. di Hipólito Rovira, portale del palazzo del marchese di dos aigües, in alabastro, 1745, 01 cancello chiuso.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Ignacio_Vergara_Gimeno_su_dis._di_Hipólito_Rovira,_portale_del_palazzo_del_marchese_di_dos_aigües,_in_alabastro,_1745,_01_cancello_chiuso.jpg"
+author = "Francesco Bini"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1738
+exterior = true
+selected = true
+side = "n"
+notes = "portal close-up, frontal, perspective-corrected (Canon 6D, 24 mm)"
+
+[[photo]]
+file = "extra/22_Dosaigues_porta.jpg"
+title = "File:Dosaigues porta.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Dosaigues_porta.jpg"
+author = "Felivet"
+license = "Public domain"
+width = 1280
+height = 1826
+exterior = true
+selected = true
+side = "n"
+notes = "portal close-up (Canon PowerShot S70)"
+
+[[photo]]
+file = "extra/23_Dosaigues_vista.jpg"
+title = "File:Dosaigues vista.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Dosaigues_vista.jpg"
+author = "Felivet"
+license = "Public domain"
+width = 1280
+height = 953
+exterior = true
+selected = true
+side = "n+e"
+notes = "NE corner, both facades and three towers, 2008 (Canon PowerShot S70, 7.3 mm)"
+
+[[photo]]
+file = "extra/24_Valencia_Palau_del_Marqu_s_de_Dos_Aig_es_Eastern_corner.jpg"
+title = "File:Valencia Palau del Marqués de Dos Aigües Eastern corner.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_Palau_del_Marqués_de_Dos_Aigües_Eastern_corner.jpg"
+author = "Ymblanter"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1907
+exterior = true
+selected = true
+side = "n+e"
+notes = "NE corner tower from Carrer dels Llibrers (GPS 41.5, -32.2 local; Nikon D3400 18 mm)"
+
+[[photo]]
+file = "extra/25_Ymblanter_Exterior_1.jpg"
+title = "File:Valencia Palau del Marqués de Dos Aigües Exterior 1.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_Palau_del_Marqués_de_Dos_Aigües_Exterior_1.jpg"
+author = "Ymblanter"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1919
+exterior = true
+selected = true
+side = "e"
+notes = "window bay of the marble corner block, Poeta Querol"
+
+[[photo]]
+file = "extra/26_Valencia_Palau_del_Marqu_s_de_Dos_Aig_es_Exterior_2.jpg"
+title = "File:Valencia Palau del Marqués de Dos Aigües Exterior 2.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_Palau_del_Marqués_de_Dos_Aigües_Exterior_2.jpg"
+author = "Ymblanter"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1919
+exterior = true
+selected = true
+side = "n"
+notes = "window bay, main facade"
+
+[[photo]]
+file = "extra/27_Val_ncia_2024_09_05_Palacio_del_Marqu_s_de_Dos_Aguas.jpg"
+title = "File:València 2024-09-05 - Palacio del Marqués de Dos Aguas.jpg"
+url = "https://commons.wikimedia.org/wiki/File:València_2024-09-05_-_Palacio_del_Marqués_de_Dos_Aguas.jpg"
+author = "Rafa Esteve"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1920
+exterior = true
+selected = true
+side = "n"
+notes = "portal (Canon EOS R7, 10 mm)"
+
+[[photo]]
+file = "extra/28_Palau_del_Marqu_s_de_Dosaig_es_Rinconada_de_Federico_Garc_a_.jpg"
+title = "File:Palau del Marqués de Dosaigües - Rinconada de Federico García Sanchiz.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palau_del_Marqués_de_Dosaigües_-_Rinconada_de_Federico_García_Sanchiz.JPG"
+author = "Eclèctica"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "n"
+notes = "recessed NW corner on the Rinconada (GPS -5.1, -32.5 local)"
+
+[[photo]]
+file = "extra/30_Palau_del_Marqu_s_de_Dosaig_es_52041726342_.jpg"
+title = "File:Palau del Marqués de Dosaigües (52041726342).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_del_Marqués_de_Dosaigües_(52041726342).jpg"
+author = "Kent Wang"
+license = "CC BY-SA 2.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "n"
+notes = "main facade at night"
+
+[[photo]]
+file = "extra/31_Valencia_palazzo_de_marchese_di_Dos_Aig_es_esterno_02.jpg"
+title = "File:Valencia, palazzo de marchese di Dos Aigües, esterno 02.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia,_palazzo_de_marchese_di_Dos_Aigües,_esterno_02.jpg"
+author = "Francesco Bini"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1698
+exterior = true
+selected = true
+side = "n"
+notes = "main facade from the west, NE tower"
+
+[[photo]]
+file = "extra/32_Vista_fa_ana_palau_marqu_s_de_Dosaig_es.jpg"
+title = "File:Vista façana palau marquès de Dosaigües.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Vista_façana_palau_marquès_de_Dosaigües.jpg"
+author = "Francesc Vernet López"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "n"
+notes = "portal and piano nobile, oblique"
+
+[[photo]]
+file = "extra/34_Palau_del_Marqu_s_de_Dos_Aig_es_2019_2.jpg"
+title = "File:Palau del Marqués de Dos Aigües 2019 2.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_del_Marqués_de_Dos_Aigües_2019_2.jpg"
+author = "Steven Lek"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1933
+exterior = true
+selected = true
+side = "n"
+notes = "portal with two visitors at the door (scale)"
+
+[[photo]]
+file = "extra/40_PNOA_2024_orthophoto.jpg"
+title = "PNOA orthophoto 2024-05 (IGN), bbox x -40..45, z -45..45 local"
+url = "https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=OI.OrthoimageCoverage&CRS=EPSG:25830&BBOX=725775.095,4372460.958,725860.095,4372550.958&WIDTH=850&HEIGHT=900&FORMAT=image/jpeg"
+author = "Instituto Geográfico Nacional (PNOA)"
+license = "CC BY 4.0 (scne.es)"
+width = 850
+height = 900
+exterior = true
+selected = true
+side = "aerial"
+notes = "0.1 m/px resample of the 0.25 m 2024 flight; footprint, towers, courtyard glass roofs and radial skylight"
 
 [[plan]]
 file = "plans/01_1_23_PALACIO_DEL_MARQUES_DE_DOS_AGUAS_firmado.jpg"
@@ -277,3 +459,8 @@ notes = "built=1950; use=4_3_publicServices; area=6934; area_in_outline=1594.5"
 url = "https://eduwp.edu.gva.es/patrimonio-cultural/ficha-inmueble.php?id=1422"
 title = "Described at"
 notes = "Wikidata P973"
+
+[[reference]]
+url = "https://es.wikipedia.org/wiki/Palacio_del_Marqu%C3%A9s_de_Dos_Aguas"
+title = "Wikipedia (es): location between Poeta Querol, Cultura and Sant Andreu; portal by Vergara after Rovira; 1853-67 stucco imitation marble"
+notes = "used for the facade identification and materials"

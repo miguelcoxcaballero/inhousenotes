@@ -55,23 +55,46 @@ fn main() {
     } else {
         CityConfig::preset(&preset).unwrap_or_else(|| panic!("unknown preset {preset}"))
     };
-    let city = build_city(&kit, &styles, &cfg);
+    let mut city = build_city(&kit, &styles, &cfg);
+    let tris: usize = city.out.placements.iter().map(|(s, _)| city.out.scenes[*s].triangle_count()).sum();
+    println!("city {preset}: {:?}, {} scenes, {} placements, {} tris, extent {:?} in {:.2}s", city.stats, city.out.scenes.len(), city.out.placements.len(), tris, city.extent, t0.elapsed().as_secs_f32());
+    let only = only.or_else(|| std::env::var("CITY_SHOTS").ok().map(|s| s.split(',').map(|x| x.trim().to_string()).collect()));
+    let shots: Vec<_> = shots(&city).into_iter().filter(|(name, _, _)| only.as_ref().is_none_or(|o| o.iter().any(|x| x == name))).collect();
+    // `CITY_RADIUS=r`: only what lies within r metres of the selected
+    // shots' sight lines is uploaded (eye-level shots of a large map in
+    // a fraction of the memory).
+    let radius = std::env::var("CITY_RADIUS").ok().and_then(|v| v.parse::<f32>().ok());
+    let near = |b: forja_math::Aabb, m: &Mat4| {
+        let Some(r) = radius else { return true };
+        let c = m.transform_point3((b.min + b.max) * 0.5);
+        let half = (b.max - b.min).length() * 0.5;
+        shots.iter().any(|(_, e, a)| {
+            let d = *a - *e;
+            let t = ((c - *e).dot(d) / d.length_squared().max(1e-6)).clamp(0.0, 1.0);
+            (*e + d * t).distance(c) < r + half
+        })
+    };
+    let scenes = std::mem::take(&mut city.out.scenes);
     let out = &city.out;
-    let tris: usize = out.placements.iter().map(|(s, _)| out.scenes[*s].triangle_count()).sum();
-    println!("city {preset}: {:?}, {} scenes, {} placements, {} tris, extent {:?} in {:.2}s", city.stats, out.scenes.len(), out.placements.len(), tris, city.extent, t0.elapsed().as_secs_f32());
     let lib = forja_world::ContentLibrary::load(&dl);
     let mut r = Renderer::new(&create_instance(), None).unwrap();
     if let Ok(img) = forja_assets::load_hdr(&dl.join("hdri_wide_street/wide_street_01_2k.hdr")) {
         r.set_environment(Some(&env::EnvMap::from_hdr(&img, 14.0)));
     }
-    let handles: Vec<ModelHandle> = out.scenes.iter().map(|s| r.upload_scene(s)).collect();
-    let tree = lib.prop("polyhaven_island_tree").map(|s| r.upload_scene(&s));
-    let bench = lib.prop("polyhaven_street_bench").map(|s| r.upload_scene(&s));
-    println!("uploaded in {:.2}s", t0.elapsed().as_secs_f32());
+    // Scenes are uploaded on first use, then the CPU copies dropped.
+    let mut handles: Vec<Option<ModelHandle>> = vec![None; scenes.len()];
     let mut frame = FrameDesc::default();
     for (s, m) in &out.placements {
-        frame.instances.push(DrawInstance::new(handles[*s], *m));
+        if !near(scenes[*s].bounds(), m) {
+            continue;
+        }
+        let h = *handles[*s].get_or_insert_with(|| r.upload_scene(&scenes[*s]));
+        frame.instances.push(DrawInstance::new(h, *m));
     }
+    drop(scenes);
+    let tree = lib.prop("polyhaven_island_tree").map(|s| r.upload_scene(&s));
+    let bench = lib.prop("polyhaven_street_bench").map(|s| r.upload_scene(&s));
+    println!("uploaded {} of {} placements in {:.2}s", frame.instances.len(), out.placements.len(), t0.elapsed().as_secs_f32());
     // Countryside under and around the map, so aerials do not look down
     // into the environment map.
     let mut land: forja_city::geom::Parts<forja_city::Mat> = forja_city::geom::Parts::new();
@@ -84,7 +107,7 @@ fn main() {
             PropKind::Tree | PropKind::Palm => tree,
             PropKind::Bench => bench,
         };
-        if let Some(h) = h {
+        if let Some(h) = h.filter(|_| near(forja_math::Aabb { min: Vec3::splat(-2.0), max: Vec3::splat(2.0) }, m)) {
             let s = if *k == PropKind::Bench { 1.0 } else { 1.5 };
             frame.instances.push(DrawInstance::new(h, *m * Mat4::from_scale(Vec3::splat(s))));
         }
@@ -106,13 +129,14 @@ fn main() {
         None if night => "_night_old".to_string(),
         None => String::new(),
     };
+    // `CITY_STATIC=1`: the city goes into the renderer's static culling
+    // grid once (as the game does) instead of being resubmitted per frame.
+    if std::env::var_os("CITY_STATIC").is_some() && !(night && legacy) {
+        r.set_static_instances(&frame.instances);
+        frame.instances.clear();
+    }
     let base_instances = frame.instances.clone();
-    let shots = shots(&city);
-    let only = only.or_else(|| std::env::var("CITY_SHOTS").ok().map(|s| s.split(',').map(|x| x.trim().to_string()).collect()));
     for (name, eye, at) in shots {
-        if only.as_ref().is_some_and(|o| !o.iter().any(|x| x == name)) {
-            continue;
-        }
         frame.camera = Camera::look_at(eye, at);
         frame.camera.fov_y = if matches!(name, "alley" | "deadend" | "slope" | "stairs") { 70f32.to_radians() } else { 60f32.to_radians() };
         let fov = frame.camera.fov_y;
@@ -122,6 +146,9 @@ fn main() {
             let glow = forja_city::nightlight::glow_parts(&out.city_lights, eye, 45.0, 2.0 * (fov * 0.5).tan() / 720.0, 1.6);
             let h = r.upload_scene(&forja_city::kit::assemble(&kit, "glow", glow, None));
             frame.instances.push(DrawInstance { cast_shadows: false, ..DrawInstance::new(h, Mat4::IDENTITY) });
+        }
+        if let Some(n) = std::env::var("CITY_BENCH").ok().and_then(|v| v.parse::<u32>().ok()) {
+            bench_frames(&mut r, &frame, name, n);
         }
         let img = r.render_to_image(&frame, 1280, 720);
         let path = format!("{prefix}_{name}{suffix}.png");
@@ -163,9 +190,10 @@ fn night_hour() -> Option<f32> {
 /// analytic sky, exposure for streets lit at ~15 lux.
 fn night_env(env: &mut Environment, dark: f32) {
     env.use_ibl = false;
+    env.camera = CameraModel::Night;
     env.sun_dir = Vec3::new(-0.35, 0.72, -0.55).normalize();
     env.sun_illuminance = 0.025 + 14.0 * (1.0 - dark).powi(3);
-    env.exposure = 0.55 + 3.0 * dark;
+    env.set_linear_exposure(0.55 + 3.0 * dark);
     env.bloom = 0.04 + 0.04 * dark;
 }
 
@@ -353,4 +381,59 @@ fn shots(city: &forja_city::layout::CityLayout) -> Vec<(&'static str, Vec3, Vec3
         out.push(("deadend", v3(p, 1.7 + f.ground.height_at(p)), v3(end, 3.0 + f.ground.height_at(end))));
     }
     out
+}
+
+/// `CITY_BENCH=N`: N real-time frames at 1280x720 into an offscreen target;
+/// prints the renderer's CPU time (scopes) and the wall time with the GPU
+/// (lavapipe here, so only the CPU side is meaningful).
+fn bench_frames(r: &mut Renderer, frame: &FrameDesc, name: &str, n: u32) {
+    use forja_render::wgpu;
+    r.resize(1280, 720);
+    r.reset_history();
+    let tex = r.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("bench"),
+        size: wgpu::Extent3d { width: 1280, height: 720, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: r.output_format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let view = tex.create_view(&Default::default());
+    r.render(frame, &view);
+    let _ = r.device.poll(wgpu::PollType::wait_indefinitely());
+    let (mut cpu, mut wall) = (0.0f32, 0.0f32);
+    let mut scopes: Vec<(&'static str, f32)> = Vec::new();
+    for i in 0..n {
+        let mut f = frame.clone();
+        f.time = (i + 1) as f32 / 60.0;
+        let t = std::time::Instant::now();
+        r.render(&f, &view);
+        cpu += t.elapsed().as_secs_f32() * 1000.0;
+        let _ = r.device.poll(wgpu::PollType::wait_indefinitely());
+        wall += t.elapsed().as_secs_f32() * 1000.0;
+        for (k, ms) in &r.cpu.scopes {
+            match scopes.iter_mut().find(|e| e.0 == *k) {
+                Some(e) => e.1 += ms,
+                None => scopes.push((k, *ms)),
+            }
+        }
+    }
+    let n = n.max(1) as f32;
+    let list: Vec<String> = scopes.iter().map(|(k, ms)| format!("{k} {:.2}", ms / n)).collect();
+    let st = &r.stats;
+    println!(
+        "bench {name}: render cpu {:.2} ms, wall {:.1} ms | {} | draws {} shadow {} | inst {} shadow {} | tris {:.2} M shadow {:.2} M | lights {}",
+        cpu / n,
+        wall / n,
+        list.join(", "),
+        st.draw_calls,
+        st.shadow_draws,
+        st.instances_drawn,
+        st.shadow_instances,
+        st.triangles as f64 / 1e6,
+        st.shadow_triangles as f64 / 1e6,
+        st.lights
+    );
 }

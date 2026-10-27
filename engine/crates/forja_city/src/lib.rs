@@ -42,9 +42,13 @@ pub mod noise;
 pub mod parcel;
 pub mod plan;
 pub mod profile;
+pub mod signals;
+pub mod street_waste;
+pub mod streettex;
 pub mod style;
 pub mod svg;
 pub mod texgen;
+pub mod traffic;
 pub mod weathering;
 
 pub use building::{CityOut, EdgeKind, Frontage, Lot, ModuleLib};

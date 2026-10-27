@@ -27,141 +27,7 @@ catastro_floor_area = { value = 845.0, unit = "m2", source = "https://www1.sedec
 catastro_floors_max = { value = 6, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 3 parts" }
 
 [[photo]]
-file = "photos/01_Banys_arabs3.jpg"
-title = "File:Banys arabs3.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Banys_arabs3.jpg"
-author = "Felivet"
-license = "Public domain"
-width = 1280
-height = 1707
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/02_Diversos_vidrios_en_el_Centro_Arqueologico_de_la_Almoina.jpg"
-title = "File:Diversos vidrios en el Centro Arqueológico de la Almoina.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Diversos_vidrios_en_el_Centro_Arqueol%C3%B3gico_de_la_Almoina.jpg"
-author = "Dorieo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 875
-camera = [-82.38, -146.0]
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/03_Banyos_Almirante.jpg"
-title = "File:Banyos Almirante.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Banyos_Almirante.JPG"
-author = "Un valencià"
-license = "Public domain"
-width = 960
-height = 1280
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/04_Banys_de_l_Almirall_cobertes.jpg"
-title = "File:Banys de l'Almirall, cobertes.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Banys_de_l%27Almirall%2C_cobertes.JPG"
-author = "Joanbanjo"
-license = "Public domain"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/05_Cobertes_dels_Banys_de_l_Almirall_de_Valencia.jpg"
-title = "File:Cobertes dels Banys de l'Almirall de València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Cobertes_dels_Banys_de_l%27Almirall_de_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "Public domain"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/06_Banos_del_Almirante_01.jpg"
-title = "File:Baños del Almirante 01.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Ba%C3%B1os_del_Almirante_01.JPG"
-author = "Dorieo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1920
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/07_Utensilis_per_al_bany_banys_de_l_Almirall_de_Valencia.jpg"
-title = "File:Utensilis per al bany, banys de l'Almirall de València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Utensilis_per_al_bany%2C_banys_de_l%27Almirall_de_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Candil_de_piquera_procedente_de_los_Banos_del_Almirante_Cent.jpg"
-title = "File:Candil de piquera procedente de los Baños del Almirante. Centro Arqueológico de la Almoina.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Candil_de_piquera_procedente_de_los_Ba%C3%B1os_del_Almirante._Centro_Arqueol%C3%B3gico_de_la_Almoina.jpg"
-author = "Dorieo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1212
-camera = [-82.38, -146.0]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Banys_arabs1.jpg"
-title = "File:Banys arabs1.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Banys_arabs1.jpg"
-author = "Felivet"
-license = "Public domain"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Xemeneia_banys_de_l_Almirall_de_Valencia.jpg"
-title = "File:Xemeneia, banys de l'Almirall de València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Xemeneia%2C_banys_de_l%27Almirall_de_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1920
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Edificios_de_Valencia_ciudad_H.jpg"
-title = "File:Edificios de Valencia ciudad H.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Edificios_de_Valencia_ciudad_H.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 500
-height = 667
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_Valencia_Banos_del_Almirante_2025_09_28_Puerta.jpg"
+file = "photos/01_Valencia_Banos_del_Almirante_2025_09_28_Puerta.jpg"
 title = "File:Valencia - Baños del Almirante - 2025-09-28 - Puerta.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Ba%C3%B1os_del_Almirante_-_2025-09-28_-_Puerta.jpg"
 author = "Rafa Esteve"
@@ -174,21 +40,81 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Escala_d_acces_a_les_cobertes_dels_banys_de_l_Almirall_Valen.jpg"
-title = "File:Escala d'accés a les cobertes dels banys de l'Almirall, València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Escala_d%27acc%C3%A9s_a_les_cobertes_dels_banys_de_l%27Almirall%2C_Val%C3%A8ncia.JPG"
+file = "photos/02_Banys_de_l_Almirall_cobertes.jpg"
+title = "File:Banys de l'Almirall, cobertes.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Banys_de_l%27Almirall%2C_cobertes.JPG"
 author = "Joanbanjo"
-license = "CC BY-SA 3.0"
+license = "Public domain"
 width = 1280
-height = 1897
-exterior = "unknown"
+height = 960
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_Banos_del_Almirante_03.jpg"
-title = "File:Baños del Almirante 03.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Ba%C3%B1os_del_Almirante_03.JPG"
+file = "photos/03_Cobertes_dels_Banys_de_l_Almirall_de_Valencia.jpg"
+title = "File:Cobertes dels Banys de l'Almirall de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Cobertes_dels_Banys_de_l%27Almirall_de_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "Public domain"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/04_Banys_arabs4.jpg"
+title = "File:Banys arabs4.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Banys_arabs4.jpg"
+author = "Felivet"
+license = "Public domain"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_Xemeneia_banys_de_l_Almirall_de_Valencia.jpg"
+title = "File:Xemeneia, banys de l'Almirall de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Xemeneia%2C_banys_de_l%27Almirall_de_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1920
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Valencia_cobertes_dels_banys_de_l_Almirall.jpg"
+title = "File:València, cobertes dels banys de l'Almirall.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia%2C_cobertes_dels_banys_de_l%27Almirall.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 833
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_Edificios_de_Valencia_ciudad_H.jpg"
+title = "File:Edificios de Valencia ciudad H.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificios_de_Valencia_ciudad_H.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 500
+height = 667
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/08_Banos_del_Almirante_09.jpg"
+title = "File:Baños del Almirante 09.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Ba%C3%B1os_del_Almirante_09.JPG"
 author = "Dorieo"
 license = "CC BY-SA 4.0"
 width = 1280
@@ -198,25 +124,145 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Banys_arabs2.jpg"
-title = "File:Banys arabs2.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Banys_arabs2.jpg"
-author = "Felivet"
-license = "Public domain"
+file = "photos/09_Banos_del_Almirante_08.jpg"
+title = "File:Baños del Almirante 08.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Ba%C3%B1os_del_Almirante_08.JPG"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
 width = 1280
-height = 1707
+height = 853
 exterior = "unknown"
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Valencia_cobertes_dels_banys_de_l_Almirall.jpg"
-title = "File:València, cobertes dels banys de l'Almirall.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia%2C_cobertes_dels_banys_de_l%27Almirall.JPG"
+file = "photos/10_Banys_de_l_Almirall_de_Valencia_lluerna.jpg"
+title = "File:Banys de l'Almirall de València, lluerna.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Banys_de_l%27Almirall_de_Val%C3%A8ncia%2C_lluerna.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 833
+height = 982
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/11_Banos_del_Almirante_10.jpg"
+title = "File:Baños del Almirante 10.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Ba%C3%B1os_del_Almirante_10.JPG"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/12_Pots_de_ceramica_banys_de_l_Almirall_de_Valencia.jpg"
+title = "File:Pots de ceràmica, banys de l'Almirall de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Pots_de_cer%C3%A0mica%2C_banys_de_l%27Almirall_de_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 853
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/13_Lluerna_dels_banys_de_l_Almirall_Valencia.jpg"
+title = "File:Lluerna dels banys de l'Almirall, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Lluerna_dels_banys_de_l%27Almirall%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 930
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/14_Banys_de_l_Almirall_lluerna_Valencia.jpg"
+title = "File:Banys de l'Almirall, lluerna, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Banys_de_l%27Almirall%2C_lluerna%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1030
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/15_Banos_del_Almirante_11.jpg"
+title = "File:Baños del Almirante 11.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Ba%C3%B1os_del_Almirante_11.JPG"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1920
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/16_Banys_de_l_Almirall_utensilis_per_al_bany_al_magatzem.jpg"
+title = "File:Banys de l'Almirall, utensilis per al bany al magatzem.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Banys_de_l%27Almirall%2C_utensilis_per_al_bany_al_magatzem.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 852
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/17_Quatre_lluernes_banys_de_l_Almirall_de_Valencia.jpg"
+title = "File:Quatre lluernes, banys de l'Almirall de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Quatre_lluernes%2C_banys_de_l%27Almirall_de_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 967
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/18_Banos_del_Almirante_12.jpg"
+title = "File:Baños del Almirante 12.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Ba%C3%B1os_del_Almirante_12.JPG"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/19_Almiralll04.jpg"
+title = "File:Almiralll04.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Almiralll04.jpg"
+author = "Joanbanjo"
+license = "Public domain"
+width = 1280
+height = 960
+exterior = "unknown"
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/20_Banos_del_Almirante_13.jpg"
+title = "File:Baños del Almirante 13.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Ba%C3%B1os_del_Almirante_13.JPG"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
 exterior = "unknown"
 selected = false
 side = ""

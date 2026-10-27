@@ -60,20 +60,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Placa_del_Quinze_de_Maig_Sento.jpg"
-title = "File:Plaça del Quinze de Maig - Sento.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Pla%C3%A7a_del_Quinze_de_Maig_-_Sento.jpg"
-author = "Sento from Valencia, Spain"
-license = "CC BY 2.0"
-width = 1280
-height = 853
-camera = [83.38, 26.7]
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/05_Torre_del_ayuntamiento_de_Valencia.jpg"
+file = "photos/04_Torre_del_ayuntamiento_de_Valencia.jpg"
 title = "File:Torre del ayuntamiento de Valencia.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Torre_del_ayuntamiento_de_Valencia.JPG"
 author = "Frnevado"
@@ -86,7 +73,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Ayuntamiento_panoramio_8.jpg"
+file = "photos/05_Ayuntamiento_panoramio_8.jpg"
 title = "File:Ayuntamiento - panoramio (8).jpg"
 url = "https://commons.wikimedia.org/wiki/File:Ayuntamiento_-_panoramio_%288%29.jpg"
 author = "carlos corzo"
@@ -99,7 +86,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Cupulas_del_Ayuntamiento_panoramio.jpg"
+file = "photos/06_Cupulas_del_Ayuntamiento_panoramio.jpg"
 title = "File:Cupulas del Ayuntamiento - panoramio.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Cupulas_del_Ayuntamiento_-_panoramio.jpg"
 author = "carlos corzo"
@@ -107,6 +94,19 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 853
 camera = [60.09, -166.82]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_Ayuntamiento_de_Valencia_panoramio.jpg"
+title = "File:Валенсия. Здание мэрии города (Ayuntamiento de Valencia) - panoramio.jpg"
+url = "https://commons.wikimedia.org/wiki/File:%D0%92%D0%B0%D0%BB%D0%B5%D0%BD%D1%81%D0%B8%D1%8F._%D0%97%D0%B4%D0%B0%D0%BD%D0%B8%D0%B5_%D0%BC%D1%8D%D1%80%D0%B8%D0%B8_%D0%B3%D0%BE%D1%80%D0%BE%D0%B4%D0%B0_%28Ayuntamiento_de_Valencia%29_-_panoramio.jpg"
+author = "tiger rus"
+license = "CC BY 3.0"
+width = 1280
+height = 1920
+camera = [83.31, 6.81]
 exterior = true
 selected = false
 side = ""

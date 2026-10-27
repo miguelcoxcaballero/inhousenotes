@@ -34,6 +34,16 @@ pub struct Node {
     pub end: bool,
 }
 
+/// Roadway between two junction mouths below which the junctions are one
+/// (m).
+pub const LINK: f32 = 3.0;
+
+/// Widest a junction of several nodes may be (m).
+pub const JUNCTION_SPAN: f32 = 16.0;
+
+/// Narrowest roadway with a lane each way (m).
+pub const TWO_WAY: f32 = 5.0;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Street {
     pub a: NodeId,
@@ -596,7 +606,71 @@ impl StreetGraph {
         streets.sort_by(|x, y| (x.a.min(x.b), x.a.max(x.b), interior(x)).cmp(&(y.a.min(y.b), y.a.max(y.b), interior(y))));
         let mut g = StreetGraph { nodes, streets, names, stars: Vec::new(), grid: SegGrid { cell: 16.0, map: HashMap::new() } };
         g.index();
+        g.orient_narrow(lib);
         g
+    }
+
+    /// Car streets too narrow for a lane each way become one-way, oriented
+    /// so that the car network stays strongly connected (Robbins: along a
+    /// depth-first search, tree streets lead away from the root and the
+    /// others back towards it). Bridges, whose either direction would trap
+    /// traffic, keep both ways (as a single shared lane, they carry none
+    /// of the traffic AI).
+    fn orient_narrow(&mut self, lib: &ProfileLibrary) {
+        let car = |s: &Street| lib.get(s.profile).vehicles && s.carriageway > 0.0;
+        let narrow = |s: &Street| car(s) && s.oneway == 0 && s.carriageway < TWO_WAY;
+        if !self.streets.iter().any(narrow) {
+            return;
+        }
+        let n = self.nodes.len();
+        let (mut disc, mut low) = (vec![u32::MAX; n], vec![0u32; n]);
+        let mut dir: Vec<i8> = vec![0; self.streets.len()];
+        let mut bridge = vec![false; self.streets.len()];
+        let mut time = 0u32;
+        for root in 0..n {
+            if disc[root] != u32::MAX || !self.stars[root].iter().any(|a| car(&self.streets[a.0 as usize])) {
+                continue;
+            }
+            // (node, street it was reached by, next arm to look at)
+            let mut stack: Vec<(usize, Option<StreetId>, usize)> = vec![(root, None, 0)];
+            disc[root] = time;
+            low[root] = time;
+            time += 1;
+            while let Some(&(u, via, k)) = stack.last() {
+                if let Some(&(si, e, _)) = self.stars[u].get(k) {
+                    stack.last_mut().expect("top").2 += 1;
+                    let st = &self.streets[si as usize];
+                    if Some(si) == via || !car(st) {
+                        continue;
+                    }
+                    let v = st.node(if e == End::A { End::B } else { End::A }) as usize;
+                    // +1 when travelling u -> v runs along the line.
+                    let along = if e == End::A { 1 } else { -1 };
+                    if disc[v] == u32::MAX {
+                        dir[si as usize] = along;
+                        disc[v] = time;
+                        low[v] = time;
+                        time += 1;
+                        stack.push((v, Some(si), 0));
+                    } else if disc[v] < disc[u] {
+                        // Back towards an ancestor.
+                        dir[si as usize] = along;
+                        low[u] = low[u].min(disc[v]);
+                    }
+                } else {
+                    stack.pop();
+                    if let (Some(si), Some(&(p, _, _))) = (via, stack.last()) {
+                        low[p] = low[p].min(low[u]);
+                        bridge[si as usize] = low[u] > disc[p];
+                    }
+                }
+            }
+        }
+        for (i, s) in self.streets.iter_mut().enumerate() {
+            if narrow(s) && !bridge[i] && dir[i] != 0 {
+                s.oneway = dir[i];
+            }
+        }
     }
 
     fn index(&mut self) {
@@ -640,15 +714,68 @@ impl StreetGraph {
         if st.carriageway > 0.0 { st.carriageway * 0.5 } else { st.width_at(st.end_s(e)) * 0.5 }
     }
 
+    /// Whether car street `s` only links two junctions whose mouths meet
+    /// or overlap (less than [`LINK`] of roadway between them): the two
+    /// carriageways of a boulevard, a staggered crossing.
+    fn is_link(&self, s: StreetId, lib: &ProfileLibrary) -> bool {
+        let st = self.street(s);
+        let p = lib.get(st.profile);
+        p.vehicles && st.carriageway > 0.0 && st.a != st.b && st.len() - self.mouth(s, End::A, lib) - self.mouth(s, End::B, lib) < LINK
+    }
+
+    /// Junctions as drivers see them: nodes joined by links
+    /// ([`LINK`]) are one junction, as long as it stays compact (no two
+    /// of its nodes more than [`JUNCTION_SPAN`] apart: a boulevard's
+    /// staggered crossings do not fuse into one). The representative
+    /// (smallest node id of its junction) of every node; a street with
+    /// both ends on one junction lies inside it.
+    pub fn junctions(&self, lib: &ProfileLibrary) -> Vec<NodeId> {
+        let mut members: Vec<Vec<NodeId>> = (0..self.nodes.len() as NodeId).map(|n| vec![n]).collect();
+        let mut root: Vec<NodeId> = (0..self.nodes.len() as NodeId).collect();
+        let mut links: Vec<(f32, StreetId)> = (0..self.streets.len() as StreetId).filter(|&s| self.is_link(s, lib)).map(|s| (self.street(s).len(), s)).collect();
+        links.sort_by(|x, y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
+        for (_, si) in links {
+            let (a, b) = (root[self.street(si).a as usize], root[self.street(si).b as usize]);
+            if a == b {
+                continue;
+            }
+            let compact = members[a as usize].iter().all(|&x| members[b as usize].iter().all(|&y| self.nodes[x as usize].p.distance(self.nodes[y as usize].p) <= JUNCTION_SPAN));
+            if !compact {
+                continue;
+            }
+            let (keep, gone) = (a.min(b), a.max(b));
+            let moved = std::mem::take(&mut members[gone as usize]);
+            for &m in &moved {
+                root[m as usize] = keep;
+            }
+            members[keep as usize].extend(moved);
+        }
+        root
+    }
+
     /// Arc length from end `e` of street `s` where its junction ends: past
     /// the kerb corners with both neighbouring arms plus the kerb radius.
     pub fn mouth(&self, s: StreetId, e: End, lib: &ProfileLibrary) -> f32 {
+        let (kerb, floor, half) = self.mouth_parts(s, e, lib);
+        kerb.clamp(floor, half)
+    }
+
+    /// Arc length from end `e` where the kerb corners of the junction end
+    /// (the mouth without its floor of half the street's width): where
+    /// turning traffic leaves the junction.
+    pub fn kerb_mouth(&self, s: StreetId, e: End, lib: &ProfileLibrary) -> f32 {
+        let (kerb, _, half) = self.mouth_parts(s, e, lib);
+        kerb.clamp(0.0, half)
+    }
+
+    /// (kerb corners plus kerb radius, floor, half the length).
+    fn mouth_parts(&self, s: StreetId, e: End, lib: &ProfileLibrary) -> (f32, f32, f32) {
         let st = self.street(s);
         let n = st.node(e);
         let star = self.star(n);
         let len = st.len();
         if star.len() < 2 {
-            return 0.0;
+            return (0.0, 0.0, len * 0.5);
         }
         let me = star.iter().position(|a| a.0 == s && a.1 == e).unwrap_or(0);
         let p0 = self.nodes[n as usize].p;
@@ -682,7 +809,7 @@ impl StreetGraph {
         }
         let r = if sharp { lib.get(st.profile).kerb_radius } else { 0.0 };
         let w = st.width_at(st.end_s(e)) * 0.5;
-        (t + r).clamp(if sharp { w.min(len * 0.5) } else { 0.0 }, len * 0.5)
+        (t + r, if sharp { w.min(len * 0.5) } else { 0.0 }, len * 0.5)
     }
 
     /// Streets passing within `r` of `p`: `(street, arc length, signed

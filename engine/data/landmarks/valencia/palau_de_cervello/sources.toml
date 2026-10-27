@@ -33,7 +33,34 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Facana_del_Palau_de_Cervello.jpg"
+file = "photos/02_At_Valencia_2025_048.jpg"
+title = "File:At Valencia 2025 048.jpg"
+url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_048.jpg"
+author = "Photograph by Mike Peel ( www.mikepeel.net )."
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+camera = [31.72, 29.21]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/03_At_Valencia_2025_418.jpg"
+title = "File:At Valencia 2025 418.jpg"
+url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_418.jpg"
+author = "Photograph by Mike Peel ( www.mikepeel.net )."
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+camera = [48.7, 19.33]
+heading = 288.8
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/04_Facana_del_Palau_de_Cervello.jpg"
 title = "File:Façana del Palau de Cervelló.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_del_Palau_de_Cervell%C3%B3.JPG"
 author = "Joanbanjo"
@@ -45,7 +72,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Palau_de_Cervello_a_Valencia.jpg"
+file = "photos/05_Palau_de_Cervello_IMG_1537.jpg"
+title = "File:Palau de Cervelló IMG 1537.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_Cervell%C3%B3_IMG_1537.jpg"
+author = "B25es"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Palau_de_Cervello_a_Valencia.jpg"
 title = "File:Palau de Cervelló, a València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Palau_de_Cervell%C3%B3%2C_a_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -57,20 +96,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_At_Valencia_2025_048.jpg"
-title = "File:At Valencia 2025 048.jpg"
-url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_048.jpg"
-author = "Photograph by Mike Peel ( www.mikepeel.net )."
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-camera = [31.72, 29.21]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/05_Palau_de_Cervello_Plaza_Tetuan_Ciutat_Vella_Valencia_Spain.jpg"
+file = "photos/07_Palau_de_Cervello_Plaza_Tetuan_Ciutat_Vella_Valencia_Spain.jpg"
 title = "File:Palau de Cervelló - Plaza Tetuán, Ciutat Vella, Valencia Spain.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Palau_de_Cervell%C3%B3_-_Plaza_Tetu%C3%A1n%2C_Ciutat_Vella%2C_Valencia_Spain.jpg"
 author = "MCAE Consulting"
@@ -82,7 +108,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Palau_de_Cervello_de_Valencia.jpg"
+file = "photos/08_Palau_de_Cervello_Ciutat_Vella_Valencia_Spain.jpg"
+title = "File:Palau de Cervelló - Ciutat Vella, Valencia, Spain.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_Cervell%C3%B3_-_Ciutat_Vella%2C_Valencia%2C_Spain.jpg"
+author = "MCAE Consulting"
+license = "CC0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/09_Palau_de_Cervello_de_Valencia.jpg"
 title = "File:Palau de Cervelló de València.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Palau_de_Cervell%C3%B3_de_Val%C3%A8ncia.jpg"
 author = "Joanbanjo"
@@ -90,44 +128,6 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/07_Entrada_triomfal_de_Ferran_VII_a_Valencia_1815_Miquel_Parra.jpg"
-title = "File:Entrada triomfal de Ferran VII a València, 1815, Miquel Parra.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Entrada_triomfal_de_Ferran_VII_a_Val%C3%A8ncia%2C_1815%2C_Miquel_Parra.jpg"
-author = "Miguel Parra Abril"
-license = "Public domain"
-width = 1280
-height = 792
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_At_Valencia_2025_418.jpg"
-title = "File:At Valencia 2025 418.jpg"
-url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_418.jpg"
-author = "Photograph by Mike Peel ( www.mikepeel.net )."
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-camera = [48.7, 19.33]
-heading = 288.8
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Palau_de_Cervello_IMG_1536.jpg"
-title = "File:Palau de Cervelló IMG 1536.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_Cervell%C3%B3_IMG_1536.jpg"
-author = "B25es"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = "unknown"
 selected = false
 side = ""
 
@@ -144,31 +144,20 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/11_Palau_de_Cervello_IMG_1535.jpg"
-title = "File:Palau de Cervelló IMG 1535.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_Cervell%C3%B3_IMG_1535.jpg"
-author = "B25es"
+file = "photos/11_At_Valencia_2025_051.jpg"
+title = "File:At Valencia 2025 051.jpg"
+url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_051.jpg"
+author = "Photograph by Mike Peel ( www.mikepeel.net )."
 license = "CC BY-SA 4.0"
 width = 1280
-height = 1707
-exterior = "unknown"
+height = 853
+camera = [38.11, 21.8]
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_Palau_de_Cervello_Ciutat_Vella_Valencia_Spain.jpg"
-title = "File:Palau de Cervelló - Ciutat Vella, Valencia, Spain.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_Cervell%C3%B3_-_Ciutat_Vella%2C_Valencia%2C_Spain.jpg"
-author = "MCAE Consulting"
-license = "CC0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Valencia_palau_de_Cervello.jpg"
+file = "photos/12_Valencia_palau_de_Cervello.jpg"
 title = "File:València, palau de Cervelló.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia%2C_palau_de_Cervell%C3%B3.JPG"
 author = "Joanbanjo"
@@ -180,39 +169,14 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_Palau_de_Cervello_IMG_1534.jpg"
-title = "File:Palau de Cervelló IMG 1534.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_Cervell%C3%B3_IMG_1534.jpg"
-author = "B25es"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_At_Valencia_2025_051.jpg"
-title = "File:At Valencia 2025 051.jpg"
-url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_051.jpg"
-author = "Photograph by Mike Peel ( www.mikepeel.net )."
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-camera = [38.11, 21.8]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_Palau_de_Cervello_Valencia_1870_J_Laurent.jpg"
+file = "photos/13_Palau_de_Cervello_Valencia_1870_J_Laurent.jpg"
 title = "File:Palau de Cervelló, València. 1870, J. Laurent.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Palau_de_Cervell%C3%B3%2C_Val%C3%A8ncia._1870%2C_J._Laurent.jpg"
 author = "Jean Laurent"
 license = "Public domain"
 width = 960
 height = 705
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 

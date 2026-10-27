@@ -60,7 +60,10 @@ impl ContentLibrary {
                     if !skip.is_empty() {
                         keep_variant(&mut scene, skip);
                     }
-                    forja_assets::lod::generate_lods(&mut scene, 8, 2000);
+                    // Down to a few hundred triangles: the Poly Haven tree is
+                    // 1.6 M triangles and is planted hundreds of times, so
+                    // eight halvings (6 k) still cost millions per frame.
+                    forja_assets::lod::generate_lods(&mut scene, 12, 2000);
                     lib.props.insert(dir.to_string(), Arc::new(scene));
                 }
                 Err(e) => log::warn!("{dir}: {e}"),

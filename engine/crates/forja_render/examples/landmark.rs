@@ -369,8 +369,15 @@ fn render_shot(st: &mut Studio, handles: &[(ModelHandle, Mat4)], s: &Shot) -> (R
         frame.env.sun_dir = Vec3::new(d.x * el.cos(), el.sin(), d.y * el.cos()).normalize();
         frame.env.sun_illuminance *= el.sin().clamp(0.0, 1.0).powf(0.6);
     }
+    // Specs give a linear exposure relative to the old fixed camera (0.55).
+    // In daylight the physical camera meters itself and takes it as
+    // compensation; a time of day keeps its hand-tuned exposure.
     if let Some(e) = s.exposure {
-        frame.env.exposure = e;
+        if s.sun.1.is_some() && s.light == Light::Atmosphere {
+            frame.env.set_linear_exposure(e);
+        } else {
+            frame.env.exposure_compensation += (e.max(1e-3) / 0.55).log2();
+        }
     }
     for l in &st.lights {
         frame.lights.push(PointLight { position: world.transform_point3(l.position), ..*l });

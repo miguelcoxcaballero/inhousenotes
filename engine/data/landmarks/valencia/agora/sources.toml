@@ -29,7 +29,7 @@ author = "Saffron Blaze"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 1636
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
@@ -41,12 +41,49 @@ author = "Diego Delso"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 867
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_L_Agora_and_Assut_de_l_Or_bridge_from_the_Turia_gardens_Vale.jpg"
+file = "photos/03_Valencia_Spain_Bridge_de_l_Assut_de_l_Or.jpg"
+title = "File:Valencia Spain Bridge de l'Assut de l'Or.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_Spain_Bridge_de_l%27Assut_de_l%27Or.jpg"
+author = "Saffron Blaze"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 857
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/04_L_agora_valencia_2009.jpg"
+title = "File:L'agora-valencia-2009.JPG"
+url = "https://commons.wikimedia.org/wiki/File:L%27agora-valencia-2009.JPG"
+author = "Alberto-g-rovi"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 850
+camera = [-298.32, -205.58]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_Valencia_Ciudad_de_las_Artes_y_las_Ciencias_20100203_RM_1734.jpg"
+title = "File:Valencia Ciudad de las Artes y las Ciencias-20100203-RM-173452.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_Ciudad_de_las_Artes_y_las_Ciencias-20100203-RM-173452.jpg"
+author = "Ermell"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 992
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_L_Agora_and_Assut_de_l_Or_bridge_from_the_Turia_gardens_Vale.jpg"
 title = "File:L'Àgora and Assut de l'Or bridge from the Turia gardens, Valencia.jpg"
 url = "https://commons.wikimedia.org/wiki/File:L%27%C3%80gora_and_Assut_de_l%27Or_bridge_from_the_Turia_gardens%2C_Valencia.jpg"
 author = "Esniom"
@@ -59,7 +96,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Agora_y_Pont_de_l_Assut_de_l_Or.jpg"
+file = "photos/07_Agora_y_Pont_de_l_Assut_de_l_Or.jpg"
 title = "File:Agora y Pont de l'Assut de l'Or.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Agora_y_Pont_de_l%27Assut_de_l%27Or.jpg"
 author = "Marja van Bochove from The Hague, Netherlands"
@@ -71,44 +108,55 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Valencia_Spain_Bridge_de_l_Assut_de_l_Or.jpg"
-title = "File:Valencia Spain Bridge de l'Assut de l'Or.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_Spain_Bridge_de_l%27Assut_de_l%27Or.jpg"
-author = "Saffron Blaze"
+file = "photos/08_Agora_Ciudad_de_las_Artes_y_las_Ciencias_Valencia_Espana_201_2.jpg"
+title = "File:Ágora, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 44.JPG"
+url = "https://commons.wikimedia.org/wiki/File:%C3%81gora%2C_Ciudad_de_las_Artes_y_las_Ciencias%2C_Valencia%2C_Espa%C3%B1a%2C_2014-06-29%2C_DD_44.JPG"
+author = "Diego Delso"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 857
-exterior = "unknown"
+height = 853
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_L_agora_valencia_2009.jpg"
-title = "File:L'agora-valencia-2009.JPG"
-url = "https://commons.wikimedia.org/wiki/File:L%27agora-valencia-2009.JPG"
-author = "Alberto-g-rovi"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 850
-camera = [-298.32, -205.58]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/07_Valencia_Ciudad_de_las_Artes_y_las_Ciencias_20100203_RM_1734.jpg"
-title = "File:Valencia Ciudad de las Artes y las Ciencias-20100203-RM-173452.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_Ciudad_de_las_Artes_y_las_Ciencias-20100203-RM-173452.jpg"
+file = "photos/09_Valencia_Ciudad_de_las_Artes_y_las_Ciencias_20100203_RM_1740.jpg"
+title = "File:Valencia Ciudad de las Artes y las Ciencias-20100203-RM-174013.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_Ciudad_de_las_Artes_y_las_Ciencias-20100203-RM-174013.jpg"
 author = "Ermell"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 992
-exterior = "unknown"
+height = 960
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Phot_Valencia_CAC_Agora_101023_8413.jpg"
+file = "photos/10_Agora_Ciudad_de_las_Artes_y_las_Ciencias_Valencia_Espana_201_3.jpg"
+title = "File:Ágora, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 45.JPG"
+url = "https://commons.wikimedia.org/wiki/File:%C3%81gora%2C_Ciudad_de_las_Artes_y_las_Ciencias%2C_Valencia%2C_Espa%C3%B1a%2C_2014-06-29%2C_DD_45.JPG"
+author = "Diego Delso"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1660
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/11_Valencia_Ciudad_de_las_Artes_y_las_Ciencias_20100203_RM_1741.jpg"
+title = "File:Valencia Ciudad de las Artes y las Ciencias-20100203-RM-174122.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_Ciudad_de_las_Artes_y_las_Ciencias-20100203-RM-174122.jpg"
+author = "Ermell"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/12_Phot_Valencia_CAC_Agora_101023_8413.jpg"
 title = "File:Phot.Valencia.CAC.Agora.101023.8413.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Phot.Valencia.CAC.Agora.101023.8413.jpg"
 author = "frank müller from Beijing & Hamburg"
@@ -121,7 +169,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_Covered_Plaza_L_Agora_2013_07_panoramio.jpg"
+file = "photos/13_Covered_Plaza_L_Agora_2013_07_panoramio.jpg"
 title = "File:Covered Plaza \"L'Àgora\" - 2013.07 - panoramio.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Covered_Plaza_%22L%27%C3%80gora%22_-_2013.07_-_panoramio.jpg"
 author = "rheins"
@@ -134,7 +182,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/10_Valencia_L_Agora_from_the_bridge.jpg"
+file = "photos/14_Valencia_L_Agora_from_the_bridge.jpg"
 title = "File:Valencia L'Àgora from the bridge.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_L%27%C3%80gora_from_the_bridge.jpg"
 author = "Ymblanter"
@@ -147,31 +195,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/11_Agora_Ciudad_de_las_Artes_y_las_Ciencias_Valencia_Espana_201_2.jpg"
-title = "File:Ágora, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 44.JPG"
-url = "https://commons.wikimedia.org/wiki/File:%C3%81gora%2C_Ciudad_de_las_Artes_y_las_Ciencias%2C_Valencia%2C_Espa%C3%B1a%2C_2014-06-29%2C_DD_44.JPG"
-author = "Diego Delso"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_Valencia_Ciudad_de_las_Artes_y_las_Ciencias_20100203_RM_1740.jpg"
-title = "File:Valencia Ciudad de las Artes y las Ciencias-20100203-RM-174013.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_Ciudad_de_las_Artes_y_las_Ciencias-20100203-RM-174013.jpg"
-author = "Ermell"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_The_City_of_Arts_and_Sciences_complex_by_Santiago_Calatrava_.jpg"
+file = "photos/15_The_City_of_Arts_and_Sciences_complex_by_Santiago_Calatrava_.jpg"
 title = "File:The City of Arts and Sciences complex by Santiago Calatrava and Félix Candela. Valencia, Spain, Southwestern Europe. September 28, 2014-6.jpg"
 url = "https://commons.wikimedia.org/wiki/File:The_City_of_Arts_and_Sciences_complex_by_Santiago_Calatrava_and_F%C3%A9lix_Candela._Valencia%2C_Spain%2C_Southwestern_Europe._September_28%2C_2014-6.jpg"
 author = "Mstyslav Chernov"
@@ -183,7 +207,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_DESDE_EL_PUENTE_DE_CALATRAVA_panoramio.jpg"
+file = "photos/16_DESDE_EL_PUENTE_DE_CALATRAVA_panoramio.jpg"
 title = "File:DESDE EL PUENTE DE CALATRAVA - panoramio.jpg"
 url = "https://commons.wikimedia.org/wiki/File:DESDE_EL_PUENTE_DE_CALATRAVA_-_panoramio.jpg"
 author = "jose antonio casanov…"
@@ -192,30 +216,6 @@ width = 1280
 height = 851
 camera = [64.02, -134.38]
 exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Agora_Ciudad_de_las_Artes_y_las_Ciencias_Valencia_Espana_201_3.jpg"
-title = "File:Ágora, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 45.JPG"
-url = "https://commons.wikimedia.org/wiki/File:%C3%81gora%2C_Ciudad_de_las_Artes_y_las_Ciencias%2C_Valencia%2C_Espa%C3%B1a%2C_2014-06-29%2C_DD_45.JPG"
-author = "Diego Delso"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1660
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_Valencia_Ciudad_de_las_Artes_y_las_Ciencias_20100203_RM_1741.jpg"
-title = "File:Valencia Ciudad de las Artes y las Ciencias-20100203-RM-174122.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_Ciudad_de_las_Artes_y_las_Ciencias-20100203-RM-174122.jpg"
-author = "Ermell"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = "unknown"
 selected = false
 side = ""
 

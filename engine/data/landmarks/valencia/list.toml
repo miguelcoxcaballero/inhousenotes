@@ -1139,7 +1139,7 @@ period = "modernisme"
 style = "Valencian Art Nouveau"
 built = "1909-1916"
 architect = "Emilio Ferrer Gisbert; Antonio Martorell Trilles"
-osm = []
+osm = ["way/477950785", "way/477950786", "way/457343282", "way/457343280", "way/457343278", "way/457343276", "way/496335457"]
 pilot = false
 why = "Group of modernista apartment blocks on Plaça de Cànovas (Eixample); in all lists."
 
@@ -1265,7 +1265,7 @@ period = "renaissance"
 style = "Renaissance cruciform infirmary"
 built = "16th c. (founded 1409)"
 architect = "Gaspar Gregori"
-osm = []
+osm = ["way/15218692"]
 pilot = false
 why = "Cruciform Renaissance infirmary, now the Public Library (Q4687025 merged); in all lists."
 
@@ -1535,7 +1535,7 @@ period = "early_20th_century"
 style = "Classicist"
 built = "1917-1930s"
 architect = "José de Astiz"
-osm = []
+osm = ["way/416487480"]
 pilot = false
 why = "Classicist bank building on Carrer de les Barques; in all lists."
 

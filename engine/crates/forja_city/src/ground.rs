@@ -74,6 +74,14 @@ fn car(g: &StreetGraph, lib: &ProfileLibrary, s: StreetId) -> bool {
     lib.get(st.profile).vehicles && st.carriageway > 0.0
 }
 
+/// Whether end `e` of street `s` has a zebra crossing (and a stop line):
+/// a car street whose profile has crossings, at a real junction, with room
+/// for both before the other end's junction.
+pub fn has_zebra(g: &StreetGraph, lib: &ProfileLibrary, s: StreetId, e: End) -> bool {
+    let n = g.street(s).node(e);
+    car(g, lib, s) && lib.get(g.street(s).profile).crossings && (g.star(n).iter().filter(|a| car(g, lib, a.0)).count() >= 3 || g.degree(n) >= 3) && g.street(s).len() >= 2.0 * g.mouth(s, e, lib) + 12.0
+}
+
 impl Ground {
     /// Splits `public` into surface classes.
     pub fn classes(g: &StreetGraph, lib: &ProfileLibrary, public: &Region, plazas: &Region, relief: crate::plan::Relief) -> Ground {
@@ -683,16 +691,12 @@ pub fn markings(gr: &Ground, g: &StreetGraph, lib: &ProfileLibrary) -> Parts<Mat
         // Zebra crossings and stop lines at the mouths of real junctions.
         if prof.crossings {
             for e in [End::A, End::B] {
-                let n = s.node(e);
-                if g.star(n).iter().filter(|a| car(g, lib, a.0)).count() < 3 && g.degree(n) < 3 {
+                if !has_zebra(g, lib, si, e) {
                     continue;
                 }
                 let m = g.mouth(si, e, lib);
                 let sign = if e == End::A { 1.0 } else { -1.0 };
                 let at = |d: f32| if e == End::A { d } else { s.len() - d };
-                if s.len() < 2.0 * m + 12.0 {
-                    continue;
-                }
                 let mut stripes = Vec::new();
                 let (c0, c1) = (at(m + 1.0), at(m + 5.0));
                 let mut o = -road + 0.3;

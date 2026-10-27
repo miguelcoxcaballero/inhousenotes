@@ -960,6 +960,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 
 [[package]]
+name = "forja_ai"
+version = "0.1.0"
+dependencies = [
+ "forja_city",
+ "forja_math",
+ "image",
+]
+
+[[package]]
 name = "forja_anim"
 version = "0.1.0"
 dependencies = [
@@ -1073,7 +1082,9 @@ dependencies = [
  "image",
  "log",
  "pollster",
+ "serde",
  "serde_json",
+ "toml",
  "wgpu",
 ]
 
@@ -2886,6 +2897,7 @@ dependencies = [
  "egui-wgpu",
  "egui-winit",
  "env_logger",
+ "forja_ai",
  "forja_anim",
  "forja_assets",
  "forja_core",

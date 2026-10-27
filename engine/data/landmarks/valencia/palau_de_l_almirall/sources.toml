@@ -23,25 +23,25 @@ catastro_floor_area = { value = 6371.0, unit = "m2", source = "https://www1.sede
 catastro_floors_max = { value = 8, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 9 parts" }
 
 [[photo]]
-file = "photos/01_Palau_de_l_Almirall_de_Valencia.jpg"
-title = "File:Palau de l'Almirall de València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Almirall_de_Val%C3%A8ncia.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/02_Exterior_del_palau_de_l_Almirall_de_Valencia.jpg"
+file = "photos/01_Exterior_del_palau_de_l_Almirall_de_Valencia.jpg"
 title = "File:Exterior del palau de l'Almirall de València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Exterior_del_palau_de_l%27Almirall_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 1867
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/02_Palau_de_l_Almirall_de_Valencia_facana.jpg"
+title = "File:Palau de l'Almirall de València, façana.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Almirall_de_Val%C3%A8ncia%2C_fa%C3%A7ana.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1052
 exterior = true
 selected = false
 side = ""
@@ -59,7 +59,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_213_Carrer_del_Palau_Valencia_al_fons_el_palau_de_l_Almirall.jpg"
+file = "photos/04_Palacio_del_Almirante_en_obras.jpg"
+title = "File:Palacio del Almirante en obras.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palacio_del_Almirante_en_obras.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_213_Carrer_del_Palau_Valencia_al_fons_el_palau_de_l_Almirall.jpg"
 title = "File:213 Carrer del Palau (València), al fons el palau de l'Almirall.jpg"
 url = "https://commons.wikimedia.org/wiki/File:213_Carrer_del_Palau_%28Val%C3%A8ncia%29%2C_al_fons_el_palau_de_l%27Almirall.jpg"
 author = "Enric"
@@ -71,7 +83,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Palau_de_l_Almirall_facana.jpg"
+file = "photos/06_216_Palau_de_l_Almirall_Valencia_Conselleria_d_Hisenda_de_la.jpg"
+title = "File:216 Palau de l'Almirall (València), Conselleria d'Hisenda de la Generalitat Valenciana.jpg"
+url = "https://commons.wikimedia.org/wiki/File:216_Palau_de_l%27Almirall_%28Val%C3%A8ncia%29%2C_Conselleria_d%27Hisenda_de_la_Generalitat_Valenciana.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_Palau_de_l_Almirall_facana.jpg"
 title = "File:Palau de l'Almirall - façana.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Almirall_-_fa%C3%A7ana.jpg"
 author = "Millars"
@@ -83,136 +107,38 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Palau_dels_almirall02.jpg"
-title = "File:Palau dels almirall02.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_dels_almirall02.jpg"
-author = "Frnevado"
-license = "CC BY-SA 4.0"
+file = "photos/08_Palau_de_l_Almirall_porta.jpg"
+title = "File:Palau de l'Almirall - porta.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Almirall_-_porta.jpg"
+author = "Millars"
+license = "CC BY-SA 3.0 es"
 width = 1280
-height = 960
-camera = [11.01, -26.03]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/07_Palau_de_l_Almirall_de_Valencia_facana.jpg"
-title = "File:Palau de l'Almirall de València, façana.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Almirall_de_Val%C3%A8ncia%2C_fa%C3%A7ana.jpg"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1052
+height = 1707
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Palau_de_l_Almirall_2015_06.jpg"
-title = "File:Palau de l'Almirall 2015 06.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Almirall_2015_06.JPG"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Palacio_del_Almirante_en_obras.jpg"
-title = "File:Palacio del Almirante en obras.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palacio_del_Almirante_en_obras.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_216_Palau_de_l_Almirall_Valencia_Conselleria_d_Hisenda_de_la.jpg"
-title = "File:216 Palau de l'Almirall (València), Conselleria d'Hisenda de la Generalitat Valenciana.jpg"
-url = "https://commons.wikimedia.org/wiki/File:216_Palau_de_l%27Almirall_%28Val%C3%A8ncia%29%2C_Conselleria_d%27Hisenda_de_la_Generalitat_Valenciana.jpg"
-author = "Enric"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Palau_de_l_Almirall_pati.jpg"
-title = "File:Palau de l'Almirall - pati.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Almirall_-_pati.jpg"
-author = "Millars"
-license = "CC BY-SA 3.0 es"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_Palau_de_l_Almirall_P1140103.jpg"
+file = "photos/09_Palau_de_l_Almirall_P1140103.jpg"
 title = "File:Palau de l'Almirall P1140103.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Almirall_P1140103.JPG"
 author = "Pere prlpz ( talk )"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 1707
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Palau_de_l_Almirall_03.jpg"
-title = "File:Palau de l'Almirall 03.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Almirall_03.jpg"
-author = "Dorieo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Celobert_palau_de_l_Almirall_Valencia.jpg"
-title = "File:Celobert, palau de l'Almirall, València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Celobert%2C_palau_de_l%27Almirall%2C_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
+file = "photos/10_Palau_de_l_Almirall_P1140107.jpg"
+title = "File:Palau de l'Almirall P1140107.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Almirall_P1140107.JPG"
+author = "Pere prlpz ( talk )"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Palau_dels_almirall01.jpg"
-title = "File:Palau dels almirall01.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_dels_almirall01.jpg"
-author = "Frnevado"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-camera = [11.01, -26.03]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_Palau_de_l_Almirall_01.jpg"
-title = "File:Palau de l'Almirall 01.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Almirall_01.jpg"
-author = "Dorieo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = "unknown"
+height = 1707
+exterior = true
 selected = false
 side = ""
 

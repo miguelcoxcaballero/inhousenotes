@@ -211,3 +211,43 @@ fn alley_fronts_are_tight() {
         assert!(narrow > 50 && lit * 2 > narrow, "{}: {narrow} narrow edges, {lit} lit", c.name);
     }
 }
+
+#[test]
+fn traffic_info_follows_the_street_graph() {
+    // The AI drives the very roadways, lights and signs the city shows.
+    for c in cities() {
+        let t = &c.lay.traffic;
+        let g = &c.lay.fabric.ground;
+        assert!(t.has_topology(), "{}: traffic without topology", c.name);
+        for s in &t.streets {
+            let line = s.centreline();
+            assert!(line.len() >= 2 && line[0] == s.a && *line.last().unwrap() == s.b);
+            // Only a narrow street left two-way (a bridge of the car network:
+            // either direction would trap traffic) has no lane of its own.
+            assert!(!s.lanes.is_empty() || s.road_half * 2.0 < forja_city::plan::graph::TWO_WAY, "{}: roadway without lanes at {:?}", c.name, s.a);
+            for l in &s.lanes {
+                assert!(l.offset.abs() + l.width * 0.5 <= s.road_half + 1e-3, "{}: lane {l:?} off a {} m roadway", c.name, s.road_half * 2.0);
+            }
+            // Its centreline is roadway (sampled at the middle of each piece).
+            for w in line.windows(2) {
+                let m = (w[0] + w[1]) * 0.5;
+                if s.median_half <= 0.0 {
+                    assert!(g.in_carriage(m) || g.junctions.iter().any(|j| j.c.distance(m) < j.r + 1.0), "{}: traffic street off the roadway at {m:?}", c.name);
+                }
+            }
+        }
+        for p in &t.signals {
+            assert!(p.placement < c.lay.out.placements.len());
+            assert!(p.variants.iter().flatten().any(|&v| v == c.lay.out.placements[p.placement].0));
+        }
+        let signs = c.lay.items.iter().filter(|i| matches!(i.kind, ItemKind::Sign(_))).count();
+        assert_eq!(signs, t.signs.len(), "{}", c.name);
+        // Vehicles ride the roadway height on slopes.
+        if !g.relief.is_flat() {
+            for s in &t.streets {
+                let q = (s.a + s.b) * 0.5;
+                assert!((t.height_at(q) - g.relief.elev(q)).abs() < 0.25 || !g.in_carriage(q), "{}: {} vs {}", c.name, t.height_at(q), g.relief.elev(q));
+            }
+        }
+    }
+}

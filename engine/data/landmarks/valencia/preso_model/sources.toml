@@ -36,7 +36,20 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Torre_prision_Valencia_9_octubre.jpg"
+file = "photos/02_Carcel_modelo_de_Valencia_01.jpg"
+title = "File:Cárcel modelo de Valencia 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:C%C3%A1rcel_modelo_de_Valencia_01.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+camera = [-11.95, -14.36]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/03_Torre_prision_Valencia_9_octubre.jpg"
 title = "File:Torre prisión Valencia (9 octubre).jpg"
 url = "https://commons.wikimedia.org/wiki/File:Torre_prisi%C3%B3n_Valencia_%289_octubre%29.jpg"
 author = "Tamorlan"
@@ -48,100 +61,87 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Preso_model_de_Valencia_en_obres.jpg"
+file = "photos/04_Preso_model_de_Valencia_en_obres.jpg"
 title = "File:Presó model de València en obres.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Pres%C3%B3_model_de_Val%C3%A8ncia_en_obres.jpg"
 author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 845
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Antiga_preso_model_de_Valencia_complex_administratiu_9_d_Oct.jpg"
+file = "photos/05_Antiga_preso_model_de_Valencia_complex_administratiu_9_d_Oct.jpg"
 title = "File:Antiga presó model de València, complex administratiu 9 d'Octubre.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Antiga_pres%C3%B3_model_de_Val%C3%A8ncia%2C_complex_administratiu_9_d%27Octubre.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Finestres_de_l_antiga_preso_model_de_Valencia.jpg"
+file = "photos/06_Finestres_de_l_antiga_preso_model_de_Valencia.jpg"
 title = "File:Finestres de l'antiga presó model de València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Finestres_de_l%27antiga_pres%C3%B3_model_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 930
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Valencia_Ciutat_Administrativa_9_d_Octubre_14.jpg"
+file = "photos/07_Valencia_Ciutat_Administrativa_9_d_Octubre_14.jpg"
 title = "File:Valencia - Ciutat Administrativa 9 d'Octubre 14.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Ciutat_Administrativa_9_d%27Octubre_14.jpg"
 author = "Zarateman"
 license = "CC0"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Valencia_antiga_preso_model.jpg"
+file = "photos/08_Carcel_modelo_de_Valencia_03.jpg"
+title = "File:Cárcel modelo de Valencia 03.jpg"
+url = "https://commons.wikimedia.org/wiki/File:C%C3%A1rcel_modelo_de_Valencia_03.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+camera = [-11.95, -14.36]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/09_Valencia_antiga_preso_model.jpg"
 title = "File:València, antiga presó model.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia%2C_antiga_pres%C3%B3_model.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 870
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Carcel_modelo_de_Valencia_01.jpg"
-title = "File:Cárcel modelo de Valencia 01.jpg"
-url = "https://commons.wikimedia.org/wiki/File:C%C3%A1rcel_modelo_de_Valencia_01.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-camera = [-11.95, -14.36]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Valencia_Ciutat_Administrativa_9_d_Octubre_12.jpg"
+file = "photos/10_Valencia_Ciutat_Administrativa_9_d_Octubre_12.jpg"
 title = "File:Valencia - Ciutat Administrativa 9 d'Octubre 12.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Ciutat_Administrativa_9_d%27Octubre_12.jpg"
 author = "Zarateman"
 license = "CC0"
 width = 1280
 height = 1791
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Grafiti_en_la_modelo_panoramio.jpg"
-title = "File:Grafiti en la modelo - panoramio.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Grafiti_en_la_modelo_-_panoramio.jpg"
-author = "Juan E. M."
-license = "CC BY-SA 3.0"
-width = 1280
-height = 916
-camera = [-23.78, 53.31]
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
@@ -153,7 +153,7 @@ author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
@@ -165,7 +165,7 @@ author = "Tamorlan"
 license = "CC BY 3.0"
 width = 1280
 height = 853
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
@@ -177,20 +177,20 @@ author = "Zarateman"
 license = "CC0"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_Carcel_modelo_de_Valencia_03.jpg"
-title = "File:Cárcel modelo de Valencia 03.jpg"
-url = "https://commons.wikimedia.org/wiki/File:C%C3%A1rcel_modelo_de_Valencia_03.jpg"
+file = "photos/14_Carcel_modelo_de_Valencia_02.jpg"
+title = "File:Cárcel modelo de Valencia 02.jpg"
+url = "https://commons.wikimedia.org/wiki/File:C%C3%A1rcel_modelo_de_Valencia_02.jpg"
 author = "19Tarrestnom65"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 camera = [-11.95, -14.36]
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
@@ -202,7 +202,7 @@ author = "Zarateman"
 license = "CC0"
 width = 1280
 height = 816
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
@@ -214,7 +214,7 @@ author = "Zarateman"
 license = "CC0"
 width = 1280
 height = 1707
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 

@@ -340,9 +340,10 @@ fn main() {
         println!("night at {:.1} h: {} lights", kit.night.hour, frame.local_lights.len());
     } else if night {
         frame.env.use_ibl = false;
+        frame.env.camera = CameraModel::Night;
         frame.env.sun_dir = Vec3::new(-0.35, 0.72, -0.55).normalize();
         frame.env.sun_illuminance = 0.025;
-        frame.env.exposure = 0.55 + 3.0 * kit.night.dark;
+        frame.env.set_linear_exposure(0.55 + 3.0 * kit.night.dark);
         frame.env.bloom = 0.08;
         println!("night at {:.1} h: {} city lights", kit.night.hour, out.city_lights.len());
     }

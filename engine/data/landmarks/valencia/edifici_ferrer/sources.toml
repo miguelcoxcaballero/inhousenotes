@@ -48,13 +48,13 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Remat_de_la_facana_de_l_edifici_Ferrer_de_Valencia.jpg"
-title = "File:Remat de la façana de l'edifici Ferrer de València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Remat_de_la_fa%C3%A7ana_de_l%27edifici_Ferrer_de_Val%C3%A8ncia.JPG"
+file = "photos/03_Edifici_Ferrer_detall_de_la_facana.jpg"
+title = "File:Edifici Ferrer, detall de la façana.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edifici_Ferrer%2C_detall_de_la_fa%C3%A7ana.jpg"
 author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 841
+height = 1727
 exterior = true
 selected = false
 side = ""
@@ -72,13 +72,13 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Edifici_Ferrer_de_Valencia_exterior.jpg"
-title = "File:Edifici Ferrer de València, exterior.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Edifici_Ferrer_de_Val%C3%A8ncia%2C_exterior.JPG"
+file = "photos/05_Remat_de_la_facana_de_l_edifici_Ferrer_de_Valencia.jpg"
+title = "File:Remat de la façana de l'edifici Ferrer de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Remat_de_la_fa%C3%A7ana_de_l%27edifici_Ferrer_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 977
+height = 841
 exterior = true
 selected = false
 side = ""
@@ -96,7 +96,43 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Valencia_exterior_de_l_edifici_Ferrer.jpg"
+file = "photos/07_Valencia_Edifici_Ferrer_05.jpg"
+title = "File:Valencia - Edifici Ferrer 05.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Edifici_Ferrer_05.jpg"
+author = "Zarateman"
+license = "CC0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/08_Edifici_Ferrer_de_Valencia_exterior.jpg"
+title = "File:Edifici Ferrer de València, exterior.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Edifici_Ferrer_de_Val%C3%A8ncia%2C_exterior.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 977
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/09_Valencia_Edifici_Ferrer_01.jpg"
+title = "File:Valencia - Edifici Ferrer 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Edifici_Ferrer_01.jpg"
+author = "Zarateman"
+license = "CC0"
+width = 1280
+height = 924
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/10_Valencia_exterior_de_l_edifici_Ferrer.jpg"
 title = "File:València, exterior de l'edifici Ferrer.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia%2C_exterior_de_l%27edifici_Ferrer.JPG"
 author = "Joanbanjo"
@@ -108,19 +144,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Edifici_Ferrer_lateral.jpg"
-title = "File:Edifici Ferrer, lateral.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Edifici_Ferrer%2C_lateral.jpg"
-author = "Joanbanjo"
-license = "Public domain"
-width = 1280
-height = 960
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Edificio_calle_Cirilo_Amoros_esquina_Pizarro_Valencia_02.jpg"
+file = "photos/11_Edificio_calle_Cirilo_Amoros_esquina_Pizarro_Valencia_02.jpg"
 title = "File:Edificio calle Cirilo Amorós esquina Pizarro, Valencia 02.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Edificio_calle_Cirilo_Amor%C3%B3s_esquina_Pizarro%2C_Valencia_02.jpg"
 author = "19Tarrestnom65"
@@ -132,31 +156,31 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/10_Valencia_Edifici_Ferrer_05.jpg"
-title = "File:Valencia - Edifici Ferrer 05.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Edifici_Ferrer_05.jpg"
-author = "Zarateman"
-license = "CC0"
+file = "photos/12_Edifici_Ferrer_lateral.jpg"
+title = "File:Edifici Ferrer, lateral.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edifici_Ferrer%2C_lateral.jpg"
+author = "Joanbanjo"
+license = "Public domain"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/11_Valencia_Edifici_Ferrer_01.jpg"
-title = "File:Valencia - Edifici Ferrer 01.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Edifici_Ferrer_01.jpg"
+file = "photos/13_Valencia_Edifici_Ferrer_02.jpg"
+title = "File:Valencia - Edifici Ferrer 02.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Edifici_Ferrer_02.jpg"
 author = "Zarateman"
 license = "CC0"
 width = 1280
-height = 924
-exterior = "unknown"
+height = 1625
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_Edificio_calle_Cirilo_Amoros_esquina_Pizarro_Valencia_04.jpg"
+file = "photos/14_Edificio_calle_Cirilo_Amoros_esquina_Pizarro_Valencia_04.jpg"
 title = "File:Edificio calle Cirilo Amorós esquina Pizarro, Valencia 04.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Edificio_calle_Cirilo_Amor%C3%B3s_esquina_Pizarro%2C_Valencia_04.jpg"
 author = "19Tarrestnom65"
@@ -168,43 +192,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Edifici_Ferrer_detall_de_la_porta.jpg"
-title = "File:Edifici Ferrer, detall de la porta.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Edifici_Ferrer%2C_detall_de_la_porta.JPG"
-author = "Joanbanjo"
-license = "Public domain"
-width = 1280
-height = 960
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Mobles_de_l_edifici_Ferrer.jpg"
-title = "File:Mobles de l'edifici Ferrer.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Mobles_de_l%27edifici_Ferrer.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Valencia_Edifici_Ferrer_02.jpg"
-title = "File:Valencia - Edifici Ferrer 02.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Edifici_Ferrer_02.jpg"
-author = "Zarateman"
-license = "CC0"
-width = 1280
-height = 1625
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_Edificio_calle_Cirilo_Amoros_esquina_Pizarro_Valencia_05.jpg"
+file = "photos/15_Edificio_calle_Cirilo_Amoros_esquina_Pizarro_Valencia_05.jpg"
 title = "File:Edificio calle Cirilo Amorós esquina Pizarro, Valencia 05.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Edificio_calle_Cirilo_Amor%C3%B3s_esquina_Pizarro%2C_Valencia_05.jpg"
 author = "19Tarrestnom65"
