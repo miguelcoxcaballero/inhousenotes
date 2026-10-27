@@ -20,6 +20,19 @@ catastro_use = { value = "1_residential", source = "https://www1.sedecatastro.go
 catastro_floor_area = { value = 44871.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=7809806&rc2=YJ2770H", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 3, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 5 parts" }
 
+length_arches = { value = 270.0, unit = "m", source = "PNOA + OSM way 23433784", note = "measured on the IGN PNOA orthophoto (WMS pnoa-ma, CC BY 4.0, 0.1 m/px) resampled into the Umbracle axis frame (s along the axis, grid azimuth 128.7 deg; t across, + = NE): first and last rib at s = -135 / +135 m; OSM/Catastro outline 270 m; the published 320 m includes the round end plazas (ramps to s = +-153..158)" }
+length_published = { value = 320, unit = "m", source = "https://es.wikipedia.org/wiki/Umbracle" }
+width_published = { value = 60, unit = "m", source = "https://es.wikipedia.org/wiki/Umbracle", note = "matches the deck from the SW wall t = -18.5 to the NE pond edge t = +39.8 (58.3 m, PNOA)" }
+arch_span = { value = 36.1, unit = "m", source = "PNOA + OSM/Catastro", note = "rib feet t = -18.1 / +18.0 (OSM edges); confirmed by the end-on photo 03 match (half span 17.2 m to the foot pixels)" }
+rib_spacing = { value = 2.5, unit = "m", source = "PNOA", note = "measured on the IGN PNOA orthophoto (WMS pnoa-ma, CC BY 4.0, 0.1 m/px) resampled into the Umbracle axis frame (s along the axis, grid azimuth 128.7 deg; t across, + = NE): periodogram of the rib shadows peaks at 2.50 m with a 5.0 m harmonic (fixed/floating alternation); 109 ribs over 270 m" }
+arch_count = { value = "55 fixed + 54 floating", source = "https://es.wikipedia.org/wiki/Umbracle", note = "consistent with 109 ribs at 2.5 m (PNOA)" }
+arch_height_published = { value = 18, unit = "m", source = "https://es.wikipedia.org/wiki/Umbracle" }
+arch_crown = { value = 27.2, unit = "m above the pond walkway (19.0 m above the deck)", source = "photo 03 camera solve", note = "crowns of 4 consecutive fixed arches (5 m apart) + both feet, solved camera rms 1.8 px; crown rise scanned 18.3/19.0/19.7/20.7 m: best fit 19.0 m above the deck (published 18 m, probably above the garden soil ~1.2 m)" }
+deck_level = { value = 8.2, unit = "m above the pond walkway", source = "photo 06 camera solve", note = "10 arcade points (feet at y 0 and deck fascia) + 12 fixed-arch crowns, eye fixed 1.6 m; rms 1.2 px at 8.0, 1.4 at 8.3, 1.9 at 8.6, 2.6 at 9.0 m" }
+pond_arcade = { value = "branching frames every 10 m", source = "PNOA + photos 04, 05, 06, 07", note = "feet t = 37.6..41, top at the deck fascia" }
+floating_arch_drop = { value = 2.5, unit = "m", source = "photos 03, C", note = "crowns of the floating ribs sit visibly below the fixed ones; estimated" }
+end_cones = { value = "trencadis cones in sunken stair wells, r 6.8 m well, ~4.3 m base, ~14.5 m tall", source = "PNOA (wells at s = -168 / +164, t = 11.5) + photo 10", note = "height estimated from photo 10" }
+
 [[photo]]
 file = "photos/01_L_Umbracle_Valencia_Spain_Jan_2007.jpg"
 title = "File:L'Umbracle, Valencia, Spain - Jan 2007.jpg"
@@ -30,8 +43,8 @@ width = 1280
 height = 812
 camera = [67.22, 59.95]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "interior NW"
 
 [[photo]]
 file = "photos/02_Umbraculo_Ciudad_de_las_Artes_y_las_Ciencias_Valencia_Espana.jpg"
@@ -42,8 +55,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1032
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "interior NW"
 
 [[photo]]
 file = "photos/03_Umbraculo_Ciudad_de_las_Artes_y_las_Ciencias_Valencia_Espana_2.jpg"
@@ -54,8 +67,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SE end"
 
 [[photo]]
 file = "photos/04_Lumbracle_valencia_2009_2.jpg"
@@ -67,8 +80,8 @@ width = 1280
 height = 850
 camera = [56.82, -83.11]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NE"
 
 [[photo]]
 file = "photos/05_Il_viale_panoramio_1.jpg"
@@ -80,8 +93,8 @@ width = 1280
 height = 857
 camera = [-187.58, -239.37]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NE"
 
 [[photo]]
 file = "photos/06_Valencia_L_Umbracle_seen_from_the_park.jpg"
@@ -93,8 +106,8 @@ width = 1280
 height = 877
 camera = [75.6, -204.33]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NE"
 
 [[photo]]
 file = "photos/07_Valencia_L_Umbracle_southern_entrance_seen_from_the_east.jpg"
@@ -106,8 +119,8 @@ width = 1280
 height = 842
 camera = [315.65, 21.92]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NE"
 
 [[photo]]
 file = "photos/08_The_Umbracle.jpg"
@@ -118,8 +131,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NE promenade"
 
 [[photo]]
 file = "photos/09_Stadstuinval.jpg"
@@ -130,8 +143,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SE end"
 
 [[photo]]
 file = "photos/10_Umbracle_and_Cone_City_of_Arts_and_Sciences_Valencia_Spain.jpg"
@@ -142,8 +155,8 @@ license = "CC0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NW end"
 
 [[photo]]
 file = "photos/11_Umbracle.jpg"
@@ -154,8 +167,8 @@ license = "CC BY-SA 4.0"
 width = 500
 height = 1085
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "interior SE"
 
 [[photo]]
 file = "photos/12_Valencia10.jpg"
@@ -166,8 +179,8 @@ license = "CC BY 3.0"
 width = 960
 height = 600
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SW"
 
 [[photo]]
 file = "photos/13_P9150222.jpg"
@@ -190,8 +203,8 @@ license = "CC BY-SA 4.0"
 width = 960
 height = 720
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SE plaza"
 
 [[photo]]
 file = "photos/catastro_7809806YJ2770H.jpg"
@@ -202,8 +215,8 @@ license = "Catastro open data (attribution required)"
 width = 1600
 height = 1200
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NW end"
 
 [[plan]]
 file = "plans/catastro_wms.png"
@@ -213,6 +226,15 @@ author = "Dirección General del Catastro"
 license = "Catastro open data (attribution required)"
 kind = "catastro"
 notes = "Cadastral map, EPSG:25830 bbox [727536.09, 4370521.1, 727829.1, 4370778.27], 0.146 m/px, north up; roman numerals = floors above ground; parcels 7809806YJ2770H"
+
+[[plan]]
+file = "plans/pnoa_hr.jpg"
+title = "PNOA orthophoto (IGN), WMS"
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+author = "Instituto Geográfico Nacional (PNOA)"
+license = "CC BY 4.0 (scne.es)"
+kind = "orthophoto"
+notes = "EPSG:25830, 320 x 260 m around the anchor, 0.1 m/px; rib spacing, span, deck edge, cone wells"
 
 [[reference]]
 url = "https://www.wikidata.org/wiki/Q2437999"
