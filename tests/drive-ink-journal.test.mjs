@@ -169,3 +169,98 @@ test('parallel responses serialize merges and a stopped journal never applies a 
  reader.j.stop();release();await reading;
  assert.equal(reader.applied.length,0);assert.equal(reader.j.seen.size,0);assert.equal(reader.j.readTasks.size,0);
 });
+
+test('cold uploads reserve their identity while folder lookup is still pending',async()=>{
+ const api=fakeInkDrive(),a=replica(api,'a');const fetch=a.j.host.fetch;let folderStarted=false,idStarted=false;
+ let releaseFolder,releaseId;const folderGate=new Promise(r=>releaseFolder=r),idGate=new Promise(r=>releaseId=r);
+ a.j.host.fetch=async(url,options)=>{
+  const parsed=new URL(url),q=parsed.searchParams.get('q')||'';
+  if(parsed.pathname.endsWith('/generateIds')){idStarted=true;await idGate;}
+  if(q.includes("mimeType='application/vnd.google-apps.folder'")){folderStarted=true;await folderGate;}
+  return fetch(url,options);
+ };
+ await a.j.enqueue({stroke:'first'},1);const writing=flush(a.j);
+ try{
+  const deadline=Date.now()+500;while((!folderStarted||!idStarted)&&Date.now()<deadline)await new Promise(r=>setTimeout(r,2));
+  assert.equal(folderStarted,true);assert.equal(idStarted,true);assert.equal(a.receipts.length,0);
+ }finally{releaseFolder();releaseId();await writing;}
+ assert.equal(a.j.status().pending,0);assert.equal(a.receipts.length,1);a.j.stop();
+});
+
+test('failed folder setup retains the write lease until identity reservation has settled',async()=>{
+ const api=fakeInkDrive(),a=replica(api,'a');const fetch=a.j.host.fetch,ensureFolder=a.j.ensureFolder;
+ let release,started=false,finished=false;const gate=new Promise(r=>release=r);
+ a.j.ensureFolder=async()=>{throw Error('Folder temporarily unavailable');};
+ a.j.host.fetch=async(url,options)=>{if(url.includes('/generateIds')){started=true;await gate;}return fetch(url,options);};
+ await a.j.enqueue({stroke:'first'},1);const writing=flush(a.j).then(()=>{finished=true;});
+ await new Promise(r=>setTimeout(r,0));assert.equal(started,true);assert.equal(finished,false);assert.equal(a.j.writing,true);
+ release();await writing;
+ const reserved=await a.j.read(a.j.key(a.j.current));assert.ok(reserved.fileId);assert.equal(reserved.ack,0);
+ a.j.ensureFolder=ensureFolder;await flush(a.j);
+ assert.equal(a.j.status().pending,0);assert.equal(a.j.current.fileId,reserved.fileId);
+ assert.equal(api.calls.filter(c=>c.url.includes('/generateIds')).length,1);a.j.stop();
+});
+
+test('durable and preview transports share a cold folder lookup only within the same account',async()=>{
+ const {LivePreview}=createRequire(import.meta.url)('../drive-live-preview-v5.js');
+ const api=fakeInkDrive(),store=memoryInkStore(),a=replica(api,'a',store);let searches=0,release;
+ const gate=new Promise(r=>release=r),fetch=api.fetch;
+ const network=async(url,options)=>{if((new URL(url).searchParams.get('q')||'').includes("mimeType='application/vnd.google-apps.folder'")){searches++;await gate;}return fetch(url,options);};
+ a.j.host.fetch=network;const preview=new LivePreview({store,account:'a',docId:'doc',fetch:network});
+ const first=a.j.ensureFolder(),second=preview.ensureFolder();await new Promise(r=>setTimeout(r,0));
+ assert.equal(searches,1);release();const ids=await Promise.all([first,second]);
+ assert.equal(ids[0],ids[1]);assert.equal(api.calls.filter(c=>c.method==='POST'&&!c.url.includes('uploadType')).length,1);
+ const other=new Journal({store,account:'other',docId:'doc',fetch:network});await other.ensureFolder();
+ assert.equal(searches,2);a.j.stop();preview.stop();other.stop();
+});
+
+test('a cancelled shared folder lookup can be retried by the surviving transport',async()=>{
+ const api=fakeInkDrive(),store=memoryInkStore(),a=replica(api,'a',store),b=replica(api,'b',store);
+ const fetch=api.fetch;let entered=false;
+ a.j.host.fetch=(url,options)=>{
+  if((new URL(url).searchParams.get('q')||'').includes('mimeType')){
+   entered=true;return new Promise((_,reject)=>options.signal.addEventListener('abort',()=>reject(new DOMException('Closed','AbortError')),{once:true}));
+  }
+  return fetch(url,options);
+ };
+ const first=a.j.ensureFolder(),second=b.j.ensureFolder();
+ const results=Promise.allSettled([first,second]);while(!entered)await new Promise(r=>setTimeout(r,0));a.j.stop();
+ assert.deepEqual((await results).map(r=>r.status),['rejected','rejected']);
+ const id=await b.j.ensureFolder();assert.ok(id);assert.equal(b.j.stopped,false);b.j.stop();
+});
+
+test('a direct hint arriving during first discovery bypasses the stalled search index',async()=>{
+ const api=fakeInkDrive(),writer=replica(api,'writer'),reader=replica(api,'reader');
+ await writer.j.enqueue({stroke:'direct'},1);await flush(writer.j);
+ let release,searches=0;const gate=new Promise(r=>release=r),fetch=reader.j.host.fetch;
+ reader.j.host.fetch=async(url,options)=>{if(url.includes('ihnKind')){searches++;await gate;}return fetch(url,options);};
+ const bootstrap=reader.j.poll();await new Promise(r=>setTimeout(r,0));
+ try{
+  await reader.j.poll();await reader.j.poll();assert.equal(searches,1);assert.equal(reader.j.reading,false);
+  reader.j.hint(writer.j.current.fileId);await reader.j.poll();
+  assert.deepEqual(reader.applied,[{stroke:'direct'}]);assert.ok(reader.j.bootstrapWait);
+ }finally{release();await bootstrap;reader.j.stop();}
+ assert.equal(reader.applied.length,1);assert.equal(reader.j.bootstrapWait,null);
+});
+
+test('updating an existing journal does not require folder metadata',async()=>{
+ const api=fakeInkDrive(),a=replica(api,'a');await a.j.enqueue({stroke:1},1);await flush(a.j);
+ a.j.folder=null;a.j.ensureFolder=async()=>{throw Error('Folder metadata should not gate an existing media update');};
+ await a.j.enqueue({stroke:2},2);await flush(a.j);
+ assert.equal(a.j.status().pending,0);assert.equal(a.receipts.at(-1).version,2);a.j.stop();
+});
+
+test('preview creation invalidates a deleted folder cache and recovers on retry',async()=>{
+ const {LivePreview}=createRequire(import.meta.url)('../drive-live-preview-v5.js');
+ const api=fakeInkDrive(),store=memoryInkStore();await store.put('settings','a','ink-journal-folder',{fileId:'deleted'});
+ const fetch=async(url,options)=>{
+  if(url.includes('uploadType=multipart')){
+   const body=typeof options.body==='string'?options.body:await options.body.text();
+   if(body.includes('"parents":["deleted"]'))return new Response('{}',{status:404});
+  }
+  return api.fetch(url,options);
+ };
+ const live=new LivePreview({store,account:'a',docId:'doc',actor:'writer',fetch});live.scheduleFrame=()=>{};live.schedulePoll=()=>{};
+ live.frame=1;await live.flushFrame();assert.equal(live.exists,false);assert.equal(await store.read('settings','a','ink-journal-folder'),null);
+ await live.flushFrame();assert.equal(live.exists,true);assert.notEqual(live.folder,'deleted');live.stop();
+});

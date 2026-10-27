@@ -133,15 +133,15 @@ test('offline checkpoint yields on dense pages and reuses the cached preview',as
  expect(result.paints).toBe(0);expect(result.yields).toBeGreaterThan(2);expect(result.strokes).toBe(3000);expect(result.preview).toBe(result.cached||null);expect(result.cancelled).toBe('AbortError');expect(result.unchanged).toBe(true);
 });
 
-test('writing bursts defer all disk writes until editing stops',async({page,context})=>{
+test('writing bursts checkpoint completed strokes between contacts while deferring page snapshots',async({page,context})=>{
  test.setTimeout(45000);
  const {cdp,target}=await startPen(page,context,3000);
  await cdp.send('Emulation.setCPUThrottlingRate',{rate:4});
  await page.evaluate(()=>{
-  window.pageWrites=0;window.operationWrites=0;
+  window.pageWrites=0;window.operationWrites=0;window.contactOperationWrites=0;
   const put=IDBObjectStore.prototype.put,add=IDBObjectStore.prototype.add;
   IDBObjectStore.prototype.put=function(...args){if(this.name===PAGE_STORE)pageWrites++;return put.apply(this,args);};
-  IDBObjectStore.prototype.add=function(...args){if(this.name===OPS_STORE)operationWrites++;return add.apply(this,args);};
+  IDBObjectStore.prototype.add=function(...args){if(this.name===OPS_STORE){operationWrites++;if(isPenWriting)contactOperationWrites++;}return add.apply(this,args);};
  });
  for(let letter=0;letter<6;letter++){
   if(letter)await cdp.send('Input.dispatchMouseEvent',{type:'mousePressed',...target,button:'left',buttons:1,clickCount:1,pointerType:'pen'});
@@ -155,8 +155,10 @@ test('writing bursts defer all disk writes until editing stops',async({page,cont
   await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',...target,button:'left',buttons:0,clickCount:1,pointerType:'pen'});
   await page.waitForTimeout(250);
  }
- const during=await page.evaluate(()=>({pages:pageWrites,ops:operationWrites,ink:state.pages[0].strokes.filter(s=>s.color==='#E81010').length}));
- expect(during.ink).toBe(6);expect(during.ops).toBe(0);expect(during.pages).toBe(0);
+ const during=await page.evaluate(()=>({pages:pageWrites,ops:operationWrites,duringContact:contactOperationWrites,ink:state.pages[0].strokes.filter(s=>s.color==='#E81010').length}));
+ // Lightweight append-only records should survive a process exit even
+ // before the whole writing burst ends. Full-page snapshots still wait.
+ expect(during.ink).toBe(6);expect(during.ops).toBeGreaterThan(0);expect(during.duringContact).toBe(0);expect(during.pages).toBe(0);
  await expect.poll(()=>page.evaluate(()=>operationWrites),{timeout:10000}).toBeGreaterThanOrEqual(6);
  await cdp.send('Emulation.setCPUThrottlingRate',{rate:1});
  await page.evaluate(()=>__IHN_TEST_API__.checkpointBeforeLeaving());

@@ -10,13 +10,14 @@
     const UPLOAD='https://www.googleapis.com/upload/drive/v3/files';
     const OUTBOX='ink-journal-outbox';
     const KIND='ink-journal-v1', PREFIX='ink-journal:', MAX_BODY=8*1024*1024;
+    const folderLookups=new WeakMap();
     const escape=value=>String(value).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     class Journal {
         constructor(host){
             this.host=host;this.store=host.store;this.account=host.account;this.docId=host.docId||'';
             this.actor=host.actor||crypto.randomUUID();this.part=0;this.current=null;
             this.records=new Map();this.sources=new Map();this.seen=new Map();
-            this.readTasks=new Map();this.applyChain=Promise.resolve();
+            this.readTasks=new Map();this.applyChain=Promise.resolve();this.bootstrapWait=null;
             this.outboxReady=!!this.store.patchAndQueue;this.persistChain=Promise.resolve();this.stopped=false;this.writing=false;this.reading=false;
             this.nextOutboxCheck=0;this.announcements=new Map();this.announcing=false;this.controllers=new Set();this.latestParts=new Map();this.lastWrite=0;this.nextDiscovery=0;this.timer=null;this.folder=null;this.lastError='';
         }
@@ -73,8 +74,22 @@
         }
         async ensureFolder(){
             if(this.folder)return this.folder;
+            // Live previews and durable journals start together. Share their
+            // folder lookup within this account/store so neither creates a
+            // second folder while the other's first lookup is still pending.
+            let accounts=folderLookups.get(this.store);
+            if(!accounts){accounts=new Map();folderLookups.set(this.store,accounts);}
+            let pending=accounts.get(this.account);
+            if(!pending){pending=this.findOrCreateFolder();accounts.set(this.account,pending);}
+            try{
+                const id=await pending;
+                if(this.stopped)throw new DOMException('Journal closed','AbortError');
+                return this.folder=id;
+            }finally{if(accounts.get(this.account)===pending)accounts.delete(this.account);}
+        }
+        async findOrCreateFolder(){
             const cached=await this.read('ink-journal-folder');
-            if(cached?.fileId)return this.folder=cached.fileId;
+            if(cached?.fileId)return cached.fileId;
             const q="trashed=false and mimeType='application/vnd.google-apps.folder' and 'me' in owners and (name='inhouse notes' or name='Inhouse Notes')";
             const found=[];let token='';
             do{
@@ -85,7 +100,7 @@
             if(!id){const file=await (await this.request(API,{method:'POST',headers:{'Content-Type':'application/json'},
                 body:JSON.stringify({name:'inhouse notes',mimeType:'application/vnd.google-apps.folder'})})).json();id=file.id;}
             if(!id)throw new Error('Drive did not confirm the ink folder');
-            await this.put('ink-journal-folder',{fileId:id});return this.folder=id;
+            await this.put('ink-journal-folder',{fileId:id});return id;
         }
         async reserve(record,key){
             if(record.fileId)return record.fileId;
@@ -94,7 +109,14 @@
             await this.patch(key,old=>({...old,fileId:id}));record.fileId=id;return id;
         }
         async upload(record,key){
-            const folder=await this.ensureFolder(),id=await this.reserve(record,key);
+            // These requests are independent. Wait for BOTH even on failure:
+            // a reservation still writing its durable ID must not outlive the
+            // write lease and race a retry. Existing files need no folder read.
+            const setup=await Promise.allSettled([
+                record.exists?Promise.resolve(null):this.ensureFolder(),this.reserve(record,key)
+            ]);
+            for(const result of setup)if(result.status==='rejected')throw result.reason;
+            const folder=setup[0].value,id=setup[1].value;
             let previous='',previousRev=0;
             if(record.previousKey){const parent=await this.read(record.previousKey);if(parent){previous=await this.reserve(parent,record.previousKey);previousRev=parent.rev;}}
             const prefix=JSON.stringify({v:1,docId:record.docId,actor:record.actor,part:record.part,rev:record.rev,previous,previousRev});
@@ -260,18 +282,24 @@
         }
         async poll(){
             if(this.stopped||!this.docId||this.reading)return;
+            const now=Date.now();
+            if(now>=this.nextDiscovery&&!this.discovery){
+                this.nextDiscovery=now+5000;
+                this.discovery=this.discover().catch(error=>this.fail(error)).finally(()=>{this.discovery=null;});
+            }
+            if(!this.sources.size&&this.discovery){
+                // Only the first empty poll waits for initial discovery. It
+                // does not own the scheduling guard: a direct-ID hint arriving
+                // meanwhile can start a read without waiting for the index.
+                if(this.bootstrapWait)return;
+                const pending=this.discovery;this.bootstrapWait=pending;
+                try{await pending;}finally{if(this.bootstrapWait===pending)this.bootstrapWait=null;}
+            }
+            if(this.stopped||this.reading)return;
             this.reading=true;
             let started=[];
             try{
                 const now=Date.now();
-                if(now>=this.nextDiscovery&&!this.discovery){
-                    this.nextDiscovery=now+5000;
-                    this.discovery=this.discover().catch(error=>this.fail(error)).finally(()=>{this.discovery=null;});
-                    // Discovery can be slow or unavailable without delaying reads
-                    // from IDs already advertised by an active device.
-                    if(!this.sources.size)await this.discovery;
-                }
-                if(this.stopped)return;
                 const due=[...this.sources.entries()]
                     .filter(([id,source])=>!this.readTasks.has(id)&&source.next<=now)
                     .sort((a,b)=>(b[1].hotUntil>now?1:0)-(a[1].hotUntil>now?1:0)||a[1].next-b[1].next)

@@ -1062,45 +1062,64 @@
         // Memory-limited history with stroke count estimation
         const MAX_HISTORY_MEMORY = 25000; // Approximate max points in history
 
-        function estimateHistoryMemory() {
+        function estimateHistoryActionMemory(action) {
             let totalPoints = 0;
-            for (const action of state.history) {
-                if (action.stroke?.points) {
-                    totalPoints += action.stroke.points.length;
-                }
-                if (action.strokes) {
-                    for (const item of action.strokes) {
-                        if (item.stroke?.points) {
-                            totalPoints += item.stroke.points.length;
-                        }
+            if (action.stroke?.points) {
+                totalPoints += action.stroke.points.length;
+            }
+            if (action.strokes) {
+                for (const item of action.strokes) {
+                    if (item.stroke?.points) {
+                        totalPoints += item.stroke.points.length;
                     }
                 }
-                if (action.before) {
-                    if (Array.isArray(action.before)) {
-                        for (const item of action.before) {
-                            if (item.stroke?.points) totalPoints += item.stroke.points.length;
-                        }
-                    } else if (action.before.strokes) {
-                        for (const item of action.before.strokes) {
-                            if (item.stroke?.points) totalPoints += item.stroke.points.length;
-                        }
+            }
+            if (action.before) {
+                if (Array.isArray(action.before)) {
+                    for (const item of action.before) {
+                        if (item.stroke?.points) totalPoints += item.stroke.points.length;
+                    }
+                } else if (action.before.strokes) {
+                    for (const item of action.before.strokes) {
+                        if (item.stroke?.points) totalPoints += item.stroke.points.length;
                     }
                 }
-                if (action.after) {
-                    if (Array.isArray(action.after)) {
-                        for (const item of action.after) {
-                            if (item.stroke?.points) totalPoints += item.stroke.points.length;
-                        }
+            }
+            if (action.after) {
+                if (Array.isArray(action.after)) {
+                    for (const item of action.after) {
+                        if (item.stroke?.points) totalPoints += item.stroke.points.length;
                     }
                 }
             }
             return totalPoints;
         }
 
-        function trimHistoryByMemory() {
-            while (state.history.length > 1 && estimateHistoryMemory() > MAX_HISTORY_MEMORY) {
-                state.history.shift();
-                state.historyIndex = Math.max(-1, state.historyIndex - 1);
+        function estimateHistoryMemory() {
+            let totalPoints = 0;
+            for (const action of state.history) totalPoints += estimateHistoryActionMemory(action);
+            return totalPoints;
+        }
+
+        function trimHistoryByMemory(target = MAX_HISTORY_MEMORY) {
+            const history = state.history;
+            if (history.length <= 1) return;
+            // Grouped erase/selection actions can hold thousands of strokes.
+            // Measure them once instead of rescanning every surviving action
+            // after each removal. Keep the original threshold and newest item.
+            const weights = new Array(history.length);
+            let totalPoints = 0;
+            for (let index = 0; index < history.length; index++) {
+                weights[index] = estimateHistoryActionMemory(history[index]);
+                totalPoints += weights[index];
+            }
+            let removed = 0;
+            while (history.length - removed > 1 && totalPoints > target) {
+                totalPoints -= weights[removed++];
+            }
+            if (removed > 0) {
+                history.splice(0, removed);
+                state.historyIndex = Math.max(-1, state.historyIndex - removed);
             }
         }
 
@@ -1117,10 +1136,7 @@
             }
             // Trim history more aggressively
             const reducedHistoryTarget = Math.floor(MAX_HISTORY_MEMORY / 2);
-            while (state.history.length > 1 && estimateHistoryMemory() > reducedHistoryTarget) {
-                state.history.shift();
-                state.historyIndex = Math.max(-1, state.historyIndex - 1);
-            }
+            trimHistoryByMemory(reducedHistoryTarget);
             // Evict PDF backgrounds for non-active pages
             pdfBackgroundCache.forEach((entry, pageIndex) => {
                 if (!activePageIndices.has(pageIndex)) {
@@ -1160,10 +1176,7 @@
                     }
                     // Aggressive history trim
                     const reducedTarget = Math.floor(MAX_HISTORY_MEMORY * 0.4);
-                    while (state.history.length > 1 && estimateHistoryMemory() > reducedTarget) {
-                        state.history.shift();
-                        state.historyIndex = Math.max(-1, state.historyIndex - 1);
-                    }
+                    trimHistoryByMemory(reducedTarget);
                     // Evict PDF backgrounds for non-active pages
                     pdfBackgroundCache.forEach((entry, pageIndex) => {
                         if (!activePageIndices.has(pageIndex)) {
