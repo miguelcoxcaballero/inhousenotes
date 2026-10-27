@@ -391,3 +391,57 @@ pub fn draw_options(ctx: &egui::Context, p: &mut PerfState) {
         p.save();
     }
 }
+
+/// Resident memory of this process in MB (Linux; 0 elsewhere).
+pub fn resident_mb() -> f64 {
+    std::fs::read_to_string("/proc/self/statm").ok().and_then(|s| s.split_whitespace().nth(1)?.parse::<f64>().ok()).map_or(0.0, |pages| pages * 4096.0 / 1048576.0)
+}
+
+/// GPU bytes the renderer will allocate for `models` (meshes with their
+/// LOD index lists; textures with mips, shared buffers once, first level
+/// within each preset cap in `caps`, see [`forja_render::texture_cap`]):
+/// `(mesh, [texture per cap])`.
+pub fn upload_estimate(models: &[std::sync::Arc<forja_assets::SceneData>], caps: &[u32]) -> (u64, Vec<u64>) {
+    let mut seen = std::collections::HashSet::new();
+    let mut mesh = 0u64;
+    let mut tex = vec![0u64; caps.len()];
+    for s in models {
+        for m in s.meshes.iter().flatten() {
+            mesh += (m.positions.len() * if m.is_skinned() { 72 } else { 48 } + m.indices.len() * 4 + m.lods.iter().map(|l| l.len() * 4).sum::<usize>()) as u64;
+        }
+        for t in &s.textures {
+            if t.rgba8.is_empty() || !seen.insert((t.rgba8.as_ptr() as usize, t.srgb)) {
+                continue;
+            }
+            for (k, cap) in caps.iter().enumerate() {
+                let (mut w, mut h) = (t.width.max(1), t.height.max(1));
+                loop {
+                    if w.max(h) <= forja_render::texture_cap(*cap, t.srgb) || (w == 1 && h == 1) {
+                        tex[k] += w as u64 * h as u64 * 4;
+                    }
+                    if w == 1 && h == 1 {
+                        break;
+                    }
+                    (w, h) = ((w / 2).max(1), (h / 2).max(1));
+                }
+            }
+        }
+    }
+    (mesh, tex)
+}
+
+/// Hands freed heap pages back to the system (glibc keeps the temporaries
+/// of the city build otherwise: ~1 GB of resident memory on the default
+/// map). A no-op elsewhere.
+pub fn trim_heap() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    {
+        unsafe extern "C" {
+            fn malloc_trim(pad: usize) -> i32;
+        }
+        // SAFETY: malloc_trim only releases free pages of the heap.
+        unsafe {
+            malloc_trim(0);
+        }
+    }
+}

@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use forja_world::{KitCity, OsmWorld, SpanishCity, TestTrack, WorldSource};
 
 fn main() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let map = std::env::args().nth(1).unwrap_or_else(|| "spain".into());
     let root = forja_assets::manifest::find_engine_root().unwrap_or_else(|| PathBuf::from("."));
     let dl = root.join("assets/downloaded");
@@ -19,7 +20,9 @@ fn main() {
         "kit" => KitCity::new(&dl).build(),
         "osm" => OsmWorld::new(dl.join("map_miami_beach_osm/map.osm")).with_content(&dl).build(),
         "track" => TestTrack::default().build(),
-        _ => SpanishCity::new(&dl, root.join("data/city/styles.toml")).build(),
+        "spain" => SpanishCity::new(&dl, root.join("data/city/styles.toml")).build(),
+        // Any built-in city plan: classic, carmen, austrias, organic...
+        plan => SpanishCity::preset(&dl, root.join("data/city/styles.toml"), plan).expect("unknown map or plan").build(),
     }
     .expect("world");
     println!("{map}: built in {:.1}s, {} scenes, {} placements", t.elapsed().as_secs_f32(), w.scenes.len(), w.placements.len());
@@ -28,6 +31,23 @@ fn main() {
         uses[*s] += 1;
     }
     let (mut uniq_tris, mut uniq_verts, mut inst_tris, mut lod_scenes, mut lod_tris) = (0usize, 0usize, 0usize, 0usize, 0usize);
+    // GPU bytes as the renderer counts them: 48 B per vertex, 4 B per
+    // index of the full mesh and of every LOD level; by name prefix.
+    let mut gpu: HashMap<String, (usize, usize)> = HashMap::new();
+    let mut gpu_total = 0usize;
+    for s in &w.scenes {
+        let b: usize = s.meshes.iter().flatten().map(|m| m.positions.len() * 48 + m.indices.len() * 4 + m.lods.iter().map(|l| l.len() * 4).sum::<usize>()).sum();
+        gpu_total += b;
+        let e = gpu.entry(s.name.split(['_', '-', ' ']).next().unwrap_or("").to_string()).or_default();
+        e.0 += b;
+        e.1 += 1;
+    }
+    let mut gpu: Vec<_> = gpu.into_iter().collect();
+    gpu.sort_by(|a, b| b.1.0.cmp(&a.1.0));
+    println!("gpu mesh bytes (with LODs): {:.0} MB; by kind (MB, scenes):", gpu_total as f64 / 1048576.0);
+    for (k, (b, n)) in gpu.iter().take(12) {
+        println!("  {k:<20} {:>7.1} {n:>6}", *b as f64 / 1048576.0);
+    }
     let mut rows = Vec::new();
     for (i, s) in w.scenes.iter().enumerate() {
         let tris = s.triangle_count();
@@ -84,6 +104,9 @@ fn main() {
                 tex_n += 1;
                 tex_bytes += t.width as u64 * t.height as u64 * 4 * 4 / 3;
                 *sizes.entry((t.width, t.height)).or_default() += 1;
+                if std::env::var_os("WORLDSTATS_TEXTURES").is_some() {
+                    println!("  texture {}x{} srgb {} {} (scene {})", t.width, t.height, t.srgb, t.name, s.name);
+                }
             }
         }
     }

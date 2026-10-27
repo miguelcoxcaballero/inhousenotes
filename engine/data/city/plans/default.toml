@@ -48,8 +48,8 @@ alley = [["madrid_popular", 0.6], ["madrid_ladrillo", 0.4]]
 [zone.grid]
 origin = [0.0, 0.0]
 dir = -1.0
-cols = 4
-rows = 5
+cols = 3
+rows = 4
 block = [46.0, 62.0]
 street = "madrid_calle"
 outer = "madrid_borde"
@@ -70,7 +70,7 @@ alley = [["valencia_carmen", 0.6], ["valencia_ruzafa", 0.4]]
 [zone.grid]
 origin = [0.0, 0.0]
 dir = 1.0
-cols = 3
+cols = 2
 rows = 3
 block = [92.0, 104.0]
 street = "ensanche"

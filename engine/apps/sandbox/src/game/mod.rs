@@ -246,6 +246,7 @@ pub fn build_at(map: MapKind, paths: Paths, hour: Option<f32>) -> App {
         .add_plugin(traffic::TrafficPlugin)
         .add_plugin(crowd::CrowdPlugin)
         .add_plugin(camera::CameraPlugin);
+    crate::perf::trim_heap();
     app.add_system(Stage::PreUpdate, "clear_frame", |w| {
         let rs = w.res_mut::<RenderScene>();
         rs.dynamic.clear();

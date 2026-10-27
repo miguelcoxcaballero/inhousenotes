@@ -23,6 +23,37 @@ pub struct Prop {
 #[derive(Default)]
 pub struct Props(pub Vec<Prop>);
 
+/// Open ground near the player at `p` for something `n` spots long
+/// (`spacing` apart along `dir`): every spot in sight of the player's
+/// chest and on level ground within a step of the player's feet. Returns
+/// the first spot (on the ground). Spots are tried on rings from `r0`.
+pub fn open_ground(physics: &PhysicsWorld, p: Vec3, r0: f32, n: usize, spacing: f32, dir: Vec3) -> Option<Vec3> {
+    use forja_math::Ray;
+    let chest = p + Vec3::Y * 1.0;
+    let ground = |at: Vec3| -> Option<f32> {
+        let sight = at + Vec3::Y * 1.0 - chest;
+        if physics.raycast(&Ray::new(chest, sight), sight.length() + 0.6, Default::default()).is_some() {
+            return None;
+        }
+        let hit = physics.raycast(&Ray::new(Vec3::new(at.x, p.y + 3.0, at.z), Vec3::NEG_Y), 6.0, Default::default())?;
+        ((hit.point.y - p.y).abs() < 1.2 && hit.normal.y > 0.9).then_some(hit.point.y)
+    };
+    for r in [r0, r0 * 0.75, r0 * 1.4, r0 * 1.8, r0 * 0.6] {
+        for k in 0..16 {
+            let a = k as f32 * std::f32::consts::TAU / 16.0;
+            let at = p + Vec3::new(a.cos() * r, 0.0, a.sin() * r);
+            let hs: Option<Vec<f32>> = (0..n).map(|i| ground(at + dir * (i as f32 * spacing))).collect();
+            if let Some(hs) = hs {
+                let (lo, hi) = hs.iter().fold((f32::MAX, f32::MIN), |(a, b), h| (a.min(*h), b.max(*h)));
+                if hi - lo < 0.15 {
+                    return Some(Vec3::new(at.x, hi + 0.01, at.z));
+                }
+            }
+        }
+    }
+    None
+}
+
 /// A box mesh as a scene, used when downloaded props are missing.
 pub fn box_scene(half: Vec3, color: Vec4) -> SceneData {
     let mut b = forja_world::builder::MeshBuilder::new(0);
@@ -50,10 +81,15 @@ impl Plugin for PropsPlugin {
         let paths = app.world.res::<Paths>().clone();
         let mut spawns: Vec<Iso> = app.world.res::<GameWorld>().desc.spawns_of(SpawnKind::Prop).map(|s| s.iso).collect();
         if spawns.is_empty() {
-            // A small stack next to the player in maps without prop spawns.
+            // A small stack next to the player in maps without prop spawns,
+            // on open ground in sight of the player: on a hill town a fixed
+            // offset put crates inside the facades (the city's collision
+            // mesh does not push them out), where they hung in the air.
             let p = app.world.res::<GameWorld>().desc.spawn(SpawnKind::Player).map(|s| s.pos).unwrap_or(Vec3::Y);
-            for i in 0..10 {
-                spawns.push(Iso::from_pos(p + Vec3::new(4.0 + (i % 3) as f32 * 0.85, 0.5 + (i / 3) as f32 * 0.82, 3.0)));
+            if let Some(base) = open_ground(app.world.res::<PhysicsWorld>(), p, 4.0, 3, 0.85, Vec3::X) {
+                for i in 0..10 {
+                    spawns.push(Iso::from_pos(base + Vec3::new((i % 3) as f32 * 0.85, 0.42 + (i / 3) as f32 * 0.82, 0.0)));
+                }
             }
         }
         let half = Vec3::splat(0.4);
