@@ -163,6 +163,37 @@ impl Default for Time {
     }
 }
 
+/// CPU time of every system in the last frame (ms), summed over the fixed
+/// steps of that frame. Filled by [`App`] for the frame profiler.
+#[derive(Clone, Debug, Default)]
+pub struct SystemTimings {
+    /// `(system name, ms)` in first-run order.
+    pub last: Vec<(&'static str, f32)>,
+    /// Fixed steps run in the last frame.
+    pub fixed_steps: u32,
+}
+
+impl SystemTimings {
+    fn begin_frame(&mut self) {
+        for e in &mut self.last {
+            e.1 = 0.0;
+        }
+        self.fixed_steps = 0;
+    }
+
+    fn add(&mut self, name: &'static str, ms: f32) {
+        match self.last.iter_mut().find(|e| e.0 == name) {
+            Some(e) => e.1 += ms,
+            None => self.last.push((name, ms)),
+        }
+    }
+
+    /// Total of all systems (ms).
+    pub fn total(&self) -> f32 {
+        self.last.iter().map(|e| e.1).sum()
+    }
+}
+
 /// A unit of engine functionality.
 pub trait Plugin {
     fn name(&self) -> &'static str {
@@ -196,6 +227,7 @@ impl App {
     pub fn new() -> Self {
         let mut world = World::default();
         world.resources.insert(Time::default());
+        world.resources.insert(SystemTimings::default());
         Self {
             world,
             systems: HashMap::new(),
@@ -263,7 +295,12 @@ impl App {
     fn run_stage(&mut self, stage: Stage) {
         if let Some(list) = self.systems.get_mut(&stage) {
             for s in list.iter_mut() {
+                let t = Instant::now();
                 (s.run)(&mut self.world);
+                let ms = t.elapsed().as_secs_f32() * 1000.0;
+                if let Some(timings) = self.world.resources.get_mut::<SystemTimings>() {
+                    timings.add(s.name, ms);
+                }
             }
         }
     }
@@ -285,6 +322,7 @@ impl App {
         for u in &self.frame_event_updaters {
             u(&mut self.world);
         }
+        self.world.res_mut::<SystemTimings>().begin_frame();
         let steps = {
             let t = self.world.res_mut::<Time>();
             t.delta = dt.min(0.25) * t.time_scale;
@@ -303,6 +341,7 @@ impl App {
             t.alpha = t.accumulator / t.fixed_dt;
             n
         };
+        self.world.res_mut::<SystemTimings>().fixed_steps = steps;
         self.run_stage(FRAME_STAGES[0]);
         for _ in 0..steps {
             self.run_stage(Stage::FixedUpdate);

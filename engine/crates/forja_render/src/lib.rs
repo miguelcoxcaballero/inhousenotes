@@ -28,6 +28,9 @@
 pub mod atmosphere;
 pub mod camera;
 pub mod env;
+pub mod profiler;
+pub mod quality;
+mod static_scene;
 
 use std::sync::Arc;
 
@@ -37,7 +40,10 @@ use forja_math::{Aabb, Frustum, Mat4, Vec3, Vec4};
 use wgpu::util::DeviceExt;
 
 pub use camera::Camera;
+pub use quality::{DynamicResolution, GraphicsConfig, Preset};
 pub use wgpu;
+
+use static_scene::{Batch, DrawKey, StaticItem, StaticScene};
 
 const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -91,6 +97,14 @@ struct MaterialUniforms {
     emissive: [f32; 4],
     params: [f32; 4],
     layers: [f32; 4],
+}
+
+/// Cost knobs read by the shaders (`Quality` in pbr.wgsl / gtao.wgsl).
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct QualityUniforms {
+    /// x: PCSS cascades, y: SSR steps, z: contact-shadow steps, w: AO scale.
+    params: [f32; 4],
 }
 
 #[repr(C)]
@@ -234,11 +248,47 @@ pub struct RenderSettings {
     /// 0: lit image; 1: ambient occlusion; 2: sun shadow (map x contact);
     /// 3: screen-space reflection hit confidence.
     pub debug_view: u32,
+    /// GTAO at half resolution with a depth-aware upsample.
+    pub ao_half_res: bool,
+    /// Cascades below this index use PCSS; the others a fixed 4-tap PCF.
+    pub pcss_cascades: u32,
+    /// Cascades 2 and 3 re-render every N frames (1: every frame).
+    pub far_cascade_interval: u32,
+    pub ssr_steps: u32,
+    pub contact_steps: u32,
+    /// Point lights shaded per pixel (nearest first).
+    pub max_lights: u32,
+    pub bloom: bool,
+    /// Multiplies the scene's shadow distance.
+    pub shadow_distance_scale: f32,
+    /// Multiplies the LOD triangle budget.
+    pub lod_detail: f32,
+    /// Textures are uploaded from the first mip not larger than this.
+    pub max_texture_size: u32,
 }
 
 impl Default for RenderSettings {
+    /// The High preset.
     fn default() -> Self {
-        Self { taa: true, ssao: true, contact_shadows: true, ssr: true, capture_frames: 8, sharpen: 0.5, debug_view: 0 }
+        Self {
+            taa: true,
+            ssao: true,
+            contact_shadows: true,
+            ssr: true,
+            capture_frames: 8,
+            sharpen: 0.5,
+            debug_view: 0,
+            ao_half_res: true,
+            pcss_cascades: 2,
+            far_cascade_interval: 2,
+            ssr_steps: 32,
+            contact_steps: 10,
+            max_lights: MAX_LIGHTS as u32,
+            bloom: true,
+            shadow_distance_scale: 1.0,
+            lod_detail: 1.0,
+            max_texture_size: 4096,
+        }
     }
 }
 
@@ -251,6 +301,9 @@ impl RenderSettings {
         }
         if let Some(n) = std::env::var("FORJA_CAPTURE_FRAMES").ok().and_then(|v| v.parse().ok()) {
             s.capture_frames = n;
+        }
+        if let Some(n) = std::env::var("FORJA_MAX_TEXTURE").ok().and_then(|v| v.parse().ok()) {
+            s.max_texture_size = n;
         }
         if let Ok(v) = std::env::var("FORJA_DEBUG") {
             s.debug_view = match v.trim() {
@@ -268,6 +321,25 @@ impl RenderSettings {
 
     /// Applies a `FORJA_FX` list: `name` or `+name` enables, `-name`
     /// disables (`taa`, `ssao`/`ao`, `contact`, `ssr`).
+    /// Copies the cost knobs of a graphics configuration (keeps the debug
+    /// view, capture frames and sharpening).
+    pub fn apply_graphics(&mut self, g: &GraphicsConfig) {
+        self.taa = g.taa;
+        self.ssao = g.ssao;
+        self.ao_half_res = g.ssao_half_res;
+        self.contact_shadows = g.contact_shadows;
+        self.contact_steps = if g.preset == Preset::Low { 6 } else if g.preset == Preset::Medium { 8 } else { 10 };
+        self.ssr = g.ssr;
+        self.ssr_steps = g.ssr_steps;
+        self.pcss_cascades = g.pcss_cascades;
+        self.far_cascade_interval = g.far_cascade_interval;
+        self.max_lights = g.max_lights;
+        self.bloom = g.bloom;
+        self.shadow_distance_scale = g.shadow_distance_scale;
+        self.lod_detail = g.lod_detail;
+        self.max_texture_size = g.max_texture_size;
+    }
+
     pub fn apply_fx(&mut self, fx: &str) {
         for item in fx.split(',').map(str::trim).filter(|i| !i.is_empty()) {
             let (on, name) = match item.strip_prefix('-') {
@@ -279,6 +351,10 @@ impl RenderSettings {
                 "ssao" | "ao" => self.ssao = on,
                 "contact" => self.contact_shadows = on,
                 "ssr" => self.ssr = on,
+                "halfao" => self.ao_half_res = on,
+                "pcss" => self.pcss_cascades = if on { 4 } else { 0 },
+                "shadowcache" => self.far_cascade_interval = if on { 2 } else { 1 },
+                "bloom" => self.bloom = on,
                 _ => log::warn!("FORJA_FX: unknown effect {name}"),
             }
         }
@@ -303,6 +379,21 @@ pub struct RenderStats {
     pub triangles: u64,
     pub shadow_draws: u32,
     pub cpu_ms: f32,
+    /// Instances and triangles drawn into the shadow cascades this frame.
+    pub shadow_instances: u32,
+    pub shadow_triangles: u64,
+    /// Cascades re-rendered this frame (bit mask).
+    pub cascades_updated: u8,
+    /// Point lights shaded.
+    pub lights: u32,
+    /// Static instances / grid cells uploaded with `set_static_instances`.
+    pub static_instances: u32,
+    pub static_cells: u32,
+    /// Internal render resolution.
+    pub width: u32,
+    pub height: u32,
+    /// Estimated GPU memory (textures, meshes, render targets), MB.
+    pub vram_mb: f32,
 }
 
 struct GpuMesh {
@@ -353,6 +444,12 @@ struct Targets {
     normal: wgpu::TextureView,
     ao_raw: wgpu::TextureView,
     ao: wgpu::TextureView,
+    /// Half-resolution GTAO (raw, denoised) and its bind groups.
+    ao_half_raw: wgpu::TextureView,
+    ao_half: wgpu::TextureView,
+    gtao_half_bind: wgpu::BindGroup,
+    blur_half_bind: wgpu::BindGroup,
+    upsample_bind: wgpu::BindGroup,
     /// TAA output of this frame (bloom and tonemap read it).
     resolved_tex: wgpu::Texture,
     resolved: wgpu::TextureView,
@@ -389,6 +486,7 @@ struct Pipelines {
     shadow_skinned_masked: wgpu::RenderPipeline,
     gtao: wgpu::RenderPipeline,
     ao_blur: wgpu::RenderPipeline,
+    ao_upsample: wgpu::RenderPipeline,
     taa: wgpu::RenderPipeline,
     sky: wgpu::RenderPipeline,
     lines: wgpu::RenderPipeline,
@@ -450,6 +548,30 @@ pub struct Renderer {
     pub stats: RenderStats,
     pub settings: RenderSettings,
     temporal: TemporalState,
+    quality_buf: wgpu::Buffer,
+    /// GPU pass timings (timestamp queries) of a recent frame.
+    pub profiler: profiler::GpuProfiler,
+    /// CPU scopes of the last [`Renderer::render`].
+    pub cpu: profiler::CpuScopes,
+    statics: StaticScene,
+    cascade_cache: [CascadeCache; 4],
+    /// Bytes of uploaded textures and meshes (VRAM estimate).
+    texture_bytes: u64,
+    mesh_bytes: u64,
+    target_bytes: u64,
+    scratch: Vec<InstanceRaw>,
+}
+
+/// Last rendered state of a shadow cascade (far cascades are refreshed
+/// every few frames and reuse it in between).
+#[derive(Clone, Copy, Default)]
+struct CascadeCache {
+    valid: bool,
+    vp: Mat4,
+    texel: f32,
+    range: f32,
+    split: f32,
+    sun: Vec3,
 }
 
 /// Frame-to-frame state of the temporal passes.
@@ -559,7 +681,7 @@ impl Renderer {
         log::info!("GPU: {} ({:?})", adapter_info.name, adapter_info.backend);
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("forja"),
-            required_features: wgpu::Features::empty(),
+            required_features: profiler::GpuProfiler::wanted_features(&adapter),
             required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
             experimental_features: wgpu::ExperimentalFeatures::disabled(),
             memory_hints: wgpu::MemoryHints::Performance,
@@ -618,8 +740,11 @@ impl Renderer {
         // Main pass screen inputs: GTAO, prepass depth (read-only attachment
         // at the same time), last frame's image and the prepass normals
         // (screen-space reflections).
-        let screen_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("screen"), entries: &[texture_entry(0), depth_entry(1), texture_entry(2), sampler_entry(3), texture_entry(4)] });
-        let gtao_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("gtao"), entries: &[depth_entry(0), texture_entry(1), texture_entry(2)] });
+        let screen_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("screen"),
+            entries: &[texture_entry(0), depth_entry(1), texture_entry(2), sampler_entry(3), texture_entry(4), uniform_entry(5, wgpu::ShaderStages::FRAGMENT)],
+        });
+        let gtao_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("gtao"), entries: &[depth_entry(0), texture_entry(1), texture_entry(2), uniform_entry(3, wgpu::ShaderStages::FRAGMENT)] });
         let taa_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("taa"),
             entries: &[texture_entry(0), texture_entry(1), depth_entry(2), sampler_entry(3), uniform_entry(4, wgpu::ShaderStages::FRAGMENT)],
@@ -751,6 +876,7 @@ impl Renderer {
         };
         let gtao_pipeline = screen_pipeline(&gtao, &gtao_layout, "fs_gtao", AO_FORMAT);
         let ao_blur_pipeline = screen_pipeline(&gtao, &gtao_layout, "fs_ao_blur", AO_FORMAT);
+        let ao_upsample_pipeline = screen_pipeline(&gtao, &gtao_layout, "fs_ao_upsample", AO_FORMAT);
         let taa_pipeline = screen_pipeline(&taa, &taa_layout, "fs_taa", HDR_FORMAT);
 
         let sky_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -832,6 +958,7 @@ impl Renderer {
             shadow_skinned_masked,
             gtao: gtao_pipeline,
             ao_blur: ao_blur_pipeline,
+            ao_upsample: ao_upsample_pipeline,
             taa: taa_pipeline,
             sky: sky_pipeline,
             lines: lines_pipeline,
@@ -920,6 +1047,8 @@ impl Renderer {
         let line_cap = 65536 * std::mem::size_of::<LineVertex>() as u64;
         let line_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("lines"), size: line_cap, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let taa_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("taa"), size: 16, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let quality_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("quality"), size: 16, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let gpu_profiler = profiler::GpuProfiler::new(&device, &queue);
         let mut r = Self {
             device,
             queue,
@@ -962,6 +1091,15 @@ impl Renderer {
             stats: RenderStats::default(),
             settings: RenderSettings::from_env(),
             temporal: TemporalState::default(),
+            quality_buf,
+            profiler: gpu_profiler,
+            cpu: Default::default(),
+            statics: StaticScene::default(),
+            cascade_cache: Default::default(),
+            texture_bytes: 0,
+            mesh_bytes: 0,
+            target_bytes: 0,
+            scratch: Vec::new(),
         };
         r.resize(1280, 720);
         r
@@ -970,6 +1108,7 @@ impl Renderer {
     /// Forgets the temporal history (camera cut, new scene): the next frame
     /// starts TAA accumulation from scratch.
     pub fn reset_history(&mut self) {
+        self.cascade_cache = Default::default();
         self.temporal.history_valid = false;
         self.temporal.still_frames = 0;
         self.temporal.prev_key = None;
@@ -1094,14 +1233,25 @@ impl Renderer {
         let normal = tex("normal", width, height, NORMAL_FORMAT);
         let ao_raw = tex("ao_raw", width, height, AO_FORMAT);
         let ao = tex("ao", width, height, AO_FORMAT);
+        let (hw, hh) = (width.div_ceil(2), height.div_ceil(2));
+        let ao_half_raw = tex("ao_half_raw", hw, hh, AO_FORMAT);
+        let ao_half = tex("ao_half", hw, hh, AO_FORMAT);
         let resolved_tex = raw_tex("resolved", width, height, HDR_FORMAT, wgpu::TextureUsages::COPY_SRC);
         let resolved = resolved_tex.create_view(&Default::default());
         let history_tex = raw_tex("history", width, height, HDR_FORMAT, wgpu::TextureUsages::COPY_DST);
         let history = history_tex.create_view(&Default::default());
         let ldr = tex("ldr", width, height, wgpu::TextureFormat::Rgba8UnormSrgb);
         let entry = view_entry;
-        let gtao_bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("gtao"), layout: &self.gtao_bgl, entries: &[entry(0, &depth), entry(1, &normal), entry(2, &ao)] });
-        let blur_bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("ao_blur"), layout: &self.gtao_bgl, entries: &[entry(0, &depth), entry(1, &normal), entry(2, &ao_raw)] });
+        let quality = || wgpu::BindGroupEntry { binding: 3, resource: self.quality_buf.as_entire_binding() };
+        let gtao_group = |label: &str, aux: &wgpu::TextureView| self.device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some(label), layout: &self.gtao_bgl, entries: &[entry(0, &depth), entry(1, &normal), entry(2, aux), quality()] });
+        // `aux` is the texture read: the GTAO pass reads none (any view that
+        // is not its target), the denoise the raw AO, the upsample the
+        // denoised half-res AO.
+        let gtao_bind = gtao_group("gtao", &ao);
+        let blur_bind = gtao_group("ao_blur", &ao_raw);
+        let gtao_half_bind = gtao_group("gtao_half", &ao_half);
+        let blur_half_bind = gtao_group("ao_blur_half", &ao_half_raw);
+        let upsample_bind = gtao_group("ao_upsample", &ao_half);
         let taa_bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("taa"),
             layout: &self.taa_bgl,
@@ -1116,9 +1266,20 @@ impl Renderer {
         let screen_bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("screen"),
             layout: &self.screen_bgl,
-            entries: &[entry(0, &ao), entry(1, &depth), entry(2, &history), wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.clamp_sampler) }, entry(4, &normal)],
+            entries: &[
+                entry(0, &ao),
+                entry(1, &depth),
+                entry(2, &history),
+                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.clamp_sampler) },
+                entry(4, &normal),
+                wgpu::BindGroupEntry { binding: 5, resource: self.quality_buf.as_entire_binding() },
+            ],
         });
         self.temporal.history_valid = false;
+        // Render target memory: hdr, normal, resolved, history (8 B/px),
+        // depth (4), ldr (4), ao x2 (1), half ao x2, bloom chain (~1/3 hdr).
+        let px = width as u64 * height as u64;
+        self.target_bytes = px * (8 * 4 + 4 + 4 + 2) + px / 2 + px * 8 / 3;
         let mut bloom = Vec::new();
         let (mut w, mut h) = (width, height);
         for _ in 0..BLOOM_MIPS {
@@ -1178,6 +1339,11 @@ impl Renderer {
             normal,
             ao_raw,
             ao,
+            ao_half_raw,
+            ao_half,
+            gtao_half_bind,
+            blur_half_bind,
+            upsample_bind,
             resolved_tex,
             resolved,
             history_tex,
@@ -1204,16 +1370,25 @@ impl Renderer {
         view
     }
 
-    fn upload_texture(&self, t: &TextureData) -> wgpu::TextureView {
-        Self::upload_texture_with(&self.device, &self.queue, t)
+    fn upload_texture(&mut self, t: &TextureData) -> wgpu::TextureView {
+        let (view, bytes) = Self::upload_texture_with(&self.device, &self.queue, t, self.settings.max_texture_size);
+        self.texture_bytes += bytes;
+        view
     }
 
-    fn upload_texture_with(device: &wgpu::Device, queue: &wgpu::Queue, t: &TextureData) -> wgpu::TextureView {
+    /// Uploads `t` with its mip chain, starting at the first level not larger
+    /// than `max_size` (the quality preset's texture cap). Returns the view
+    /// and the bytes of GPU memory used.
+    fn upload_texture_with(device: &wgpu::Device, queue: &wgpu::Queue, t: &TextureData, max_size: u32) -> (wgpu::TextureView, u64) {
         let format = if t.srgb { wgpu::TextureFormat::Rgba8UnormSrgb } else { wgpu::TextureFormat::Rgba8Unorm };
-        let mips = generate_mips(t);
+        let mut mips = generate_mips(t);
+        while mips.len() > 1 && mips[0].0.max(mips[0].1) > max_size.max(1) {
+            mips.remove(0);
+        }
+        let bytes = mips.iter().map(|m| m.2.len() as u64).sum();
         let tex = device.create_texture(&wgpu::TextureDescriptor {
             label: Some(&t.name),
-            size: wgpu::Extent3d { width: t.width, height: t.height, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d { width: mips[0].0, height: mips[0].1, depth_or_array_layers: 1 },
             mip_level_count: mips.len() as u32,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -1229,11 +1404,11 @@ impl Renderer {
                 wgpu::Extent3d { width: *w, height: *h, depth_or_array_layers: 1 },
             );
         }
-        tex.create_view(&Default::default())
+        (tex.create_view(&Default::default()), bytes)
     }
 
     fn solid_view(device: &wgpu::Device, queue: &wgpu::Queue, rgba: [u8; 4], srgb: bool) -> wgpu::TextureView {
-        Self::upload_texture_with(device, queue, &TextureData { name: "solid".into(), width: 1, height: 1, rgba8: rgba.to_vec().into(), srgb })
+        Self::upload_texture_with(device, queue, &TextureData { name: "solid".into(), width: 1, height: 1, rgba8: rgba.to_vec().into(), srgb }, 1).0
     }
 
     fn upload_material(&self, m: &MaterialData, textures: &[wgpu::TextureView], defaults: &[wgpu::TextureView; 3]) -> GpuMaterial {
@@ -1300,6 +1475,7 @@ impl Renderer {
                     .map(|i| Vertex { pos: p.positions[i].to_array(), normal: p.normals[i].to_array(), uv: p.uvs[i].to_array(), tangent: p.tangents[i].to_array() })
                     .collect();
                 let vertex = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("vb"), contents: bytemuck::cast_slice(&verts), usage: wgpu::BufferUsages::VERTEX });
+                self.mesh_bytes += (verts.len() * std::mem::size_of::<Vertex>() + p.indices.len() * 4 + p.lods.iter().map(|l| l.len() * 4).sum::<usize>()) as u64;
                 let index = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("ib"), contents: bytemuck::cast_slice(&p.indices), usage: wgpu::BufferUsages::INDEX });
                 let skin = p.is_skinned().then(|| {
                     let sv: Vec<SkinVertex> = (0..p.positions.len())
@@ -1341,12 +1517,103 @@ impl Renderer {
         self.models[m.0 as usize].bounds
     }
 
+    // ---------------------------------------------------------------- static set
+
+    /// Uploads the instances that never move (buildings, modules, street
+    /// furniture, trees). They are bucketed into a culling grid once and
+    /// drawn every frame without being resubmitted; [`FrameDesc::instances`]
+    /// then only holds what moves. Replaces the previous static set
+    /// (an empty slice clears it). Skinned instances are not allowed here.
+    pub fn set_static_instances(&mut self, instances: &[DrawInstance]) {
+        let t = std::time::Instant::now();
+        let mut items = Vec::new();
+        for inst in instances {
+            let Some(model) = self.models.get(inst.model.0 as usize) else { continue };
+            for part in &model.parts {
+                let mesh = &self.meshes[part.mesh as usize];
+                let node_m = inst.nodes.as_ref().and_then(|n| n.get(part.node).copied()).unwrap_or(model.rest[part.node]);
+                let world = inst.transform * node_m;
+                let mat = &self.materials[mesh.material as usize];
+                let pipe = if mat.blend { 3 } else if mat.double_sided { 1 } else { 0 };
+                let bounds = transform_aabb(&mesh.aabb, &world);
+                if bounds.is_empty() {
+                    continue;
+                }
+                items.push(StaticItem {
+                    key: DrawKey { pipe, material: mesh.material, mesh: part.mesh },
+                    raw: InstanceRaw { model: world.to_cols_array_2d(), tint: inst.tint.to_array(), extra: [0, 0, 0, 0] },
+                    bounds,
+                    no_shadow: mat.blend || !inst.cast_shadows,
+                });
+            }
+        }
+        self.statics = StaticScene::build(items);
+        log::info!("static set: {} instances, {} parts in {} cells ({:.1} ms)", instances.len(), self.statics.items, self.statics.cell_count(), t.elapsed().as_secs_f32() * 1000.0);
+    }
+
+    /// Applies a graphics configuration: cost knobs immediately, shadow map
+    /// size by reallocating it; the texture cap affects later uploads.
+    pub fn apply_graphics(&mut self, g: &GraphicsConfig) {
+        self.settings.apply_graphics(g);
+        if g.shadow_resolution != self.shadow_size {
+            self.set_shadow_resolution(g.shadow_resolution);
+        }
+    }
+
+    /// Reallocates the cascade shadow maps at `size` texels per side.
+    pub fn set_shadow_resolution(&mut self, size: u32) {
+        let size = size.clamp(256, self.device.limits().max_texture_dimension_2d);
+        let shadow_tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("shadow"),
+            size: wgpu::Extent3d { width: size, height: size, depth_or_array_layers: 4 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: SHADOW_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        self.shadow_view = shadow_tex.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2Array), ..Default::default() });
+        self.shadow_layers = (0..4)
+            .map(|i| shadow_tex.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2), base_array_layer: i, array_layer_count: Some(1), ..Default::default() }))
+            .collect();
+        self.shadow_size = size;
+        self.cascade_cache = Default::default();
+        self.frame_bind = make_frame_bind(&self.device, &self.frame_bgl, &self.frame_buf, &self.shadow_view, &self.shadow_sampler, &self.env_view, &self.linear_sampler);
+    }
+
+    pub fn shadow_resolution(&self) -> u32 {
+        self.shadow_size
+    }
+
+    /// Estimated GPU memory in bytes: textures (with mips), meshes, render
+    /// targets and shadow maps.
+    pub fn vram_estimate(&self) -> u64 {
+        self.texture_bytes + self.mesh_bytes + self.target_bytes + self.shadow_size as u64 * self.shadow_size as u64 * 4 * 4 + self.instance_cap + self.joint_cap
+    }
+
+    /// Finest LOD of `mesh` with at most `budget` triangles, plus `bias`
+    /// levels, clamped to the levels it has.
+    fn lod_for(meshes: &[GpuMesh], mesh: u32, budget: f32, bias: u32) -> u32 {
+        let m = &meshes[mesh as usize];
+        let n = m.lods.len() as u32;
+        let mut lod = 0;
+        while lod < n && (m.indices(lod).1 / 3) as f32 > budget {
+            lod += 1;
+        }
+        (lod + bias).min(n)
+    }
+
     // ---------------------------------------------------------------- render
 
     /// Renders a frame into `target` (a surface texture view or offscreen
-    /// texture in [`Renderer::output_format`]).
+    /// texture in [`Renderer::output_format`]). The internal resolution is
+    /// the last [`Renderer::resize`]; when it is smaller than `target` (a
+    /// render scale below 1) the final pass upsamples with sharpening.
     pub fn render(&mut self, frame: &FrameDesc, target: &wgpu::TextureView) {
         let t0 = std::time::Instant::now();
+        self.cpu.clear();
+        self.profiler.begin_frame(&self.device);
         let (width, height) = self.size();
         let cam = Camera { aspect: width as f32 / height as f32, ..frame.camera };
         let tf = self.temporal_frame(&cam, frame.time, width, height);
@@ -1372,56 +1639,79 @@ impl Renderer {
         let frustum = Frustum::from_view_proj(&view_proj);
         // Fit the cascades to the visible depth range from a lower bound of
         // the distance to the closest visible geometry: bounding spheres for
-        // ordinary instances, the box for large ones (a ground plane's
-        // sphere would contain an aerial camera). Bounded cost: one point
-        // transform and a sphere test per instance, stopping as soon as
-        // something is near the camera, as it always is at street level.
+        // ordinary dynamic instances, the box for large ones (a ground
+        // plane's sphere would contain an aerial camera), and the cell
+        // bounds of the static grid. Stops as soon as something is near the
+        // camera, as it always is at street level.
         let near = cam.near.max(0.1);
-        let mut nearest = f32::INFINITY;
-        for inst in &frame.instances {
-            let Some(model) = self.models.get(inst.model.0 as usize) else { continue };
-            if model.bounds.is_empty() {
-                continue;
-            }
-            let m = &inst.transform;
-            let scale = m.x_axis.truncate().length().max(m.y_axis.truncate().length()).max(m.z_axis.truncate().length());
-            let animated = inst.joints.is_some() || inst.nodes.is_some();
-            let r = model.bounds.half_extents().length() * scale + if animated { 0.5 } else { 0.0 };
-            let c = m.transform_point3(model.bounds.center());
-            if frustum.intersects_sphere(c, r) {
-                let d = if r > 50.0 {
-                    let b = transform_aabb(&model.bounds, m);
-                    (b.min - cam.position).max(cam.position - b.max).max(Vec3::ZERO).length()
-                } else {
-                    (c - cam.position).length() - r
-                };
-                nearest = nearest.min(d);
-                if nearest <= near * 1.2 {
-                    break;
+        let mut nearest = self.statics.nearest_visible(&frustum.planes, cam.position, near * 1.2);
+        if nearest > near * 1.2 {
+            for inst in &frame.instances {
+                let Some(model) = self.models.get(inst.model.0 as usize) else { continue };
+                if model.bounds.is_empty() {
+                    continue;
+                }
+                let m = &inst.transform;
+                let scale = m.x_axis.truncate().length().max(m.y_axis.truncate().length()).max(m.z_axis.truncate().length());
+                let animated = inst.joints.is_some() || inst.nodes.is_some();
+                let r = model.bounds.half_extents().length() * scale + if animated { 0.5 } else { 0.0 };
+                let c = m.transform_point3(model.bounds.center());
+                if frustum.intersects_sphere(c, r) {
+                    let d = if r > 50.0 {
+                        let b = transform_aabb(&model.bounds, m);
+                        (b.min - cam.position).max(cam.position - b.max).max(Vec3::ZERO).length()
+                    } else {
+                        (c - cam.position).length() - r
+                    };
+                    nearest = nearest.min(d);
+                    if nearest <= near * 1.2 {
+                        break;
+                    }
                 }
             }
         }
-        let (shadow_near, shadow_far) = camera::fitted_shadow_range(near, nearest, cam.fov_y, cam.aspect, env.shadow_distance);
+        let s = self.settings.clone();
+        let shadow_distance = env.shadow_distance * s.shadow_distance_scale;
+        let (shadow_near, shadow_far) = camera::fitted_shadow_range(near, nearest, cam.fov_y, cam.aspect, shadow_distance);
         let splits = camera::cascade_splits(shadow_near, shadow_far, 0.8);
         let mut cascade_vp = [Mat4::IDENTITY; 4];
         let mut cascade_texel = [0.0f32; 4];
         let mut cascade_range = [0.0f32; 4];
         let mut prev = shadow_near.max(cam.near);
         let caster_reach = 400.0;
-        for (i, s) in splits.iter().enumerate() {
-            let (m, radius) = camera::cascade_fit(&cam, prev, *s, sun, self.shadow_size, caster_reach);
-            cascade_vp[i] = m;
-            cascade_texel[i] = 2.0 * radius / self.shadow_size as f32;
-            cascade_range[i] = 2.0 * radius + caster_reach;
-            prev = *s;
+        // Far cascades are refreshed every `far_cascade_interval` frames
+        // (cascade 2 and 3 on alternate frames) and otherwise reuse the
+        // matrix they were rendered with. Their fit is padded by 4% so the
+        // stale map still covers the moving slice.
+        let interval = s.far_cascade_interval.max(1);
+        let mut refresh = [true; 4];
+        for (i, split) in splits.iter().enumerate() {
+            let cached = self.cascade_cache[i];
+            let far_c = i >= 2 && interval > 1;
+            let due = (tf.frame_index + i as u32) % interval == 0;
+            let reuse = far_c && !due && cached.valid && (cached.split - split).abs() <= split * 0.01 && cached.sun.dot(sun) > 0.99999;
+            if reuse {
+                cascade_vp[i] = cached.vp;
+                cascade_texel[i] = cached.texel;
+                cascade_range[i] = cached.range;
+                refresh[i] = false;
+            } else {
+                let pad = if far_c { 1.04 } else { 1.0 };
+                let (m, radius) = camera::cascade_fit_padded(&cam, prev, *split, sun, self.shadow_size, caster_reach, pad);
+                cascade_vp[i] = m;
+                cascade_texel[i] = 2.0 * radius / self.shadow_size as f32;
+                cascade_range[i] = 2.0 * radius + caster_reach;
+                self.cascade_cache[i] = CascadeCache { valid: true, vp: m, texel: cascade_texel[i], range: cascade_range[i], split: *split, sun };
+            }
+            prev = *split;
         }
         let proj = cam.proj();
         let fx_on = |b: bool| b as u32 as f32;
-        let s = &self.settings;
         let mut lights = [GpuLight::zeroed(); MAX_LIGHTS];
         let mut sorted: Vec<&PointLight> = frame.lights.iter().collect();
         sorted.sort_by(|a, b| (a.position - cam.position).length_squared().total_cmp(&(b.position - cam.position).length_squared()));
-        for (i, l) in sorted.iter().take(MAX_LIGHTS).enumerate() {
+        let light_count = sorted.len().min(MAX_LIGHTS).min(s.max_lights as usize);
+        for (i, l) in sorted.iter().take(light_count).enumerate() {
             lights[i] = GpuLight { pos_radius: [l.position.x, l.position.y, l.position.z, l.radius], color: [l.color.x, l.color.y, l.color.z, l.intensity] };
         }
         let uniforms = FrameUniforms {
@@ -1436,7 +1726,7 @@ impl Renderer {
             ground_color: sky.ground.extend(env.fog_falloff).to_array(),
             cascade_splits: splits,
             cascade_vp: cascade_vp.map(|m| m.to_cols_array_2d()),
-            params: [sorted.len().min(MAX_LIGHTS) as f32, 1.0 / self.shadow_size as f32, env.bloom, 0.0],
+            params: [light_count as f32, 1.0 / self.shadow_size as f32, env.bloom, 0.0],
             screen: [width as f32, height as f32, 1.0 / width as f32, 1.0 / height as f32],
             sh,
             env_params: [ibl.is_some() as u32 as f32, ibl.map_or(0.0, |e| e.max_mip), 1.0, 0.0],
@@ -1449,17 +1739,53 @@ impl Renderer {
             ao_params: [env.ao_radius, env.specular_occlusion, 60.0, s.debug_view as f32],
             lights,
         };
+        let half_ao = s.ssao && s.ao_half_res;
+        let quality = QualityUniforms { params: [s.pcss_cascades as f32, s.ssr_steps.max(4) as f32, s.contact_steps.max(1) as f32, if half_ao { 2.0 } else { 1.0 }] };
         self.queue.write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&uniforms));
+        self.queue.write_buffer(&self.quality_buf, 0, bytemuck::bytes_of(&quality));
         self.queue.write_buffer(&self.taa_buf, 0, bytemuck::bytes_of(&tf.taa_params));
         for (i, m) in cascade_vp.iter().enumerate() {
-            self.queue.write_buffer(&self.cascade_bufs[i], 0, bytemuck::bytes_of(&m.to_cols_array_2d()));
+            if refresh[i] {
+                self.queue.write_buffer(&self.cascade_bufs[i], 0, bytemuck::bytes_of(&m.to_cols_array_2d()));
+            }
         }
+        self.cpu.add("setup", t0.elapsed().as_secs_f32() * 1000.0);
 
-        // Build instance batches: main view + one list per cascade.
+        // ---- Visibility: static grid + dynamic instances -> instanced batches.
+        let t_cull = std::time::Instant::now();
         let tan_half_fov = (cam.fov_y * 0.5).tan();
         let cascade_planes: Vec<[Vec4; 6]> = cascade_vp.iter().map(camera::frustum_planes_standard).collect();
+        let mut all = std::mem::take(&mut self.scratch);
+        all.clear();
+        let mut main_batches: Vec<Batch> = Vec::new();
+        let mut shadow_batches: [Vec<Batch>; 4] = Default::default();
+        // LOD: the finest level with at most one triangle per two covered
+        // pixels; covered pixels = PI * (radius / distance * focal)^2.
+        let focal = height as f32 * 0.5 / tan_half_fov;
+        let lod_scale = std::f32::consts::PI * focal * focal * 0.5 * s.lod_detail;
+        {
+            let meshes = &self.meshes;
+            let statics = &mut self.statics;
+            let main_view = static_scene::View { planes: &frustum.planes, eye: cam.position, min_radius_per_m: 0.6 / focal, min_radius: 0.0, lod_scale, shadow: false };
+            statics.gather(&main_view, &|m, b| Self::lod_for(meshes, m, b, 0), &mut all, &mut main_batches);
+            for c in 0..4 {
+                if !refresh[c] {
+                    continue;
+                }
+                // Casters are culled by their size in shadow texels, not by
+                // camera distance: facades are assembled from many small
+                // modules that together cast the large shadows.
+                let v = static_scene::View { planes: &cascade_planes[c], eye: cam.position, min_radius_per_m: 0.0, min_radius: 2.5 * cascade_texel[c], lod_scale, shadow: true };
+                // Shadow maps hide silhouette detail: one LOD coarser than
+                // the camera in the near cascades, two in the far ones.
+                let bias = if c >= 2 { 2 } else { 1 };
+                statics.gather(&v, &|m, b| Self::lod_for(meshes, m, b, bias), &mut all, &mut shadow_batches[c]);
+            }
+        }
+        let static_ms = t_cull.elapsed().as_secs_f32() * 1000.0;
+        self.cpu.add("cull static", static_ms);
+        let t_dyn = std::time::Instant::now();
         let mut joints: Vec<[[f32; 4]; 4]> = Vec::new();
-        // (mesh, skinned, joint offset, instance raw)
         let mut main: Vec<(u32, InstanceRaw)> = Vec::new();
         let mut shadow: [Vec<(u32, InstanceRaw)>; 4] = Default::default();
         let mut culled = 0u32;
@@ -1474,14 +1800,10 @@ impl Renderer {
             let dist = (wbi.center() - cam.position).length().max(0.1);
             let px_radius = radius / (dist * tan_half_fov) * height as f32 * 0.5;
             let in_main = px_radius > 0.6 && frustum.intersects_aabb(&wbi);
-            // Shadow casters are culled by their size in shadow texels of
-            // each cascade, not by camera distance: buildings are assembled
-            // from many small modules, which together cast the large shadows
-            // that still matter far away and from the air.
             let mut cmask = 0u8;
             if inst.cast_shadows {
                 for (c, planes) in cascade_planes.iter().enumerate() {
-                    if radius >= 2.5 * cascade_texel[c] && aabb_in_planes(&wbi, planes) {
+                    if refresh[c] && radius >= 2.5 * cascade_texel[c] && aabb_in_planes(&wbi, planes) {
                         cmask |= 1 << c;
                     }
                 }
@@ -1506,8 +1828,6 @@ impl Renderer {
                 let skinned = mesh.skin.is_some() && inst.joints.is_some();
                 let node_m = inst.nodes.as_ref().and_then(|n| n.get(part.node).copied()).unwrap_or(model.rest[part.node]);
                 let world = if skinned { inst.transform } else { inst.transform * node_m };
-                // LOD from screen-space triangle density: the finest level
-                // with at most one triangle per two covered pixels.
                 let (visible, pixels, wb) = if per_part {
                     let wb = transform_aabb(&mesh.aabb, &world);
                     let cov = wb.half_extents().length() / ((wb.center() - cam.position).length().max(0.1) * tan_half_fov);
@@ -1515,11 +1835,7 @@ impl Renderer {
                 } else {
                     (in_main, inst_pixels, None)
                 };
-                let budget = (pixels * 0.5) as u32;
-                let mut lod = 0;
-                while lod < mesh.lods.len() as u32 && mesh.indices(lod).1 / 3 > budget {
-                    lod += 1;
-                }
+                let lod = Self::lod_for(&self.meshes, part.mesh, pixels * 0.5 * s.lod_detail, 0);
                 let raw = InstanceRaw { model: world.to_cols_array_2d(), tint: inst.tint.to_array(), extra: [joint_offset, skinned as u32, lod, 0] };
                 if visible {
                     main.push((part.mesh, raw));
@@ -1537,31 +1853,50 @@ impl Renderer {
                 }
             }
         }
-        // Sort for batching: by pipeline then mesh.
-        // Skinned meshes without joints fall back to the static pipeline (bind pose).
-        let key = |r: &Renderer, mesh: u32, raw: &InstanceRaw| {
+        // Dynamic lists -> batches (skinned meshes without joints fall back
+        // to the static pipeline, i.e. the bind pose).
+        let main_key = |r: &Renderer, mesh: u32, raw: &InstanceRaw| {
             let m = &r.meshes[mesh as usize];
             let mat = &r.materials[m.material as usize];
-            let pipe = if mat.blend { if raw.extra[1] == 1 { 4 } else { 3 } } else if raw.extra[1] == 1 { 2 } else if mat.double_sided { 1 } else { 0 };
+            let pipe: u8 = if mat.blend { if raw.extra[1] == 1 { 4 } else { 3 } } else if raw.extra[1] == 1 { 2 } else if mat.double_sided { 1 } else { 0 };
             (pipe, m.material, mesh, raw.extra[2])
         };
-        main.sort_by_key(|(m, raw)| key(self, *m, raw));
-        // Shadow casters: (alpha-masked, skinned, material when masked, mesh, lod).
-        let shadow_key = |r: &Renderer, mesh: u32, raw: &InstanceRaw| {
-            let mat = r.meshes[mesh as usize].material;
-            let masked = r.materials[mat as usize].masked;
-            (masked, raw.extra[1], if masked { mat } else { 0 }, mesh, raw.extra[2])
-        };
-        for s in &mut shadow {
-            s.sort_by_key(|(m, raw)| shadow_key(self, *m, raw));
+        main.sort_by_key(|(m, raw)| main_key(self, *m, raw));
+        let mut i = 0;
+        while i < main.len() {
+            let k = main_key(self, main[i].0, &main[i].1);
+            let first = all.len() as u32;
+            while i < main.len() && main_key(self, main[i].0, &main[i].1) == k {
+                all.push(main[i].1);
+                i += 1;
+            }
+            main_batches.push(Batch { pipe: k.0, material: k.1, mesh: k.2, lod: k.3, skinned: k.0 == 2 || k.0 == 4, first, count: all.len() as u32 - first });
         }
-        let mut all: Vec<InstanceRaw> = Vec::with_capacity(main.len() + shadow.iter().map(Vec::len).sum::<usize>());
-        all.extend(main.iter().map(|(_, r)| *r));
-        let mut shadow_ranges = [0u32; 4];
-        for (c, s) in shadow.iter().enumerate() {
-            shadow_ranges[c] = all.len() as u32;
-            all.extend(s.iter().map(|(_, r)| *r));
+        for (c, list) in shadow.iter_mut().enumerate() {
+            list.sort_by_key(|(m, raw)| (raw.extra[1], *m, raw.extra[2]));
+            let mut i = 0;
+            while i < list.len() {
+                let k = (list[i].1.extra[1], list[i].0, list[i].1.extra[2]);
+                let first = all.len() as u32;
+                while i < list.len() && (list[i].1.extra[1], list[i].0, list[i].1.extra[2]) == k {
+                    all.push(list[i].1);
+                    i += 1;
+                }
+                let material = self.meshes[k.1 as usize].material;
+                shadow_batches[c].push(Batch { pipe: 0, material, mesh: k.1, lod: k.2, skinned: k.0 == 1, first, count: all.len() as u32 - first });
+            }
         }
+        // Submission order: pipeline, then material, then mesh.
+        main_batches.sort_by_key(Batch::sort_key);
+        for list in &mut shadow_batches {
+            list.sort_by_key(|b| {
+                let masked = self.materials[b.material as usize].masked;
+                (masked, b.skinned, if masked { b.material } else { 0 }, b.mesh, b.lod)
+            });
+        }
+        self.cpu.add("cull dynamic", t_dyn.elapsed().as_secs_f32() * 1000.0);
+
+        let t_up = std::time::Instant::now();
         let bytes = (all.len() * std::mem::size_of::<InstanceRaw>()) as u64;
         if bytes > self.instance_cap {
             self.instance_cap = bytes.next_power_of_two();
@@ -1588,28 +1923,39 @@ impl Renderer {
         if !frame.lines.is_empty() {
             self.queue.write_buffer(&self.line_buf, 0, bytemuck::cast_slice(&frame.lines));
         }
+        let instance_bytes = bytes;
+        self.scratch = all;
         let t = self.targets.as_ref().expect("resized");
         let pu = &t.post_bind.uniforms;
         let tonemap_u = &pu[pu.len() - 2];
+        let bloom_amount = if s.bloom { env.bloom } else { 0.0 };
         self.queue.write_buffer(
             tonemap_u,
             0,
-            bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0], params: [env.exposure, env.bloom, env.vignette, 0.0] }),
+            bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0], params: [env.exposure, bloom_amount, env.vignette, 0.0] }),
         );
         // Final pass: FXAA without TAA, CAS sharpening with it (stronger
         // while the camera moves, when the temporal filter is softer).
         let still = tf.taa_params[3] > 0.5;
-        let sharpen = if still { self.settings.sharpen } else { (self.settings.sharpen * 1.6).min(1.0) };
+        let sharpen = if still { s.sharpen } else { (s.sharpen * 1.6).min(1.0) };
         self.queue.write_buffer(
             &pu[pu.len() - 1],
             0,
-            bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0], params: [(!self.settings.taa) as u32 as f32, sharpen, 0.0, 0.0] }),
+            bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0], params: [(!s.taa) as u32 as f32, sharpen, 0.0, 0.0] }),
         );
+        self.cpu.add("upload", t_up.elapsed().as_secs_f32() * 1000.0);
 
+        let t_enc = std::time::Instant::now();
+        let prof = &self.profiler;
         let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("frame") });
-        let mut stats = RenderStats { instances_culled: culled, ..Default::default() };
+        let mut stats = RenderStats { instances_culled: culled, lights: light_count as u32, width, height, static_instances: self.statics.items as u32, static_cells: self.statics.cell_count() as u32, ..Default::default() };
+        const SHADOW_NAMES: [&str; 4] = ["shadow c0", "shadow c1", "shadow c2", "shadow c3"];
         // 1. Shadows (alpha-masked casters are alpha tested).
         for c in 0..4 {
+            if !refresh[c] {
+                continue;
+            }
+            stats.cascades_updated |= 1 << c;
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("shadow"),
                 color_attachments: &[],
@@ -1618,26 +1964,18 @@ impl Renderer {
                     depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
                     stencil_ops: None,
                 }),
-                timestamp_writes: None,
+                timestamp_writes: prof.pass(SHADOW_NAMES[c]),
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
             pass.set_vertex_buffer(1, self.instance_buf.slice(..));
-            let base = shadow_ranges[c];
-            let list = &shadow[c];
-            let mut i = 0;
-            let mut bound: Option<(bool, u32)> = None;
+            let mut bound: Option<(bool, bool)> = None;
             let mut bound_mat = u32::MAX;
-            while i < list.len() {
-                let k = shadow_key(self, list[i].0, &list[i].1);
-                let mut j = i + 1;
-                while j < list.len() && shadow_key(self, list[j].0, &list[j].1) == k {
-                    j += 1;
-                }
-                let (masked, sk, mat, mesh_id, lod) = k;
-                let mesh = &self.meshes[mesh_id as usize];
-                if bound != Some((masked, sk)) {
-                    pass.set_pipeline(match (masked, sk == 1) {
+            for b in &shadow_batches[c] {
+                let masked = self.materials[b.material as usize].masked;
+                let mesh = &self.meshes[b.mesh as usize];
+                if bound != Some((masked, b.skinned)) {
+                    pass.set_pipeline(match (masked, b.skinned) {
                         (false, false) => &self.pipelines.shadow,
                         (false, true) => &self.pipelines.shadow_skinned,
                         (true, false) => &self.pipelines.shadow_masked,
@@ -1645,22 +1983,23 @@ impl Renderer {
                     });
                     pass.set_bind_group(0, &self.cascade_binds[c], &[]);
                     pass.set_bind_group(1, &self.joint_bind, &[]);
-                    bound = Some((masked, sk));
+                    bound = Some((masked, b.skinned));
                     bound_mat = u32::MAX;
                 }
-                if masked && mat != bound_mat {
-                    pass.set_bind_group(2, &self.materials[mat as usize].bind_group, &[]);
-                    bound_mat = mat;
+                if masked && b.material != bound_mat {
+                    pass.set_bind_group(2, &self.materials[b.material as usize].bind_group, &[]);
+                    bound_mat = b.material;
                 }
                 pass.set_vertex_buffer(0, mesh.vertex.slice(..));
-                if sk == 1 && let Some(s) = &mesh.skin {
-                    pass.set_vertex_buffer(2, s.slice(..));
+                if b.skinned && let Some(sk) = &mesh.skin {
+                    pass.set_vertex_buffer(2, sk.slice(..));
                 }
-                let (ib, count) = mesh.indices(lod);
+                let (ib, count) = mesh.indices(b.lod);
                 pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..count, 0, base + i as u32..base + j as u32);
+                pass.draw_indexed(0..count, 0, b.first..b.first + b.count);
                 stats.shadow_draws += 1;
-                i = j;
+                stats.shadow_instances += b.count;
+                stats.shadow_triangles += (count / 3) as u64 * b.count as u64;
             }
         }
         // 2. Depth + normal prepass of the opaque surfaces (blended ones are
@@ -1680,25 +2019,16 @@ impl Renderer {
                     depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(0.0), store: wgpu::StoreOp::Store }),
                     stencil_ops: None,
                 }),
-                timestamp_writes: None,
+                timestamp_writes: prof.pass("prepass"),
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
             pass.set_vertex_buffer(1, self.instance_buf.slice(..));
-            let mut i = 0;
             let mut bound_pipe = usize::MAX;
             let mut bound_mat = u32::MAX;
-            while i < main.len() {
-                let k = key(self, main[i].0, &main[i].1);
-                if k.0 >= 3 {
-                    break;
-                }
-                let mut j = i + 1;
-                while j < main.len() && key(self, main[j].0, &main[j].1) == k {
-                    j += 1;
-                }
-                let (pipe, mat, mesh_id, lod) = k;
-                let masked = self.materials[mat as usize].masked;
+            for b in main_batches.iter().take_while(|b| b.pipe < 3) {
+                let pipe = b.pipe as usize;
+                let masked = self.materials[b.material as usize].masked;
                 let pp = pipe * 2 + masked as usize;
                 if pp != bound_pipe {
                     pass.set_pipeline(&self.pipelines.prepass[pipe][masked as usize]);
@@ -1706,24 +2036,23 @@ impl Renderer {
                     pass.set_bind_group(2, &self.joint_bind, &[]);
                     bound_pipe = pp;
                 }
-                if (masked || bound_mat == u32::MAX) && mat != bound_mat {
-                    pass.set_bind_group(1, &self.materials[mat as usize].bind_group, &[]);
-                    bound_mat = mat;
+                if (masked || bound_mat == u32::MAX) && b.material != bound_mat {
+                    pass.set_bind_group(1, &self.materials[b.material as usize].bind_group, &[]);
+                    bound_mat = b.material;
                 }
-                let mesh = &self.meshes[mesh_id as usize];
+                let mesh = &self.meshes[b.mesh as usize];
                 pass.set_vertex_buffer(0, mesh.vertex.slice(..));
-                if pipe == 2 && let Some(s) = &mesh.skin {
-                    pass.set_vertex_buffer(2, s.slice(..));
+                if pipe == 2 && let Some(sk) = &mesh.skin {
+                    pass.set_vertex_buffer(2, sk.slice(..));
                 }
-                let (ib, count) = mesh.indices(lod);
+                let (ib, count) = mesh.indices(b.lod);
                 pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..count, 0, i as u32..j as u32);
-                i = j;
+                pass.draw_indexed(0..count, 0, b.first..b.first + b.count);
             }
         }
-        let screen_pass = |enc: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, pipe: &wgpu::RenderPipeline, bind: &wgpu::BindGroup| {
+        let screen_pass = |enc: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, pipe: &wgpu::RenderPipeline, bind: &wgpu::BindGroup, name: &'static str| {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("screen"),
+                label: Some(name),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view,
                     depth_slice: None,
@@ -1731,7 +2060,7 @@ impl Renderer {
                     ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::WHITE), store: wgpu::StoreOp::Store },
                 })],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
+                timestamp_writes: prof.pass(name),
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
@@ -1740,10 +2069,17 @@ impl Renderer {
             pass.set_bind_group(1, bind, &[]);
             pass.draw(0..3, 0..1);
         };
-        // 3. Ambient occlusion (GTAO + bilateral denoise).
-        if self.settings.ssao {
-            screen_pass(&mut enc, &t.ao_raw, &self.pipelines.gtao, &t.gtao_bind);
-            screen_pass(&mut enc, &t.ao, &self.pipelines.ao_blur, &t.blur_bind);
+        // 3. Ambient occlusion: GTAO + bilateral denoise, at half resolution
+        // with a depth-aware upsample, or at full resolution.
+        if s.ssao {
+            if half_ao {
+                screen_pass(&mut enc, &t.ao_half_raw, &self.pipelines.gtao, &t.gtao_half_bind, "gtao");
+                screen_pass(&mut enc, &t.ao_half, &self.pipelines.ao_blur, &t.blur_half_bind, "gtao");
+                screen_pass(&mut enc, &t.ao, &self.pipelines.ao_upsample, &t.upsample_bind, "gtao");
+            } else {
+                screen_pass(&mut enc, &t.ao_raw, &self.pipelines.gtao, &t.gtao_bind, "gtao");
+                screen_pass(&mut enc, &t.ao, &self.pipelines.ao_blur, &t.blur_bind, "gtao");
+            }
         }
         // 4. Main HDR pass + sky + lines, depth-tested against the prepass
         // (read-only, so the shaders can also sample it).
@@ -1757,37 +2093,27 @@ impl Renderer {
                     ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &t.depth, depth_ops: None, stencil_ops: None }),
-                timestamp_writes: None,
+                timestamp_writes: prof.pass("main+sky"),
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
             pass.set_vertex_buffer(1, self.instance_buf.slice(..));
-            let mut i = 0;
-            let mut bound_pipe = usize::MAX;
+            let mut bound_pipe = u8::MAX;
             let mut bound_mat = u32::MAX;
             // Opaque first; the sky goes after opaque and before blended.
             let mut sky_drawn = false;
-            while i <= main.len() {
-                let blend_start = i == main.len() || key(self, main[i].0, &main[i].1).0 >= 3;
+            for i in 0..=main_batches.len() {
+                let blend_start = i == main_batches.len() || main_batches[i].pipe >= 3;
                 if blend_start && !sky_drawn {
                     pass.set_pipeline(&self.pipelines.sky);
                     pass.set_bind_group(0, &self.frame_bind, &[]);
                     pass.draw(0..3, 0..1);
-                    bound_pipe = usize::MAX;
+                    bound_pipe = u8::MAX;
                     sky_drawn = true;
                 }
-                if i == main.len() {
-                    break;
-                }
-                let mesh_id = main[i].0;
-                let k = key(self, mesh_id, &main[i].1);
-                let mut j = i + 1;
-                while j < main.len() && key(self, main[j].0, &main[j].1) == k {
-                    j += 1;
-                }
-                let (pipe, mat, _, lod) = k;
-                if pipe != bound_pipe {
-                    pass.set_pipeline(match pipe {
+                let Some(b) = main_batches.get(i) else { break };
+                if b.pipe != bound_pipe {
+                    pass.set_pipeline(match b.pipe {
                         0 => &self.pipelines.opaque,
                         1 => &self.pipelines.double_sided,
                         2 => &self.pipelines.skinned,
@@ -1797,25 +2123,24 @@ impl Renderer {
                     pass.set_bind_group(0, &self.frame_bind, &[]);
                     pass.set_bind_group(2, &self.joint_bind, &[]);
                     pass.set_bind_group(3, &t.screen_bind, &[]);
-                    bound_pipe = pipe;
+                    bound_pipe = b.pipe;
                     bound_mat = u32::MAX;
                 }
-                if mat != bound_mat {
-                    pass.set_bind_group(1, &self.materials[mat as usize].bind_group, &[]);
-                    bound_mat = mat;
+                if b.material != bound_mat {
+                    pass.set_bind_group(1, &self.materials[b.material as usize].bind_group, &[]);
+                    bound_mat = b.material;
                 }
-                let mesh = &self.meshes[mesh_id as usize];
+                let mesh = &self.meshes[b.mesh as usize];
                 pass.set_vertex_buffer(0, mesh.vertex.slice(..));
-                if (pipe == 2 || pipe == 4) && let Some(s) = &mesh.skin {
-                    pass.set_vertex_buffer(2, s.slice(..));
+                if b.skinned && let Some(sk) = &mesh.skin {
+                    pass.set_vertex_buffer(2, sk.slice(..));
                 }
-                let (ib, count) = mesh.indices(lod);
+                let (ib, count) = mesh.indices(b.lod);
                 pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..count, 0, i as u32..j as u32);
+                pass.draw_indexed(0..count, 0, b.first..b.first + b.count);
                 stats.draw_calls += 1;
-                stats.instances_drawn += (j - i) as u32;
-                stats.triangles += (count / 3) as u64 * (j - i) as u64;
-                i = j;
+                stats.instances_drawn += b.count;
+                stats.triangles += (count / 3) as u64 * b.count as u64;
             }
             if !frame.lines.is_empty() {
                 pass.set_pipeline(&self.pipelines.lines);
@@ -1825,19 +2150,19 @@ impl Renderer {
             }
         }
         // 5. TAA resolve into `resolved`, which becomes next frame's history.
-        screen_pass(&mut enc, &t.resolved, &self.pipelines.taa, &t.taa_bind);
+        screen_pass(&mut enc, &t.resolved, &self.pipelines.taa, &t.taa_bind, "taa");
         enc.copy_texture_to_texture(
             wgpu::TexelCopyTextureInfo { texture: &t.resolved_tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
             wgpu::TexelCopyTextureInfo { texture: &t.history_tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
             wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
         );
         // 6. Bloom down/up chain.
-        let fullscreen = |enc: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, pipe: &wgpu::RenderPipeline, bind: &wgpu::BindGroup, load: wgpu::LoadOp<wgpu::Color>| {
+        let fullscreen = |enc: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, pipe: &wgpu::RenderPipeline, bind: &wgpu::BindGroup, load: wgpu::LoadOp<wgpu::Color>, name: &'static str| {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("post"),
+                label: Some(name),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment { view, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load, store: wgpu::StoreOp::Store } })],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
+                timestamp_writes: prof.pass(name),
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
@@ -1845,17 +2170,27 @@ impl Renderer {
             pass.set_bind_group(0, bind, &[]);
             pass.draw(0..3, 0..1);
         };
-        for i in 0..BLOOM_MIPS {
-            fullscreen(&mut enc, &t.bloom[i].0, &self.pipelines.down, &t.post_bind.down[i], wgpu::LoadOp::Clear(wgpu::Color::BLACK));
+        if s.bloom {
+            for i in 0..BLOOM_MIPS {
+                fullscreen(&mut enc, &t.bloom[i].0, &self.pipelines.down, &t.post_bind.down[i], wgpu::LoadOp::Clear(wgpu::Color::BLACK), "bloom");
+            }
+            for (k, i) in (1..BLOOM_MIPS).rev().enumerate() {
+                fullscreen(&mut enc, &t.bloom[i - 1].0, &self.pipelines.up, &t.post_bind.up[k], wgpu::LoadOp::Load, "bloom");
+            }
         }
-        for (k, i) in (1..BLOOM_MIPS).rev().enumerate() {
-            fullscreen(&mut enc, &t.bloom[i - 1].0, &self.pipelines.up, &t.post_bind.up[k], wgpu::LoadOp::Load);
-        }
-        // 7. Tonemap, then FXAA or sharpening.
-        fullscreen(&mut enc, &t.ldr, &self.pipelines.tonemap, &t.post_bind.tonemap, wgpu::LoadOp::Clear(wgpu::Color::BLACK));
-        fullscreen(&mut enc, target, &self.pipelines.fxaa, &t.post_bind.fxaa, wgpu::LoadOp::Clear(wgpu::Color::BLACK));
+        // 7. Tonemap, then FXAA or sharpening (and the upscale to the output
+        // when rendering below its resolution).
+        fullscreen(&mut enc, &t.ldr, &self.pipelines.tonemap, &t.post_bind.tonemap, wgpu::LoadOp::Clear(wgpu::Color::BLACK), "tonemap");
+        fullscreen(&mut enc, target, &self.pipelines.fxaa, &t.post_bind.fxaa, wgpu::LoadOp::Clear(wgpu::Color::BLACK), "final");
+        self.profiler.resolve(&mut enc);
+        self.cpu.add("encode", t_enc.elapsed().as_secs_f32() * 1000.0);
+        let t_sub = std::time::Instant::now();
         self.queue.submit([enc.finish()]);
+        self.profiler.after_submit();
+        self.cpu.add("submit", t_sub.elapsed().as_secs_f32() * 1000.0);
         stats.cpu_ms = t0.elapsed().as_secs_f32() * 1000.0;
+        stats.vram_mb = self.vram_estimate() as f32 / (1024.0 * 1024.0);
+        let _ = instance_bytes;
         self.stats = stats;
     }
 
