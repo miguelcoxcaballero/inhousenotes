@@ -12,6 +12,21 @@ commons_category = "Sant Joan de l'Hospital (Valencia)"
 wikipedia = { es = "https://es.wikipedia.org/wiki/Iglesia_de_San_Juan_del_Hospital_(Valencia)", ca = "https://ca.wikipedia.org/wiki/Esgl%C3%A9sia_de_Sant_Joan_de_l%27Hospital" }
 
 [facts]
+plan_source = { value = "OSM way 514000994 + Catastro 6029506YJ2762G parts 1, 2, 4, 5, 7", source = "https://www.openstreetmap.org/way/514000994", note = "checked on the IGN PNOA orthophoto (WMS pnoa-ma, CC BY 4.0, 0.05 m/px request): nave eaves z -8.4 / 5.2, ridge z -1.65, west roof end x -19.2, apse roof edge x 20.5, apse hips converging at x ~15-16, nave buttress shadows at x -13.3, -7.1, -0.9, 5.1, 11.4; model footprint IoU 0.91 with OSM, 0.83 with Catastro" }
+nave_dimensions = { value = "38.55 m long, 10.43 m wide (inside), 14.52 m high", source = "https://es.wikipedia.org/wiki/Iglesia_de_San_Juan_del_Hospital_(Valencia)", note = "infobox; the text gives 36 x 19 m (with the chapels) and 10.5 m span (ca.wikipedia). Model: nave walls 13.3 m apart outside (10.4 inside + 1.45 m walls), 39.6 m from the west wall to the apse" }
+apse_plan = { value = "five-sided apse; outside a regular half octagon of 4.57 m sides, E face x 20.4, centre (14.88, -0.18)", source = "Catastro part 5 (faces 4.80 / 4.57 / 4.97 m) + PNOA roof edge; Wikipedia es/ca (five sides)" }
+method_heights = { value = "constrained bundle adjustment", source = "scratchpad ba2.py: photos 06 (f 1174 px), 07 (f 1035), 09 (f 892), 13 (f 1036) with focal lengths from the Commons EXIF (DC E1020 32 mm eq., DMC-FZ18 28 mm eq., FinePix S1 4.3 mm, PowerShot S70 5.8 mm), eye-height prior 1.6 +- 0.3 m, plan points from the apse octagon and the wall line; 29 observations, rms 8-10 px", note = "+- are the formal 1-sigma of the adjustment, scaled by the residual" }
+apse_eave = { value = 14.25, unit = "m", source = "bundle adjustment: 14.24 +- 0.48 (variants 14.24-14.39)", note = "top of the corbel-table cornice under the tiles; the same height fits the nave's south eave behind (photo 07)" }
+apse_buttress_tops = { value = "13.6-13.8 m", source = "bundle adjustment: S 13.80 +- 0.51, SE 13.55 +- 0.40, NE 13.57 +- 0.49", note = "gargoyles on the S, SE and NE buttresses above" }
+apse_windows = { value = "E window apex 13.3 m (two-light, quatrefoil), SE/NE lancets apex 12.85 m; sills ~4.8 m", source = "bundle adjustment: hE 13.21 +- 0.48, hl 12.78 +- 0.44; sills by ray intersection 4.6-4.9 m in photo 13" }
+cemetery_wall = { value = "crest 3.2 m, merlons to 3.95 m (0.55 m wide at ~1.0 m), ashlar base 1.85 m", source = "bundle adjustment: crest 3.20 +- 0.34, merlon top 3.94 +- 0.41, ashlar band 1.82 +- 0.21, merlon spacing 0.99 m; photo 09: ~20 brick courses (~6.7 cm) between band and crest = 1.35 m", note = "line x 23.06 +- 0.65 at z 3.1 (adjustment), PNOA merlon line x 22.6-23.9 from z 3 to 17.2" }
+cemetery_gate = { value = "round-arched gate ~2.8 x 2.9 m near the south end, centre z ~14.5", source = "photos 07, 16 (09 suggests ~2 m further north)", note = "position uncertain +-1.5 m" }
+dome = { value = "dome top 15.1 m, tiles from ~12.2 m, tiled drum eave 11.6 m, radius ~2.9-3.3 m, centre (9.3, 11.0)", source = "bundle adjustment hd 14.88-15.26 +- 0.5-0.9; ray intersection in photo 07 (tile base 11.8-12.7, eave 11.6); PNOA ring for the centre", note = "Real Capella de Santa Bàrbara, Juan Pérez Castiel 1684-89, Greek cross, dome on pendentives (ca.wikipedia)" }
+chapel_se = { value = "oculus centre 8.25 m, gable top ~10.8 m", source = "ray intersection in photo 07 on the chapel east face (x 17.7)" }
+north_chapels_eave = { value = 7.7, unit = "m", source = "bundle adjustment of photos 05 (f 1546 px, Canon 80D 18 mm) and 08 (f 1386 px, DMC-FS35 5 mm): 7.60 +- 0.64 m at the NE corner (0.9, -12.3)" }
+bell_tower = { value = "stone shaft 17.2 m, bell-arch apex 21.0 m, cornice 22.4 m, ball finials ~24.1 m", source = "bundle adjustment of photos 05/08 with the tower on its Catastro plan: 17.30 +- 0.99 / 21.15 +- 1.20 / 24.17 +- 1.37; stage proportions from photo 05 (stage as wide as the shaft)", note = "the adjustment prefers the tower ~1.2 m further south than Catastro part 1; no published height found" }
+house_eave = { value = 10.6, unit = "m", source = "Catastro facade photo (three window rows, 3 floors in Catastro part 2) and photos 05/08 (white eave 9.2-11.0 m)" }
+narthex_height = { value = 10.0, unit = "m", source = "estimated: lower than the nave (PNOA: 1.4 m shadow of the nave west wall on its roof); not visible from the street" }
 style = { value = "Valencian Gothic", source = "https://www.wikidata.org/wiki/Q9007135#P149" }
 heritage = { value = "bien de interés cultural", source = "https://www.wikidata.org/wiki/Q9007135#P1435" }
 bic_code = { value = "RI-51-0001123", source = "https://www.wikidata.org/wiki/Q9007135#P808" }
@@ -31,8 +46,8 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/02_Esglesia_de_sant_Joan_de_l_Hospital_de_Valencia_campanar.jpg"
@@ -44,8 +59,8 @@ width = 1280
 height = 1791
 camera = [6.67, 6.45]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/03_Arcosolios_do_cemiterio_de_de_Sant_Joan_de_l_Hospital.jpg"
@@ -57,8 +72,8 @@ width = 1280
 height = 853
 camera = [-0.93, 32.66]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/04_Lateral_del_edificio_de_la_Iglesia_de_San_Juan_del_Hospital.jpg"
@@ -84,8 +99,8 @@ width = 1280
 height = 1920
 camera = [-0.29, -14.96]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/06_Merlets_i_capcalera_de_l_esglesia_de_sant_Joan_de_l_Hospital.jpg"
@@ -96,8 +111,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 939
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/07_Sant_Joan_de_l_Hospital_P1140090.jpg"
@@ -108,8 +123,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/08_Sant_Joan_de_l_Hospital_Valencia_05.jpg"
@@ -120,8 +135,8 @@ license = "CC BY-SA 3.0 es"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/09_Pared_exterior_del_cementerio_medieval.jpg"
@@ -132,8 +147,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/10_Exterior_de_la_iglesia_de_San_Juan_del_Hospital_Valencia_02.jpg"
@@ -145,8 +160,8 @@ width = 1280
 height = 853
 camera = [6.67, 6.45]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/11_Capcalera_de_l_esglesia_de_sant_Joan_de_l_Hospital_Valencia.jpg"
@@ -157,8 +172,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/12_Exterior_de_San_Juan_del_Hospital_Valencia_02.jpg"
@@ -169,8 +184,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/13_Santjoanhospital_testa_exterior.jpg"
@@ -181,8 +196,8 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/14_Iglesia_San_Juan_del_Hospital_North_Patio_Entrance_Ciutat_Ve.jpg"
@@ -193,8 +208,8 @@ license = "CC0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/15_Exterior_de_la_iglesia_de_San_Juan_del_Hospital_Valencia_03.jpg"
@@ -206,8 +221,8 @@ width = 1280
 height = 853
 camera = [6.67, 6.45]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/catastro_6029506YJ2762G.jpg"
@@ -218,8 +233,68 @@ license = "Catastro open data (attribution required)"
 width = 1200
 height = 1600
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
+
+[[photo]]
+file = "photos/16_Exterior_de_la_iglesia_de_San_Juan_del_Hospital_Valencia_01.jpg"
+title = "File:Exterior de la iglesia de San Juan del Hospital, Valencia 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3AExterior_de_la_iglesia_de_San_Juan_del_Hospital%2C_Valencia_01.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1920
+exterior = true
+selected = true
+side = "e"
+
+[[photo]]
+file = "photos/17_Exterior_de_la_iglesia_de_San_Juan_del_Hospital_Valencia_16.jpg"
+title = "File:Exterior de la iglesia de San Juan del Hospital, Valencia 16.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3AExterior_de_la_iglesia_de_San_Juan_del_Hospital%2C_Valencia_16.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "n"
+
+[[photo]]
+file = "photos/18_Sant_Joan_de_l_Hospital_Capella_Jaume_I.jpg"
+title = "File:Sant Joan de l'Hospital Capella Jaume I.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3ASant_Joan_de_l%27Hospital_Capella_Jaume_I.jpg"
+author = "Joanbanjo"
+license = "Public domain"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "s"
+
+[[photo]]
+file = "photos/19_Sant_Joan_de_l_Hospital_fossar_sud.jpg"
+title = "File:Sant Joan de l'Hospital fossar sud.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3ASant_Joan_de_l%27Hospital_fossar_sud.jpg"
+author = "Joanbanjo"
+license = "Public domain"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "s"
+
+[[photo]]
+file = "photos/20_Esglesies_de_Sant_Tomas_i_Sant_Joan_des_del_Micalet.jpg"
+title = "File:Esglésies de Sant Tomàs i Sant Felip i de Sant Joan de l'Hospital des del Micalet, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File%3AEsgl%C3%A9sies_de_Sant_Tom%C3%A0s_i_Sant_Felip_i_de_Sant_Joan_de_l%27Hospital_des_del_Micalet%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "aerial"
 
 [[plan]]
 file = "plans/01_1_37_TEMPLO_Y_DEPENDENCIAS_DE_SAN_JUAN_DEL_HOSPITAL_firmado.jpg"
@@ -247,6 +322,11 @@ author = "Dirección General del Catastro"
 license = "Catastro open data (attribution required)"
 kind = "catastro"
 notes = "Cadastral map, EPSG:25830 bbox [725911.55, 4372660.52, 726019.05, 4372756.68], 0.080 m/px, north up; roman numerals = floors above ground; parcels 6029506YJ2762G"
+
+[[reference]]
+url = "https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=OI.OrthoimageCoverage&SRS=EPSG:25830&BBOX=725926.13,4372672.61,726006.13,4372752.61&WIDTH=1600&HEIGHT=1600&FORMAT=image/jpeg"
+title = "IGN PNOA orthophoto (CC BY 4.0)"
+notes = "plan check: eaves, ridge, apse roof, buttress shadows, dome ring, cemetery wall line"
 
 [[reference]]
 url = "https://www.wikidata.org/wiki/Q9007135"
