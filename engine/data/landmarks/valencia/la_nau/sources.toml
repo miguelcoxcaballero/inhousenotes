@@ -21,6 +21,26 @@ catastro_built = { value = 1700, source = "https://www1.sedecatastro.gob.es/CYCB
 catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6026401&rc2=YJ2762E" }
 catastro_floor_area = { value = 10605.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6026401&rc2=YJ2762E", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 3, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 5 parts" }
+plan_outline = { value = "OSM relation 11164787, 3612 m2; IoU 0.998 with Catastro parcel 6026401YJ2762E; edges checked on the IGN PNOA orthophoto (WMS pnoa-ma, CC BY 4.0, 0.075 m/px, bbox E 725919-726039 N 4372386-4372506)", source = "https://www.ign.es/wms-inspire/pnoa-ma" }
+facade_w_length = { value = 58.44, unit = "m", source = "OSM outline, Placa del Patriarca front NW-SW corner" }
+facade_n_length = { value = 63.25, unit = "m", source = "OSM outline, Carrer de la Nau front" }
+facade_e_length = { value = 69.16, unit = "m", source = "OSM outline, Carrer de la Universitat front" }
+facade_s_length = { value = 70.21, unit = "m", source = "OSM outline, Carrer de Salva front" }
+balustrade_top = { value = 13.8, unit = "m", source = "constrained bundle adjustment of photos 01, 08 and the Catastro facade photo (Canon SX270 EXIF 4.5 mm = 25 mm eq.), eye-height prior 1.6 m; +-0.25 m" }
+cornice_top = { value = 12.8, unit = "m", source = "same bundle adjustment; +-0.25 m" }
+cornice_levels = { value = "plinth 0-1.0, string course 5.25-5.55, architrave 10.7-11.2, modillion cornice 11.2-12.8, balustrade 12.8-13.8 m", source = "rays of solved camera of photo 01 intersected with the west facade plane" }
+west_facade_layout = { value = "u from NW corner: corner quoins 0-1.1; north section bays 3.6/7.8 (Estudi General door)/12.1; quoin strip 15.1-16.9; central section small windows at 19.8, 23.4, 27.3, 31.1, 36.6, 41.5 (centre 8.05 m), oculi 19.9 and 41.6 (centre 3.5 m); quoin strip 43.25-45.2; south section bays 47.6/51.4/55.2; SW quoins 57.4-58.44", source = "bundle adjustment photos 01/08/Catastro and facade-plane rays of photo 01" }
+fountain = { value = "centre u = 31.05 m, width ~16.7 m, entablature 4.6 m, pediment apex 6.3 m, five niches", source = "bundle adjustment (pediment apex), photo 08 interpolation" }
+dome_centre = { value = [-29.0, -1.0], unit = "m (local x, z)", source = "bundle adjustment (-29.2, -0.9) +- 0.5 and PNOA octagon / OSM part:5 (-29.2, -1.4)" }
+dome_cross_top = { value = 22.7, unit = "m", source = "bundle adjustment photos 01/08/Catastro (22.62-22.85)" }
+dome_apex = { value = 20.75, unit = "m", source = "bundle adjustment gives 21.0-21.3 at the knob; shell top lowered to 20.75 after the rise/cross ratio of telephoto photo 12" }
+dome_eave = { value = 16.2, unit = "m", source = "solved cameras of photos 01/08/Catastro (15.7-16.0 at the eave front) and edge overlays" }
+drum = { value = "octagon 7.8 m across flats, from the terrace (12.8 m) to the eave", source = "apparent widths in photos 08 and Catastro with solved cameras; OSM part:5" }
+cloister_top = { value = 9.6, unit = "m", source = "PNOA shadow widths: courtyard shadow 3.3 m vs west-facade shadow 4.7 m for the 13.8 m balustrade (parallel walls)" }
+inner_wings_eave = { value = 14.3, unit = "m", source = "PNOA: ~0.5 m shadow of the inner wing wall on the 3.5 m roof terrace (scaled by the facade shadow); photos 06/10/21 show it just above the balustrade" }
+nw_block = { value = "3 floors round the small courtyard, eave 16.0 m, tile hip roof (estimated)", source = "Catastro part 2 (3 floors), PNOA roof colours" }
+east_portal = { value = "stone portal bay with UNIVERSIDAD LITERARIA lintel, balcony window with segmental pediment, u ~36.4 m from the SE corner", source = "photos 16-18 (Pere Lopez); position from a protruding balcony on the PNOA (approximate)" }
+other_facades = { value = "north, east and south fronts: regular bays at 3.95 m like the west sections (ground windows with segmental heads, balcony windows with alternating pediments)", source = "photos 11, 15, 16 (approximate: no frontal photo of these fronts)" }
 
 [[photo]]
 file = "photos/01_Edifici_de_La_Nau_des_de_la_Placa_del_Patriarca_Valencia.jpg"
@@ -31,8 +51,8 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/02_Fronto_d_una_finestra_de_l_edifici_de_La_Nau_Valencia.jpg"
@@ -44,8 +64,8 @@ width = 1280
 height = 943
 camera = [3.38, -2.64]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/03_La_Nau_Universitat_de_Valencia_6813_02.jpg"
@@ -58,8 +78,8 @@ height = 1707
 camera = [-11.8, -24.42]
 heading = 277.2
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/04_110_Font_de_la_placa_del_Col_legi_del_Patriarca_Valencia_ado.jpg"
@@ -71,8 +91,8 @@ width = 1280
 height = 960
 camera = [3.38, -2.64]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/05_109_Placa_del_Col_legi_del_Patriarca_Valencia_amb_el_Col_leg.jpg"
@@ -84,8 +104,8 @@ width = 1280
 height = 960
 camera = [3.38, -2.64]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/06_Universitat_de_Valencia_P1130910.jpg"
@@ -96,8 +116,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/07_Universitat_de_Valencia_Carrer_la_Nau_IMG_1553.jpg"
@@ -108,8 +128,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/08_Universitat_Literaria_de_Valencia_png.jpg"
@@ -120,8 +140,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/09_Finestres_de_la_Nau_Universitat_de_Valencia.jpg"
@@ -132,8 +152,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/10_Universitat_de_Valencia_P1130924.jpg"
@@ -144,8 +164,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/11_Facana_de_la_Nau_al_carrer_de_la_Universitat_Valencia.jpg"
@@ -156,8 +176,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 915
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/12_Universitat_de_Valencia_P1130925.jpg"
@@ -168,8 +188,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/13_Valencia_LA_NAU4.jpg"
@@ -180,8 +200,8 @@ license = "Public domain"
 width = 330
 height = 220
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/catastro_6026401YJ2762E.jpg"
@@ -192,8 +212,115 @@ license = "Catastro open data (attribution required)"
 width = 1600
 height = 1200
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
+
+[[photo]]
+file = "photos/15_P1400103.jpg"
+title = "File:Universitat de València P1400103.JPG"
+url = "https://commons.wikimedia.org/wiki/File%3AUniversitat_de_Val%C3%A8ncia_P1400103.JPG"
+author = "Pere López"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+focal_35mm = 28
+exterior = true
+selected = true
+side = "e"
+notes = "Carrer de la Universitat front (narrow street); added by hand (Commons category), EXIF from the Commons API"
+
+[[photo]]
+file = "photos/16_P1400106.jpg"
+title = "File:Universitat de València P1400106.JPG"
+url = "https://commons.wikimedia.org/wiki/File%3AUniversitat_de_Val%C3%A8ncia_P1400106.JPG"
+author = "Pere López"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1707
+focal_35mm = 28
+exterior = true
+selected = true
+side = "e"
+notes = "UNIVERSIDAD LITERARIA portal bay; added by hand (Commons category), EXIF from the Commons API"
+
+[[photo]]
+file = "photos/17_P1400107.jpg"
+title = "File:Universitat de València P1400107.JPG"
+url = "https://commons.wikimedia.org/wiki/File%3AUniversitat_de_Val%C3%A8ncia_P1400107.JPG"
+author = "Pere López"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+focal_35mm = 28
+exterior = true
+selected = true
+side = "e"
+notes = "portal lintel close-up; added by hand (Commons category), EXIF from the Commons API"
+
+[[photo]]
+file = "photos/18_P1400108_1.jpg"
+title = "File:Universitat de València P1400108 1.JPG"
+url = "https://commons.wikimedia.org/wiki/File%3AUniversitat_de_Val%C3%A8ncia_P1400108_1.JPG"
+author = "Pere López"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+focal_35mm = 28
+exterior = true
+selected = true
+side = "e"
+notes = "portal balcony close-up; added by hand (Commons category), EXIF from the Commons API"
+
+[[photo]]
+file = "photos/19_P1400117.jpg"
+title = "File:Universitat de València P1400117.JPG"
+url = "https://commons.wikimedia.org/wiki/File%3AUniversitat_de_Val%C3%A8ncia_P1400117.JPG"
+author = "Pere López"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1707
+focal_35mm = 28
+exterior = true
+selected = true
+side = "w"
+notes = "Estudi General door; added by hand (Commons category), EXIF from the Commons API"
+
+[[photo]]
+file = "photos/20_P1400125.jpg"
+title = "File:Universitat de València P1400125.JPG"
+url = "https://commons.wikimedia.org/wiki/File%3AUniversitat_de_Val%C3%A8ncia_P1400125.JPG"
+author = "Pere López"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+focal_35mm = 28
+exterior = true
+selected = true
+side = "w"
+notes = "west front from Carrer del Poeta Querol; added by hand (Commons category), EXIF from the Commons API"
+
+[[photo]]
+file = "photos/21_P1400126.jpg"
+title = "File:Universitat de València P1400126.JPG"
+url = "https://commons.wikimedia.org/wiki/File%3AUniversitat_de_Val%C3%A8ncia_P1400126.JPG"
+author = "Pere López"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+focal_35mm = 54
+exterior = true
+selected = true
+side = "w"
+notes = "west front from Carrer del Poeta Querol, 54 mm; added by hand (Commons category), EXIF from the Commons API"
+
+[[plan]]
+file = "plans/pnoa_ortho.jpg"
+title = "IGN PNOA orthophoto (WMS pnoa-ma), bbox E 725919-726039, N 4372386-4372506, 1600 px"
+url = "https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=OI.OrthoimageCoverage&CRS=EPSG:25830&BBOX=725919.08,4372386.05,726039.08,4372506.05&WIDTH=1600&HEIGHT=1600&FORMAT=image/jpeg"
+author = "Instituto Geografico Nacional (PNOA)"
+license = "CC BY 4.0"
+kind = "orthophoto"
+notes = "used to check the outline, the dome position and roof shadows; 0.075 m/px, north up"
 
 [[plan]]
 file = "plans/01_1_18_UNIVERSIDAD_DE_VALENCIA_firmado.jpg"
