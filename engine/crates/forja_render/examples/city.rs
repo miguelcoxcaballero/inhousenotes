@@ -21,7 +21,9 @@
 //! `_rain`, `_night_wet` or `_before` suffix. `CITY_SHOTS=a,b` also picks
 //! shots. `CITY_TREES=scanned` uses the scanned library tree instead of the
 //! procedural `forja_flora` species (`CITY_SEASON=winter|spring|autumn`).
-//! `CITY_RADIUS=r` uploads only what lies within r m of the selected shots.
+//! `CITY_RADIUS=r` uploads only what lies within r m of the selected shots
+//! (eye-level shots of the full default map in about 6 GB), `CITY_SIZE=WxH`
+//! sets the image size.
 
 use std::path::PathBuf;
 
@@ -59,7 +61,7 @@ fn main() {
     };
     let mut city = build_city(&kit, &styles, &cfg);
     let tris: usize = city.out.placements.iter().map(|(s, _)| city.out.scenes[*s].triangle_count()).sum();
-    println!("city {preset}: {:?}, {} scenes, {} placements, {} tris, extent {:?} in {:.2}s", city.stats, city.out.scenes.len(), city.out.placements.len(), tris, city.extent, t0.elapsed().as_secs_f32());
+    println!("city {preset}: {:?}, {} scenes, {} placements, {} tris, extent {:?} in {:.2}s, {} MB resident", city.stats, city.out.scenes.len(), city.out.placements.len(), tris, city.extent, t0.elapsed().as_secs_f32(), rss_mb());
     let only = only.or_else(|| std::env::var("CITY_SHOTS").ok().map(|s| s.split(',').map(|x| x.trim().to_string()).collect()));
     let shots: Vec<_> = shots(&city).into_iter().filter(|(name, _, _)| only.as_ref().is_none_or(|o| o.iter().any(|x| x == name))).collect();
     // `CITY_RADIUS=r`: only what lies within r metres of the selected
@@ -77,12 +79,20 @@ fn main() {
         })
     };
     let scenes = std::mem::take(&mut city.out.scenes);
+    // Colliders are not drawn, and the plan has given its shots.
+    city.out.col_verts = Vec::new();
+    city.out.col_tris = Vec::new();
+    city.fabric = Default::default();
+    city.items = Vec::new();
+    trim();
+    println!("built: {} MB resident", rss_mb());
     let out = &city.out;
     let lib = forja_world::ContentLibrary::load(&dl);
     let mut r = Renderer::new(&create_instance(), None).unwrap();
     if let Ok(img) = forja_assets::load_hdr(&dl.join("hdri_wide_street/wide_street_01_2k.hdr")) {
         r.set_environment(Some(&env::EnvMap::from_hdr(&img, 14.0)));
     }
+    println!("renderer: {} MB resident", rss_mb());
     // Scenes are uploaded on first use, then the CPU copies dropped.
     let mut handles: Vec<Option<ModelHandle>> = vec![None; scenes.len()];
     let mut frame = FrameDesc::default();
@@ -94,6 +104,7 @@ fn main() {
         frame.instances.push(DrawInstance::new(h, *m));
     }
     drop(scenes);
+    trim();
     let scanned = std::env::var("CITY_TREES").is_ok_and(|v| v == "scanned");
     let tree = if scanned { lib.prop("polyhaven_island_tree").map(|s| r.upload_scene(&s)) } else { None };
     if !scanned {
@@ -108,7 +119,7 @@ fn main() {
         frame.instances.extend(forest.instances.iter().filter(|(_, t)| near(point, t)).map(|(m, t)| DrawInstance::new(handles[*m], *t)));
     }
     let bench = lib.prop("polyhaven_street_bench").map(|s| r.upload_scene(&s));
-    println!("uploaded {} of {} placements in {:.2}s", frame.instances.len(), out.placements.len(), t0.elapsed().as_secs_f32());
+    println!("uploaded {} of {} placements in {:.2}s, {} MB resident", frame.instances.len(), out.placements.len(), t0.elapsed().as_secs_f32(), rss_mb());
     // Countryside under and around the map, so aerials do not look down
     // into the environment map.
     let mut land: forja_city::geom::Parts<forja_city::Mat> = forja_city::geom::Parts::new();
@@ -150,6 +161,8 @@ fn main() {
         frame.instances.clear();
     }
     let base_instances = frame.instances.clone();
+    // `CITY_SIZE=WxH` (default 1280x720).
+    let size = std::env::var("CITY_SIZE").ok().and_then(|v| v.split_once('x').and_then(|(w, h)| Some((w.parse::<u32>().ok()?, h.parse::<u32>().ok()?)))).unwrap_or((1280, 720));
     for (name, eye, at) in shots {
         frame.camera = Camera::look_at(eye, at);
         frame.camera.fov_y = if matches!(name, "alley" | "deadend" | "slope" | "stairs") { 70f32.to_radians() } else { 60f32.to_radians() };
@@ -164,7 +177,7 @@ fn main() {
         if let Some(n) = std::env::var("CITY_BENCH").ok().and_then(|v| v.parse::<u32>().ok()) {
             bench_frames(&mut r, &frame, name, n);
         }
-        let img = r.render_to_image(&frame, 1280, 720);
+        let img = r.render_to_image(&frame, size.0, size.1);
         let path = format!("{prefix}_{name}{suffix}.png");
         img.save(&path).unwrap();
         println!("{path}: eye {eye} at {at} {:?}", r.stats);
@@ -395,6 +408,26 @@ fn shots(city: &forja_city::layout::CityLayout) -> Vec<(&'static str, Vec3, Vec3
         out.push(("deadend", v3(p, 1.7 + f.ground.height_at(p)), v3(end, 3.0 + f.ground.height_at(end))));
     }
     out
+}
+
+/// Hands freed heap back to the system (the city's build garbage), so a
+/// large map renders in less memory.
+fn trim() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    {
+        unsafe extern "C" {
+            fn malloc_trim(pad: usize) -> i32;
+        }
+        // SAFETY: glibc's malloc_trim only releases free heap pages.
+        unsafe {
+            malloc_trim(0);
+        }
+    }
+}
+
+/// Resident memory of this process (MB; 0 where /proc is missing).
+fn rss_mb() -> u64 {
+    std::fs::read_to_string("/proc/self/status").ok().and_then(|s| s.lines().find(|l| l.starts_with("VmRSS")).and_then(|l| l.split_whitespace().nth(1)?.parse::<u64>().ok())).map_or(0, |kb| kb / 1024)
 }
 
 /// `CITY_BENCH=N`: N real-time frames at 1280x720 into an offscreen target;
