@@ -12,6 +12,24 @@ commons_category = "Drassanes del Grau"
 wikipedia = { es = "https://es.wikipedia.org/wiki/Atarazanas_del_Grao", ca = "https://ca.wikipedia.org/wiki/Drassanes_del_Grau" }
 
 [facts]
+naves = { value = 5, source = "OSM ways 460056118/119/120/121/122 and Catastro 9415312-16YJ2791E; IGN PNOA orthophoto WMS https://www.ign.es/wms-inspire/pnoa-ma (CC BY 4.0)", note = "five parallel naves side by side north to south, gables east (Placa de Joan Antoni Benlliure) and west (Carrer de Salvador Gasull)" }
+nave_widths = { value = [13.03, 13.72, 13.51, 13.04, 15.26], unit = "m", source = "OSM outlines (perpendicular to the nave axis), north to south; Catastro parcels agree within 0.05 m", note = "valleys visible in the PNOA orthophoto lie on these lines within ~0.8 m" }
+nave_length = { value = 49.4, unit = "m", source = "OSM outlines (49.35-49.59 m), PNOA orthophoto", note = "axis azimuth 99.6 deg (rotate_y -9.5)" }
+ridge_height = { value = 10.5, unit = "m", source = "IGN PNOA-LiDAR WMS https://wms-mapa-lidar.idee.es/lidar GetFeatureInfo (layer edificios-h30, 2.5 m cells, CC BY 4.0)", note = "raw ridge cells 9.9-10.3 at x=-8.9 and x=+11.1 (cell average under-reads a 25 deg ridge by ~0.3 m); agrees with photo 14 bundle (rms 6.4 px)" }
+valley_height = { value = 7.1, unit = "m", source = "IGN PNOA-LiDAR WMS https://wms-mapa-lidar.idee.es/lidar GetFeatureInfo (layer edificios-h30, 2.5 m cells, CC BY 4.0); photos 09, 14, Catastro facade", note = "valley cells 7.0-7.4 raw; photo 09 gives valley/ridge ratio 0.69, LiDAR 0.66-0.68: compromise 7.1 (gable V at the facade 7.25)" }
+north_eave = { value = 7.1, unit = "m", source = "IGN PNOA-LiDAR WMS https://wms-mapa-lidar.idee.es/lidar GetFeatureInfo (layer edificios-h30, 2.5 m cells, CC BY 4.0)", note = "north slope cells 8.4 at 2.2 m inside the face extrapolate to ~7.2" }
+south_eave = { value = 5.3, unit = "m", source = "IGN PNOA-LiDAR WMS https://wms-mapa-lidar.idee.es/lidar GetFeatureInfo (layer edificios-h30, 2.5 m cells, CC BY 4.0); photo 07; Catastro facade photo 9415316 solve (rms 6.7 px best at 5.3 over 4.4-5.8)", note = "nave 5 has an asymmetric roof: ridge 46 % of its width from the north valley, south slope 28 deg" }
+roof_pitch = { value = 25, unit = "deg", source = "photo 09 (gable rise 0.49 x half width) and LiDAR slopes 0.42-0.56" }
+lidar_offset = { value = [0.0, 2.1], unit = "m", source = "IGN PNOA-LiDAR WMS https://wms-mapa-lidar.idee.es/lidar GetFeatureInfo (layer edificios-h30, 2.5 m cells, CC BY 4.0)", note = "LiDAR cells sit ~2.1 m south of the Catastro/OSM frame (fitted on 4 ridges and 3 valleys of two N-S transects); street cells return no data, so no street bias could be fitted (heights used as given)" }
+east_arch = { value = { span = "10.7-11.3", crown = 9.6, springing = 3.3 }, unit = "m", source = "photo 09 (frontal, scaled by the 13.5 m nave pitch: span 11.3, crown 9.47, springing 3.3) and Catastro facade photo 9415316 (nave 5 arch 10.7 m, centred under its ridge)", note = "two-centred, nearly semicircular pointed arch; crown raised to 9.6 after overlays of photo 14" }
+porch_depth = { value = 6.0, unit = "m", source = "estimate: one bay of the diaphragm arches = north buttress spacing 6.07 m (PNOA orthophoto); photos 03, 11, 18 show one-bay porches linked by pointed arches", note = "not measured directly" }
+inner_glazing = { value = { width = 9.0, crown = 8.6, dado = 2.8 }, unit = "m", source = "photos 09, 11, 14 (glazed pointed arch over a brick dado at the back of each porch), estimated" }
+north_buttresses = { value = 9, source = "IGN PNOA orthophoto WMS https://www.ign.es/wms-inspire/pnoa-ma (CC BY 4.0)", note = "6.07 m apart from the NW corner to the NE corner; 1.35 m wide, ~1.8 m deep, tops ~0.9 m below the eave (photo 15)" }
+roof_ribs = { value = [13.0, 25.5, 37.5], unit = "m from the west gable", source = "IGN PNOA orthophoto WMS https://www.ign.es/wms-inspire/pnoa-ma (CC BY 4.0) (light transverse stripes on every nave) and photo 07" }
+gargoyles = { value = 8, source = "photos 09, 13, 16; PNOA orthophoto (white dots at the west valleys)", note = "stone gargoyles at the four valleys of both gable fronts" }
+west_openings = { value = { slot_window = "1.0 x 5.2 m from 3.4 m", door = "1.3 x 2.7 m" }, source = "photos 08, 13 (one tall slot window over a door per gable; none seen on the south nave)" }
+south_wall = { value = "rubble masonry laced with brick courses, brick west part (~17 m) and brick SE corner pier", source = "photos 06, 07, 12" }
+north_wall = { value = "rendered wall with buttresses", source = "photos 05, 14, 15" }
 built = { value = "14th century", source = "https://www.wikidata.org/wiki/Q8207890#P571" }
 style = { value = "Valencian Gothic", source = "https://www.wikidata.org/wiki/Q8207890#P149" }
 heritage = { value = "bien de interés cultural", source = "https://www.wikidata.org/wiki/Q8207890#P1435" }
@@ -32,8 +50,8 @@ width = 1280
 height = 960
 camera = [50.46, -29.35]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/02_Drassanes_del_Grau_exterior.jpg"
@@ -44,8 +62,8 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/03_Drassanes_de_Valencia_Grau.jpg"
@@ -57,7 +75,7 @@ width = 1280
 height = 960
 exterior = true
 selected = false
-side = ""
+side = "e"
 
 [[photo]]
 file = "photos/04_Atarazanas_Reales.jpg"
@@ -69,7 +87,7 @@ width = 1280
 height = 960
 exterior = true
 selected = false
-side = ""
+side = "e"
 
 [[photo]]
 file = "photos/05_Atarazanas_Derecha.jpg"
@@ -80,8 +98,8 @@ license = "CC BY-SA 3.0 es"
 width = 1280
 height = 720
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/06_Atarazanas_Izquierda.jpg"
@@ -92,8 +110,8 @@ license = "CC BY-SA 3.0 es"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/07_Atarazanas_del_Grao_Valencia_01.jpg"
@@ -104,8 +122,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/08_Parte_trasera_de_las_atarazanas_de_Valencia_01.jpg"
@@ -117,7 +135,7 @@ width = 1280
 height = 1707
 exterior = true
 selected = false
-side = ""
+side = "w"
 
 [[photo]]
 file = "photos/09_Exterior_de_les_drassanes_del_Grau_Valencia.jpg"
@@ -128,8 +146,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 954
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/10_El_Grau_Valencia_Valencia_Spain_panoramio_6.jpg"
@@ -142,7 +160,7 @@ height = 960
 camera = [50.46, -29.35]
 exterior = true
 selected = false
-side = ""
+side = "e"
 
 [[photo]]
 file = "photos/11_Porxo_de_les_drassanes_del_Grau.jpg"
@@ -152,7 +170,7 @@ author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 1757
-exterior = true
+exterior = false
 selected = false
 side = ""
 
@@ -165,8 +183,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/13_Parte_trasera_de_las_atarazanas_de_Valencia_02.jpg"
@@ -177,8 +195,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/14_Exterior_de_les_drassanes_del_Grau.jpg"
@@ -189,8 +207,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 875
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/catastro_9415316YJ2791E.jpg"
@@ -201,8 +219,8 @@ license = "Catastro open data (attribution required)"
 width = 1600
 height = 1200
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/catastro_9415313YJ2791E.jpg"
@@ -213,6 +231,66 @@ license = "Catastro open data (attribution required)"
 width = 1600
 height = 1200
 exterior = true
+selected = false
+side = "e"
+
+[[photo]]
+file = "photos/15_Contraforts_de_les_drassanes_del_Grau.jpg"
+title = "File:Contraforts de les drassanes del Grau.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Contraforts_de_les_drassanes_del_Grau.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1870
+exterior = true
+selected = true
+side = "n"
+
+[[photo]]
+file = "photos/16_Parte_trasera_de_las_atarazanas_de_Valencia_03.jpg"
+title = "File:Parte trasera de las atarazanas de Valencia 03.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Parte_trasera_de_las_atarazanas_de_Valencia_03.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = "w"
+
+[[photo]]
+file = "photos/17_Atarazanas_del_Grao_Val_ncia_03.jpg"
+title = "File:Atarazanas del Grao, València 03.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Atarazanas_del_Grao,_Val%C3%A8ncia_03.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = "e"
+
+[[photo]]
+file = "photos/18_Atarazanas_del_Grao_Val_ncia_05.jpg"
+title = "File:Atarazanas del Grao, València 05.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Atarazanas_del_Grao,_Val%C3%A8ncia_05.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = "e"
+
+[[photo]]
+file = "photos/19_Drassanes_del_Grau_Val_ncia.jpg"
+title = "File:Drassanes del Grau, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Drassanes_del_Grau,_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = false
 selected = false
 side = ""
 
@@ -233,6 +311,16 @@ author = "Dirección General del Catastro"
 license = "Catastro open data (attribution required)"
 kind = "catastro"
 notes = "Cadastral map, EPSG:25830 bbox [729341.74, 4371297.69, 729460.89, 4371433.49], 0.080 m/px, north up; roman numerals = floors above ground; parcels 9415316YJ2791E, 9415313YJ2791E, 9415314YJ2791E, 9415315YJ2791E"
+
+[[reference]]
+url = "https://wms-mapa-lidar.idee.es/lidar"
+title = "IGN PNOA-LiDAR building heights WMS"
+notes = "GetFeatureInfo samples: N-S transects at x=-8.9 and x=+11.1, E-W along nave 3; offset 2.1 m south"
+
+[[reference]]
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+title = "IGN PNOA orthophoto WMS"
+notes = "plan, valleys, ridges, roof ribs, north buttresses and west gargoyles"
 
 [[reference]]
 url = "https://www.wikidata.org/wiki/Q8207890"

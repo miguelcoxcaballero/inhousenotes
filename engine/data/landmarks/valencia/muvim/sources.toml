@@ -20,6 +20,23 @@ catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatast
 catastro_floor_area = { value = 8849.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5324524&rc2=YJ2752C", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 5, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 10 parts" }
 
+# measured (landmark model)
+outline_length = { value = 95.0, unit = "m", source = "OSM way 15218690 / PNOA orthophoto", note = "NNE-SSW extent of the plan, tower (north) to the south end of the wing" }
+west_wing_length = { value = 63.0, unit = "m", source = "OSM way 15218690, east face edge 33 (44.4 m) plus the knee", note = "exhibition wing along the Jardi de l'Antic Hospital" }
+tower_plan = { value = [9.15, 15.3], unit = "m", source = "Catastro BuildingPart 14 + OSM part 7 (north face width) checked on PNOA" }
+tower_height = { value = 23.3, unit = "m", source = "constrained camera solve, Catastro facade photo (Canon SX270 4.5 mm, 25 mm eq.) + Commons photo 06 (Nikon D3100 18 mm): 23.3 / 22.6 m", note = "IGN LiDAR cells read 18.8-19.1 m over the tower; the photos show the tower about 6 m above the 17.4 m north block, so the photo value is used" }
+lantern_glass_bottom = { value = 15.7, unit = "m", source = "same camera solve (glass band 15.7-23.3 m on the north face)" }
+lantern_depth = { value = 8.0, unit = "m", source = "PNOA orthophoto: glazed roof over the north 8 m of the tower" }
+north_block_height = { value = 17.4, unit = "m", source = "IGN PNOA-LiDAR, median of 20 cells over OSM part 0" }
+north_band_height = { value = 12.8, unit = "m", source = "IGN PNOA-LiDAR, median of 14 cells over OSM part 3 (north and north-west band)" }
+east_wing_height = { value = 16.5, unit = "m", source = "IGN PNOA-LiDAR, median of 12 cells over OSM part 2; skylight monitors to ~18 m" }
+west_wing_roof = { value = [17.0, 14.9], unit = "m", source = "IGN PNOA-LiDAR cells along OSM part 1: roof falls from 17.0 m at the knee to 14.9 m at the south end" }
+garden_gallery_height = { value = 13.6, unit = "m", source = "IGN PNOA-LiDAR, 14 cells over OSM part 6 (cantilevered volume, building:min_level 1)" }
+gallery_soffit = { value = 4.6, unit = "m", source = "photo proportions (07, 08, 12): soffit about 32-40 % of the facade height", note = "estimate, +-0.5 m" }
+canopy_height = { value = 4.25, unit = "m", source = "IGN PNOA-LiDAR, 17 cells over the pergola (3.9-4.4 m); consistent with the Catastro-photo camera" }
+canopy_plan = { value = [25.0, 10.8], unit = "m", source = "PNOA orthophoto: free north edge 25 m at 15 deg, west end 10.8 m, reaching the north facade" }
+lidar_plan_offset = { value = [2.5, -1.5], unit = "m", source = "fit of 189 LiDAR cells against the OSM outline (x east, z south)", note = "the building:h30 layer returns nothing over the ground, so no street bias could be measured; the canopy and the Catastro-photo camera agree with the raw values" }
+
 [[photo]]
 file = "photos/01_Museu_Valencia_de_la_Il_lustracio_i_de_la_Modernitat_Valenci.jpg"
 title = "File:Museu Valencià de la Il·lustració i de la Modernitat, València, País Valencià.JPG"
@@ -29,8 +46,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1690
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/02_Muvim_terrassa.jpg"
@@ -42,8 +59,8 @@ width = 1280
 height = 960
 camera = [-0.61, -43.6]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/03_MuVIM_2025_06.jpg"
@@ -55,8 +72,8 @@ width = 1280
 height = 720
 camera = [19.65, -23.26]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/04_MuVIM_MMXXVI.jpg"
@@ -68,8 +85,8 @@ width = 1280
 height = 960
 camera = [11.16, 5.65]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
 
 [[photo]]
 file = "photos/05_Muvim_panoramio.jpg"
@@ -81,8 +98,8 @@ width = 1280
 height = 1920
 camera = [-16.93, 57.46]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/06_Museu_Valencia_de_la_Il_lustracio_i_de_la_Modernitat_des_del.jpg"
@@ -94,8 +111,8 @@ width = 1280
 height = 854
 camera = [15.29, -4.47]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/07_MuVIM_exterior.jpg"
@@ -106,8 +123,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 964
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/08_Muvim_parque.jpg"
@@ -118,8 +135,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 964
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/09_499_MuVIM_Museu_Valencia_de_la_Il_lustracio_i_de_la_Modernit.jpg"
@@ -130,8 +147,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/10_Muvim_frontal.jpg"
@@ -142,8 +159,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/11_Exterior_of_the_Museu_Valencia_de_la_Il_lustracio_i_de_la_Mo.jpg"
@@ -154,8 +171,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 768
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/12_Valencia_Museu_Valencia_de_la_Il_lustracio_i_de_la_Modernita.jpg"
@@ -166,8 +183,8 @@ license = "CC0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/13_Muvim5.jpg"
@@ -178,8 +195,8 @@ license = "Public domain"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/14_501_MuVIM_Museu_Valencia_de_la_Il_lustracio_i_de_la_Modernit.jpg"
@@ -190,8 +207,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/15_Valencia_Museu_Valencia_de_la_Il_lustracio_i_de_la_Modernita_2.jpg"
@@ -202,8 +219,8 @@ license = "CC0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/catastro_5324524YJ2752C.jpg"
@@ -214,8 +231,8 @@ license = "Catastro open data (attribution required)"
 width = 1600
 height = 1200
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "ne"
 
 [[plan]]
 file = "plans/catastro_wms.png"
@@ -260,3 +277,13 @@ notes = "built=2000; use=4_3_publicServices; area=8849; area_in_outline=2160.0"
 url = "http://www.muvim.es/"
 title = "Official website"
 notes = "Wikidata P856"
+
+[[reference]]
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+title = "IGN PNOA orthophoto WMS"
+notes = "plan of the roofs, canopy outline and lantern; CC BY 4.0"
+
+[[reference]]
+url = "https://wms-mapa-lidar.idee.es/lidar"
+title = "IGN PNOA-LiDAR building heights (GetFeatureInfo, 2.5 m cells)"
+notes = "roof heights of every volume; CC BY 4.0"
