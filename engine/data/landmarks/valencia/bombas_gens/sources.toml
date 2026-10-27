@@ -12,6 +12,23 @@ commons_category = "Fàbrica de Bombas Gens"
 wikipedia = { es = "https://es.wikipedia.org/wiki/Bombas_Gens", ca = "https://ca.wikipedia.org/wiki/Bombas_Gens" }
 
 [facts]
+built = { value = 1930, source = "https://ca.wikipedia.org/wiki/Bombas_Gens", note = "factory of Bombas Gens by Cayetano Borso di Carminati, 1930 (Catastro date 1936 = later works); restored 2014-2017 by Ramón Esteve Estudio as Bombas Gens Centre d'Art" }
+avenue_front_length = { value = 39.7, unit = "m", source = "OSM way 701982887 edges 40-43 (Av. de Burjassot), checked on the IGN PNOA orthophoto (WMS pnoa-ma, CC BY 4.0)", note = "street front from the south corner to the vivienda; the roofed wing ends 35.0 m from the corner (PNOA: garden behind the last 4.7 m, closed by an end wall)" }
+south_front_length = { value = 14.04, unit = "m", source = "OSM way 701982887 edge 39", note = "corner front on the junction with Carrer de Reus" }
+chamfer_length = { value = 5.85, unit = "m", source = "OSM way 701982887 edge 38" }
+wing_depth = { value = 9.2, unit = "m", source = "OSM part way/1550827176 (front wing) / PNOA roof", note = "avenue wing, hip tile roof behind the parapet" }
+front_cornice = { value = 5.3, unit = "m", source = "upright camera solve of photo 03 (eye prior 1.6 m, OSM plan corners): 5.25 m; frontal photo a03: 5.4 m", note = "top of the cornice band" }
+front_pier_caps = { value = 6.4, unit = "m", source = "photo 03 upright solve 6.46 m; Catastro photo solved with its EXIF focal length (Canon IXUS 130, 5.0 mm = 2100 px): 6.33 m", note = "caps of the crowned piers; parapet coping 6.1 m; crowns to about 7.3 m (photo a03 ratios)" }
+front_parapet = { value = 6.1, unit = "m", source = "photo a03 ratios to the pier caps; people for scale in photos a01 (6.1 m) and b02 (5.7 m)", note = "plain parapet panel, red ceramic lattice panels over the three-light bays" }
+grilles = { value = [0.6, 3.45], unit = "m", source = "photos 03, a03", note = "bottom and top of the iron grilles; 2-light bays 2.95 m, gate bay 3.57 m between 0.8 m piers, door leaves 2.9 m wide, transom apex 4.6 m (a03 frontal); 3-light bays 3.4 m on the avenue, 4.15 m on the south front (photo 03 scaled by the 14.04 m front)" }
+bay_rhythm_avenue = { value = "corner pier 1.9 | 2 lights | pier | gate | pier | 2 lights | crowned pier | 4 x 3 lights separated alternately by plain strips and crowned piers | end pier at 35 m", source = "photos 01, 03, a01, a02, b02, r7" }
+nave_frame_azimuth = { value = 24.8, unit = "deg", source = "PNOA orthophoto ridge lines and OSM nave block edges (bearing 25 deg)", note = "the east nave is skewed by about 8 deg like its east wall" }
+nave_walls = { value = [0.0, 12.9, 28.0, 39.7, 55.4], unit = "m", source = "PNOA ridge lines at t = 5.6, 19.4, 33.0, 42-49 m (relief shift 0.9 m) and OSM patio walls at t = 28.0 / 39.7", note = "nave widths 12.9, 15.1, 11.7 and 15.7-20 m; the third nave is cut by the patio for 26.7 m" }
+nave_eaves = { value = 7.4, unit = "m", source = "aerial photo r7 relative to the 6.1 m front and the courtyard wall in photo a11 (7.2 m, person for scale)", note = "uncertain +-0.8 m; gable pitch 21 deg (r7 gable slopes), ridges 9.9-10.5 m; north gables carry stepped Art Deco parapets with crowned piers (photos 10, 15, 08)" }
+patio = { value = "11.7 x 26.7 m", source = "OSM way 701982887 notch; photo r7", note = "patio inside the third nave with a zinc/glass canopy pavilion and two old boiler stacks (about 12.8 / 10.6 m, photo 09)" }
+reus_hall = { value = 4.6, unit = "m", source = "photos 04, 14 (BOMBASGENS brick wall), r7 (planted roof)", note = "low exhibition hall with green roof between the naves and Carrer de Reus" }
+vivienda = { value = { portico_terrace = 4.0, house_eaves = 7.2, tower_eaves = 13.2 }, unit = "m", source = "photo b01 frontal (97 px/m on the 6.04 + 4.48 m OSM fronts); tower from photos 02 / b03 against the 7.2 m house (Catastro 5 floors)" }
+new_block = { value = [14.6, 17.6], unit = "m", source = "OSM building:levels 4 / 5 (estimate 3.5 m per floor)", note = "2017 brick block behind the vivienda" }
 architect = { value = "Cayetano Borso di Carminati", source = "https://www.wikidata.org/wiki/Q16911704#P84" }
 style = { value = "Art Deco in the Land of Valencia", source = "https://www.wikidata.org/wiki/Q16911704#P149" }
 heritage = { value = ["Property of Local Relevance", "BIE"], source = "https://www.wikidata.org/wiki/Q16911704#P1435", note = "Property of Local Relevance (start time: 2026-07-05)" }
@@ -31,8 +48,8 @@ width = 1280
 height = 853
 camera = [-39.56, 40.59]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/02_Vivienda_anexa_a_Bombas_Gens_02.jpg"
@@ -44,8 +61,8 @@ width = 1280
 height = 1920
 camera = [-51.21, 10.46]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/03_Fabrica_de_Bombes_Gens_avinguda_de_Burjassot_Valencia.jpg"
@@ -57,8 +74,8 @@ width = 1280
 height = 812
 camera = [-9.33, 69.04]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/04_Edificio_Bombas_Gens_Centro_de_Arte_05.jpg"
@@ -70,8 +87,8 @@ width = 1280
 height = 960
 camera = [45.19, 11.86]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
 
 [[photo]]
 file = "photos/05_Bombas_Gens_08.jpg"
@@ -83,8 +100,8 @@ width = 1280
 height = 960
 camera = [44.66, 25.44]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/06_Remat_de_la_facana_de_la_fabrica_de_Bombes_Gens.jpg"
@@ -96,8 +113,8 @@ width = 1280
 height = 859
 camera = [-22.29, 36.3]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/07_Bombas_Gens_Ramon_Esteve_Estudio.jpg"
@@ -108,8 +125,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 800
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "aerial"
 
 [[photo]]
 file = "photos/08_Edificio_Bombas_Gens_Centro_de_Arte_04.jpg"
@@ -121,8 +138,8 @@ width = 1280
 height = 1707
 camera = [-29.48, -38.87]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/09_Fabrica_de_Bombes_Hidrauliques_Gens_Valencia_02.jpg"
@@ -134,8 +151,8 @@ width = 1280
 height = 1707
 camera = [-5.57, 15.19]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "patio"
 
 [[photo]]
 file = "photos/10_Bombas_Gens_09.jpg"
@@ -147,8 +164,8 @@ width = 1280
 height = 960
 camera = [-7.38, -49.17]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/11_Bombas_Gens_Centre_d_Art_retol.jpg"
@@ -184,8 +201,8 @@ width = 1280
 height = 960
 camera = [-42.17, 56.13]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/14_Edificio_Bombas_Gens_Centro_de_Arte_06.jpg"
@@ -197,8 +214,8 @@ width = 1280
 height = 960
 camera = [48.86, 10.83]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
 
 [[photo]]
 file = "photos/15_Bombas_Gens_10.jpg"
@@ -210,8 +227,8 @@ width = 1280
 height = 960
 camera = [-7.38, -49.17]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/catastro_5041825YJ2754A.jpg"
@@ -222,8 +239,229 @@ license = "Catastro open data (attribution required)"
 width = 2592
 height = 1944
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
+
+[[photo]]
+file = "photos/16_r7.jpg"
+title = "File:Bombas Gens. Ramón Esteve Estudio.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Bombas_Gens._Ram%C3%B3n_Esteve_Estudio.jpg"
+author = "Ramon Esteve Estudio"
+license = "CC BY-SA 4.0"
+width = 1920
+height = 1200
+exterior = true
+selected = true
+side = "aerial"
+note = "1920 px copy of photo 07: aerial from a building south-west of the corner (2018)"
+
+[[photo]]
+file = "photos/17_a01.jpg"
+title = "File:Edificio Bombas Gens Centro de Arte 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_Bombas_Gens_Centro_de_Arte_01.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "sw"
+note = "avenue front around the gate, 2017"
+
+[[photo]]
+file = "photos/18_a02.jpg"
+title = "File:Edificio Bombas Gens Centro de Arte 02.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_Bombas_Gens_Centro_de_Arte_02.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "sw"
+note = "north-west end of the avenue front, garden wall and vivienda, 2017"
+
+[[photo]]
+file = "photos/19_a03.jpg"
+title = "File:Edificio Bombas Gens Centro de Arte 03.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_Bombas_Gens_Centro_de_Arte_03.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "sw"
+note = "frontal elevation of the gate bay, 2017 (used for the bay and height ratios)"
+
+[[photo]]
+file = "photos/20_lat1.jpg"
+title = "File:Fàbrica de Bombes Gens, lateral.JPG"
+url = "https://commons.wikimedia.org/wiki/File:F%C3%A0brica_de_Bombes_Gens,_lateral.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 847
+exterior = true
+selected = true
+side = "se"
+note = "south front and chamfer, 2013"
+
+[[photo]]
+file = "photos/21_lat2.jpg"
+title = "File:Bombes Gens, lateral.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Bombes_Gens,_lateral.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1974
+exterior = true
+selected = true
+side = "sw"
+note = "raking view along the avenue front, 2013"
+
+[[photo]]
+file = "photos/22_vfb.jpg"
+title = "File:València, fàbrica de Bombes Gens.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia,_f%C3%A0brica_de_Bombes_Gens.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1717
+exterior = true
+selected = true
+side = "sw"
+note = "gate bay frontal, 2013"
+
+[[photo]]
+file = "photos/23_b01.jpg"
+title = "File:Bombas Gens 01.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Bombas_Gens_01.JPG"
+author = "B25es"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "sw"
+note = "vivienda anexa front, 2013 (portico and house measured at 97 px/m)"
+
+[[photo]]
+file = "photos/24_b02.jpg"
+title = "File:Bombas Gens 02.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Bombas_Gens_02.JPG"
+author = "B25es"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "sw"
+note = "avenue front, 2013"
+
+[[photo]]
+file = "photos/25_b03.jpg"
+title = "File:Bombas Gens 03.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Bombas_Gens_03.JPG"
+author = "B25es"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "sw"
+note = "vivienda and tower from the avenue, 2013"
+
+[[photo]]
+file = "photos/26_b04.jpg"
+title = "File:Bombas Gens 04.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Bombas_Gens_04.JPG"
+author = "B25es"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "sw"
+note = "gate bay frontal, 2013"
+
+[[photo]]
+file = "photos/27_b06.jpg"
+title = "File:Bombas Gens 06.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Bombas_Gens_06.JPG"
+author = "B25es"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "s"
+note = "avenue front from the south-east, 2013"
+
+[[photo]]
+file = "photos/28_b07.jpg"
+title = "File:Bombas Gens 07.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Bombas_Gens_07.JPG"
+author = "B25es"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "se"
+note = "south front and chamfer, 2013"
+
+[[photo]]
+file = "photos/29_b11.jpg"
+title = "File:Bombas Gens 11.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Bombas_Gens_11.JPG"
+author = "Dorieo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "s"
+note = "whole front from across the junction, 2013"
+
+[[photo]]
+file = "photos/30_viv1.jpg"
+title = "File:Vivienda anexa a Bombas Gens 01.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Vivienda_anexa_a_Bombas_Gens_01.JPG"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "sw"
+note = "vivienda tower, 2013"
+
+[[photo]]
+file = "photos/31_a11.jpg"
+title = "File:Edificio Bombas Gens Centro de Arte 11.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_Bombas_Gens_Centro_de_Arte_11.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "patio"
+note = "courtyard wall behind the gate with a person for scale, 2017"
+
+[[photo]]
+file = "photos/32_a14.jpg"
+title = "File:Edificio Bombas Gens Centro de Arte 14.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_Bombas_Gens_Centro_de_Arte_14.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "patio"
+note = "courtyard, 2017"
 
 [[plan]]
 file = "plans/catastro_wms.png"
@@ -233,6 +471,15 @@ author = "Dirección General del Catastro"
 license = "Catastro open data (attribution required)"
 kind = "catastro"
 notes = "Cadastral map, EPSG:25830 bbox [724814.14, 4373854.31, 724968.77, 4374009.21], 0.080 m/px, north up; roman numerals = floors above ground; parcels 5041825YJ2754A"
+
+[[plan]]
+file = "plans/pnoa_ortho.jpg"
+title = "IGN PNOA orthophoto"
+url = "https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=OI.OrthoimageCoverage&CRS=EPSG:25830&BBOX=724830.195,4373852.988,724960.195,4373982.988&WIDTH=1560&HEIGHT=1560&FORMAT=image/jpeg"
+author = "Instituto Geográfico Nacional (PNOA)"
+license = "CC BY 4.0 (scne.es)"
+kind = "orthophoto"
+notes = "EPSG:25830 bbox above, 12 px/m, local x = E - 724895.195, z = 4373922.988 - N; used for the nave ridge lines, the wing end and the patio"
 
 [[reference]]
 url = "https://www.wikidata.org/wiki/Q16911704"
