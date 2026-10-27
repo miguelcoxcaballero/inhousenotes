@@ -195,16 +195,27 @@ fn surfaces(gr: &Ground, g: &StreetGraph, lib: &ProfileLibrary) -> Vec<Surface> 
         groups.entry(sig).or_default().push(i as StreetId);
     }
     let mut out = Vec::new();
-    let mut taken = Region::empty();
     let classes = [(&gr.carriage, 0usize), (&gr.walk, 1), (&gr.shared, 2)];
-    let mut cells = Vec::new();
-    for (sig, list) in &groups {
-        let set: std::collections::BTreeSet<u64> = list.iter().map(|&i| g.street(i).key).collect();
-        let own = g.corridor(|s, i| if set.contains(&s.key) { s.width[i] + 0.5 } else { 0.0 }).minus(&taken);
-        taken = taken.union(&own);
-        cells.push((sig.clone(), own));
-    }
+    // A class is owned only by streets that have it: an alley's shared
+    // paving that reaches into a car street's corridor keeps the alley's
+    // height, it does not take the car street's.
+    let has = |k: usize, s: &crate::plan::Street| match k {
+        0 => lib.get(s.profile).vehicles && s.carriageway > 0.0,
+        2 => s.carriageway <= 0.0,
+        _ => true,
+    };
     for (class, k) in classes {
+        let mut taken = Region::empty();
+        let mut cells = Vec::new();
+        for (sig, list) in &groups {
+            let set: std::collections::BTreeSet<u64> = list.iter().filter(|&&i| has(k, g.street(i))).map(|&i| g.street(i).key).collect();
+            if set.is_empty() {
+                continue;
+            }
+            let own = g.corridor(|s, i| if set.contains(&s.key) { s.width[i] + 0.5 } else { 0.0 }).and(class).minus(&taken);
+            taken = taken.union(&own);
+            cells.push((sig.clone(), own));
+        }
         let mut rest = class.clone();
         for (sig, own) in &cells {
             let r = class.and(own);
@@ -304,7 +315,10 @@ pub fn kerbs(gr: &Ground) -> Vec<Kerb> {
 /// Side of the ground, marking and building tiles (m).
 pub const TILE: f32 = 64.0;
 
-pub fn mesh(gr: &Ground, g: &StreetGraph, lib: &ProfileLibrary, courts: &Region) -> (BTreeMap<(i32, i32), Parts<Mat>>, Vec<[Vec3; 3]>) {
+/// `outside` is the ground around the city (to the edge of the map): on
+/// sloping ground it is meshed on the terrain too, so the city does not
+/// stand on a ledge above a flat plane.
+pub fn mesh(gr: &Ground, g: &StreetGraph, lib: &ProfileLibrary, courts: &Region, outside: &Region) -> (BTreeMap<(i32, i32), Parts<Mat>>, Vec<[Vec3; 3]>) {
     let mut tiles: BTreeMap<(i32, i32), Parts<Mat>> = BTreeMap::new();
     let mut col: Vec<[Vec3; 3]> = Vec::new();
     let tile_of = |p: Vec2| ((p.x / TILE).floor() as i32, (p.y / TILE).floor() as i32);
@@ -314,7 +328,8 @@ pub fn mesh(gr: &Ground, g: &StreetGraph, lib: &ProfileLibrary, courts: &Region)
     // On sloping ground the flat asphalt plane no longer carries the roadway
     // and courts need their own paving.
     let court = Surface { region: if flat { Region::empty() } else { courts.clone() }, h: 0.0, mat: Mat::SidewalkSlab };
-    for s in gr.surfaces.iter().chain(std::iter::once(&court)) {
+    let around = Surface { region: if flat { Region::empty() } else { outside.clone() }, h: 0.0, mat: Mat::Asphalt };
+    for s in gr.surfaces.iter().chain([&court, &around]) {
         if flat && s.h <= 0.0 && s.mat == Mat::Asphalt {
             continue;
         }

@@ -400,7 +400,8 @@ impl Fabric {
                             parcel_courts.push(r);
                             continue;
                         }
-                        let br = BlockRing { pts: outer, tags, apex, theta };
+                        let z = if relief.is_flat() { Vec::new() } else { outer.iter().map(|q| relief.elev(*q)).collect() };
+                        let br = BlockRing { pts: outer, tags, apex, theta, z };
                         let inr = r.pole().map(|p| p.1).unwrap_or(1.0);
                         let mut rng = Rng::keyed(seed, stage::PARCEL, key ^ point_key(rs.outer[0]));
                         let dbg = std::env::var("FORJA_FABRIC_DEBUG").is_ok().then(|| (br.pts.len(), br.tags.iter().filter(|t| **t == Tag::Front).count(), corners.len(), r.area()));
