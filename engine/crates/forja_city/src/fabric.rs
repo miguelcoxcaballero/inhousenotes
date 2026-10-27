@@ -19,6 +19,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 
 use forja_math::Vec2;
+use rayon::prelude::*;
 
 use crate::generators::{CityPlan, LotRules};
 use crate::geom::{Rng, point_key};
@@ -285,6 +286,15 @@ fn bevel(ring: &[Vec2], faces: &dyn Fn(Vec2, Vec2) -> bool, chamfer_of: &dyn Fn(
     (out, marks)
 }
 
+/// One parcelled block before numbering (see [`Fabric::build`]).
+struct BlockOut {
+    shape: Shape,
+    key: u64,
+    corners: Vec<CornerMark>,
+    lots: Vec<(Region, Option<usize>)>,
+    courts: Vec<Region>,
+}
+
 impl Fabric {
     /// Turns any draft into lots.
     pub fn build(d: &Draft, plan: &CityPlan, lib: &ProfileLibrary, seed: u64) -> Fabric {
@@ -326,10 +336,14 @@ impl Fabric {
             let zone = plan.zone(*z);
             let rules = zone.map(|z| z.lots).unwrap_or_default();
             let land_z = land.and(mask).opening(rules.neck.max(0.5));
-            for shape in land_z.shapes() {
+            // Blocks are independent (each keys its own random streams):
+            // parcel them in parallel, then number them in shape order.
+            let shapes = land_z.shapes();
+            let built: Vec<Vec<BlockOut>> = shapes.par_iter().map(|shape| {
+                let mut outs: Vec<BlockOut> = Vec::new();
                 let outer = clean_ring(&shape.outer, 0.005);
                 if outer.len() < 3 {
-                    continue;
+                    return outs;
                 }
                 let faces = |a: Vec2, b: Vec2| {
                     let d = (b - a).normalize_or(Vec2::X);
@@ -353,7 +367,9 @@ impl Fabric {
                 for bs in pieces {
                     let key = bs.outer.iter().fold(Vec2::splat(f32::MAX), |m, p| if (p.x, p.y) < (m.x, m.y) { *p } else { m });
                     let key = point_key(key);
-                    let bi = blocks.len() as u32;
+                    let bi = outs.len() as u32;
+                    let mut lots_out: Vec<(Region, Option<usize>)> = Vec::new();
+                    let mut courts_out: Vec<Region> = Vec::new();
                     let bregion = Region::from_shapes(std::slice::from_ref(&bs));
                     // Footprint lots first (their centroid in the block).
                     let mut rest = bregion.clone();
@@ -369,7 +385,7 @@ impl Fabric {
                         }
                         rest = rest.minus(&piece);
                         for comp in split_holes(&piece) {
-                            lot_regions.push((comp, bi, Some(fi)));
+                            lots_out.push((comp, Some(fi)));
                         }
                     }
                     // Procedural lots on what is left.
@@ -397,7 +413,7 @@ impl Fabric {
                         let theta = corners.iter().map(|c| c.theta).collect();
                         let front_len: f32 = (0..nn).filter(|&i| tags[i] != Tag::Blind).map(|i| outer[i].distance(outer[(i + 1) % nn])).sum();
                         if front_len < rules.min_width {
-                            parcel_courts.push(r);
+                            courts_out.push(r);
                             continue;
                         }
                         let z = if relief.is_flat() { Vec::new() } else { outer.iter().map(|q| relief.elev(*q)).collect() };
@@ -410,12 +426,19 @@ impl Fabric {
                             eprintln!("block {bi}: {} pts, {} front, {} corners, area {:.0} -> {} lots, court {:.0}", d.0, d.1, d.2, d.3, parts.lots.len(), parts.courts.area());
                         }
                         for l in parts.lots {
-                            lot_regions.push((l, bi, None));
+                            lots_out.push((l, None));
                         }
-                        parcel_courts.push(parts.courts);
+                        courts_out.push(parts.courts);
                     }
-                    blocks.push(Block { shape: bs, zone: *z, key, corners: corners.clone(), lots: 0..0 });
+                    outs.push(BlockOut { shape: bs, key, corners: corners.clone(), lots: lots_out, courts: courts_out });
                 }
+                outs
+            }).collect();
+            for b in built.into_iter().flatten() {
+                let bi = blocks.len() as u32;
+                lot_regions.extend(b.lots.into_iter().map(|(l, f)| (l, bi, f)));
+                parcel_courts.extend(b.courts);
+                blocks.push(Block { shape: b.shape, zone: *z, key: b.key, corners: b.corners, lots: 0..0 });
             }
         }
         laps.lap("blocks and parcels");
@@ -430,26 +453,27 @@ impl Fabric {
             }
             ix
         };
-        for (r, bi, fp) in lot_regions.iter_mut() {
+        // Each lot keys its own random stream: independent, in parallel.
+        lot_regions.par_iter_mut().for_each(|(r, bi, fp)| {
             let b = &blocks[*bi as usize];
             let jitter = plan.zone(b.zone).map(|z| z.lots.jitter).unwrap_or(0.0);
             if jitter <= 0.0 || fp.is_some() {
-                continue;
+                return;
             }
             let key = r.shapes().first().map(|s| point_key(s.outer[0])).unwrap_or(0);
             let mut rng = Rng::keyed(seed, stage::JITTER, key);
             *r = setback(r, &front_ix, jitter, &mut rng, &domain_loc);
-        }
+        });
         laps.lap("setbacks");
         // Lots never leave their block (setbacks and merges are region algebra);
         // the weld then clears the millimetre debris on the shared vertex set.
         let block_regions: Vec<Region> = blocks.iter().map(|b| Region::from_shapes(std::slice::from_ref(&b.shape))).collect();
-        for (r, bi, _) in lot_regions.iter_mut() {
+        lot_regions.par_iter_mut().for_each(|(r, bi, _)| {
             let inside = r.and(&block_regions[*bi as usize]);
             if let Some(best) = inside.components().into_iter().max_by(|a, b| a.area().total_cmp(&b.area())) {
                 *r = best;
             }
-        }
+        });
         weld(&mut lot_regions, &front_ix, WELD);
         laps.lap("clip and weld");
         // Courts vs public: what is not lot, split topologically. Merging two

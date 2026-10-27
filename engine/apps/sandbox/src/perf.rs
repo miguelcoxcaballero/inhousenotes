@@ -354,6 +354,13 @@ pub fn draw_options(ctx: &egui::Context, p: &mut PerfState) {
             g.label("Small shadow casters (texels)");
             custom |= g.add(egui::Slider::new(&mut c.shadow_caster_texels, 1.0..=8.0)).changed();
             g.end_row();
+            g.label("Building shadow proxies from");
+            g.horizontal(|g| {
+                for (n, label) in [(1, "c1"), (2, "c2"), (3, "c3"), (4, "off")] {
+                    custom |= g.selectable_value(&mut c.shadow_proxy_cascade, n, label).changed();
+                }
+            });
+            g.end_row();
             g.label("LOD detail");
             custom |= g.add(egui::Slider::new(&mut c.lod_detail, 0.25..=2.0)).changed();
             g.end_row();

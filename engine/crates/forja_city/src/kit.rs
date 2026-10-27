@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use forja_assets::{AlphaMode, MaterialData, NodeData, PbrSet, SceneData, TextureData};
+use forja_assets::{AlphaMode, MaterialData, NodeData, PbrSet, SceneData, ShadowRole, TextureData};
 use forja_math::{Vec3, Vec4};
 
 use rayon::prelude::*;
@@ -310,10 +310,175 @@ const SETS: [&str; 19] = [
     "pbr_sand",
 ];
 
+/// Tile patterns of the kit, in generation (and seed) order.
+const TILES: [TilePattern; 5] = [TilePattern::CheckerGreen, TilePattern::CheckerBlue, TilePattern::DiamondBlue, TilePattern::Frieze, TilePattern::White];
+
 impl Kit {
     /// Loads scanned sets from `downloaded` (missing ones fall back to flat
     /// colors) and generates the procedural textures.
     pub fn load(downloaded: Option<&Path>) -> Self {
+        let t0 = std::time::Instant::now();
+        let key = Self::cache_key(downloaded);
+        if let Some(kit) = forja_assets::cache::load("kit", &key).and_then(|b| forja_assets::cache::Reader::new(&b)).and_then(Self::from_cache) {
+            log::info!("city kit: {} scanned materials from the cache in {:.1}s", kit.pbr.len(), t0.elapsed().as_secs_f32());
+            return kit;
+        }
+        let kit = Self::generate(downloaded);
+        let t = std::time::Instant::now();
+        let bytes = kit.to_cache();
+        forja_assets::cache::store("kit", &key, &bytes);
+        log::info!("city kit: cached ({:.0} MB) in {:.1}s", bytes.len() as f64 / 1048576.0, t.elapsed().as_secs_f32());
+        kit
+    }
+
+    /// Everything the kit is made from: the code that generates and
+    /// processes its textures and every file of the scanned sets.
+    fn cache_key(downloaded: Option<&Path>) -> [u8; 32] {
+        let mut k = forja_assets::cache::Key::new().str("kit 1");
+        for src in [
+            include_str!("kit.rs"),
+            include_str!("macrotex.rs"),
+            include_str!("texgen.rs"),
+            include_str!("streettex.rs"),
+            include_str!("weathering.rs"),
+            include_str!("noise.rs"),
+            include_str!("geom.rs"),
+            include_str!("../../forja_assets/src/pbr.rs"),
+        ] {
+            k = k.str(src);
+        }
+        for id in SETS {
+            k = k.str(id);
+            k = match downloaded.map(|r| r.join(id)).filter(|d| d.exists()) {
+                Some(d) => k.dir_files(&d),
+                None => k.str("absent"),
+            };
+        }
+        k.finish()
+    }
+
+    fn to_cache(&self) -> Vec<u8> {
+        use forja_assets::cache::Writer;
+        let mut w = Writer::new();
+        let gen_set = |w: &mut Writer, g: &GenSet| {
+            w.texture(&g.color);
+            w.opt_texture(g.normal.as_ref());
+            w.opt_texture(g.orm.as_ref());
+        };
+        let mut ids: Vec<&&'static str> = self.pbr.keys().collect();
+        ids.sort();
+        w.usize(ids.len());
+        for id in ids {
+            let p = &self.pbr[*id];
+            w.str(id);
+            w.str(&p.name);
+            w.texture(&p.color);
+            w.opt_texture(p.normal.as_ref());
+            w.opt_texture(p.orm.as_ref());
+            w.opt_texture(p.emission.as_ref());
+        }
+        for t in TILES {
+            gen_set(&mut w, &self.tiles[&t]);
+        }
+        for k in SignKind::ALL {
+            w.texture(&self.signs[&k]);
+        }
+        let list = |w: &mut Writer, v: &[TextureData]| {
+            w.usize(v.len());
+            for t in v {
+                w.texture(t);
+            }
+        };
+        list(&mut w, &self.ped);
+        w.texture(&self.shop_signs);
+        list(&mut w, &self.graffiti);
+        list(&mut w, &self.awnings);
+        w.texture(&self.interiors);
+        w.texture(&self.shop_interiors);
+        w.texture(&self.shop_lights);
+        list(&mut w, &self.plates);
+        let d = &self.decals;
+        list(&mut w, &[d.plinth.clone(), d.wash.clone(), d.streaks.clone(), d.soot.clone(), d.ground.clone()]);
+        gen_set(&mut w, &self.glass);
+        gen_set(&mut w, &self.road_paint);
+        w.texture(&self.interior_ao);
+        w.texture(&self.interiors_lit);
+        w.texture(&self.curtains_lit);
+        w.texture(&self.shop_signs_lit);
+        gen_set(&mut w, &self.hdpe);
+        w.texture(&self.street_atlas);
+        list(&mut w, &self.bike_lenses);
+        w.finish()
+    }
+
+    /// The kit from an opened cache entry (the compressed payload is
+    /// already freed: it would otherwise double the peak).
+    fn from_cache(mut r: forja_assets::cache::Reader) -> Option<Self> {
+        use forja_assets::cache::Reader;
+        let gen_set = |r: &mut Reader| -> Option<GenSet> { Some(GenSet { color: r.texture()?, normal: r.opt_texture()?, orm: r.opt_texture()? }) };
+        let list = |r: &mut Reader| -> Option<Vec<TextureData>> {
+            let n = r.usize()?;
+            (n < 4096).then_some(())?;
+            (0..n).map(|_| r.texture()).collect()
+        };
+        let mut pbr = HashMap::new();
+        for _ in 0..r.usize()? {
+            let id = r.str()?;
+            let id: &'static str = SETS.iter().chain(&["arch_wood_gray"]).find(|s| **s == id)?;
+            pbr.insert(id, PbrSet { name: r.str()?, color: r.texture()?, normal: r.opt_texture()?, orm: r.opt_texture()?, emission: r.opt_texture()? });
+        }
+        let mut tiles = HashMap::new();
+        for t in TILES {
+            tiles.insert(t, gen_set(&mut r)?);
+        }
+        let mut signs = HashMap::new();
+        for k in SignKind::ALL {
+            signs.insert(k, r.texture()?);
+        }
+        let ped: [TextureData; 2] = list(&mut r)?.try_into().ok()?;
+        let shop_signs = r.texture()?;
+        let graffiti = list(&mut r)?;
+        let awnings = list(&mut r)?;
+        let (interiors, shop_interiors, shop_lights) = (r.texture()?, r.texture()?, r.texture()?);
+        let plates = list(&mut r)?;
+        let [plinth, wash, streaks, soot, ground]: [TextureData; 5] = list(&mut r)?.try_into().ok()?;
+        let (glass, road_paint) = (gen_set(&mut r)?, gen_set(&mut r)?);
+        let (interior_ao, interiors_lit, curtains_lit, shop_signs_lit) = (r.texture()?, r.texture()?, r.texture()?, r.texture()?);
+        let hdpe = gen_set(&mut r)?;
+        let street_atlas = r.texture()?;
+        let bike_lenses: [TextureData; 3] = list(&mut r)?.try_into().ok()?;
+        if !r.at_end() {
+            return None;
+        }
+        Some(Kit {
+            pbr,
+            tiles,
+            signs,
+            ped,
+            shop_signs,
+            graffiti,
+            awnings,
+            interiors,
+            shop_interiors,
+            shop_lights,
+            plates,
+            decals: DecalTextures { plinth, wash, streaks, soot, ground },
+            glass,
+            road_paint,
+            interior_ao,
+            interiors_lit,
+            curtains_lit,
+            shop_signs_lit,
+            hdpe,
+            street_atlas,
+            bike_lenses,
+            night: NightState::DAY,
+        })
+    }
+
+    /// Decodes and weathers the scans and generates the procedural
+    /// textures (what [`Kit::load`] caches).
+    fn generate(downloaded: Option<&Path>) -> Self {
         // Decode and weather the scans in parallel (macro textures take a
         // fraction of a second each in release builds).
         let found: Vec<(&'static str, std::path::PathBuf)> = match downloaded {
@@ -348,7 +513,7 @@ impl Kit {
             pbr.insert("arch_wood_gray", gray);
         }
         let shutter_base = pbr.get("arch_metal_shutter").map(|s: &PbrSet| s.color.clone()).unwrap_or_else(|| texgen::Canvas::new(256, 256, texgen::rgb(0x8a9096)).to_texture("shutter", true));
-        let tiles = [TilePattern::CheckerGreen, TilePattern::CheckerBlue, TilePattern::DiamondBlue, TilePattern::Frieze, TilePattern::White]
+        let tiles = TILES
             .into_iter()
             .enumerate()
             .map(|(i, p)| (p, texgen::tiles(p, i as u64 + 3)))
@@ -745,6 +910,12 @@ impl<'a> Assembler<'a> {
     /// Adds `parts` as one node. Meshes above `lod_min` triangles get
     /// simplified levels.
     pub fn add_parts(&mut self, parts: Parts<Mat>, lod_min: Option<usize>) {
+        self.add_parts_roles(parts, lod_min, &|_| ShadowRole::All);
+    }
+
+    /// [`Self::add_parts`] with a shadow role per material (see
+    /// [`ShadowRole`]).
+    pub fn add_parts_roles(&mut self, parts: Parts<Mat>, lod_min: Option<usize>, role: &dyn Fn(Mat) -> ShadowRole) {
         let mut prims = Vec::new();
         let Parts { prims: mut map, order } = parts;
         for k in order {
@@ -754,6 +925,7 @@ impl<'a> Assembler<'a> {
             }
             let mi = self.material(k);
             let mut mesh = p.into_mesh(mi);
+            mesh.shadow = role(k);
             if let Some(min) = lod_min {
                 forja_assets::lod::generate_mesh_lods(&mut mesh, 5, min);
             }
@@ -771,6 +943,23 @@ impl<'a> Assembler<'a> {
 
     pub fn finish(self) -> SceneData {
         self.scene
+    }
+}
+
+/// [`assemble`] with a shadow role per material.
+pub fn assemble_roles(kit: &Kit, name: &str, parts: Parts<Mat>, lod_min: Option<usize>, role: &dyn Fn(Mat) -> ShadowRole) -> SceneData {
+    let mut a = Assembler::new(kit, name);
+    a.add_parts_roles(parts, lod_min, role);
+    a.finish()
+}
+
+/// Roofs keep casting in the far shadow cascades over a building's proxy
+/// (which stops at the eave); everything else of a block (walls with
+/// openings, mouldings, plinths, party walls) is near-cascade detail.
+pub fn block_shadow_role(m: Mat) -> ShadowRole {
+    match m {
+        Mat::RoofClay | Mat::RoofSlate | Mat::RoofTerrace | Mat::Zinc => ShadowRole::All,
+        _ => ShadowRole::Near,
     }
 }
 

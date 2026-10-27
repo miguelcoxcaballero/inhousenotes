@@ -10,7 +10,7 @@ use forja_math::{Mat4, Vec2, Vec3};
 
 use crate::furniture;
 use crate::geom::{Parts, Prim, Rng, polyline_normals, signed_area};
-use crate::kit::{Kit, Mat, Rgb, assemble, hex};
+use crate::kit::{Kit, Mat, Rgb, hex};
 use crate::nightlight::{self, CityLight, LightKind, NightState, Premises, hash01};
 use crate::modules::{self, BalconyKey, P, Piece, PortalKey, REVEAL, ShopKey, ShopPiece, SurroundKind, WindowKey, facade_frame};
 use crate::style::{ShutterKind, Style, parse_material, parse_pattern, parse_rgb, parse_shutter};
@@ -48,6 +48,43 @@ pub struct CityOut {
     /// Party walls waiting for `medianeras` (built once the neighbours on
     /// both sides are known).
     pub party_walls: Vec<PartyWall>,
+    /// Closed masses of the buildings built so far, for their far-cascade
+    /// shadow proxies (see [`proxy_scene`]).
+    pub shadow_masses: Vec<ShadowMass>,
+}
+
+/// A prism `ring x [bottom, top]` standing in for a building (or its
+/// ático) in the far shadow cascades, where its facade detail is skipped.
+#[derive(Clone, Debug)]
+pub struct ShadowMass {
+    pub ring: Vec<Vec2>,
+    pub bottom: f32,
+    pub top: f32,
+}
+
+/// The far-cascade shadow proxy of `masses`: side walls and a cap per
+/// prism (a few dozen triangles per building instead of thousands of
+/// window, balcony and wall-opening triangles), drawn only into the far
+/// cascades ([`forja_assets::ShadowRole::Proxy`]).
+pub fn proxy_scene(kit: &Kit, masses: &[ShadowMass]) -> Option<SceneData> {
+    if masses.is_empty() {
+        return None;
+    }
+    let mut parts: Parts<Mat> = Parts::new();
+    let m = Mat::Stucco(hex(0xe9e3d6));
+    let prim = parts.get(m);
+    for s in masses {
+        let n = s.ring.len();
+        for i in 0..n {
+            let (a, b) = (s.ring[i], s.ring[(i + 1) % n]);
+            if a.distance(b) < 0.05 {
+                continue;
+            }
+            prim.quad(Vec3::new(a.x, s.bottom, a.y), Vec3::new(b.x, s.bottom, b.y), Vec3::new(b.x, s.top, b.y), Vec3::new(a.x, s.top, a.y), 4.0);
+        }
+        prim.polygon(&s.ring, s.top, true, 4.0);
+    }
+    (parts.tri_count() > 0).then(|| crate::kit::assemble_roles(kit, "block_shadow", parts, None, &|_| forja_assets::ShadowRole::Proxy))
 }
 
 /// A medianera: the wall a building shares with its neighbour, recorded by
@@ -116,6 +153,9 @@ impl CityOut {
     }
 }
 
+/// Modules from this many triangles get LOD chains.
+const MODULE_LOD_MIN: usize = 400;
+
 /// Cache of instanced modules (each a render scene).
 pub struct ModuleLib<'k> {
     pub kit: &'k Kit,
@@ -125,11 +165,18 @@ pub struct ModuleLib<'k> {
     named: HashMap<String, usize>,
     /// How far each module reaches out of its wall plane.
     reach: HashMap<usize, f32>,
+    /// Modules made now belong to a facade: near-cascade shadow detail
+    /// (the building's [`ShadowMass`] casts in the far cascades).
+    pub facade: bool,
+    /// Defer the modules' LOD chains to [`ModuleLib::finish_lods`] (built
+    /// in parallel at the end of a city instead of one by one).
+    pub defer_lods: bool,
+    pending_lods: Vec<usize>,
 }
 
 impl<'k> ModuleLib<'k> {
     pub fn new(kit: &'k Kit) -> Self {
-        Self { kit, windows: HashMap::new(), shops: HashMap::new(), portals: HashMap::new(), named: HashMap::new(), reach: HashMap::new() }
+        Self { kit, windows: HashMap::new(), shops: HashMap::new(), portals: HashMap::new(), named: HashMap::new(), reach: HashMap::new(), facade: false, defer_lods: false, pending_lods: Vec::new() }
     }
 
     /// How far module `m` reaches out of the wall plane it is placed on
@@ -154,8 +201,37 @@ impl<'k> ModuleLib<'k> {
         fits
     }
 
-    fn make(&self, out: &mut CityOut, name: &str, p: P) -> usize {
-        out.add_scene(assemble(self.kit, name, p, Some(400)))
+    fn make(&mut self, out: &mut CityOut, name: &str, p: P) -> usize {
+        let facade = self.facade;
+        // Facade detail casts in the near cascades (the building mass in the
+        // far ones); its iron (grilles, railings, balcony bars) only in the
+        // first: thinner than a texel beyond, it only flickered there.
+        let role = move |m: Mat| match (facade, m) {
+            (false, _) => forja_assets::ShadowRole::All,
+            (true, Mat::Iron) => forja_assets::ShadowRole::Fine,
+            (true, _) => forja_assets::ShadowRole::Near,
+        };
+        let lods = (!self.defer_lods).then_some(MODULE_LOD_MIN);
+        let i = out.add_scene(crate::kit::assemble_roles(self.kit, name, p, lods, &role));
+        if self.defer_lods {
+            self.pending_lods.push(i);
+        }
+        i
+    }
+
+    /// Builds the LOD chains [`ModuleLib::defer_lods`] postponed, in
+    /// parallel (the same chains `make` would have built).
+    pub fn finish_lods(&mut self, out: &mut CityOut) {
+        use rayon::prelude::*;
+        let mut taken: Vec<(usize, Arc<SceneData>)> = self.pending_lods.drain(..).map(|i| (i, std::mem::take(&mut out.scenes[i]))).collect();
+        taken.par_iter_mut().for_each(|(_, s)| {
+            for m in Arc::make_mut(s).meshes.iter_mut().flatten() {
+                forja_assets::lod::generate_mesh_lods(m, 5, MODULE_LOD_MIN);
+            }
+        });
+        for (i, s) in taken {
+            out.scenes[i] = s;
+        }
     }
 
     /// Instanced pieces of a window (surround, glazing, interior, shutter,
@@ -609,11 +685,16 @@ fn choose(style: &Style, rng: &mut Rng) -> Choices {
 pub fn build(lib: &mut ModuleLib, out: &mut CityOut, lot: &Lot, style: &Style, seed: u64) -> f32 {
     let mut parts: Parts<Mat> = Parts::new();
     let first = out.party_walls.len();
+    let masses = out.shadow_masses.len();
     let h = build_into(lib, out, &mut parts, lot, style, seed);
     medianeras(lib, out, &mut parts, first);
-    let scene = assemble(lib.kit, "building", parts, None);
+    let scene = crate::kit::assemble_roles(lib.kit, "building", parts, None, &crate::kit::block_shadow_role);
     let si = out.add_scene(scene);
     out.placements.push((si, Mat4::IDENTITY));
+    if let Some(p) = proxy_scene(lib.kit, &out.shadow_masses[masses..]) {
+        let pi = out.add_scene(p);
+        out.placements.push((pi, Mat4::IDENTITY));
+    }
     h
 }
 
@@ -622,6 +703,13 @@ pub fn build(lib: &mut ModuleLib, out: &mut CityOut, lot: &Lot, style: &Style, s
 /// instanced modules to `out`. Its party walls are only recorded: call
 /// `medianeras` once the neighbours are built too.
 pub fn build_into(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>, lot: &Lot, style: &Style, seed: u64) -> f32 {
+    let was_facade = std::mem::replace(&mut lib.facade, true);
+    let eave = build_body(lib, out, parts, lot, style, seed);
+    lib.facade = was_facade;
+    eave
+}
+
+fn build_body(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>, lot: &Lot, style: &Style, seed: u64) -> f32 {
     let (mut rng, c, fp) = start(lot, style, seed);
     let lot = &fp.lot;
     let base = lot.base;
@@ -715,6 +803,15 @@ pub fn build_into(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>
         lanterns(lib, out, lot, run, style, &c, top, &mut lamps_placed);
     }
     out.collider_polygon(&lot.ring, base + top);
+    // Far-cascade shadow mass: the footprint up to the eave (the roof
+    // keeps casting itself), from below the plinth; an ático adds its
+    // own block on the setback ring.
+    out.shadow_masses.push(ShadowMass { ring: lot.ring.clone(), bottom: base - SKIRT - 3.0, top: base + top });
+    if c.atico
+        && let Some(ring) = setback_ring(lot, ATICO_SETBACK)
+    {
+        out.shadow_masses.push(ShadowMass { ring, bottom: base + top - 0.1, top: base + top + 0.5 + ATICO_H });
+    }
     mouldings(lib, out, parts, lot, style, &c, top, &mut rng);
     roof(lib, out, parts, lot, style, &c, top, &mut rng);
     out.buildings += 1;
@@ -1377,6 +1474,12 @@ const MEDIANERAS: [Mat; 6] = [Mat::Brick([240, 222, 210]), Mat::Brick([228, 208,
 /// to above the roof, and now and then a column of small windows opened
 /// later; on top, a coping.
 pub fn medianeras(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>, from: usize) {
+    let was_facade = std::mem::replace(&mut lib.facade, true);
+    party_walls(lib, out, parts, from);
+    lib.facade = was_facade;
+}
+
+fn party_walls(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>, from: usize) {
     let walls = out.party_walls[from..].to_vec();
     for w in &walls {
         let f = edge_frame(w.a, w.b, w.base);

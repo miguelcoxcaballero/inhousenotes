@@ -16,9 +16,14 @@ NOVEDADES DE LA v0.1.2
   - Camara diurna fisica y noche real (F3): farolas, ventanas y comercios
     encendidos, adaptacion del ojo.
   - Rendimiento: el mapa esta presupuestado para una GPU de gama media
-    (GTX 1660 / RX 580, 6 GB) a 1080p y 60 FPS en Alto: ~2,3 GB de VRAM en
-    Alto, ~3 GB de RAM, modulos de fachada compartidos, mundo estatico en
-    una rejilla de culling, LOD y sombras por preset. Carga en unos 30-45 s.
+    (GTX 1660 / RX 580, 6 GB) a 1080p y 60 FPS en Alto: ~1,4 GB de VRAM en
+    Alto (texturas comprimidas BC1/BC3), ~3 GB de RAM, modulos de fachada
+    compartidos, sombras lejanas con volumenes simplificados de los
+    edificios, mundo estatico en una rejilla de culling, LOD y sombras por
+    preset. La ventana abre al momento con una pantalla de carga; la
+    primera carga tarda ~45-60 s y guarda materiales, arboles y texturas
+    comprimidas en la carpeta cache (~0,7 GB, se puede borrar); las
+    siguientes tardan ~20-30 s.
   - F9: opciones graficas con presets Bajo / Medio / Alto / Ultra (Auto
     elige segun la GPU; Guardar escribe data\graphics.toml).
   - F11: perfilador (FPS, tiempos CPU/GPU por pase, triangulos, VRAM).
@@ -58,7 +63,8 @@ CONTROLES
   V                             cambiar camara
   F2                            siguiente mapa
   F3                            hora del dia (+3 h; al anochecer la ciudad
-                                se reconstruye con su iluminacion nocturna)
+                                nocturna se prepara en segundo plano y se
+                                cambia sin detener el juego)
   F9                            opciones graficas y presets
   F11                           perfilador de rendimiento
   F10                           ayuda           F12 captura de pantalla

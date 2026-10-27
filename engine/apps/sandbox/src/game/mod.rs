@@ -237,8 +237,9 @@ pub fn build_at(map: MapKind, paths: Paths, hour: Option<f32>) -> App {
         .insert_resource(humans::HumanLibrary::default())
         .insert_resource(people::PeopleLibrary::default())
         .add_plugin(forja_physics::PhysicsPlugin::default())
-        .add_plugin(world::WorldPlugin { map, hour: hour.and_then(env::content_hour) })
-        .add_plugin(env::EnvPlugin)
+        .add_plugin(world::WorldPlugin { map, hour: hour.and_then(env::content_hour) });
+    forja_assets::progress::stage("Cargando gente, coches y tráfico", 0.66);
+    app.add_plugin(env::EnvPlugin)
         .add_plugin(props::PropsPlugin)
         .add_plugin(vehicles::VehiclesPlugin)
         .add_plugin(player::PlayerPlugin)

@@ -45,7 +45,7 @@ pub fn strip(s: &SceneData) -> (SceneData, usize) {
                 .iter()
                 .map(|m| {
                     freed += m.positions.len() * 48 + m.indices.len() * 4 + m.lods.iter().map(|l| l.len() * 4).sum::<usize>();
-                    MeshData { material: m.material, aabb: m.aabb, lod_sync: m.lod_sync, ..Default::default() }
+                    MeshData { material: m.material, aabb: m.aabb, lod_sync: m.lod_sync, shadow: m.shadow, ..Default::default() }
                 })
                 .collect()
         })

@@ -100,6 +100,9 @@ pub struct GraphicsConfig {
     /// Sun shadow casters with a bounding radius under this many cascade
     /// texels are skipped (small facade details in the far cascades).
     pub shadow_caster_texels: f32,
+    /// First sun cascade (0-3) where facade detail is replaced by the
+    /// city's shadow proxies (building masses); 4 never uses them.
+    pub shadow_proxy_cascade: u32,
     /// Show the frame profiler overlay at start (F11 toggles it).
     pub profiler_overlay: bool,
     /// Write the per-frame profile to this CSV file (empty: off).
@@ -134,6 +137,7 @@ impl Default for GraphicsConfig {
             max_texture_size: 4096,
             lod_detail: 1.0,
             shadow_caster_texels: 2.5,
+            shadow_proxy_cascade: 3,
             profiler_overlay: false,
             profiler_csv: String::new(),
         };
@@ -192,6 +196,13 @@ impl GraphicsConfig {
             Preset::High => 2.5,
             _ => 1.5,
         };
+        // Facade detail (window modules, walls with openings) in the far
+        // cascades costs most of the shadow triangles; the building masses
+        // cast the same shadow there.
+        self.shadow_proxy_cascade = match p {
+            Preset::Low | Preset::Medium => 2,
+            _ => 3,
+        };
     }
 
     /// Clamps every value to what the renderer supports.
@@ -211,6 +222,7 @@ impl GraphicsConfig {
         self.max_texture_size = self.max_texture_size.clamp(256, 16384);
         self.lod_detail = self.lod_detail.clamp(0.1, 4.0);
         self.shadow_caster_texels = self.shadow_caster_texels.clamp(0.5, 16.0);
+        self.shadow_proxy_cascade = self.shadow_proxy_cascade.min(4);
         self
     }
 

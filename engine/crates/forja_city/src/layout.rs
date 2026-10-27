@@ -9,6 +9,7 @@
 
 use std::collections::BTreeMap;
 
+use forja_assets::SceneData;
 use forja_math::{Mat4, Quat, Vec2, Vec3};
 
 use crate::building::{self, CityOut, ModuleLib};
@@ -216,6 +217,7 @@ pub fn build_city_with(kit: &Kit, styles: &StyleLibrary, lib: &ProfileLibrary, c
 /// long stage of a load. Returns the kit and the city.
 pub fn build_city_loading(load_kit: impl FnOnce() -> Kit + Send, styles: &StyleLibrary, cfg: &CityConfig) -> (Kit, CityLayout) {
     let lib = ProfileLibrary::builtin();
+    forja_assets::progress::stage("Trazando calles, manzanas y parcelas", 0.03);
     let (kit, fabric) = std::thread::scope(|s| {
         let kit = s.spawn(load_kit);
         let draft = generators::draft(&cfg.plan, &lib, cfg.seed);
@@ -226,6 +228,7 @@ pub fn build_city_loading(load_kit: impl FnOnce() -> Kit + Send, styles: &StyleL
     if let Err(v) = fabric.validate() {
         log::warn!("fabric: {} violations, first {:?}", v.len(), v.first());
     }
+    forja_assets::progress::stage("Levantando los edificios", 0.3);
     let city = realize(&kit, styles, fabric, &cfg.plan, &lib, cfg.seed);
     (kit, city)
 }
@@ -234,6 +237,9 @@ pub fn build_city_loading(load_kit: impl FnOnce() -> Kit + Send, styles: &StyleL
 pub fn realize(kit: &Kit, styles: &StyleLibrary, fabric: Fabric, plan: &CityPlan, lib: &ProfileLibrary, seed: u64) -> CityLayout {
     let mut lay = CityLayout::default();
     let mut mlib = ModuleLib::new(kit);
+    mlib.defer_lods = true;
+    // Block scenes are assembled (meshes, tangents) in parallel at the end.
+    let mut pending_blocks: Vec<(usize, Parts<Mat>)> = Vec::new();
     let [lo, hi] = fabric.extent;
     let ext = Vec2::new(lo.x.abs().max(hi.x.abs()), lo.y.abs().max(hi.y.abs())) + Vec2::splat(10.0);
     lay.extent = ext;
@@ -272,8 +278,11 @@ pub fn realize(kit: &Kit, styles: &StyleLibrary, fabric: Fabric, plan: &CityPlan
         by_tile.entry(((c.x / 64.0).floor() as i32, (c.y / 64.0).floor() as i32)).or_default().push(bi);
     }
     let (mut built, mut plinths) = (0usize, 0usize);
-    for (_, blocks) in by_tile {
+    let tiles = by_tile.len().max(1);
+    for (ti, (_, blocks)) in by_tile.into_iter().enumerate() {
+        forja_assets::progress::advance(0.3 + 0.25 * ti as f32 / tiles as f32);
         let mut parts: Parts<Mat> = Parts::new();
+        let masses = lay.out.shadow_masses.len();
         for bi in blocks {
             let b = &fabric.blocks[bi];
             let first_wall = lay.out.party_walls.len();
@@ -293,8 +302,20 @@ pub fn realize(kit: &Kit, styles: &StyleLibrary, fabric: Fabric, plan: &CityPlan
             building::medianeras(&mut mlib, &mut lay.out, &mut parts, first_wall);
         }
         if parts.tri_count() > 0 {
-            let si = lay.out.add_scene(assemble(kit, "block", parts, None));
+            let si = lay.out.add_scene(SceneData::default());
             lay.out.placements.push((si, Mat4::IDENTITY));
+            pending_blocks.push((si, parts));
+        }
+        if let Some(p) = building::proxy_scene(kit, &lay.out.shadow_masses[masses..]) {
+            let pi = lay.out.add_scene(p);
+            lay.out.placements.push((pi, Mat4::IDENTITY));
+        }
+    }
+    {
+        use rayon::prelude::*;
+        let built: Vec<(usize, SceneData)> = pending_blocks.into_par_iter().map(|(si, parts)| (si, crate::kit::assemble_roles(kit, "block", parts, None, &crate::kit::block_shadow_role))).collect();
+        for (si, s) in built {
+            lay.out.scenes[si] = std::sync::Arc::new(s);
         }
     }
     // 3. Road markings.
@@ -309,6 +330,7 @@ pub fn realize(kit: &Kit, styles: &StyleLibrary, fabric: Fabric, plan: &CityPlan
     items.extend(dress::after_buildings(&fabric, lib, &eaves, &fronts, seed));
     place_items(&mut mlib, &mut lay, &items, seed, &|p| prop_site(&fabric, plan, p));
     lay.items = items;
+    mlib.finish_lods(&mut lay.out);
     // 5. What the traffic AI drives by: the street graph's roadways with
     // their lanes, and the signs and lights just placed.
     traffic_info(&mut lay, &fabric, plan, lib);

@@ -13,7 +13,7 @@ use forja_city::layout::{PropKind, PropSite, Setting};
 use forja_math::{Mat4, Quat};
 
 use crate::rng::{Rng, hash_str};
-use crate::{Capsule, Params, Pruning, Season, SpeciesLibrary, TreeAsset, generate, impostor};
+use crate::{Billboard, Capsule, Params, Pruning, Season, SpeciesLibrary, Stats, TreeAsset, generate, impostor};
 
 #[derive(Clone, Debug)]
 pub struct PlantOptions {
@@ -107,6 +107,36 @@ pub fn plant(props: &[(PropKind, Mat4)], sites: &[PropSite], lib: &SpeciesLibrar
         }
     }
     let variants = opt.variants.max(1);
+    let key = forest_key(&groups, lib, opt);
+    let t0 = std::time::Instant::now();
+    let cached = forja_assets::cache::load("trees", &key).and_then(|b| forja_assets::cache::Reader::new(&b)).and_then(read_forest).filter(|b| b.len() == groups.len());
+    let built = match cached {
+        Some(b) => {
+            log::info!("trees: {} models from the cache in {:.1}s", b.iter().map(Vec::len).sum::<usize>(), t0.elapsed().as_secs_f32());
+            b
+        }
+        None => {
+            let b = grow(&groups, lib, opt, variants);
+            if let Some(bytes) = write_forest(&b) {
+                forja_assets::cache::store("trees", &key, &bytes);
+            }
+            log::info!("trees: {} models grown in {:.1}s", b.iter().map(Vec::len).sum::<usize>(), t0.elapsed().as_secs_f32());
+            b
+        }
+    };
+    let mut forest = CityForest::default();
+    let mut first = Vec::new();
+    for (g, list) in groups.iter().zip(built) {
+        first.push(forest.models.len());
+        forest.by_species.entry(g.0.to_string()).or_insert(forest.models.len());
+        forest.models.extend(list);
+    }
+    place(&mut forest, &first, &groups, wanted, props, opt);
+    forest
+}
+
+/// Generates the variants of every `(species, pruning)` group.
+fn grow(groups: &[(&'static str, Pruning)], lib: &SpeciesLibrary, opt: &PlantOptions, variants: usize) -> Vec<Vec<TreeAsset>> {
     // Species one after another (each builds its textures with all cores):
     // generating several atlases at once needs a lot of memory.
     let built: Vec<Vec<TreeAsset>> = groups
@@ -134,13 +164,10 @@ pub fn plant(props: &[(PropKind, Mat4)], sites: &[PropSite], lib: &SpeciesLibrar
         })
         .collect();
     crate::clear_texture_cache();
-    let mut forest = CityForest::default();
-    let mut first = Vec::new();
-    for (g, list) in groups.iter().zip(built) {
-        first.push(forest.models.len());
-        forest.by_species.entry(g.0.to_string()).or_insert(forest.models.len());
-        forest.models.extend(list);
-    }
+    built
+}
+
+fn place(forest: &mut CityForest, first: &[usize], groups: &[(&'static str, Pruning)], wanted: Vec<(usize, &'static str, Pruning)>, props: &[(PropKind, Mat4)], opt: &PlantOptions) {
     for (i, sp, pr) in wanted {
         let gi = groups.iter().position(|g| *g == (sp, pr)).unwrap();
         let n = if gi + 1 < first.len() { first[gi + 1] - first[gi] } else { forest.models.len() - first[gi] };
@@ -158,7 +185,116 @@ pub fn plant(props: &[(PropKind, Mat4)], sites: &[PropSite], lib: &SpeciesLibrar
         forest.colliders.push(Capsule { a: mt.transform_point3(c.a), b: mt.transform_point3(c.b), radius: c.radius });
         forest.instances.push((model, mt));
     }
-    forest
+}
+
+/// Cache key of a forest: the tree generator's code, the species
+/// definitions used and the planting options.
+fn forest_key(groups: &[(&'static str, Pruning)], lib: &SpeciesLibrary, opt: &PlantOptions) -> [u8; 32] {
+    let mut k = forja_assets::cache::Key::new().str("trees 1");
+    for src in [
+        include_str!("city.rs"),
+        include_str!("foliage.rs"),
+        include_str!("impostor.rs"),
+        include_str!("lib.rs"),
+        include_str!("mesh.rs"),
+        include_str!("palm.rs"),
+        include_str!("rng.rs"),
+        include_str!("skeleton.rs"),
+        include_str!("species.rs"),
+        include_str!("texture.rs"),
+        include_str!("../../forja_assets/src/lod.rs"),
+    ] {
+        k = k.str(src);
+    }
+    k = k.u64(opt.variants as u64).u64(opt.seed).str(&format!("{:?}", opt.season));
+    for (sp, pr) in groups {
+        k = k.str(sp).str(&format!("{pr:?}")).str(&format!("{:?}", lib.get(sp)));
+    }
+    k.finish()
+}
+
+const SEASONS: [Season; 4] = [Season::Summer, Season::Spring, Season::Autumn, Season::Winter];
+const PRUNINGS: [Pruning; 5] = [Pruning::Natural, Pruning::Pollard, Pruning::Lollipop, Pruning::Lifted, Pruning::Trimmed];
+
+fn write_forest(built: &[Vec<TreeAsset>]) -> Option<Vec<u8>> {
+    let mut w = forja_assets::cache::Writer::new();
+    w.usize(built.len());
+    for list in built {
+        w.usize(list.len());
+        for t in list {
+            w.str(&t.species);
+            w.u64(t.seed);
+            let p = &t.params;
+            w.f32(p.age);
+            w.f32(p.size);
+            w.u8(SEASONS.iter().position(|s| *s == p.season)? as u8);
+            w.f32(p.health);
+            w.u8(p.pruning.map_or(Some(255), |pr| PRUNINGS.iter().position(|x| *x == pr).map(|i| i as u8))?);
+            w.bool(p.bake_impostor);
+            if !w.scene(&t.scene) {
+                return None;
+            }
+            w.usize(t.wind.len());
+            for v in &t.wind {
+                w.usize(v.len());
+                w.f32s(v);
+            }
+            w.vec3(t.capsule.a);
+            w.vec3(t.capsule.b);
+            w.f32(t.capsule.radius);
+            w.f32(t.height);
+            w.vec3(t.crown_center);
+            w.vec3(t.crown_radii);
+            for n in t.lod_triangles {
+                w.usize(n);
+            }
+            w.vec3(t.billboard.center);
+            w.f32(t.billboard.half);
+            let st = &t.stats;
+            for n in [st.stems, st.cards, st.fruits, st.fronds] {
+                w.usize(n);
+            }
+            w.f32(st.ms);
+        }
+    }
+    Some(w.finish())
+}
+
+fn read_forest(mut r: forja_assets::cache::Reader) -> Option<Vec<Vec<TreeAsset>>> {
+    let n = r.usize()?;
+    let mut out = Vec::new();
+    for _ in 0..n.min(4096) {
+        let m = r.usize()?;
+        let mut list = Vec::new();
+        for _ in 0..m.min(4096) {
+            let species = r.str()?;
+            let seed = r.u64()?;
+            let (age, size) = (r.f32()?, r.f32()?);
+            let season = *SEASONS.get(r.u8()? as usize)?;
+            let health = r.f32()?;
+            let pruning = match r.u8()? {
+                255 => None,
+                i => Some(*PRUNINGS.get(i as usize)?),
+            };
+            let params = Params { age, size, season, health, pruning, bake_impostor: r.bool()? };
+            let scene = r.scene()?;
+            let nw = r.usize()?;
+            let mut wind = Vec::new();
+            for _ in 0..nw.min(64) {
+                let k = r.usize()?;
+                wind.push((0..k.min(1 << 26)).map(|_| r.f32()).collect::<Option<Vec<f32>>>()?);
+            }
+            let capsule = Capsule { a: r.vec3()?, b: r.vec3()?, radius: r.f32()? };
+            let height = r.f32()?;
+            let (crown_center, crown_radii) = (r.vec3()?, r.vec3()?);
+            let lod_triangles = [r.usize()?, r.usize()?, r.usize()?];
+            let billboard = Billboard { center: r.vec3()?, half: r.f32()? };
+            let stats = Stats { stems: r.usize()?, cards: r.usize()?, fruits: r.usize()?, fronds: r.usize()?, ms: r.f32()? };
+            list.push(TreeAsset { species, seed, params, scene, wind, capsule, height, crown_center, crown_radii, lod_triangles, billboard, stats });
+        }
+        out.push(list);
+    }
+    r.at_end().then_some(out)
 }
 
 impl CityForest {
