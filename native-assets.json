@@ -32,18 +32,18 @@
       "mime": "application/javascript"
     },
     "/drive-ink-app-v5.js": {
-      "sha256": "e0879841f69b6f3dfde2d48719f8684c3fc9e075977f7a5d08bfca67fbc51afd",
-      "size": 13099,
+      "sha256": "c7b6c505af12efb0a0535ffb3840c2ea91323bacb47f90c7f135b0079ce486ba",
+      "size": 13368,
       "mime": "application/javascript"
     },
     "/drive-ink-journal-v5.js": {
-      "sha256": "6a21b5eb5d0da642e050cf5aa2bd68e95839d96e1fc86ce79a07688ed301cf2e",
-      "size": 20166,
+      "sha256": "df004667c3aec46e31cefbd7540ad5de631f5092735b80cc121f44a550b4ef38",
+      "size": 20209,
       "mime": "application/javascript"
     },
     "/drive-live-preview-v5.js": {
-      "sha256": "66c1672d76e86b358e1c0698b8f68d73adbcb372ea6711d476bfcb7769ef7462",
-      "size": 9005,
+      "sha256": "7da285e7f20a5b15b6e2bf105bb86d38b0ffbaa3562106258f2d0f112f9bb738",
+      "size": 10642,
       "mime": "application/javascript"
     },
     "/icons/welcome-pages.svg": {

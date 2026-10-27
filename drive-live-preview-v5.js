@@ -22,14 +22,39 @@
             if(old&&packet.sequence<=old.sequence)return;
             const offset=Number(packet.offset)||0;
             if(offset<0||offset+packet.points.length>24000)return;
-            const points=old?.points||[];
+            // Final batches may contain a shorter/refined path. Start from
+            // that geometry rather than retaining the preview's stale tail.
+            const points=packet.finalBatch&&offset===0?[]:(old?.points||[]);
             for(let i=0;i<packet.points.length;i++)points[offset+i]=packet.points[i];
+            if(packet.finalBatch&&Number.isSafeInteger(packet.totalPoints)&&packet.totalPoints>=0)
+                points.length=Math.min(24000,packet.totalPoints);
             if(packet.cancel)points.length=0;
             this.paths.set(key,{...packet,offset:0,points,updatedAt:Date.now()});
             this.frame++;
             for(const [id,path]of this.paths)if(Date.now()-path.updatedAt>15000)this.paths.delete(id);
             while(this.paths.size>24)this.paths.delete(this.paths.keys().next().value);
             this.scheduleFrame();
+        }
+        retireConfirmed(operations){
+            if(this.stopped||!this.paths.size||!Array.isArray(operations))return;
+            const confirmed=new Map();
+            for(const encoded of operations){
+                let op;try{op=JSON.parse(encoded);}catch(_){continue;}
+                if(op.kind==='stroke'&&op.stroke?.id)confirmed.set(op.stroke.id,op.stroke.syncStamp);
+                for(const page of op.pages||[])for(const stroke of page.strokes||[])
+                    if(stroke?.id)confirmed.set(stroke.id,stroke.syncStamp);
+            }
+            let changed=false;
+            for(const [key,path]of this.paths){
+                if(!path.final||!confirmed.has(path.strokeId))continue;
+                const stamp=confirmed.get(path.strokeId);
+                if(stamp?.clock!==path.syncStamp?.clock||stamp?.actor!==path.syncStamp?.actor)continue;
+                this.paths.delete(key);changed=true;
+            }
+            // The durable journal is now the source of the finished stroke.
+            // Keep unconfirmed/unfinished paths intact even if another write
+            // completed out of order. No local or remote ink is deleted here.
+            if(changed){this.frame++;this.scheduleFrame();}
         }
         scheduleFrame(){
             if(this.stopped||this.frameTimer||this.writing||this.sentFrame===this.frame)return;
@@ -41,7 +66,10 @@
             this.writing=true;this.lastFrameAt=Date.now();
             try{
                 const frame=this.frame;
-                const packets=[...this.paths.values()].map(path=>({...path,points:path.points.slice(0, path.points.findIndex(point=>!point)<0?path.points.length:path.points.findIndex(point=>!point))}));
+                const packets=[...this.paths.values()].map(path=>{
+                    const gap=path.points.findIndex(point=>!point);
+                    return {...path,points:path.points.slice(0,gap<0?path.points.length:gap)};
+                });
                 const raw=JSON.stringify({v:1,docId:this.docId,actor:this.actor,frame,at:Date.now(),packets});
                 if(raw.length>MAX_BYTES)throw new Error('Live frame is too large; the complete stroke stays in the durable journal');
                 const folder=await this.ensureFolder();
