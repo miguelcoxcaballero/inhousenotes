@@ -19,6 +19,29 @@ catastro_refcat = { value = "5531704YJ2753B", source = "https://www1.sedecatastr
 catastro_built = { value = 1750, source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5531704&rc2=YJ2753B", note = "Catastro dateOfConstruction (often the last major works)" }
 catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5531704&rc2=YJ2753B" }
 catastro_floor_area = { value = 1814.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5531704&rc2=YJ2753B", note = "Catastro officialArea (gross floor area)" }
+plan_source = { value = "OSM way 514601809 (outline) + Catastro 5531704YJ2753B parts", source = "https://www.openstreetmap.org/way/514601809", note = "checked on the IGN PNOA orthophoto (WMS pnoa-ma, CC BY 4.0, 0.1 m/px): nave eaves z -5.6 (x -16) / 9.8-12 (south), apse hips converging at (20.5, 4), south chapel tiles z 10-14.5, pavilion shadows at x -4, 1, 6 and the east corner; model footprint IoU 0.99 with OSM, 0.875 with Catastro" }
+south_front_length = { value = 23.67, unit = "m", source = "OSM way 514601809 nodes (-12.17, 12.7) to (11.16, 16.69)", note = "from the tower SE corner to the neighbour (Pl. de Sant Nicolau); azimuth of the facade normal 189.7 deg" }
+west_front_length = { value = 13.2, unit = "m", source = "OSM way 514601809 nodes (-17.45, -4.93), (-18.29, 1.9), (-18.55, 5.0) + 3.2 m strip in front of the tower", note = "south end projects ~0.9 m in front of the tower west face (photos 07, 09)" }
+nave_plan = { value = "north wall z -5.55 (x -16.5) to -2.2 (x 20); south wall z 9.45 (x -10.7) to 12.0 (x 20.3); polygonal apse to x 26", source = "PNOA + Catastro parts 7, 8, 10", note = "nave + apse ~43 x 15.5 m outside" }
+tower_plan = { value = "6.6 x 6.5 m, centre (-14.47, 8.8), sides parallel to the south front (9.7 deg)", source = "bundle adjustment of the tower corners (5 photos) and PNOA top (x -17.5..-11.8)", note = "OSM part 1485420318 is 7.2 x 6.9 m about 1 m further west; the photo solutions put the SW corner at x -17.2..-18.3" }
+method_heights = { value = "constrained bundle adjustment", source = "scratchpad ba.py: Catastro facade photo (Canon SX270 HS, 4.5 mm -> f = 1167 px from EXIF, fixed), Commons photos 04, 07, 14 (f free with prior), eye-height prior 1.6 +- 0.3 m; 49 observations, shared unknown levels, facade positions and tower plan", note = "rms 8 / 11 / 15 / 20 px per photo; spread between solution variants (tower plan free / constrained) given as +-" }
+tower_stone_stage_top = { value = 14.0, unit = "m", source = "bundle adjustment (13.8 / 14.2 in two variants, +-0.5)", note = "ashlar base, also the top of the west front" }
+tower_shaft_top = { value = 21.9, unit = "m", source = "bundle adjustment (21.6 / 22.2, +-0.8)", note = "plain brick shaft, bottom of the red-and-white frieze" }
+tower_bell_cornice_top = { value = 30.7, unit = "m", source = "bundle adjustment (30.3 / 31.2, +-1.1)" }
+tower_pinnacle_tips = { value = 35.2, unit = "m", source = "bundle adjustment (34.75 / 35.7, +-1.3)", note = "green glazed corner spirelets" }
+tower_lantern_top = { value = 43.4, unit = "m", source = "bundle adjustment (42.8 / 43.9, +-1.6)", note = "top of the octagonal two-storey lantern (1755), base of the iron cross" }
+tower_cross_top = { value = 46.9, unit = "m", source = "bundle adjustment (46.25 / 47.5, +-1.7)", note = "no published height found (Wikipedia es/ca, campaners.com unreachable)" }
+south_front_cornice = { value = 9.0, unit = "m", source = "bundle adjustment: cornice top 8.77-9.04 +- 0.3, cornice line 9.17-9.43", note = "cresting to ~9.75 m, pavilions to ~11.5 m" }
+south_front_plinth = { value = 1.66, unit = "m", source = "bundle adjustment (1.66-1.71 +- 0.07)", note = "limestone plinth" }
+south_portal = { value = "centre 14.1 m from the tower corner, opening 1.9 x 4.5 m", source = "bundle adjustment (sp 13.97-14.24 +- 0.3, apex 4.46-4.58 +- 0.15); width from photo 06 scaled on the plinth" }
+south_windows = { value = "narrow lancet at u 8.5 (sill 3.05 m), two-light window at u 18.4 (sill 3.1 m)", source = "bundle adjustment (s 8.3-8.8 +- 0.5, 18.4-18.5 +- 0.2; sills 3.0-3.2 +- 0.1)" }
+west_portal = { value = "opening 2.7 x 6.9 m, outer archivolt apex ~8.6 m, centre 4.1 m from the wing corner", source = "photo 12 (Joanbanjo), 94 px/m on the door", note = "15th-c. Gothic portal with Baroque tympanum relief" }
+rose_window = { value = "diameter ~3.8 m with ring, centre ~11.5 m", source = "photos 03, 10, 13 against the west front top (14.0 m)" }
+nave_eave = { value = 13.8, unit = "m", source = "estimated: just under the west front top (14.0); low roof visible only ~1.5 m above the west parapet (photos 10, 13)" }
+west_wing = { value = 13.0, unit = "m", source = "photo 03: top level with the west front north end", note = "parish wing with Baroque portal (Catastro part 5)" }
+six_chapels_each_side = { value = "single nave, six bays, six chapels between the buttresses each side, polygonal apse", source = "https://es.wikipedia.org/wiki/Iglesia_de_San_Nicol%C3%A1s_de_Bari_y_San_Pedro_M%C3%A1rtir" }
+neo_gothic_front = { value = "1861-64, Timoteo Calvo", source = "https://ca.wikipedia.org/wiki/Esgl%C3%A9sia_de_Sant_Nicolau_(Val%C3%A8ncia)" }
+tower_stages = { value = "square, three bodies: stone to a cornice, brick to the bell chamber, bell chamber with one arch per face between pilasters, balustrade and two-stage lantern", source = "https://ca.wikipedia.org/wiki/Esgl%C3%A9sia_de_Sant_Nicolau_(Val%C3%A8ncia)" }
 catastro_floors_max = { value = 4, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 8 parts" }
 
 [[photo]]
@@ -30,8 +53,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/02_Iglesia_de_San_Nicolas_de_Valencia_01.jpg"
@@ -43,8 +66,8 @@ width = 1280
 height = 960
 camera = [-169.62, 43.58]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/03_At_Valencia_2025_508.jpg"
@@ -57,8 +80,8 @@ height = 1707
 camera = [-29.49, 18.21]
 heading = 18.8
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/04_Exterior_de_la_iglesia_de_San_Nicolas_Bari_y_San_Pedro_Marti.jpg"
@@ -71,8 +94,8 @@ height = 1707
 camera = [5.07, 30.43]
 heading = 302.8
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/05_Tanques_antimiccio_Esglesia_de_Sant_Nicolau_4725.jpg"
@@ -85,8 +108,8 @@ height = 1707
 camera = [7.52, 17.14]
 heading = 309.4
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/06_Facana_neogotica_de_l_esglesia_de_Sant_Nicolau_de_Valencia.jpg"
@@ -97,8 +120,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/07_Campanario_de_la_Iglesia_de_San_Nicolas_Valencia_01.jpg"
@@ -109,8 +132,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 2011
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/08_Exterior_of_Church_of_Sant_Nicolau_Valencia_01.jpg"
@@ -133,8 +156,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1933
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/10_Igrexa_de_San_Nicolas_de_Bari_e_San_Pedro_Martir.jpg"
@@ -146,8 +169,8 @@ width = 1280
 height = 853
 camera = [-15.51, 3.81]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/11_463_Esglesia_de_Sant_Nicolau_i_Sant_Pere_Martir_Valencia_fac.jpg"
@@ -158,8 +181,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/12_Portades_de_l_esglesia_de_Sant_Nicolau_de_Valencia.jpg"
@@ -170,8 +193,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/13_Esglesia_de_Sant_Nicolau_52043235255.jpg"
@@ -182,8 +205,8 @@ license = "CC BY-SA 2.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/14_Plaza_de_San_Nicolas_Valencia_04.jpg"
@@ -194,8 +217,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/15_Valencia_Iglesia_de_Sant_Nicolau_02.jpg"
@@ -218,8 +241,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
 
 [[photo]]
 file = "photos/catastro_5531704YJ2753B.jpg"
@@ -230,8 +253,8 @@ license = "Catastro open data (attribution required)"
 width = 1200
 height = 1600
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[plan]]
 file = "plans/01_1_30_IGLESIA_DE_SAN_NICOLAS_DE_BARI_Y_SAN_PEDRO_MARTIR_firma.jpg"
@@ -304,3 +327,8 @@ notes = "Wikidata P856"
 url = "https://eduwp.edu.gva.es/patrimonio-cultural/ficha-inmueble.php?id=1411"
 title = "Described at"
 notes = "Wikidata P973"
+
+[[reference]]
+url = "https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=OI.OrthoimageCoverage&CRS=EPSG:25830&BBOX=725411.155,4372870.99,725501.155,4372930.99&WIDTH=900&HEIGHT=600&FORMAT=image/jpeg"
+title = "IGN PNOA orthophoto (CC BY 4.0, scne.es)"
+notes = "0.1 m/px around the church; used for the roof edges, apse hips, pavilion shadows and the tower top"
