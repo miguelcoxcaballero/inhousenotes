@@ -46,6 +46,19 @@ pub fn cylinder(b: &mut Builder, c: &Cylinder, cone: bool, sc: &Scope, o: &mut O
     }
     let r1 = c.radius_top.unwrap_or(if cone { 0.0 } else { c.radius });
     let seg = b.user_segs(c.segments, b.segs(c.radius.max(r1), 8, 64), 3, 512, "segments")?;
+    if !c.openings.is_empty() {
+        // A wall with openings: a round (or faceted) mass on the circle.
+        let axis = e - a;
+        if cone || (r1 - c.radius).abs() > 1e-4 || axis.x.abs() + axis.z.abs() > 1e-3 * axis.length() || axis.y <= 0.0 {
+            return Err(Error::msg("cylinder `openings` need a vertical, straight cylinder (no cone, `radius_top` or tilted `from`/`to`)"));
+        }
+        let shape = Shape::new(poly::regular(Vec2::new(a.x, a.z), c.radius, seg, 0.0));
+        let ops: Vec<&Openings> = c.openings.iter().collect();
+        let inner = Scope { parent: Some(shape.clone()), ..sc.clone() };
+        let top = c.caps.then_some(sc.mat);
+        super::masses::prism_with_facades(b, &shape, a.y, e.y, 0.0, !c.faceted, top, c.caps && a.y > 0.05, &ops, &inner, o)?;
+        return Ok(());
+    }
     let p = o.geo.get(sc.mat);
     if c.faceted {
         let axis = (e - a).normalize();
@@ -284,6 +297,14 @@ pub fn loft(_b: &mut Builder, l: &Loft, sc: &Scope, o: &mut Out) -> Result<()> {
                 mesh::planar_shape(&mut p, &s2, &plane, false, Vec2::ZERO);
             }
         }
+    }
+    if l.flip {
+        super::masses::flip_prim(&mut p);
+    }
+    if l.double_sided {
+        let mut back = p.clone();
+        super::masses::flip_prim(&mut back);
+        p.append(&back, &Mat4::IDENTITY);
     }
     o.geo.get(sc.mat).append(&p, &Mat4::IDENTITY);
     Ok(())

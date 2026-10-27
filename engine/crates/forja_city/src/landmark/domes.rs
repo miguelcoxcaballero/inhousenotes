@@ -162,6 +162,7 @@ fn ring_openings(kind: OpeningKind, arch: ArchKind, infill: Infill, w: f32, h: f
         enabled: true,
         collide: None,
         note: None,
+        solid: None,
         on: None,
         edges: EdgeSel(edges.into_iter().map(EdgeTok::Index).collect()),
         // One opening per drum / lantern face, even on round drums.
@@ -236,7 +237,8 @@ pub fn dome(b: &mut Builder, d: &Dome, sc: &Scope, o: &mut Out) -> Result<()> {
         } else {
             Vec::new()
         };
-        let refs: Vec<&Openings> = ops.iter().collect();
+        let mut refs: Vec<&Openings> = ops.iter().collect();
+        refs.extend(dr.openings.iter());
         masses::prism_with_facades(b, &shape, y, y + dr.height, 0.0, round, Some(dm), y > 0.05, &refs, &ds, o)?;
         if dr.pilasters && !round {
             for q in &shape.outer {

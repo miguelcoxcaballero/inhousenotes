@@ -310,3 +310,230 @@ fn closed_walls_any_winding_and_curved_arcades() {
     assert_sane(&m, "round arcade");
     assert!(m.warnings.is_empty(), "{:?}", m.warnings);
 }
+
+// ------------------------------------------------- modelling feedback
+
+/// Nearest hit of a ray on a triangle list (both sides).
+fn ray_hit(pos: &[Vec3], idx: &[u32], o: Vec3, d: Vec3) -> Option<f32> {
+    let mut best: Option<f32> = None;
+    for t in idx.chunks_exact(3) {
+        let (a, b, c) = (pos[t[0] as usize], pos[t[1] as usize], pos[t[2] as usize]);
+        let (e1, e2) = (b - a, c - a);
+        let p = d.cross(e2);
+        let det = e1.dot(p);
+        if det.abs() < 1e-9 {
+            continue;
+        }
+        let s = o - a;
+        let u = s.dot(p) / det;
+        let q = s.cross(e1);
+        let v = d.dot(q) / det;
+        let tt = e2.dot(q) / det;
+        if u >= -1e-5 && v >= -1e-5 && u + v <= 1.0 + 1e-5 && tt > 1e-4 && best.is_none_or(|x| tt < x) {
+            best = Some(tt);
+        }
+    }
+    best
+}
+
+fn lod_mesh(m: &Model, mat: &str) -> forja_assets::MeshData {
+    let id = m.palette_id(mat).unwrap();
+    let mut p = m.geo.prims[&id].clone();
+    super::weld(&mut p);
+    let mut mesh = p.into_mesh(0);
+    super::lods(&mut mesh, 4);
+    mesh
+}
+
+#[test]
+fn distance_lods_keep_window_openings() {
+    // A long facade with 4 x 24 windows, balconies and pilasters: every
+    // window still opens in every LOD (a ray through its centre passes
+    // the facade plane) and the balconies keep their slabs.
+    let text = format!(
+        "{HEAD}[[element]]\ntype = \"mass\"\nname = \"body\"\npolygon = [[0,0],[96,0],[96,12],[0,12]]\nheight = 16\ncornice = true\n[[element.openings]]\nedges = \"facing:s\"\nkind = \"window\"\narch = \"segmental\"\nwidth = 1.2\nheight = 2.0\nlevels = [1.5, 5, 8.5, 12]\nbays = {{ count = 24, margin = 2 }}\nsurround = true\nsill = true\nbalcony = {{ depth = 0.6, railing = \"stone\" }}\n[[element]]\ntype = \"array\"\nmode = \"linear\"\ncount = 25\nstep = [3.83333, 0, 0]\n[[element.children]]\ntype = \"pilaster\"\nat = [2.0, 0, 12]\nfacing = \"s\"\nheight = 15\nwidth = 0.5\n"
+    );
+    let m = build_text(&text, None);
+    let mesh = lod_mesh(&m, "stone");
+    assert!(mesh.triangle_count() > 3000);
+    // No corner of a reveal, sill, surround, balcony or pilaster is
+    // collapsed away in any LOD.
+    let locks = super::crease_locks(&mesh.positions, &mesh.normals, super::LOD_CREASE);
+    let base: std::collections::HashSet<u32> = mesh.indices.iter().copied().filter(|v| locks[*v as usize]).collect();
+    for (l, lod) in mesh.lods.iter().enumerate() {
+        let used: std::collections::HashSet<u32> = lod.iter().copied().collect();
+        let lost = base.iter().filter(|v| !used.contains(v)).count();
+        assert!(lost * 10000 <= base.len(), "LOD {}: {lost} of {} feature vertices collapsed", l + 1, base.len());
+    }
+    for (l, lod) in std::iter::once(&mesh.indices).chain(mesh.lods.iter()).enumerate() {
+        for lv in [1.5f32, 5.0, 8.5, 12.0] {
+            for k in 0..24 {
+                let cx = 2.0 + 92.0 * (k as f32 + 0.5) / 24.0;
+                let o = Vec3::new(cx, lv + 1.5, 20.0);
+                let t = ray_hit(&mesh.positions, lod, o, Vec3::new(0.0, 0.0, -1.0));
+                assert!(t.is_some_and(|t| 20.0 - t < 11.9), "LOD {l}: window {k} at level {lv} is closed ({t:?})");
+                // The balcony slab under it is still there.
+                let b = ray_hit(&mesh.positions, lod, Vec3::new(cx, lv + 0.5, 12.3), Vec3::NEG_Y);
+                assert!(b.is_some_and(|t| t < 0.7), "LOD {l}: balcony {k} at level {lv} is gone ({b:?})");
+            }
+        }
+    }
+    // Smooth surfaces still simplify.
+    let dome = build_text(&format!("{HEAD}[[element]]\ntype = \"dome\"\ncenter = [0, 0]\ny = 10\nradius = 8\nsegments = 160\nmaterial = \"stone\"\n"), None);
+    let dm = lod_mesh(&dome, "stone");
+    assert!(dm.lods.len() >= 2, "{}", dm.lods.len());
+    assert!(dm.lods.last().unwrap().len() * 3 < dm.indices.len(), "{} -> {}", dm.indices.len() / 3, dm.lods.last().unwrap().len() / 3);
+}
+
+#[test]
+fn crease_vertices_are_locked() {
+    let pos = [Vec3::ZERO, Vec3::ZERO, Vec3::X, Vec3::X, Vec3::Y];
+    let nrm = [Vec3::Z, Vec3::X, Vec3::Z, Vec3::new(0.0, 0.1, 1.0).normalize(), Vec3::Z];
+    let l = super::crease_locks(&pos, &nrm, 30.0);
+    assert_eq!(l, vec![true, true, false, false, false]);
+}
+
+#[test]
+fn open_surfaces_stay_out_of_the_plan_slices() {
+    let text = format!(
+        "{HEAD}[[element]]\ntype = \"mass\"\npolygon = [[0,0],[10,0],[10,8],[0,8]]\nheight = 6\n[[element]]\ntype = \"shell\"\nsurface = \"cylinder\"\nradii = [3, 3, 3]\ncenter = [20, 0, 4]\nsolid = false\n[[element]]\ntype = \"box\"\nmin = [30, 0, 0]\nmax = [32, 3, 2]\n"
+    );
+    let m = build_text(&text, None);
+    assert_eq!(m.col_groups.len(), 2, "mass and box only");
+    let grouped: usize = m.col_groups.iter().map(|g| g.1 - g.0).sum();
+    assert!(m.collider.len() > grouped, "the open shell still collides");
+}
+
+#[test]
+fn reference_heights_replace_tag_checks() {
+    let fp = Footprint::parse(r#"{"anchor":[0,0],"outlines":[{"id":"osm:way/1","tags":{"building:levels":"2"},"outer":[[0,0],[10,0],[10,8],[0,8]]}],"parts":[{"id":"osm:way/2","tags":{"building:levels":"9"},"outer":[[0,0],[4,0],[4,4],[0,4]]}]}"#, "fp").unwrap();
+    let text = format!(
+        "{HEAD}[reference_heights]\n\"outline:0\" = 14\n\"way/2\" = {{ height = 30, tolerance = 2, source = \"survey\" }}\nspire = 21.5\nnothing = 3\n[[element]]\ntype = \"mass\"\npolygon = \"outline:0\"\nheight = 14\n[[element]]\ntype = \"box\"\nname = \"spire\"\nmin = [1, 0, 1]\nmax = [2, 21.4, 2]\n"
+    );
+    let m = build_text(&text, Some(&fp));
+    let j = super::metrics::compute(&m, Some(&fp), "t", 1.0);
+    let o = &j["outlines"][0];
+    assert_eq!(o["height_source"], "reference", "{o}");
+    assert_eq!(o["height_check"], "ok", "{o}");
+    let p = &j["parts"][0];
+    assert_eq!(p["reference_source"], "survey");
+    assert_eq!(p["height_check"], "model too low", "{p}");
+    let w: Vec<String> = j["warnings"].as_array().unwrap().iter().map(|v| v.as_str().unwrap().to_string()).collect();
+    // The level-based (2 x 3.2 m) tag check of the outline is gone.
+    assert!(!w.iter().any(|x| x.contains("outline:0") && x.contains("tagged")), "{w:?}");
+    assert!(w.iter().any(|x| x.contains("part:0") && x.contains("measured reference height 30.0")), "{w:?}");
+    assert!(w.iter().any(|x| x.contains("`nothing` matches no")), "{w:?}");
+    let rc = &j["reference_checks"][0];
+    assert_eq!(rc["element"], "spire");
+    assert_eq!(rc["height_check"], "ok");
+}
+
+#[test]
+fn sunken_areas_cut_the_ground() {
+    let text = format!(
+        "{HEAD}[ground]\ncut = [[[30, 0], [34, 0], [34, 4], [30, 4]]]\n[[element]]\ntype = \"mass\"\npolygon = [[0,0],[10,0],[10,8],[0,8]]\nheight = 6\n[[element]]\ntype = \"sunken\"\npolygon = [[-6,-6],[16,-6],[16,-2],[-6,-2]]\ndepth = 2.5\nkerb = 0.4\n[[element]]\ntype = \"moat\"\npolygon = \"rect:4x4\"\ntransform = {{ translate = [50, 0, 0] }}\n"
+    );
+    let m = build_text(&text, None);
+    assert_sane(&m, "sunken");
+    assert_eq!(m.ground_cuts.len(), 3);
+    // The moat's cut follows its transform.
+    assert!(m.ground_cuts.iter().any(|c| c.contains(forja_math::Vec2::new(50.0, 0.0))));
+    let (mn, _) = super::mesh::bounds(&m.geo).unwrap();
+    assert!((mn.y + 3.0).abs() < 1e-3, "{mn:?}");
+    let j = super::metrics::compute(&m, None, "t", 1.0);
+    assert!(!j["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap().contains("below the ground")), "{}", j["warnings"]);
+    // Pit walls face into the pit: the wall at z = -6 faces +z.
+    let id = m.palette_id("stone").unwrap();
+    let p = &m.geo.prims[&id];
+    let side: Vec<f32> = p.positions.iter().zip(&p.normals).filter(|(q, n)| (q.z + 6.0).abs() < 1e-4 && q.y < -1.0 && n.z.abs() > 0.9).map(|(_, n)| n.z).collect();
+    assert!(!side.is_empty() && side.iter().all(|z| *z > 0.9), "{side:?}");
+}
+
+#[test]
+fn edge_materials_split_facades() {
+    let text = format!(
+        "{HEAD}[[element]]\ntype = \"mass\"\npolygon = [[0,0],[12,0],[12,8],[0,8]]\nheight = 9\nedge_materials = [{{ edges = \"facing:n\", material = \"brick\" }}]\n[[element.openings]]\nkind = \"window\"\nbays = 2\n"
+    );
+    let m = build_text(&text, None);
+    let brick = m.palette_id("brick").unwrap();
+    let p = &m.geo.prims[&brick];
+    assert!(p.tri_count() > 10);
+    // The brick wall is the north face (z = 0, facing -z) with its reveals.
+    let face = p.normals.iter().filter(|n| n.z < -0.99).count();
+    assert!(face > 3);
+    assert!(p.positions.iter().all(|q| q.z < 1.0), "brick only on the north side");
+}
+
+#[test]
+fn stepped_and_raked_wall_tops() {
+    let text = format!(
+        "{HEAD}[[element]]\ntype = \"wall\"\npath = [[0,0],[10,0],[10,6]]\ny0 = 0\nthickness = 0.5\ntop_profile = [[0, 6], [5, 6], [5, 4], [10, 4], [16, 2]]\n[[element.openings]]\nkind = \"arch\"\nwidth = 1.2\nheight = 2.4\nbays = 1\n"
+    );
+    let m = build_text(&text, None);
+    assert_sane(&m, "stepped wall");
+    let id = m.palette_id("stone").unwrap();
+    let p = &m.geo.prims[&id];
+    let down = |x: f32, z: f32| ray_hit(&p.positions, &p.indices, Vec3::new(x, 10.0, z), Vec3::NEG_Y).map(|t| 10.0 - t);
+    assert!((down(2.5, 0.0).unwrap() - 6.0).abs() < 1e-3, "{:?}", down(2.5, 0.0));
+    assert!((down(7.5, 0.0).unwrap() - 4.0).abs() < 1e-3, "{:?}", down(7.5, 0.0));
+    // The raked leg drops from 4 m to 2 m along the second segment
+    // (s = 10..16): at s = 14.5 it is 2.5 m high.
+    let r = down(10.0, 4.5).unwrap();
+    assert!((r - 2.5).abs() < 0.15, "{r}");
+    // The step riser at s = 5 faces the lower side.
+    let near: Vec<(Vec3, Vec3)> = p.normals.iter().zip(&p.positions).filter(|(_, q)| q.z.abs() < 0.3 && q.y > 3.9).map(|(n, q)| (*n, *q)).collect();
+    assert!(near.iter().any(|(n, q)| (q.x - 5.0).abs() < 1e-3 && n.x > 0.99 && q.y > 4.0), "{near:?}");
+}
+
+#[test]
+fn openings_on_cylinders_and_drums() {
+    let text = format!(
+        "{HEAD}[[element]]\ntype = \"cylinder\"\nat = [0, 0, 0]\nradius = 4\nheight = 8\n[[element.openings]]\nkind = \"window\"\nlevels = [3]\nbays = {{ azimuth = [0, 90, 180, 270] }}\n[[element]]\ntype = \"dome\"\ncenter = [20, 0]\ny = 8\nradius = 4\ndrum = {{ height = 3, openings = [{{ kind = \"oculus\", width = 0.8, levels = [9], bays = {{ count = 6 }} }}] }}\n"
+    );
+    let m = build_text(&text, None);
+    assert_sane(&m, "cylinder openings");
+    let glass = m.palette_id("glass").unwrap();
+    let g = &m.geo.prims[&glass];
+    // Four windows on the cylinder (x < 10) and oculi on the drum.
+    assert!(g.positions.iter().any(|q| q.x < 10.0) && g.positions.iter().any(|q| q.x > 10.0));
+    let bad = "[landmark]\nname = \"t\"\n[[element]]\ntype = \"cone\"\nheight = 3\n[[element.openings]]\nkind = \"window\"\n";
+    let spec = super::parse::parse_spec(bad, "t").unwrap();
+    assert!(build::build(&spec, None, bad, "t").is_err());
+}
+
+#[test]
+fn relief_panels_and_two_sided_lofts() {
+    for shape in ["rect", "arched", "circle", "oval", "shield", "cartouche"] {
+        for relief in ["none", "boss", "panel", "figure"] {
+            let text = format!("{HEAD}[[element]]\ntype = \"plaque\"\nat = [0, 3, 0]\nfacing = \"s\"\nsize = [1.2, 1.6]\nshape = \"{shape}\"\nrelief = \"{relief}\"\nfield_material = \"marble\"\n");
+            let m = build_text(&text, None);
+            assert_sane(&m, &format!("relief {shape} {relief}"));
+            let (mn, mx) = super::mesh::bounds(&m.geo).unwrap();
+            assert!(mn.y >= 2.85 && mx.y <= 4.75 && mx.z > 0.05 && mn.z > -0.02, "{shape} {relief}: {mn:?} {mx:?}");
+        }
+    }
+    let loft = |extra: &str| format!("{HEAD}[[element]]\ntype = \"loft\"\ncaps = false\nsection = {{ shape = \"ellipse\", size = [2, 1] }}\nstations = [{{ at = [0, 0, 0] }}, {{ at = [0, 0, 6] }}]\n{extra}");
+    let one = build_text(&loft(""), None).geo.tri_count();
+    let two = build_text(&loft("double_sided = true\n"), None).geo.tri_count();
+    assert_eq!(two, one * 2);
+    let a = build_text(&loft(""), None);
+    let b = build_text(&loft("flip = true\n"), None);
+    let (pa, pb) = (a.geo.prims.values().next().unwrap(), b.geo.prims.values().next().unwrap());
+    assert!((pa.normals[0] + pb.normals[0]).length() < 1e-4);
+}
+
+#[test]
+fn horizontal_stripes_and_view_keys_parse() {
+    let text = format!(
+        "{HEAD}[material.bands]\nkind = \"glazed_tiles\"\npattern = \"stripes_h\"\ncolors = [\"#1f4f9c\", \"#f3efe4\"]\n[render]\nhide_context = [3, \"context:4\"]\n[[view]]\nphoto = \"a.jpg\"\nfocal_35mm = \"exif\"\nfix = [\"fov\", \"height\"]\nlevel = true\nupright = true\nshift = [0, 0.1]\neye_height = 1.6\n[[view]]\nshift = \"solve\"\nfocal_35mm = 26\n[[element]]\ntype = \"box\"\nsize = [1, 1, 1]\nmaterial = \"bands\"\n"
+    );
+    let spec = super::parse::parse_spec(&text, "t").unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(spec.view[0].fix, vec!["fov".to_string(), "height".to_string()]);
+    assert_eq!(spec.view[0].focal_35mm, Some(super::spec::Focal::Exif));
+    assert_eq!(spec.view[1].shift, Some(super::spec::ShiftSpec::Solve));
+    assert_eq!(spec.render.hide_context.len(), 2);
+    build_text(&text, None);
+    let bad = format!("{HEAD}[[view]]\nfix = [\"fob\"]\n");
+    let e = super::parse::parse_spec(&bad, "t").unwrap_err().to_string();
+    assert!(e.contains("did you mean `fov`"), "{e}");
+}

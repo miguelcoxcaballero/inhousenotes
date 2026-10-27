@@ -30,6 +30,10 @@ pub struct Facade {
     pub outline: Option<Vec<Vec2>>,
     /// Period of a closed run (round towers): u wraps at this length.
     pub wrap: Option<f32>,
+    /// Stepped or raked top: a polyline in (u, v) from u = 0 to u = len
+    /// (non-decreasing u; equal u = a step) replacing the top edge `v1`
+    /// (which is then the highest point).
+    pub top: Option<Vec<Vec2>>,
 }
 
 impl Facade {
@@ -40,7 +44,24 @@ impl Facade {
         }
     }
 
+    /// Top height of a stepped / raked facade at `u` (the higher side at a step).
+    pub fn top_at(&self, u: f32) -> f32 {
+        let Some(t) = &self.top else { return self.v1 };
+        let mut best = f32::MIN;
+        for w in t.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            if u >= a.x - 1e-5 && u <= b.x + 1e-5 {
+                let y = if (b.x - a.x).abs() < 1e-6 { a.y.max(b.y) } else { a.y + (b.y - a.y) * ((u - a.x) / (b.x - a.x)).clamp(0.0, 1.0) };
+                best = best.max(y);
+            }
+        }
+        if best == f32::MIN { self.v1 } else { best }
+    }
+
     pub fn inside(&self, p: Vec2, eps: f32) -> bool {
+        if self.top.is_some() {
+            return p.x > eps && p.x < self.len - eps && p.y > self.v0 + eps && p.y < self.top_at(p.x) - eps;
+        }
         match &self.outline {
             Some(o) => {
                 let n = o.len();
@@ -214,6 +235,24 @@ pub fn wall_shape(f: &Facade, cuts: &[Vec<Vec2>]) -> (Shape, Vec<String>) {
     (Shape { outer, holes }, warnings)
 }
 
+/// Wall face of a facade minus its cuts: one shape, or several pieces on
+/// a stepped / raked facade (exact boolean of the outline and the cuts).
+pub fn wall_shapes(f: &Facade, cuts: &[Vec<Vec2>]) -> (Vec<Shape>, Vec<String>) {
+    let Some(top) = &f.top else {
+        let (s, w) = wall_shape(f, cuts);
+        return (vec![s], w);
+    };
+    let mut outline = vec![Vec2::new(0.0, f.v0), Vec2::new(f.len, f.v0)];
+    outline.extend(top.iter().rev().copied());
+    let Some(ring) = poly::normalize(&outline, true) else { return (Vec::new(), vec!["a stepped / raked wall top leaves no wall".into()]) };
+    let holes: Vec<Shape> = cuts.iter().filter_map(|c| poly::normalize(c, true)).map(Shape::new).collect();
+    let base = Shape::new(ring);
+    if holes.is_empty() {
+        return (vec![base], Vec::new());
+    }
+    (poly::boolean(std::slice::from_ref(&base), &holes, poly::BoolOp::Difference), Vec::new())
+}
+
 /// Copies of cuts crossing the seam of a closed run, shifted by one
 /// period, so both ends of the developed wall get their part.
 fn wrapped(f: &Facade, cuts: &[Cut]) -> Vec<Cut> {
@@ -241,8 +280,10 @@ fn wrapped(f: &Facade, cuts: &[Cut]) -> Vec<Cut> {
 pub fn build(geo: &mut Geo, f: &Facade, cuts: &[Cut]) -> Vec<String> {
     let cuts = &wrapped(f, cuts)[..];
     let outers: Vec<Vec<Vec2>> = cuts.iter().map(|c| c.outer().to_vec()).collect();
-    let (shape, warnings) = wall_shape(f, &outers);
-    mesh::planar_shape(geo.get(f.mat), &shape, &f.plane, false, Vec2::new(f.uv_off, 0.0));
+    let (shapes, warnings) = wall_shapes(f, &outers);
+    for shape in &shapes {
+        mesh::planar_shape(geo.get(f.mat), shape, &f.plane, false, Vec2::new(f.uv_off, 0.0));
+    }
     for c in cuts {
         reveal(geo, f, c);
         if let Some(bm) = c.back {
@@ -390,9 +431,17 @@ pub const RUN_ANGLE: f32 = 25.0;
 /// `smooth` shades every vertex of a run smoothly (otherwise only those
 /// turning less than 20 degrees).
 pub fn runs_of(shape: &Shape, y0: f32, y1: f32, mat: MatId, run_angle: f32, smooth: bool, skip: &[EdgeRef]) -> Vec<Run> {
+    runs_of_mats(shape, y0, y1, mat, run_angle, smooth, skip, &[])
+}
+
+/// [`runs_of`] with wall materials per edge (`edge_mats`, the rest
+/// `mat`): runs also split where the material changes.
+#[allow(clippy::too_many_arguments)]
+pub fn runs_of_mats(shape: &Shape, y0: f32, y1: f32, mat: MatId, run_angle: f32, smooth: bool, skip: &[EdgeRef], edge_mats: &[(EdgeRef, MatId)]) -> Vec<Run> {
     let mut out = Vec::new();
     for (r, (ring, _)) in shape.rings().enumerate() {
-        ring_runs(ring, r, true, y0, y1, mat, run_angle, smooth, skip, &mut out);
+        let em = |i: usize| edge_mats.iter().rev().find(|(e, _)| e.ring == r && e.i == i).map(|x| x.1).unwrap_or(mat);
+        ring_runs(ring, r, true, y0, y1, &em, run_angle, smooth, skip, &mut out);
     }
     out
 }
@@ -401,12 +450,12 @@ pub fn runs_of(shape: &Shape, y0: f32, y1: f32, mat: MatId, run_angle: f32, smoo
 /// side (free-standing walls). Edge `i` is the segment `i -> i + 1`.
 pub fn path_runs(path: &[Vec2], closed: bool, y0: f32, y1: f32, mat: MatId, run_angle: f32, smooth: bool) -> Vec<Run> {
     let mut out = Vec::new();
-    ring_runs(path, 0, closed, y0, y1, mat, run_angle, smooth, &[], &mut out);
+    ring_runs(path, 0, closed, y0, y1, &|_| mat, run_angle, smooth, &[], &mut out);
     out
 }
 
 #[allow(clippy::too_many_arguments)]
-fn ring_runs(ring: &[Vec2], r: usize, closed_ring: bool, y0: f32, y1: f32, mat: MatId, run_angle: f32, smooth: bool, skip: &[EdgeRef], out: &mut Vec<Run>) {
+fn ring_runs(ring: &[Vec2], r: usize, closed_ring: bool, y0: f32, y1: f32, mat: &dyn Fn(usize) -> MatId, run_angle: f32, smooth: bool, skip: &[EdgeRef], out: &mut Vec<Run>) {
     let flat = Plane::new(Vec3::ZERO, Vec3::X, Vec3::Y);
     let n = ring.len();
     if n < 2 || (closed_ring && n < 3) {
@@ -421,8 +470,9 @@ fn ring_runs(ring: &[Vec2], r: usize, closed_ring: bool, y0: f32, y1: f32, mat: 
     }
     let open: Vec<bool> = (0..n).map(|i| i >= edges_n || skip.contains(&EdgeRef { ring: r, i }) || (ring[(i + 1) % n] - ring[i]).length() < 1e-4).collect();
     let corner = runs::corners(ring, closed_ring, run_angle);
-    // A vertex breaks a run when it is a corner or touches an open edge.
-    let breaks: Vec<bool> = (0..n).map(|i| corner[i] || open[i] || open[(i + n - 1) % n]).collect();
+    // A vertex breaks a run when it is a corner, touches an open edge or
+    // changes the wall material.
+    let breaks: Vec<bool> = (0..n).map(|i| corner[i] || open[i] || open[(i + n - 1) % n] || mat(i) != mat((i + n - 1) % n)).collect();
     let mut chains: Vec<(usize, usize, bool)> = Vec::new();
     if !breaks.iter().any(|b| *b) {
         chains.push((0, n, true));
@@ -465,7 +515,7 @@ fn ring_runs(ring: &[Vec2], r: usize, closed_ring: bool, y0: f32, y1: f32, mat: 
         let end = first + count;
         let end_pos = if end >= n { pos[end - n] + if end - n == 0 { per } else { 0.0 } } else { pos[end] };
         let uv_off = if closed { 0.0 } else { per - end_pos };
-        let facade = Facade { plane: flat, len, v0: y0, v1: y1, uv_off, mat, outline: None, wrap: closed.then_some(len) };
+        let facade = Facade { plane: flat, len, v0: y0, v1: y1, uv_off, mat: mat(first), outline: None, wrap: closed.then_some(len), top: None };
         out.push(Run { facade, bend: Some(Arc::new(bend)), edges });
     }
 }
@@ -482,7 +532,7 @@ mod tests {
     use crate::landmark::spec::ArchKind;
 
     fn facade() -> Facade {
-        Facade { plane: Plane::new(Vec3::ZERO, Vec3::X, Vec3::Y), len: 10.0, v0: 0.0, v1: 6.0, uv_off: 0.0, mat: 0, outline: None, wrap: None }
+        Facade { plane: Plane::new(Vec3::ZERO, Vec3::X, Vec3::Y), len: 10.0, v0: 0.0, v1: 6.0, uv_off: 0.0, mat: 0, outline: None, wrap: None, top: None }
     }
 
     #[test]
