@@ -1213,7 +1213,7 @@ impl Renderer {
         let gtao_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("gtao"), entries: &[depth_entry(0), texture_entry(1), texture_entry(2), uniform_entry(3, wgpu::ShaderStages::FRAGMENT)] });
         let taa_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("taa"),
-            entries: &[texture_entry(0), texture_entry(1), depth_entry(2), sampler_entry(3), uniform_entry(4, wgpu::ShaderStages::FRAGMENT)],
+            entries: &[texture_entry(0), texture_entry(1), depth_entry(2), sampler_entry(3), uniform_entry(4, wgpu::ShaderStages::FRAGMENT), texture_entry(5)],
         });
 
         let fog_apply = wgsl("fog_apply", include_str!("shaders/fog_apply.wgsl"));
@@ -1870,6 +1870,7 @@ impl Renderer {
                 entry(2, &depth),
                 wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.clamp_sampler) },
                 wgpu::BindGroupEntry { binding: 4, resource: self.taa_buf.as_entire_binding() },
+                entry(5, &velocity),
             ],
         });
         let screen_bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1945,7 +1946,7 @@ impl Renderer {
         let tonemap = bind(&resolved, &tu, &bloom[0].0, &exposure);
         let dof_tonemap = bind(&hdr, &tu, &bloom[0].0, &exposure);
         let dof_down = bind(&hdr, &uniforms[0], &dummy, &dummy);
-        let camera = self.camera_fx.targets(&self.device, self.output_format, (width, height), &self.taa_bgl, &resolved, &depth);
+        let camera = self.camera_fx.targets(&self.device, self.output_format, (width, height), &self.taa_bgl, &resolved, &depth, &velocity);
         uniforms.push(tu);
         // Final pass uniform is rewritten each frame (FXAA or sharpening).
         let fu = mk_uniform([1.0 / width as f32, 1.0 / height as f32], [1.0, 0.0, 0.0, 0.0]);
