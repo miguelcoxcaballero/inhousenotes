@@ -241,6 +241,13 @@ function ihnEnsureTabChannel() {
             }
             return;
         }
+        if (event.data?.type === 'drive-ink-hint') {
+            window.InhouseDriveInk?.hint(event.data.fileId,event.data.id,event.data.preview);return;
+        }
+        if (event.data?.type === 'drive-committed') {
+            ihnHandleDriveCommitHint(event.data);
+            return;
+        }
         if (event.data?.type === 'live-stroke') {
             ihnHandleRealtimeStrokePacket(event.data, 'tab');
             return;
@@ -1407,6 +1414,36 @@ function ihnSendControl(peer, payload) {
     }
 }
 
+// A hint only: recipients still fetch Drive's authenticated revision and merge.
+// It never acknowledges a local draft or trusts a peer-supplied document body.
+let ihnDriveCommitHintAt = 0;
+let ihnDriveCommitHintFile = '';
+function ihnHandleDriveCommitHint(message) {
+    if (!message?.fileId || message.fileId !== state.driveFileId
+        || typeof pollDriveRevision !== 'function') return;
+    const now = Date.now();
+    if (ihnDriveCommitHintFile === message.fileId && now - ihnDriveCommitHintAt < 400) return;
+    ihnDriveCommitHintAt = now;
+    ihnDriveCommitHintFile = message.fileId;
+    void pollDriveRevision();
+}
+
+function publishDriveInkHint(fileId,id,preview=false) {
+    if(fileId!==state.driveFileId)return;
+    const message={type:'drive-ink-hint',fileId,id,preview};
+    ihnEnsureTabChannel();
+    try { ihnLiveBroadcastChannel?.postMessage(message); } catch (_) {}
+    ihnLivePeers.forEach(peer=>ihnSendControl(peer,message));
+}
+
+function publishDriveCommitHint(fileId) {
+    if (!fileId || fileId !== state.driveFileId) return;
+    const message = {type:'drive-committed', fileId};
+    ihnEnsureTabChannel();
+    try { ihnLiveBroadcastChannel?.postMessage(message); } catch (_) {}
+    ihnLivePeers.forEach(peer => ihnSendControl(peer, message));
+}
+
 function ihnSendHealthPing(peer, payload = {}) {
     if (!peer || peer.channel?.readyState !== 'open') return 0;
     const at = Date.now();
@@ -1449,6 +1486,7 @@ function ihnSanitizeLiveStrokeStamp(value) {
 
 function ihnSendRealtimeStrokePacket(packet, excludePeerId = '') {
     if (!packet || packet.fileId !== state?.driveFileId) return false;
+    if(!excludePeerId&&packet.type==='live-stroke')window.InhouseDriveInk?.preview(packet);
     ihnRememberRealtimePacket(packet);
     ihnEnsureTabChannel();
     try { ihnLiveBroadcastChannel?.postMessage(packet); } catch (error) {}
@@ -3355,8 +3393,11 @@ function ihnLiveBroadcastRetryDelay(attempt) {
 
 async function ihnBroadcastDocument() {
     if (!ihnLiveBroadcastQueued || !ihnCanEditLiveDocument()) return;
-    if (ihnLiveBroadcastBusy || ihnLiveApplying || hasSmoothInteraction()) {
-        scheduleLiveDocumentBroadcast({ internal: true });
+    // A short lift between letters is not idle time for cloning, hashing and
+    // serializing a complete notebook. Live stroke packets remain immediate.
+    if (ihnLiveBroadcastBusy || ihnLiveApplying || hasSmoothInteraction()
+        || (typeof hasRecentUserActivity === 'function' && hasRecentUserActivity(1200))) {
+        scheduleLiveDocumentBroadcast({ internal: true, delay: 180 });
         return;
     }
     clearTimeout(ihnLiveBroadcastTimer);
@@ -3595,6 +3636,13 @@ async function ihnHandleWireMessage(
             targetPeerId: peerId,
             force: true
         });
+        return;
+    }
+    if (message?.type === 'drive-ink-hint') {
+        window.InhouseDriveInk?.hint(message.fileId,message.id,message.preview);return;
+    }
+    if (message?.type === 'drive-committed') {
+        ihnHandleDriveCommitHint(message);
         return;
     }
     if (message?.type === 'live-stroke') {

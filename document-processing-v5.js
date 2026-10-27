@@ -6,7 +6,29 @@
     const client = new root.InhouseRuntimeCore.WorkerRpcClient(() => new Worker(processorUrl));
     // Checkpoint compression must not queue behind a PDF export.
     const checkpointClient = new root.InhouseRuntimeCore.WorkerRpcClient(() => new Worker(processorUrl));
-    const run = (type, data, options) => (type === 'packInkCheckpoint' || type === 'unpackInkCheckpoint' ? checkpointClient : client).run(type, data, options);
+    async function run(type, data, options = {}) {
+        // Checkpoints keep their own queue but share the editing pause.
+        const target = type === 'packInkCheckpoint' || type === 'unpackInkCheckpoint' ? checkpointClient : client;
+        const epoch = target.epoch;
+        const sessionToken = typeof root.getDocumentSessionToken === 'function' ? root.getDocumentSessionToken() : undefined;
+        const yieldToPen = async () => {
+            if (type !== 'pdfDispose' && typeof root.waitForDocumentBackgroundTurn === 'function') {
+                await root.waitForDocumentBackgroundTurn({signal:options.signal, sessionToken});
+            }
+            if (epoch !== target.epoch) throw new DOMException('Processing interrupted', 'AbortError');
+        };
+        // Gate before structured-cloning large payloads to the worker and
+        // before main-thread continuations consume the finished result.
+        await yieldToPen();
+        const result = await target.run(type, data, options);
+        await yieldToPen();
+        return result;
+    }
+    function interruptForEditing() {
+        const error = new DOMException('Processing paused for editing', 'AbortError');
+        if (client.active) { client.reset(error); facade = null; }
+        if (checkpointClient.active) checkpointClient.reset(error);
+    }
     function reset(error) { client.reset(error); checkpointClient.reset(error); facade = null; }
     let facade = null;
     async function pdfLib(library) {
@@ -79,5 +101,5 @@
         };
         return facade;
     }
-    root.InhouseDocumentProcessing = Object.freeze({ run, reset, pdfLib });
+    root.InhouseDocumentProcessing = Object.freeze({ run, reset, pdfLib, interruptForEditing });
 })(globalThis);
