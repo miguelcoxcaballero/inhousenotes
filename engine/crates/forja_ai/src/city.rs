@@ -113,4 +113,21 @@ mod tests {
         // Moving at well over 1 m/s on average, waits included.
         assert!(st.distance > sim.vehicles.len() as f64 * 120.0 * 1.5, "{}", st.distance);
     }
+
+    /// The full map at review density: staggered boulevard junctions with
+    /// 5.5 m links, L-junctions at the map edge, many pedestrians.
+    #[test]
+    fn the_full_city_at_review_density_stays_clean() {
+        let city = build_city(&Kit::load(None), &StyleLibrary::builtin(), &CityConfig::default());
+        let net = RoadNetwork::build(&roads(&city.traffic).spec);
+        let cfg = SimConfig { seed: 3, max_vehicles: 220, vehicle_density: 14.0, max_peds: 400, ped_density: 40.0, spawn_min: 0.0, spawn_max: 5000.0, despawn: 9000.0, near: 150.0, ..Default::default() };
+        let mut sim = TrafficSim::new(net, cfg);
+        for _ in 0..(150.0 / sim.cfg.dt) as usize {
+            sim.step();
+            sim.events.clear();
+        }
+        let st = sim.stats;
+        assert!(sim.vehicles.len() >= 60 && sim.peds.len() >= 200, "{} {}", sim.vehicles.len(), sim.peds.len());
+        assert_eq!((st.vehicle_collisions, st.ped_collisions, st.red_light_violations, st.stop_sign_violations, st.box_violations), (0, 0, 0, 0, 0), "{:?}", sim.violations);
+    }
 }
