@@ -1,0 +1,562 @@
+# Palau de l'Almirall (Palacio del Almirante), Carrer del Palau 14, València (Conselleria d'Hisenda).
+# 15th-c. Valencian Gothic palace of the Admirals of Aragon; the street front was regularised later
+# (balconies, plastered top floor). Front on Carrer del Palau (30 m, faces NNE): stone ashlar up to
+# a string course, cream plaster top floor, stone corner strip at the west end, tiled eaves; ground
+# floor with two large Gothic-framed windows (colonnettes, pinnacles), a lintelled portal with an
+# eared frame, roundels and the Almirall arms, two smaller framed windows, basement vents; main floor
+# with four tall balconied windows; top floor with four smaller balconied windows.
+#
+# PLAN: OSM outline (= BIC parcel, 1439 m2; PGOU ficha 1440 m2). East side trimmed 1.0 m: the
+#   PNOA orthophoto roof edges and the LiDAR street cells (x = 27.8 empty all along) put the
+#   east wall at x ~ 27.3 instead of the OSM 28.4 (OSM runs into the Banys de l'Almirall alley).
+#   North wing 7.0 m deep (PNOA tile band 6.5 m + gutter), patio = Catastro part 6 (LiDAR empty),
+#   NE light well (Catastro notch, LiDAR empty), modern Hisenda annex to the south.
+# HEIGHTS: PNOA-LiDAR building heights (2.5 m cells, offset fitted on the facade/street edge:
+#   ~1 m south): north wing 15.5-16.0 near the front, 17.1-17.6 deepest -> eave 15.6, ridge 17.2;
+#   patio wings / terraces 16.1-17.6; annex 9.4-13.9; west strip 16.5-19.7. Facade levels from
+#   photo 01 (40 mm, f = 2093 px from EXIF) by cross-ratio along bay 1 with the vertical VP and
+#   eye-height scale, cross-checked by the 1.0 m balcony railings; bay positions from photos 01 and
+#   03 (28 mm) by cross-ratio along the base line between the facade ends. See sources.toml [facts].
+
+[landmark]
+name = "Palau de l'Almirall"
+slug = "palau_de_l_almirall"
+main_facade = "facing:n"
+notes = "Gothic palace of the Admirals of Aragon (Conselleria d'Hisenda): ashlar street front with Gothic ground-floor windows, eared portal, iron balconies and plastered top floor; patio; modern annex to the south."
+
+[landmark.info]
+built = "15th c. (Gothic palace of the Almirall family); street front regularised 18th-19th c.; restored 1991 and 2020-2022"
+style = "Valencian Gothic"
+heritage = "Bien de Interés Cultural (RI-51-0001142, 1944)"
+address = "Carrer del Palau 14, València"
+
+[defaults]
+material = "plaster"
+roof_material = "roof"
+glass_material = "glass"
+door_material = "door"
+iron_material = "iron"
+frame_material = "frame"
+
+[render]
+sun = [200, 55]
+paving = 50
+hide_context = ["context:366", "context:369"]
+street_eye = [44.0, 1.6, -22.2]
+street_target = [12.0, 7.0, -22.6]
+street_fov = 48
+
+[reference_heights]
+north_wing = { height = 17.4, tolerance = 0.5, source = "ridge: LiDAR deepest north-wing cells 17.1-17.6 (eave 15.6 from front cells 15.5-16.0 and photo 01)" }
+
+# ------------------------------------------------------------ materials (tints from photos 02/05/10/P1140106)
+[material.stone]
+kind = "ashlar"
+tint = "#bfb4a5"
+block = [0.75, 0.36]
+roughness = 0.85
+weathering = 0.5
+
+[material.stone_fine]
+kind = "limestone"
+tint = "#d6c8b2"
+block = [0.8, 0.4]
+weathering = 0.35
+
+[material.plaster]
+kind = "flat"
+color = "#e6d9c7"
+roughness = 0.85
+weathering = 0.3
+uv_scale = 3.0
+
+[material.rear]
+kind = "plaster"
+tint = "#e3d7c6"
+weathering = 0.3
+
+[material.annex]
+kind = "stucco"
+tint = "#ebe6dc"
+weathering = 0.15
+
+[material.roof]
+kind = "roof_tiles"
+tint = "#8f7a6c"
+weathering = 0.45
+
+[material.terrace]
+kind = "paving"
+tint = "#d9d2c4"
+
+[material.frame]
+kind = "painted_wood"
+color = "#6a3519"
+tint = "#6a3519"
+
+[material.door]
+kind = "painted_wood"
+color = "#2c2a26"
+tint = "#2c2a26"
+
+[material.iron]
+kind = "iron"
+
+[material.glass]
+kind = "glass"
+
+[material.skylight]
+kind = "curtain_wall"
+color = "#8fa3ad"
+
+[material.dark]
+kind = "dark"
+
+# ------------------------------------------------------------ north wing (the Gothic street range)
+[[element]]
+type = "mass"
+name = "north_wing_base"
+note = "ashlar storeys 0-9.5 m (string course), 7.0 m deep"
+polygon = { ref = "outline:0", clip = [[-5.7, -31.23], [35.2, -18.5], [32.23, -8.95], [-8.67, -21.68]], subtract = [[[27.71, -19.5], [31.0, -19.5], [31.0, -1.0], [26.23, -1.0]]] }
+height = 9.5
+material = "stone"
+top = false
+edge_materials = [{ edges = "not:facing:n", material = "rear" }]
+  [[element.openings]]
+  edges = "facing:n"
+  kind = "window"
+  note = "basement vents"
+  width = 0.85
+  height = 0.7
+  levels = [0.35]
+  bays = { at = [5.2, 9.2, 23.6, 26.5] }
+  infill = "grille"
+  depth = 0.3
+  surround = { width = 0.12, projection = 0.04 }
+  material = "stone_fine"
+  [[element.openings]]
+  edges = "facing:n"
+  kind = "window"
+  note = "large Gothic-framed windows (colonnettes and pinnacles)"
+  width = 1.75
+  height = 1.85
+  levels = [2.35]
+  bays = { at = [5.2, 9.2] }
+  infill = "glass"
+  frame = 0.08
+  depth = 0.3
+  surround = { width = 0.28, projection = 0.1 }
+  sill = { depth = 0.12, height = 0.22, extend = 0.3 }
+  material = "stone_fine"
+  [[element.openings]]
+  edges = "facing:n"
+  kind = "window"
+  note = "smaller Gothic-framed windows east of the portal"
+  width = 1.15
+  height = 1.75
+  levels = [2.45]
+  bays = { at = [23.6, 26.5] }
+  infill = "glass"
+  frame = 0.07
+  depth = 0.3
+  surround = { width = 0.2, projection = 0.08 }
+  sill = { depth = 0.1, height = 0.18, extend = 0.2 }
+  material = "stone_fine"
+  [[element.openings]]
+  edges = "facing:n"
+  kind = "door"
+  note = "lintelled portal with eared frame and roundels (Almirall arms above)"
+  arch = "flat"
+  width = 3.0
+  height = 4.5
+  levels = [0]
+  bays = { at = [17.5] }
+  infill = "door"
+  depth = 0.45
+  surround = { width = 0.55, projection = 0.08, ears = true }
+  material = "stone_fine"
+  [[element.openings]]
+  edges = "facing:n"
+  kind = "window"
+  note = "main floor: tall windows with iron balconies"
+  width = 1.6
+  height = 3.2
+  levels = [5.5]
+  bays = { at = [4.8, 10.6, 16.4, 21.6] }
+  infill = "glass"
+  mullions = 1
+  transoms = 1
+  frame = 0.08
+  depth = 0.35
+  balcony = { depth = 0.85, extend = 0.8, railing = "iron", railing_height = 1.0, corbels = false, thickness = 0.1 }
+
+[[element]]
+type = "mass"
+name = "north_wing"
+note = "plastered top floor 9.5-15.6 m (eave)"
+polygon = { ref = "outline:0", clip = [[-5.7, -31.23], [35.2, -18.5], [32.23, -8.95], [-8.67, -21.68]], subtract = [[[27.71, -19.5], [31.0, -19.5], [31.0, -1.0], [26.23, -1.0]]] }
+y0 = 9.5
+height = 6.1
+material = "plaster"
+top = false
+edge_materials = [{ edges = "not:facing:n", material = "rear" }]
+roof = { shape = "gable", pitch = 25, ridge = "long", overhang = 0.45 }
+  [[element.openings]]
+  edges = "facing:n"
+  kind = "window"
+  note = "top floor: smaller windows with iron balconies"
+  width = 1.2
+  height = 2.5
+  levels = [11.3]
+  bays = { at = [5.1, 10.8, 16.6, 21.7] }
+  infill = "glass"
+  mullions = 1
+  frame = 0.07
+  depth = 0.3
+  balcony = { depth = 0.7, extend = 0.45, railing = "iron", railing_height = 1.0, corbels = false, thickness = 0.1 }
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "window"
+  note = "side wall on the Banys de l'Almirall alley: one balconied top-floor window (photo 11)"
+  width = 1.0
+  height = 2.3
+  levels = [11.5]
+  bays = { at = [4.6] }
+  infill = "glass"
+  frame = 0.07
+  depth = 0.3
+  balcony = { depth = 0.6, extend = 0.3, railing = "iron", railing_height = 1.0, corbels = false, thickness = 0.1 }
+
+[[element]]
+type = "mass"
+name = "corner_quoins"
+note = "stone corner strip of the NE corner, rising through the plastered top floor to the eave (photos 01, 03, 11, C)"
+polygon = [[26.33, -18.13], [27.61, -17.73], [27.53, -16.73], [26.25, -17.13]]
+y0 = 9.5
+height = 5.75
+material = "stone"
+top = false
+
+[[element]]
+type = "relief"
+name = "arms"
+note = "Almirall coat of arms over the portal lintel (photos 06, 08, 16)"
+at = [10.88, 4.95, -22.93]
+facing = 17
+size = [0.75, 0.95]
+shape = "shield"
+depth = 0.12
+frame = 0.06
+relief = "figure"
+material = "stone_fine"
+
+[[element]]
+type = "relief"
+name = "roundel_e"
+note = "carved roundels on the portal jambs (photos 08, 09, 16)"
+at = [12.58, 2.0, -22.4]
+facing = 17
+size = [0.5, 0.5]
+shape = "circle"
+depth = 0.06
+frame = 0.05
+relief = "boss"
+material = "stone_fine"
+
+[[element]]
+type = "relief"
+name = "roundel_w"
+at = [9.19, 2.0, -23.45]
+facing = 17
+size = [0.5, 0.5]
+shape = "circle"
+depth = 0.06
+frame = 0.05
+relief = "boss"
+material = "stone_fine"
+
+[[element]]
+type = "string_course"
+name = "string_course"
+on = "north_wing"
+edges = "facing:n"
+y = 9.4
+profile = "torus"
+size = 0.2
+projection = 0.12
+material = "stone_fine"
+
+[[element]]
+type = "cornice"
+name = "eave_cornice"
+on = "north_wing"
+edges = "facing:n"
+y = 15.25
+profile = "cyma"
+size = 0.35
+projection = 0.25
+material = "plaster"
+
+# ------------------------------------------------------------ palace core around the patio
+[[element]]
+type = "mass"
+name = "core_east"
+note = "rooms and terraces east and south of the patio; LiDAR 16.1-17.6"
+polygon = { ref = "outline:0", clip = [[2.0, -30.0], [40.0, -30.0], [40.0, -2.0], [2.0, -2.0]], subtract = [[[-5.7, -31.23], [35.2, -18.5], [32.23, -8.95], [-8.67, -21.68]], [[27.71, -19.5], [31.0, -19.5], [31.0, -1.0], [26.23, -1.0]], "catastro:6", [[22.6, -11.8], [26.6, -12.6], [26.0, -6.3], [23.3, -6.6]]] }
+height = 16.5
+material = "rear"
+top_material = "terrace"
+parapet = { height = 0.8, thickness = 0.25 }
+  [[element.openings]]
+  edges = "inner"
+  kind = "arch"
+  note = "patio: pointed arcade on the ground floor (patio photos 01-03, 07)"
+  arch = "pointed"
+  width = 3.2
+  height = 4.6
+  levels = [0]
+  bays = { spacing = 4.2, margin = 0.6 }
+  infill = "dark"
+  depth = 0.5
+  material = "stone_fine"
+  [[element.openings]]
+  edges = "inner"
+  kind = "window"
+  note = "patio: upper gallery of slender round arches on colonnettes (photo 18)"
+  arch = "round"
+  width = 1.1
+  height = 2.4
+  levels = [7.2]
+  bays = { spacing = 1.45, margin = 0.5 }
+  infill = "dark"
+  depth = 0.4
+  material = "stone_fine"
+
+[[element]]
+type = "mass"
+name = "core_west"
+note = "west range of the patio and terrace; LiDAR 13.9-15.5 falling to the south"
+polygon = { ref = "outline:0", clip = [[-12.0, -30.0], [2.0, -30.0], [2.0, -4.1], [-12.0, -4.1]], subtract = [[[-5.7, -31.23], [35.2, -18.5], [32.23, -8.95], [-8.67, -21.68]], "catastro:6"] }
+height = 14.6
+material = "rear"
+top_material = "terrace"
+parapet = { height = 0.7, thickness = 0.25 }
+  
+# ------------------------------------------------------------ modern Hisenda annex (south)
+[[element]]
+type = "mass"
+name = "annex_mid"
+note = "Catastro part 1 (4 floors) + curved terrace block; LiDAR 9.4-13.9"
+polygon = { ref = "outline:0", clip = [[-11.4, -4.1], [26.5, -4.1], [26.5, 5.6], [-11.4, 5.6]], subtract = [[[2.0, -30.0], [40.0, -30.0], [40.0, -2.0], [2.0, -2.0]]] }
+height = 12.4
+material = "annex"
+top_material = "terrace"
+parapet = { height = 0.6, thickness = 0.2 }
+
+[[element]]
+type = "mass"
+name = "annex_south"
+note = "terrace block east of the atrium (Catastro part 3 south / part 2)"
+polygon = { ref = "outline:0", clip = [[-3.0, -2.0], [26.5, -2.0], [26.5, 10.0], [-3.0, 10.0]], subtract = [[[-11.4, -4.1], [26.5, -4.1], [26.5, 5.6], [-11.4, 5.6]]] }
+height = 10.6
+material = "annex"
+top_material = "terrace"
+parapet = { height = 0.6, thickness = 0.2 }
+
+[[element]]
+type = "mass"
+name = "atrium"
+note = "glazed atrium (Catastro part 2, 2 floors; PNOA skylight, LiDAR empty on glass)"
+polygon = { ref = "outline:0", clip = [[-12.2, 5.6], [-3.0, 5.6], [-3.0, 23.0], [-12.2, 23.0]] }
+height = 7.4
+material = "annex"
+top_material = "skylight"
+
+[[element]]
+type = "mass"
+name = "west_range"
+note = "tiled west range (Catastro part 4); LiDAR 16.5-19.7"
+polygon = { ref = "outline:0", clip = [[-30.0, -5.0], [-12.2, -5.0], [-12.2, 26.5], [-30.0, 26.5]] }
+height = 16.4
+material = "annex"
+roof = { shape = "hip", pitch = 30, overhang = 0.3 }
+
+[[element]]
+type = "mass"
+name = "south_tail"
+note = "Catastro parts 7/8 (3 and 5 floors); LiDAR 10.6-11.1"
+polygon = { ref = "outline:0", clip = [[-16.0, 23.0], [-2.0, 23.0], [-2.0, 34.0], [-16.0, 34.0]], subtract = [[[-30.0, -5.0], [-12.2, -5.0], [-12.2, 26.5], [-30.0, 26.5]]] }
+height = 11.0
+material = "annex"
+top_material = "terrace"
+parapet = { height = 0.6, thickness = 0.2 }
+
+# ------------------------------------------------------------ photo cameras (focal lengths from EXIF)
+[[view]]
+name = "p01"
+photo = "photos/01_Exterior_del_palau_de_l_Almirall_de_Valencia.jpg"
+focal_35mm = 40
+eye_height = 1.6
+match = [
+  { px = [231, 1676], world = [27.59, 0, -17.73] },
+  { px = [1048, 1559], world = [-0.86, 0, -26.58] },
+  { px = [459, 66], world = [22.72, 15.6, -19.24] },
+  { px = [1033, 735], world = [-0.86, 15.6, -26.58] },
+  { px = [452, 1162], world = [23.46, 4.2, -19.01] },
+  { px = [533, 1360], world = [21.79, 2.35, -19.53] },
+  { px = [423, 706], world = [23.78, 8.7, -18.92] },
+  { px = [445, 213], world = [23.3, 13.8, -19.06] },
+  { px = [900, 1265], world = [9.31, 4.4, -23.42] },
+  { px = [812, 1588], world = [12.08, 0, -22.55] },
+]
+
+[[view]]
+name = "p03"
+context = false
+photo = "photos/03_Palau_de_l_Almirall_P1140102.jpg"
+focal_35mm = 28
+eye_height = 1.6
+match = [
+  { px = [62, 1639], world = [27.59, 0, -17.73] },
+  { px = [972, 1403], world = [-0.86, 0, -26.58] },
+  { px = [972, 778], world = [-0.86, 15.6, -26.58] },
+  { px = [485, 118], world = [22.72, 15.6, -19.24] },
+  { px = [423, 1035], world = [23.46, 4.2, -19.01] },
+  { px = [495, 1222], world = [21.79, 2.35, -19.53] },
+  { px = [420, 640], world = [23.78, 8.7, -18.92] },
+  { px = [468, 202], world = [23.3, 13.8, -19.06] },
+  { px = [600, 1080], world = [19.65, 4.2, -20.2] },
+]
+
+[[view]]
+name = "catastro"
+context = false
+photo = "photos/catastro_6029105YJ2763A.jpg"
+focal_35mm = 25
+eye_height = 1.6
+match = [
+  { px = [100, 200], world = [27.59, 9.4, -17.73] },
+  { px = [1056, 650], world = [-0.86, 15.6, -26.58] },
+  { px = [1050, 800], world = [-0.86, 9.4, -26.58] },
+  { px = [394, 1344], world = [23.03, 0.35, -19.14] },
+  { px = [490, 53], world = [22.72, 15.6, -19.24] },
+  { px = [456, 156], world = [23.3, 13.8, -19.06] },
+  { px = [403, 535], world = [23.78, 8.7, -18.92] },
+  { px = [398, 922], world = [23.46, 4.2, -19.01] },
+  { px = [604, 978], world = [19.65, 4.2, -20.2] },
+]
+
+[[view]]
+name = "p05"
+context = false
+photo = "photos/05_213_Carrer_del_Palau_Valencia_al_fons_el_palau_de_l_Almirall.jpg"
+focal_35mm = 71
+fix = ["fov"]
+eye_height = 1.6
+eye_height_sigma = 0.1
+match = [
+  { px = [456, 60], world = [23.3, 13.8, -19.06] },
+  { px = [435, 627], world = [23.78, 8.7, -18.92] },
+  { px = [453, 1113], world = [23.46, 4.2, -19.01] },
+  { px = [604, 1147], world = [19.65, 4.2, -20.2] },
+  { px = [660, 240], world = [17.85, 13.8, -20.76] },
+  { px = [1100, 513], world = [-0.86, 15.6, -26.58] },
+]
+
+[[view]]
+name = "p11"
+context = false
+photo = "photos/11_Valencia_palau_de_l_Almirall.jpg"
+focal_35mm = 25
+eye_height = 1.6
+match = [
+  { px = [343, 57], world = [27.59, 15.6, -17.73] },
+  { px = [270, 500], world = [27.59, 9.4, -17.73] },
+  { px = [536, 779], world = [23.78, 8.7, -18.92] },
+  { px = [543, 1164], world = [23.46, 4.2, -19.01] },
+  { px = [569, 407], world = [23.3, 13.8, -19.06] },
+  { px = [736, 1214], world = [19.65, 4.2, -20.2] },
+  { px = [789, 607], world = [17.85, 13.8, -20.76] },
+]
+
+[[view]]
+name = "p12"
+context = false
+photo = "photos/12_Palau_de_l_Almirall_09.jpg"
+focal_35mm = 27
+fix = ["fov"]
+eye_height = 1.6
+match = [
+  { px = [296, 1236], world = [23.46, 4.2, -19.01] },
+  { px = [355, 1436], world = [21.79, 2.35, -19.53] },
+  { px = [505, 1173], world = [19.65, 4.2, -20.2] },
+  { px = [331, 782], world = [23.78, 8.7, -18.92] },
+  { px = [655, 524], world = [18.24, 8.7, -20.64] },
+  { px = [404, 300], world = [23.3, 13.8, -19.06] },
+  { px = [251, 1745], world = [23.03, 0.35, -19.14] },
+  { px = [182, 800], world = [27.59, 9.4, -17.73] },
+]
+
+[[view]]
+name = "p02"
+context = false
+photo = "photos/02_Palau_de_l_Almirall_de_Valencia_facana.jpg"
+focal_35mm = 32
+eye_height = 1.6
+match = [
+  { px = [247, 504], world = [23.46, 4.2, -19.01] },
+  { px = [407, 767], world = [21.79, 2.35, -19.53] },
+  { px = [587, 603], world = [19.65, 4.2, -20.2] },
+  { px = [703, 213], world = [18.24, 8.7, -20.64] },
+  { px = [923, 40], world = [12.32, 13.8, -22.48] },
+  { px = [957, 700], world = [12.32, 4.5, -22.48] },
+]
+
+[[view]]
+name = "p07"
+context = false
+photo = "photos/07_Palau_de_l_Almirall_facana.jpg"
+focal_35mm = 35
+fix = ["fov"]
+eye_height = 1.6
+match = [
+  { px = [633, 1600], world = [12.32, 0, -22.48] },
+  { px = [633, 1008], world = [12.32, 4.5, -22.48] },
+  { px = [825, 1040], world = [9.45, 4.5, -23.37] },
+  { px = [662, 500], world = [12.7, 8.7, -22.36] },
+  { px = [683, 50], world = [12.32, 13.8, -22.48] },
+  { px = [913, 283], world = [7.45, 13.8, -23.98] },
+  { px = [967, 1108], world = [5.61, 4.2, -24.57] },
+]
+
+[[view]]
+name = "p13"
+context = false
+photo = "photos/13_Palau_de_l_Almirall_P1140105.jpg"
+focal_35mm = 28
+fix = ["fov"]
+eye_height = 1.6
+match = [
+  { px = [600, 1000], world = [12.32, 4.5, -22.48] },
+  { px = [828, 1020], world = [9.45, 4.5, -23.37] },
+  { px = [608, 1583], world = [12.32, 0, -22.48] },
+  { px = [608, 558], world = [12.7, 8.7, -22.36] },
+  { px = [608, 117], world = [12.32, 13.8, -22.48] },
+  { px = [853, 358], world = [7.45, 13.8, -23.98] },
+  { px = [953, 1100], world = [5.61, 4.2, -24.57] },
+]
+
+[[view]]
+name = "p14"
+context = false
+photo = "photos/14_Palau_de_l_Almirall_P1140106.jpg"
+focal_35mm = 28
+fix = ["fov"]
+eye_height = 1.6
+match = [
+  { px = [460, 105], world = [23.3, 13.8, -19.06] },
+  { px = [865, 105], world = [17.85, 13.8, -20.76] },
+  { px = [377, 395], world = [23.78, 8.7, -18.92] },
+  { px = [947, 385], world = [18.24, 8.7, -20.64] },
+  { px = [373, 887], world = [23.46, 4.2, -19.01] },
+]
