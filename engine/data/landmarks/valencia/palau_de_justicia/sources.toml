@@ -20,6 +20,16 @@ catastro_built = { value = 1914, source = "https://www1.sedecatastro.gob.es/CYCB
 catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6326401&rc2=YJ2762E" }
 catastro_floor_area = { value = 12273.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6326401&rc2=YJ2762E", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 5, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 3 parts" }
+plan_outline = { value = "63.8 x 47.6", unit = "m", source = "OSM relation 18681032 (rectangle turned 21.8 deg), checked on the IGN PNOA orthophoto (WMS pnoa-ma, CC BY 4.0)", note = "PNOA roof outline coincides within ~0.3 m; NE main facade 63.81 m, NW 47.63 m, SW 63.82 m, SE 47.62 m" }
+bay_spacing = { value = 6.45, unit = "m", source = "IGN PNOA orthophoto: dormer ridges over every window axis, all four sides", note = "NE: axes at +-7.5, +-13.9, +-20.3 from the centre, frontispiece gap 14.8 m; SW: 7 brick bays; NW/SE: 5 brick bays; photo 06 ratio centre-to-first-axis / bay = 1.22 agrees" }
+corner_pavilions = { value = "7.8 (NE), 9.2 (SW), 7.7 (NW/SE)", unit = "m", source = "PNOA axes + camera-solved photo 07 (pavilion window axis 3.9 m from the N corner, rusticated pilaster 7.6 m)" }
+cornice_top = { value = 21.0, unit = "m", source = "joint camera solve of Commons photos 01, 07, 10 (EXIF focal lengths, eye-height prior 1.6 m, plan corners fixed; RMS 1.0 px)", note = "+-0.4 m" }
+finial_tips = { value = 26.4, unit = "m", source = "joint camera solve photos 01/07/10", note = "flame finials on pedestals (pedestal tops 23.2 m)" }
+statue_charles_iii = { value = "27.1 - 30.5", unit = "m", source = "joint camera solve photos 01/07/10", note = "statue base / head; pediment apex 23.7 m (photos 01/07); seated virtues to ~26.4" }
+storeys = { value = "ground windows 1.2-3.4, doors 0-3.9, mezzanine 4.8-7.7, piano nobile 9.3-12.4 (pediments 14.5), second floor 15.4-17.6, architrave 18.4, cornice 19.9-21.0, balustrade to 22.8, dormers 21.7-24.4", unit = "m", source = "rays from the solved camera of photo 07 onto the NE facade plane, refined on views p04/p09", note = "door height checked against a 1.68 m passer-by on the Catastro photo (3.9 m)" }
+frontispiece_width = { value = 10.6, unit = "m", source = "photos 06 and 09 scaled by the PNOA bay spacing", note = "paired pilasters at +-3.0/+-4.2 m, portal 3.3 x 5.8 m, central balcony 8.8 m" }
+roof = { value = "ring of tiled double-pitched wings, ridge 7.8 m in from the eaves, ~18 deg; glazed central courtyard", source = "IGN PNOA orthophoto; pitch estimated (roof hidden behind the balustrade from the street)" }
+architects = { value = "Antoni Gilabert, Felip Rubio; finished by Tomàs Miner 1802; sculpture Ignasi Vergara", source = "https://ca.wikipedia.org/wiki/Palau_de_Just%C3%ADcia_de_Val%C3%A8ncia" }
 
 [[photo]]
 file = "photos/01_Palau_de_justicia_valencia.jpg"
@@ -30,8 +40,8 @@ license = "Public domain"
 width = 1280
 height = 845
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SE+NE (E corner)"
 
 [[photo]]
 file = "photos/02_Escut_a_la_facana_de_l_antiga_Duana_Valencia.jpg"
@@ -43,8 +53,8 @@ width = 1280
 height = 996
 camera = [-4.7, -18.94]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NE (arms detail)"
 
 [[photo]]
 file = "photos/03_At_Valencia_2025_016.jpg"
@@ -56,8 +66,8 @@ width = 1280
 height = 853
 camera = [-75.61, 40.38]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NW+SW (W corner)"
 
 [[photo]]
 file = "photos/04_At_Valencia_2025_018.jpg"
@@ -69,8 +79,8 @@ width = 1280
 height = 1920
 camera = [-70.85, 26.54]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NW+SW (W corner)"
 
 [[photo]]
 file = "photos/05_Palau_de_Justicia_de_Valencia_facana.jpg"
@@ -81,8 +91,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1906
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NE+NW (N corner)"
 
 [[photo]]
 file = "photos/06_Palacio_de_Justicia_de_Valencia_1_png.jpg"
@@ -93,8 +103,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NE (frontispiece)"
 
 [[photo]]
 file = "photos/07_Palau_de_Justicia_DSCN2909.jpg"
@@ -105,8 +115,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NE+NW (N corner)"
 
 [[photo]]
 file = "photos/08_Palau_de_Justicia_P1400027.jpg"
@@ -129,8 +139,8 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NE (frontispiece crown)"
 
 [[photo]]
 file = "photos/10_Fiscalia_valencia.jpg"
@@ -141,8 +151,8 @@ license = "Public domain"
 width = 1280
 height = 706
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SE+NE (E corner)"
 
 [[photo]]
 file = "photos/11_Palacio_de_Justicia_de_Valencia_2_png.jpg"
@@ -153,8 +163,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NW+SW (W corner)"
 
 [[photo]]
 file = "photos/12_Valencia_Palau_de_Justicia_3.jpg"
@@ -165,8 +175,8 @@ license = "CC0"
 width = 1280
 height = 1637
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NE (frontispiece)"
 
 [[photo]]
 file = "photos/13_PLAZA_DEL_PARTERRE.jpg"
@@ -177,8 +187,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NW (Parterre)"
 
 [[photo]]
 file = "photos/14_Palaciojusticia2.jpg"
@@ -201,8 +211,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NE (crown)"
 
 [[photo]]
 file = "photos/catastro_6326401YJ2762E.jpg"
@@ -213,8 +223,8 @@ license = "Catastro open data (attribution required)"
 width = 1600
 height = 1200
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NE (main facade)"
 
 [[plan]]
 file = "plans/01_1_20_PALACIO_DE_JUSTICIA_firmado.jpg"
@@ -268,3 +278,8 @@ notes = "built=1914; use=4_3_publicServices; area=12273; area_in_outline=2592.5"
 url = "https://eduwp.edu.gva.es/patrimonio-cultural/ficha-inmueble.php?id=1429"
 title = "Described at"
 notes = "Wikidata P973"
+
+[[reference]]
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+title = "IGN PNOA orthophoto (WMS, CC BY 4.0)"
+notes = "used for plan, bay axes (dormer ridges) and roof layout"
