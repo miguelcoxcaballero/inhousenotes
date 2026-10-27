@@ -395,6 +395,7 @@ impl CameraFx {
         taa_bgl: &wgpu::BindGroupLayout,
         resolved: &wgpu::TextureView,
         depth: &wgpu::TextureView,
+        velocity: &wgpu::TextureView,
     ) -> CameraFxTargets {
         let ldr2 = device
             .create_texture(&wgpu::TextureDescriptor {
@@ -428,6 +429,7 @@ impl CameraFx {
                 tv(2, depth),
                 wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.sampler) },
                 wgpu::BindGroupEntry { binding: 4, resource: self.dof_buf.as_entire_binding() },
+                tv(5, velocity),
             ],
         });
         CameraFxTargets { ldr2, look_bind, dof_bind }

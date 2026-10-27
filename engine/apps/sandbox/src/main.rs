@@ -555,6 +555,9 @@ fn run_smoke(args: &Args) {
     let mut perf_state = PerfState::load(&paths().data.join("graphics.toml"), &renderer);
     perf_state.cfg.apply_preset(args.preset.unwrap_or(forja_render::Preset::Low));
     renderer.apply_graphics(&perf_state.cfg);
+    if let Ok(fx) = std::env::var("FORJA_FX") {
+        renderer.settings.apply_fx(&fx);
+    }
     let mut extract = Extract::new();
     let (w, h) = (args.width, args.height);
     renderer.resize(w, h);
