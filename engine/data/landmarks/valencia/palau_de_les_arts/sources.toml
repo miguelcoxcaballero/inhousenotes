@@ -20,6 +20,21 @@ catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatast
 catastro_floor_area = { value = 89517.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=7611101&rc2=YJ2770G", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 12, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 87 parts" }
 
+height = { value = 75.0, unit = "m", source = "https://es.wikipedia.org/wiki/Palacio_de_las_Artes_Reina_Sof%C3%ADa (also en.wikipedia)", note = "top of the plume crest; used as the vertical scale anchor of the photo measurements (model crest 75.0 m at s = -6)" }
+plume_length = { value = 230.0, unit = "m", source = "https://en.wikipedia.org/wiki/Palau_de_les_Arts_Reina_Sof%C3%ADa", note = "along the curve; model plume from the root at s = -126 (ground, NW plaza) to the SE tip at s = +91.5 (y 42): 218 m horizontal, ~245 m along the top curve" }
+axis_azimuth = { value = 128.3, unit = "deg", source = "OSM way 23433773 tips (-69.20, -54.74) / (69.34, 54.74), grid azimuth", note = "model axis frame: s along the axis (+ = SE), t across (+ = NE), origin at the midpoint of the tips (0.07, 0.0)" }
+shell_length = { value = 176.6, unit = "m", source = "OSM way 23433773 tip to tip; checked on PNOA 2008 (near nadir), the shell tips coincide with the OSM tips", note = "published figures of ~163 m could not be verified against the plan data" }
+shell_width = { value = 88.5, unit = "m", source = "OSM way 23433773 (max extent across the axis at s = -2), PNOA 2008 shells' outer edges at t = +47 / -45", note = "model shell envelope = OSM half-width W(s) per station" }
+plume_root = { value = [-125.5, 0.0], unit = "m (s, t)", source = "PNOA 2024 and 2008 orthophotos (root foot on the NW plaza, no relief displacement)" }
+plume_plan_width = { value = 23.5, unit = "m", source = "PNOA 2008 central lens (t -12..+12 at s = 0) and 2024 band between the dark slits", note = "tapers to ~9 m at s = -85 and to a point at the SE tip" }
+eye_opening_plan = { value = [-37.5, 41.0], unit = "m (s range at roof level)", source = "PNOA 2008: NE opening s -33..+42 at t 20..37, SW -42..+40" }
+eye_opening_elevation = { value = [-52.0, 55.0], unit = "m (s range at deck level)", source = "broadside photo n10 (Coentor, Galaxy S2 4.03 mm, horizon at the car roofs): opening corners at deck level, apex 55 m", note = "triangular/rounded upper boundary; lower boundary = top garden deck ~27-29 m" }
+shell_top = { value = 57.5, unit = "m", source = "photo n10 scaled to the 75 m crest (shell top edge under the plume gap, t ~ 15)" }
+beak_tips = { value = [40.0, 37.0], unit = "m (SE, NW)", source = "photos n09/e19 (SE) and n06/e21 (NW), ratios to the lip and plume tip; uncertain +-4 m" }
+decks = { value = [14.0, 20.5, 28.5], unit = "m", source = "photo n10 deck bands (porthole parapet top at ~28.5 m)" }
+stage_mouth = { value = [17.0, 36.0], unit = "m (width, height)", source = "https://ca.wikipedia.org/wiki/Palau_de_les_Arts_Reina_Sofia" }
+floors = { value = "14 above ground, 3 below", source = "https://en.wikipedia.org/wiki/Palau_de_les_Arts_Reina_Sof%C3%ADa" }
+
 [[photo]]
 file = "photos/01_El_Palau_de_les_Arts_Reina_Sofia_Valencia_Jan_2007.jpg"
 title = "File:El Palau de les Arts Reina Sofía, Valencia - Jan 2007.jpg"
@@ -29,12 +44,24 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 736
 camera = [47.64, 118.64]
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Ciutat_de_les_Arts_i_les_Ciencies_Valencia_Valencia_Spain_pa.jpg"
+file = "photos/02_Palacio_de_las_Artes_Reina_Sofia_Ciudad_de_las_Artes_y_las_C.jpg"
+title = "File:Palacio de las Artes Reina Sofía, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 34.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palacio_de_las_Artes_Reina_Sof%C3%ADa%2C_Ciudad_de_las_Artes_y_las_Ciencias%2C_Valencia%2C_Espa%C3%B1a%2C_2014-06-29%2C_DD_34.JPG"
+author = "Diego Delso"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 665
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/03_Ciutat_de_les_Arts_i_les_Ciencies_Valencia_Valencia_Spain_pa.jpg"
 title = "File:Ciutat de les Arts i les Ciències, València, Valencia, Spain - panoramio (19).jpg"
 url = "https://commons.wikimedia.org/wiki/File:Ciutat_de_les_Arts_i_les_Ci%C3%A8ncies%2C_Val%C3%A8ncia%2C_Valencia%2C_Spain_-_panoramio_%2819%29.jpg"
 author = "Ben Bender"
@@ -47,19 +74,31 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Palacio_de_las_Artes_Reina_Sofia_Ciudad_de_las_Artes_y_las_C.jpg"
-title = "File:Palacio de las Artes Reina Sofía, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 34.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Palacio_de_las_Artes_Reina_Sof%C3%ADa%2C_Ciudad_de_las_Artes_y_las_Ciencias%2C_Valencia%2C_Espa%C3%B1a%2C_2014-06-29%2C_DD_34.JPG"
+file = "photos/04_Palacio_de_las_Artes_Reina_Sofia_Ciudad_de_las_Artes_y_las_C_2.jpg"
+title = "File:Palacio de las Artes Reina Sofía, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 35.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palacio_de_las_Artes_Reina_Sof%C3%ADa%2C_Ciudad_de_las_Artes_y_las_Ciencias%2C_Valencia%2C_Espa%C3%B1a%2C_2014-06-29%2C_DD_35.JPG"
 author = "Diego Delso"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 665
-exterior = "unknown"
+height = 746
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Jardines_del_Turia_Valencia.jpg"
+file = "photos/05_Palacio_de_las_Artes_Reina_Sofia_Ciudad_de_las_Artes_y_las_C_3.jpg"
+title = "File:Palacio de las Artes Reina Sofía, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 36.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palacio_de_las_Artes_Reina_Sof%C3%ADa%2C_Ciudad_de_las_Artes_y_las_Ciencias%2C_Valencia%2C_Espa%C3%B1a%2C_2014-06-29%2C_DD_36.JPG"
+author = "Diego Delso"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 772
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Jardines_del_Turia_Valencia.jpg"
 title = "File:Jardines del Turia. Valencia.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Jardines_del_Turia._Valencia.jpg"
 author = "José Luis Filpo Cabana"
@@ -72,7 +111,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Valencia_Palau_de_les_Arts_Reina_Sofia_from_the_north.jpg"
+file = "photos/07_Valencia_Palau_de_les_Arts_Reina_Sofia_from_the_north.jpg"
 title = "File:Valencia Palau de les Arts Reina Sofia from the north.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_Palau_de_les_Arts_Reina_Sofia_from_the_north.jpg"
 author = "Ymblanter"
@@ -85,7 +124,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Valencia_Quatre_Carreres_operahuis_Palau_de_les_Arts_Reina_S.jpg"
+file = "photos/08_Valencia_Quatre_Carreres_operahuis_Palau_de_les_Arts_Reina_S.jpg"
 title = "File:Valencia-Quatre Carreres, operahuis Palau de les Arts Reina Sofía vanaf de brug Pont de Montolivet IMG 27542026-08-24 10.08.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia-Quatre_Carreres%2C_operahuis_Palau_de_les_Arts_Reina_Sof%C3%ADa_vanaf_de_brug_Pont_de_Montolivet_IMG_27542026-08-24_10.08.jpg"
 author = "Michielverbeek"
@@ -98,56 +137,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Palacio_de_las_Artes_Reina_Sofia_Ciudad_de_las_Artes_y_las_C_2.jpg"
-title = "File:Palacio de las Artes Reina Sofía, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 35.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Palacio_de_las_Artes_Reina_Sof%C3%ADa%2C_Ciudad_de_las_Artes_y_las_Ciencias%2C_Valencia%2C_Espa%C3%B1a%2C_2014-06-29%2C_DD_35.JPG"
-author = "Diego Delso"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 746
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Museo_principe_felipe_valencia_2009_7.jpg"
-title = "File:Museo principe felipe-valencia-2009 (7).JPG"
-url = "https://commons.wikimedia.org/wiki/File:Museo_principe_felipe-valencia-2009_%287%29.JPG"
-author = "Alberto-g-rovi"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 850
-camera = [372.18, 390.2]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_CiutatArts_Navidad_BlueHour.jpg"
-title = "File:CiutatArts Navidad BlueHour.jpg"
-url = "https://commons.wikimedia.org/wiki/File:CiutatArts_Navidad_BlueHour.jpg"
-author = "Rafa Esteve"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_CiutatArts_Navidad_Night.jpg"
-title = "File:CiutatArts Navidad Night.jpg"
-url = "https://commons.wikimedia.org/wiki/File:CiutatArts_Navidad_Night.jpg"
-author = "Rafa Esteve"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Valencia_Quatre_Carreres_operahuis_Palau_de_les_Arts_Reina_S_2.jpg"
+file = "photos/09_Valencia_Quatre_Carreres_operahuis_Palau_de_les_Arts_Reina_S_2.jpg"
 title = "File:Valencia-Quatre Carreres, operahuis Palau de les Arts Reina Sofía vanaf Avinguda del Professor López Piñero IMG 2905 2026-08-24 17.46.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia-Quatre_Carreres%2C_operahuis_Palau_de_les_Arts_Reina_Sof%C3%ADa_vanaf_Avinguda_del_Professor_L%C3%B3pez_Pi%C3%B1ero_IMG_2905_2026-08-24_17.46.jpg"
 author = "Michielverbeek"
@@ -160,7 +150,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_Palau_de_Les_Arts_Reina_Sofia_in_Valencia_in_2014.jpg"
+file = "photos/10_Palau_de_Les_Arts_Reina_Sofia_in_Valencia_in_2014.jpg"
 title = "File:Palau de Les Arts Reina Sofía in Valencia in 2014.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Palau_de_Les_Arts_Reina_Sof%C3%ADa_in_Valencia_in_2014.jpg"
 author = "Choinowski"
@@ -172,7 +162,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Opera_Gener_2014_2.jpg"
+file = "photos/11_Opera_Gener_2014_2.jpg"
 title = "File:Òpera Gener 2014 - 2.jpeg"
 url = "https://commons.wikimedia.org/wiki/File:%C3%92pera_Gener_2014_-_2.jpeg"
 author = "Coentor"
@@ -184,7 +174,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_Opera_Febrer_2014.jpg"
+file = "photos/12_Opera_Febrer_2014.jpg"
 title = "File:Òpera Febrer 2014.jpg"
 url = "https://commons.wikimedia.org/wiki/File:%C3%92pera_Febrer_2014.jpg"
 author = "Coentor"
@@ -196,7 +186,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_The_City_of_Arts_and_Sciences_complex_by_Santiago_Calatrava_.jpg"
+file = "photos/13_The_City_of_Arts_and_Sciences_complex_by_Santiago_Calatrava_.jpg"
 title = "File:The City of Arts and Sciences complex by Santiago Calatrava and Félix Candela. Valencia, Spain, Southwestern Europe. September 28, 2014-4.jpg"
 url = "https://commons.wikimedia.org/wiki/File:The_City_of_Arts_and_Sciences_complex_by_Santiago_Calatrava_and_F%C3%A9lix_Candela._Valencia%2C_Spain%2C_Southwestern_Europe._September_28%2C_2014-4.jpg"
 author = "Mstyslav Chernov"
@@ -208,14 +198,39 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_El_Hemisferico_Ciudad_de_las_Artes_y_las_Ciencias_Valencia_E.jpg"
-title = "File:El Hemisférico, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 60-62 HDR.JPG"
-url = "https://commons.wikimedia.org/wiki/File:El_Hemisf%C3%A9rico%2C_Ciudad_de_las_Artes_y_las_Ciencias%2C_Valencia%2C_Espa%C3%B1a%2C_2014-06-29%2C_DD_60-62_HDR.JPG"
-author = "Diego Delso"
-license = "CC BY-SA 3.0"
+file = "photos/14_Palau_musica.jpg"
+title = "File:Palau musica.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_musica.jpg"
+author = "Felivet"
+license = "Public domain"
 width = 1280
-height = 853
-exterior = "unknown"
+height = 920
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/15_Puente_Cuidad_de_las_ciencias_y_las_artes_en_Valencia.jpg"
+title = "File:Puente Cuidad de las ciencias y las artes en Valencia.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Puente_Cuidad_de_las_ciencias_y_las_artes_en_Valencia.jpg"
+author = "Areyes108"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/16_Valencia_Quartre_Carreres_operahuis_Palau_de_les_Arts_Reina_.jpg"
+title = "File:Valencia-Quartre Carreres, operahuis Palau de les Arts Reina Sofía vanaf de brug Pont de Montolivet IMG 2939 2026-08-25 09.56.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia-Quartre_Carreres%2C_operahuis_Palau_de_les_Arts_Reina_Sof%C3%ADa_vanaf_de_brug_Pont_de_Montolivet_IMG_2939_2026-08-25_09.56.jpg"
+author = "Michielverbeek"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 880
+camera = [169.88, -160.58]
+exterior = true
 selected = false
 side = ""
 
@@ -279,3 +294,313 @@ notes = "built=2006; use=4_3_publicServices; area=89517; area_in_outline=9280.9"
 url = "http://www.lesarts.com/"
 title = "Official website"
 notes = "Wikidata P856"
+
+[[photo]]
+file = "extra/p_Coentor_Gener2014.jpg"
+title = "File:Òpera Gener 2014 - 2.jpeg"
+url = "https://commons.wikimedia.org/wiki/File:%C3%92pera_Gener_2014_-_2.jpeg"
+author = "Coentor"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "SW long side broadside at dusk (view n10): plume profile, shell top, eye opening, deck levels (stable copy of the fetched file)"
+
+[[photo]]
+file = "extra/p_Choinowski_2014.jpg"
+title = "File:Palau de Les Arts Reina Sofía in Valencia in 2014.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_Les_Arts_Reina_Sof%C3%ADa_in_Valencia_in_2014.jpg"
+author = "Choinowski"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "SE end from the SW pool, close (view n09): beak, lip, SE lobby glazing (stable copy of the fetched file)"
+
+[[photo]]
+file = "extra/p_Ymblanter_north.jpg"
+title = "File:Valencia Palau de les Arts Reina Sofia from the north.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_Palau_de_les_Arts_Reina_Sofia_from_the_north.jpg"
+author = "Ymblanter"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 854
+exterior = true
+selected = true
+side = "NE side from the Turia garden, NW end near (view n06): NW beak, plume descending to its root (stable copy of the fetched file)"
+
+[[photo]]
+file = "extra/p_Michielverbeek_Montolivet.jpg"
+title = "File:Valencia-Quatre Carreres, operahuis Palau de les Arts Reina Sofía vanaf de brug Pont de Montolivet IMG 27542026-08-24 10.08.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia-Quatre_Carreres%2C_operahuis_Palau_de_les_Arts_Reina_Sof%C3%ADa_vanaf_de_brug_Pont_de_Montolivet_IMG_27542026-08-24_10.08.jpg"
+author = "Michielverbeek"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 798
+exterior = true
+selected = true
+side = "NE long side from the Pont de Montolivet (view n07) (stable copy of the fetched file)"
+
+[[photo]]
+file = "extra/p_Michielverbeek_LopezPinero.jpg"
+title = "File:Valencia-Quatre Carreres, operahuis Palau de les Arts Reina Sofía vanaf Avinguda del Professor López Piñero IMG 2905 2026-08-24 17.46.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia-Quatre_Carreres%2C_operahuis_Palau_de_les_Arts_Reina_Sof%C3%ADa_vanaf_Avinguda_del_Professor_L%C3%B3pez_Pi%C3%B1ero_IMG_2905_2026-08-24_17.46.jpg"
+author = "Michielverbeek"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 582
+exterior = true
+selected = true
+side = "W / NW end from Av. Professor Lopez Pinero (view n08): plume root leg on the NW plaza (stable copy of the fetched file)"
+
+[[photo]]
+file = "extra/p_aerial_Puente.jpg"
+title = "File:Puente Cuidad de las ciencias y las artes en Valencia.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Puente_Cuidad_de_las_ciencias_y_las_artes_en_Valencia.jpg"
+author = "Areyes108"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "aerial from the NE over the Turia garden and Pont de Montolivet (view n14): eye opening, pools, plume (stable copy of the fetched file)"
+
+[[photo]]
+file = "extra/p_BenBender_panoramio19.jpg"
+title = "File:Ciutat de les Arts i les Ciències, València, Valencia, Spain - panoramio (19).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Ciutat_de_les_Arts_i_les_Ci%C3%A8ncies%2C_Val%C3%A8ncia%2C_Valencia%2C_Spain_-_panoramio_%2819%29.jpg"
+author = "Ben Bender"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 859
+exterior = true
+selected = true
+side = "SW side near the SE end from the street (view n03); EXIF GPS camera is ~100 m off (stable copy of the fetched file)"
+
+[[photo]]
+file = "extra/p_Diliff_2007.jpg"
+title = "File:El Palau de les Arts Reina Sofía, Valencia - Jan 2007.jpg"
+url = "https://commons.wikimedia.org/wiki/File:El_Palau_de_les_Arts_Reina_Sof%C3%ADa%2C_Valencia_-_Jan_2007.jpg"
+author = "Diliff"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 736
+exterior = true
+selected = true
+side = "night view of the SE end over the pools (stable copy of the fetched file)"
+
+[[photo]]
+file = "extra/p_Delso_DD34.jpg"
+title = "File:Palacio de las Artes Reina Sofía, Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 34.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palacio_de_las_Artes_Reina_Sof%C3%ADa%2C_Ciudad_de_las_Artes_y_las_Ciencias%2C_Valencia%2C_Espa%C3%B1a%2C_2014-06-29%2C_DD_34.JPG"
+author = "Diego Delso"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 665
+exterior = true
+selected = true
+side = "NE side at dusk from the Turia garden (stable copy of the fetched file)"
+
+[[photo]]
+file = "extra/e17_Pehlemann_Sud.jpg"
+title = "File:El Palau de les Arts Reina Sofía (2005) Süd die Oper Ciudad de las Artes y las Ciencias Valencia Spanien Foto Wolfgang Pehlemann P1140076.jpg"
+url = "https://commons.wikimedia.org/wiki/File:El_Palau_de_les_Arts_Reina_Sof%C3%ADa_%282005%29_S%C3%BCd_die_Oper_Ciudad_de_las_Artes_y_las_Ciencias_Valencia_Spanien_Foto_Wolfgang_Pehlemann_P1140076.jpg"
+author = "Wolfgang Pehlemann"
+license = "CC BY-SA 3.0 de"
+width = 1280
+height = 711
+exterior = true
+selected = true
+side = "SE end, SW flank: beak and lip detail"
+
+[[photo]]
+file = "extra/e18_Pehlemann_Sudost.jpg"
+title = "File:El Palau de les Arts Reina Sofía (2005) Südost die Oper Ciudad de las Artes y las Ciencias Valencia Spanien Foto Wolfgang Pehlemann P1140093.jpg"
+url = "https://commons.wikimedia.org/wiki/File:El_Palau_de_les_Arts_Reina_Sof%C3%ADa_%282005%29_S%C3%BCdost_die_Oper_Ciudad_de_las_Artes_y_las_Ciencias_Valencia_Spanien_Foto_Wolfgang_Pehlemann_P1140093.jpg"
+author = "Wolfgang Pehlemann"
+license = "CC BY-SA 3.0 de"
+width = 1280
+height = 2304
+exterior = true
+selected = true
+side = "SE end square-on (vertical panorama): pointed arch of the two shells, plume fin, lip, curved lobby glazing"
+
+[[photo]]
+file = "extra/e19_Pehlemann_West.jpg"
+title = "File:El Palau de les Arts Reina Sofía (2005) West Die Oper Ciudad de las Artes y las Ciencias Valencia Spanien Foto Wolfgang Pehlemann P1140118.jpg"
+url = "https://commons.wikimedia.org/wiki/File:El_Palau_de_les_Arts_Reina_Sof%C3%ADa_%282005%29_West_Die_Oper_Ciudad_de_las_Artes_y_las_Ciencias_Valencia_Spanien_Foto_Wolfgang_Pehlemann_P1140118.jpg"
+author = "Wolfgang Pehlemann"
+license = "CC BY-SA 3.0 de"
+width = 1280
+height = 711
+exterior = true
+selected = true
+side = "NE side near the SE end (view e19, cropped panorama, fov unknown): beak, lip, lobby, eye opening"
+
+[[photo]]
+file = "extra/e20_Pehlemann_Montolivet.jpg"
+title = "File:Pont de Montolivet vor El Palau de les Arts Reina Sofía (2005) die Oper Ciudad de las Artes y las Ciencias Valencia Spanien Foto Wolfgang Pehlemann P1140051.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Pont_de_Montolivet_vor_El_Palau_de_les_Arts_Reina_Sof%C3%ADa_%282005%29_die_Oper_Ciudad_de_las_Artes_y_las_Ciencias_Valencia_Spanien_Foto_Wolfgang_Pehlemann_P1140051.jpg"
+author = "Wolfgang Pehlemann"
+license = "CC BY-SA 3.0 de"
+width = 1280
+height = 720
+exterior = true
+selected = true
+side = "SE end from the CAC pools beyond the Pont de Montolivet"
+
+[[photo]]
+file = "extra/e21_MCAE_East_View.jpg"
+title = "File:Palau de Les Arts Reina Sofía - East View - City of Arts and Sciences - Valencia Spain.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_Les_Arts_Reina_Sof%C3%ADa_-_East_View_-_City_of_Arts_and_Sciences_-_Valencia_Spain.jpg"
+author = "MCAE Consulting"
+license = "CC0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "NE side from the Turia garden, NW end near (view e21)"
+
+[[photo]]
+file = "extra/e22_MCAE_South_View.jpg"
+title = "File:Palau de Les Arts Reina Sofía - South View - City of Arts and Sciences - Valencia Spain.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_Les_Arts_Reina_Sof%C3%ADa_-_South_View_-_City_of_Arts_and_Sciences_-_Valencia_Spain.jpg"
+author = "MCAE Consulting"
+license = "CC0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "SE end on axis (view e22, iPhone 13 ultrawide 15 mm eq.)"
+
+[[photo]]
+file = "extra/e23_MCAE_Pool_View.jpg"
+title = "File:Palau de Les Arts Reina Sofía - Pool View - City of Arts and Sciences - Valencia Spain.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_Les_Arts_Reina_Sof%C3%ADa_-_Pool_View_-_City_of_Arts_and_Sciences_-_Valencia_Spain.jpg"
+author = "MCAE Consulting"
+license = "CC0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "SW side over the pool with the PALAU DE LES ARTS lettering"
+
+[[photo]]
+file = "extra/e24_MCAE_Puente_Montolivet.jpg"
+title = "File:Puente Montolivet and the Palau de les Arts Reina Sofía in the City of Arts and Sciences, Valencia, Spain.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Puente_Montolivet_and_the_Palau_de_les_Arts_Reina_Sof%C3%ADa_in_the_City_of_Arts_and_Sciences%2C_Valencia%2C_Spain.jpg"
+author = "MCAE Consulting"
+license = "CC0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "SE end from beyond the Pont de Montolivet (view e24)"
+
+[[photo]]
+file = "extra/e25_Voladizo.jpg"
+title = "File:Voladizo - Palau de les Arts Reina Sofia.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Voladizo_-_Palau_de_les_Arts_Reina_Sofia.JPG"
+author = "Tamorlan"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "detail: cantilevered beak (96 mm eq. telephoto)"
+
+[[photo]]
+file = "extra/e26_Dorieo_01.jpg"
+title = "File:Palau de les Arts Reina Sofia 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_les_Arts_Reina_Sofia_01.jpg"
+author = "Dorieo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "SE end from the SW pool"
+
+[[photo]]
+file = "extra/e28_Riobo_2019.jpg"
+title = "File:Palau de les Arts, Valencia.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_les_Arts%2C_Valencia.jpg"
+author = "Bene Riobó"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 543
+exterior = true
+selected = true
+side = "NE long side broadside panorama (view e28)"
+
+[[photo]]
+file = "extra/e29_Lek_2018_1.jpg"
+title = "File:Palau de les Arts Reina Sofia Valencia 2018 1.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_les_Arts_Reina_Sofia_Valencia_2018_1.jpg"
+author = "Steven Lek"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 848
+exterior = true
+selected = true
+side = "from the CAC pools (52 mm eq.)"
+
+[[photo]]
+file = "extra/e30_Lek_2019_3.jpg"
+title = "File:Palau de les Arts Reina Sofia Valencia 2019 3.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_les_Arts_Reina_Sofia_Valencia_2019_3.jpg"
+author = "Steven Lek"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 848
+exterior = true
+selected = true
+side = "SW side through palms"
+
+[[photo]]
+file = "extra/e31_Lek_2019_5.jpg"
+title = "File:Palau de les Arts Reina Sofia Valencia 2019 5.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_les_Arts_Reina_Sofia_Valencia_2019_5.jpg"
+author = "Steven Lek"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 848
+exterior = true
+selected = true
+side = "SE end from the CAC pool and Pont de Montolivet"
+
+[[photo]]
+file = "extra/e32_Alien_head.jpg"
+title = "File:Alien head (Valencia).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Alien_head_%28Valencia%29.jpg"
+author = "Felipe Gabaldón"
+license = "CC BY 2.0"
+width = 1280
+height = 852
+exterior = true
+selected = true
+side = "SE end from below: shells and plume"
+
+[[photo]]
+file = "extra/e34_Sunnya_July2015.jpg"
+title = "File:Palau de les Arts Reina Sofia, July 2015.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_les_Arts_Reina_Sofia%2C_July_2015.jpg"
+author = "Sunnya343"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "SW side from the street"
+
+[[reference]]
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+title = "IGN PNOA orthophotos (maxima actualidad 2024; pnoa-historico PNOA2008/PNOA2012), EPSG:25830, 0.2 m/px"
+notes = "CC BY 4.0, PNOA cedido por (c) Instituto Geografico Nacional. bbox 727338,4370795,727638,4371095. Rectified into the axis frame for plan measurements; 2008 is near nadir, 2012/2024 lean ~18 m SW at plume height."
+
+[[reference]]
+url = "https://calatrava.com/projects/palau-de-las-artes-valencia.html"
+title = "Santiago Calatrava: Palau de les Arts Reina Sofia (overview)"
+notes = "two symmetrical cut-away shells, steel sheath projecting axially from the entrance concourse over the envelope, promenade decks cantilevered off the sides"
