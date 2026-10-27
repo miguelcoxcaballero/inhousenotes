@@ -1154,11 +1154,12 @@ fn fan_blade(l: &mut Layers, a: &Area, c: [f32; 3], dead: bool, rng: &mut Rng) {
             let th = p.y.atan2(p.x);
             let f = (th / std::f32::consts::TAU * segs as f32).rem_euclid(1.0);
             let k = (th / std::f32::consts::TAU * segs as f32).floor() as i32;
-            // Splits between segments open beyond ~45 % of the radius.
-            let split = smoothstep(0.42, 0.62, rho);
-            let half_w = 0.5 - 0.42 * split;
+            // Splits between segments open beyond ~35 % of the radius and
+            // the free segments narrow to points.
+            let split = smoothstep(0.3, 0.52, rho);
+            let half_w = 0.5 - 0.3 * split - 0.16 * smoothstep(0.6, 1.0, rho);
             let edge = half_w - (f - 0.5).abs();
-            let rag = if dead { 0.85 + 0.15 * id_f(k as u32, 5) } else { 0.94 + 0.06 * id_f(k as u32, 5) };
+            let rag = if dead { 0.8 + 0.2 * id_f(k as u32, 5) } else { 0.86 + 0.14 * id_f(k as u32, 5) };
             let cov = (edge * (std::f32::consts::TAU * rho * r / segs as f32) + 0.5).clamp(0.0, 1.0) * ((rag - rho) * r + 0.5).clamp(0.0, 1.0);
             if cov <= 0.0 {
                 continue;
