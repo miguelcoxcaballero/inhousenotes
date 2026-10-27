@@ -5,13 +5,13 @@
 //! city's light positions until the content team's lamps land.
 
 use forja_math::Vec3;
-use forja_render::{Environment, Light, PointLight, kelvin};
+use forja_render::{CameraModel, Environment, Light, PointLight, kelvin};
 
 /// The night of the engine before clustered lighting (what the sandbox
 /// does): the sun flipped above the horizon as a dim moon, a fixed exposure
 /// of 5.5 and the 40 lamps nearest the camera as legacy point lights.
 pub fn legacy_night() -> Environment {
-    Environment { use_ibl: false, sun_dir: Vec3::new(-0.35, 0.55, -0.45).normalize(), sun_illuminance: 0.35, exposure: 5.5, bloom: 0.1, ..Environment::default() }
+    Environment { camera: CameraModel::Night, use_ibl: false, sun_dir: Vec3::new(-0.35, 0.55, -0.45).normalize(), sun_illuminance: 0.35, exposure: 5.5, bloom: 0.1, ..Environment::default() }
 }
 
 pub fn legacy_lights(points: &[(Vec3, Vec3)], cam: Vec3) -> Vec<PointLight> {

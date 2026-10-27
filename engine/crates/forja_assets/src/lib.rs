@@ -165,6 +165,10 @@ pub struct MaterialData {
     pub clearcoat_roughness: f32,
     /// Skin-like subsurface scattering amount (0..1).
     pub subsurface: f32,
+    /// KHR_materials_specular factor: scales the Fresnel reflectance of
+    /// dielectrics (1 = F0 0.04). Porous masonry, unglazed clay and lime
+    /// render reflect less than their solid mineral (~0.65-0.8).
+    pub specular: f32,
 }
 
 impl Default for MaterialData {
@@ -188,6 +192,7 @@ impl Default for MaterialData {
             clearcoat: 0.0,
             clearcoat_roughness: 0.03,
             subsurface: 0.0,
+            specular: 1.0,
         }
     }
 }
@@ -410,6 +415,7 @@ pub fn load_gltf(path: &Path) -> Result<SceneData, AssetError> {
             clearcoat: clearcoat(&doc, m.index()).0,
             clearcoat_roughness: clearcoat(&doc, m.index()).1,
             subsurface: 0.0,
+            specular: m.specular().map(|s| s.specular_factor()).unwrap_or(1.0),
         });
     }
     let default_material = scene.materials.len();

@@ -37,6 +37,8 @@ ssr_steps = 32
 contact_shadows = true
 taa = true
 bloom = true
+# Depth of field of cutscenes / photo mode (High and Ultra).
+dof = true
 
 # Local lights per frame after frustum culling (closest first; the light
 # clusters bound the per-pixel cost) and spot lights with a shadow map (0-4).

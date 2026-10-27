@@ -18,8 +18,31 @@ fn fs_main(in: SkyOut) -> @location(0) vec4<f32> {
     let far = frame.inv_view_proj * vec4<f32>(in.ndc, 1e-6, 1.0);
     let d = normalize(far.xyz / far.w - frame.camera_pos.xyz);
     if (frame.env_params.x > 0.5) {
-        let photo = textureSampleLevel(env_tex, env_samp, equirect_uv(d), 0.0).rgb + local_inscatter(in.clip.xy, d, 1e9);
-        return vec4<f32>(min(photo * exposure_state.pre, vec3<f32>(60000.0)), 1.0);
+        var c = textureSampleLevel(env_tex, env_samp, equirect_uv(d), 0.0).rgb;
+        // The photo is the view from ~1.7 m in the street it was shot in:
+        // its lower half is that street and its horizon is a band of trees
+        // and cars. From high viewpoints switch to the analytic atmosphere
+        // lit by the photo's own sun (same irradiance above the air) over
+        // the synthetic ground the diffuse light uses, under the same
+        // aerial perspective as the city.
+        let h = frame.camera_pos.y;
+        let w = smoothstep(8.0, 60.0, h);
+        if (w > 0.0) {
+            // Below the horizon blend the horizon sky into the fogged ground.
+            let dh = normalize(vec3<f32>(d.x, max(d.y, 0.0), d.z));
+            var a = sky_radiance(dh, frame.sun_dir.xyz, h * 0.001) * frame.params.x;
+            let dist = min(h / max(-d.y, 1e-4), 3e4);
+            // Land beyond the city seen from above (towns, orchards, dry
+            // fields) reflects ~10%, darker than the 17% paving of the
+            // diffuse ground.
+            let ground = height_fog(frame.ground_color.rgb * 0.6, frame.camera_pos.xyz + d * dist, d);
+            // Distant land melts into the bright horizon haze over the
+            // last few degrees instead of meeting the sky at a hard line.
+            a = mix(a, ground, smoothstep(0.0, 0.1, -d.y));
+            c = mix(c, a, w);
+        }
+        c += local_inscatter(in.clip.xy, d, 1e9);
+        return vec4<f32>(min(c * exposure_state.pre, vec3<f32>(60000.0)), 1.0);
     }
     let l = frame.sun_dir.xyz;
     let alt = frame.camera_pos.y * 0.001;

@@ -151,7 +151,8 @@ when the GPU is over budget).
 | Shadowed spot lights | 0 | 2 | 4 | 4 |
 | Texture cap | 1024 | 2048 | 4096 | 4096 |
 | LOD detail | 0.5 | 0.75 | 1.0 | 1.5 |
-| TAA, bloom | on | on | on | on |
+| Depth of field (cutscenes, photo mode) | off | off | on | on |
+| TAA, bloom, camera stage (grade, grain, aberration) | on | on | on | on |
 
 **Auto** (default `auto = true`): discrete GPUs get High, except old or
 entry-level ones (GTX 9xx/10xx, RX 4xx/5xx, MX, RX 6400/6500...) which get
@@ -183,8 +184,9 @@ hardware; the DRS keeps the frame on budget if they are optimistic.
 | TAA | 0.15 | 0.25 | 0.3 | 0.3 |
 | Eye adaptation (night) | 0.05 | 0.05 | 0.05 | 0.05 |
 | Bloom | 0.2 | 0.3 | 0.35 | 0.35 |
-| Tonemap + final | 0.2 | 0.25 | 0.3 | 0.3 |
-| **Total day / night** | **~4 / 4.1** | **~7 / 7.4** | **~9.6 / 10.3** | **~14.6 / 15.3** |
+| Tonemap + final + camera stage | 0.3 | 0.4 | 0.45 | 0.45 |
+| Depth of field (only when a shot sets it) | 0 | 0 | 0.8 | 0.8 |
+| **Total day / night** (no DOF) | **~4.1 / 4.2** | **~7.2 / 7.6** | **~9.8 / 10.5** | **~14.8 / 15.5** |
 | FPS (GPU bound) | 200+ | 130+ | ~100 (60 with headroom) | ~65 on this class; for 3070+ |
 
 CPU per frame, measured on the shared 4-core VM (upper bounds for a
@@ -195,6 +197,17 @@ here; the rest of the measured renderer time is lavapipe's `submit`
 (software rasterization), which a hardware driver does not have. On a
 desktop CPU the engine side should be ~4-7 ms, i.e. not the bottleneck at
 60 FPS.
+
+## Moving and changing things
+
+The static culling grid holds only what never changes. Traffic AI cars,
+parked cars, the player, pedestrians and props are dynamic instances
+(culled per instance every frame). Traffic signal heads are static
+placements whose model switches with the AI's aspect: the game lists them
+in `RenderScene::volatile_statics`, so they stay out of the grid and are
+submitted every frame. Night lights (`FrameDesc::local_lights`, city
+content lights within 600 m) are capped per preset ("lights per frame",
+closest first) before clustering.
 
 ## Remaining risks for real-GPU testing
 
