@@ -10,6 +10,7 @@ use crate::furniture::{self, Aspect};
 use crate::geom::{Parts, Rng};
 use crate::kit::{Kit, Mat, assemble, hex};
 use crate::nightlight::{self, FloodOptions};
+use crate::street_waste::{self as sw, BinModel, ContainerModel};
 use crate::style::StyleLibrary;
 use crate::texgen::SignKind;
 
@@ -693,8 +694,30 @@ fn plaza(lib: &mut ModuleLib, lay: &mut CityLayout, b: &Block, d: &District, rng
             let bq = a + dir * (t + 6.0) + inward * 3.5;
             let yaw = (-inward).x.atan2(-inward.y) + std::f32::consts::PI;
             lay.props.push((PropKind::Bench, Mat4::from_rotation_translation(Quat::from_rotation_y(yaw), Vec3::new(bq.x, 0.155, bq.y))));
+            // A drum on its post at the end of every bench.
+            let bin = lib.named(&mut lay.out, "papelera_single", || sw::papelera(BinModel::PostSingle, 0));
+            let pq = bq + dir * 1.3;
+            lay.out.placements.push((bin, Mat4::from_rotation_translation(Quat::from_rotation_y(inward.x.atan2(inward.y)), Vec3::new(pq.x, 0.155, pq.y))));
             t += 14.0;
         }
+    }
+    // Underground container mouths at the plaza edge (old-town plazas
+    // have no kerbside containers): four fractions and a glass igloo,
+    // fronts toward the plaza.
+    if d.valencia {
+        let (a, bb) = (ring[0], ring[1]);
+        let dir = (bb - a).normalize();
+        let inward = Vec2::new(-dir.y, dir.x);
+        let mut t = (bb - a).length() * 0.5 - 4.0;
+        for f in [3u8, 0, 1, 4] {
+            let m = lib.named(&mut lay.out, &format!("underground_{f}"), || sw::underground_bin(f));
+            let q = a + dir * t + inward * 5.5;
+            lay.out.placements.push((m, Mat4::from_rotation_translation(Quat::from_rotation_y(inward.x.atan2(inward.y)), Vec3::new(q.x, 0.155, q.y))));
+            t += 1.75;
+        }
+        let ig = lib.named(&mut lay.out, "igloo_1", || sw::glass_igloo(1));
+        let q = a + dir * (t + 0.6) + inward * 5.5;
+        lay.out.placements.push((ig, Mat4::from_rotation_translation(Quat::from_rotation_y(inward.x.atan2(inward.y)), Vec3::new(q.x, 0.155, q.y))));
     }
     let si = lay.out.add_scene(assemble(lib.kit, "plaza", p, None));
     lay.out.placements.push((si, Mat4::IDENTITY));
@@ -856,6 +879,12 @@ fn street_furniture(lib: &mut ModuleLib, lay: &mut CityLayout, s: &Segment, d: &
                     let lamp = street_lamp_module(lib, &mut lay.out, true, Vec3::new(q.x, 0.15, q.y), 0.15);
                     place(lay, lamp, q, 0.15, left * -side);
                     lay.out.lights.push((Vec3::new(q.x, 4.4, q.y), Vec3::new(1.0, 0.82, 0.58)));
+                    if k % 6 == 1 {
+                        // Municipal drum clamped to the lamp column, on the
+                        // pavement side.
+                        let bin = lib.named(&mut lay.out, "papelera_clamp", || sw::papelera(BinModel::Clamp(9), 0));
+                        place(lay, bin, q, 0.15, left * side);
+                    }
                 } else {
                     let qt = at(t, side * (road + 1.0));
                     place(lay, grate, qt, 0.15, dir);
@@ -877,21 +906,51 @@ fn street_furniture(lib: &mut ModuleLib, lay: &mut CityLayout, s: &Segment, d: &
             }
         }
     }
-    // Litter bins and a group of recycling containers in the parking lane.
-    let bin = lib.named(&mut lay.out, "litter_bin", furniture::litter_bin);
-    let mut t = 20.0;
-    while t < len - 20.0 {
-        let side = if (t as i32 / 20) % 2 == 0 { 1.0 } else { -1.0 };
-        place(lay, bin, at(t + 4.0, side * (road + 0.5)), 0.15, left * -side);
-        t += 40.0;
+    // Litter bins by the crossings at both ends (the municipal double bin
+    // in Valencia, a single drum in Madrid), on the kerb side of the
+    // pavement, clear of the crosswalk.
+    for (end, inward) in [(0.0f32, 1.0f32), (len, -1.0)] {
+        let side = if inward > 0.0 { 1.0 } else { -1.0 };
+        let (name, model) = if d.valencia { ("papelera_double", BinModel::PostDouble) } else { ("papelera_single", BinModel::PostSingle) };
+        let bin = lib.named(&mut lay.out, name, || sw::papelera(model, 0));
+        let q = at(end + inward * 8.5, side * (road + 0.55));
+        // Facing the pavement: a double bin's drums then run along the kerb.
+        place(lay, bin, q, 0.15, left * side);
     }
-    if len > 40.0 && road > 3.0 {
-        let side = -1.0;
-        let t = len * 0.5 + rng.range(-8.0, 8.0);
-        for k in 0..4u8 {
-            let kind = [0u8, 1, 2, 3][k as usize];
-            let c = lib.named(&mut lay.out, &format!("container_{kind}"), || furniture::container(kind));
-            place(lay, c, at(t + k as f32 * 2.0, side * (road - 1.1)), 0.0, left * -side);
+    if !d.valencia {
+        let bin = lib.named(&mut lay.out, "litter_bin", furniture::litter_bin);
+        let mut t = 30.0;
+        while t < len - 30.0 {
+            let side = if (t as i32 / 20) % 2 == 0 { 1.0 } else { -1.0 };
+            place(lay, bin, at(t + 4.0, side * (road + 0.5)), 0.15, left * side);
+            t += 40.0;
+        }
+    }
+    // Container islands ("illes") in the parking lane: 3-5 fractions side
+    // by side against the kerb, fronts toward the pavement, never on the
+    // footway of narrow streets (no parking lane: their residents use the
+    // underground mouths of the plazas).
+    if len > 40.0 && road > 4.5 {
+        let fleet = if rng.chance(0.55) { ContainerModel::Kerbside } else { ContainerModel::SideLoader };
+        let mut t = 16.0 + rng.range(0.0, 10.0);
+        let mut side = if rng.chance(0.5) { 1.0f32 } else { -1.0 };
+        while t < len - 26.0 {
+            let n = 3 + rng.below(3);
+            // Always general waste, then packaging, paper, glass, organic.
+            let fractions: Vec<u8> = [3u8, 0, 1, 2, 4].into_iter().take(n).collect();
+            let mut x = t;
+            for (i, f) in fractions.iter().enumerate() {
+                let model = if d.valencia { fleet } else { ContainerModel::Bin1100 };
+                let size = sw::container_size(model, *f);
+                let wear = rng.below(8) as u8;
+                x += size.x * 0.5;
+                let c = lib.named(&mut lay.out, &format!("container_{model:?}_{f}_{wear}"), || sw::container_model(model, *f, wear));
+                // Fronts (+Z) face the pavement: outward from the road axis.
+                place(lay, c, at(x, side * (road - 0.05 - size.y * 0.5)), 0.0, left * side);
+                x += size.x * 0.5 + if i + 1 < fractions.len() { 0.3 } else { 0.0 };
+            }
+            t = x + 45.0 + rng.range(0.0, 25.0);
+            side = -side;
         }
     }
     // Signs at the street entrance and exit.
@@ -945,11 +1004,14 @@ fn intersections(lib: &mut ModuleLib, lay: &mut CityLayout, segments: &[Segment]
                 let walk = !along_z;
                 let arm = if s.avenue { 5.0 } else { 0.0 };
                 let key = format!("tl_{state:?}_{walk}_{arm}");
-                let m = lib.named(&mut lay.out, &key, || furniture::traffic_light(state, walk, -std::f32::consts::FRAC_PI_2, arm));
+                // The pedestrian head faces across the road (+X local), where
+                // the people waiting on the far kerb look at it.
+                let ped_yaw = std::f32::consts::FRAC_PI_2;
+                let m = lib.named(&mut lay.out, &key, || furniture::traffic_light(state, walk, ped_yaw, arm));
                 let at = Mat4::from_rotation_translation(Quat::from_rotation_y(yaw), Vec3::new(pos.x, 0.15, pos.y));
                 lay.out.placements.push((m, at));
                 if lib.kit.night.is_night() {
-                    lay.out.city_lights.extend(furniture::signal_lights(state, walk, -std::f32::consts::FRAC_PI_2, arm).into_iter().map(|mut l| {
+                    lay.out.city_lights.extend(furniture::signal_lights(state, walk, ped_yaw, arm).into_iter().map(|mut l| {
                         l.pos = at.transform_point3(l.pos);
                         if let Some(s) = &mut l.spot {
                             s.dir = at.transform_vector3(s.dir);
