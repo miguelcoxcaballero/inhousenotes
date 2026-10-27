@@ -7,7 +7,7 @@
         ||(typeof require==='function'?require('./drive-ink-journal-v5.js').Journal:null);
     const API='https://www.googleapis.com/drive/v3/files';
     const UPLOAD='https://www.googleapis.com/upload/drive/v3/files';
-    const KIND='ink-preview-v1',FRAME_MS=100,MAX_BYTES=2*1024*1024,READ_CACHE_CHARS=4*1024*1024;
+    const KIND='ink-preview-v1',FRAME_MS=100,WARM_MS=300,WARM_FOR_MS=120000,MAX_BYTES=2*1024*1024,READ_CACHE_CHARS=4*1024*1024;
     const escape=value=>String(value).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     class LivePreview extends Base {
         constructor(host){
@@ -172,6 +172,10 @@
                 if(this.previewSources.get(id)!==cached.source||cached.docId!==this.docId
                     ||now-cached.at>20000||cached.at>now+30000)this.forgetReadFrame(id);
         }
+        // A writer pauses between words and lines. Keep polling a device that
+        // wrote recently at a short interval, so the first stroke after a
+        // pause appears while it is drawn instead of up to 2 s later.
+        idleDelay(source,now){return source.lastFrameAt&&now-source.lastFrameAt<WARM_FOR_MS?WARM_MS:2000;}
         async readPreview(id,source){
             const now=Date.now(),wakeEpoch=source.wakeEpoch||0;source.inFlight=true;source.next=now+2000;
             try{
@@ -192,7 +196,7 @@
                         source.activeUntil=0;source.next=receivedAt+15000;this.forgetReadFrame(id);return;
                     }
                     this.readCache.delete(id);this.readCache.set(id,cached);
-                    source.next=receivedAt+(source.activeUntil>receivedAt?FRAME_MS:2000);
+                    source.next=receivedAt+(source.activeUntil>receivedAt?FRAME_MS:this.idleDelay(source,receivedAt));
                     return;
                 }
                 const value=JSON.parse(raw);
@@ -205,9 +209,9 @@
                         if(packet?.fileId!==this.docId||packet.type!=='live-stroke'||!Array.isArray(packet.points)||packet.points.length>24000)continue;
                         this.host.preview?.(packet);
                     }
-                    source.frame=value.frame;source.activeUntil=receivedAt+5000;
+                    source.frame=value.frame;source.activeUntil=receivedAt+5000;source.lastFrameAt=receivedAt;
                 }
-                source.next=receivedAt+(source.activeUntil>receivedAt?FRAME_MS:2000);
+                source.next=receivedAt+(source.activeUntil>receivedAt?FRAME_MS:this.idleDelay(source,receivedAt));
                 // Install proof only after every preview callback succeeds.
                 // Bound retained strings across all sources, not just per file.
                 this.rememberReadFrame(id,source,raw,value);

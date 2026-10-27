@@ -279,8 +279,9 @@ test('cached frames retain the original activity and freshness deadlines',async 
   await reader.live.readPreview('cached',source);const activeUntil=source.activeUntil;
   t.mock.timers.setTime(104999);await reader.live.readPreview('cached',source);
   assert.equal(source.activeUntil,activeUntil);assert.equal(source.next,105099);
+  // The activity window has closed; the writer stays warm (300 ms polls).
   t.mock.timers.setTime(105001);await reader.live.readPreview('cached',source);
-  assert.equal(source.activeUntil,activeUntil);assert.equal(source.next,107001);
+  assert.equal(source.activeUntil,activeUntil);assert.equal(source.next,105301);
   t.mock.timers.setTime(120001);await reader.live.readPreview('cached',source);
   assert.equal(source.activeUntil,0);assert.equal(source.next,135001);assert.equal(reader.live.readCache.size,0);
   assert.equal(reader.frames.length,1);
@@ -601,4 +602,23 @@ test('an in-flight discovery retains bounded polling while a direct hint deliver
   live.hint('active');assert.equal(live.pollAt,101000);t.mock.timers.tick(0);await nextPreviewTurn();
   assert.equal(reads,1);assert.equal(frames.length,1);assert.equal(listings,1);assert.equal(live.pollAt,101100);
  }finally{live.stop();gate.release();await nextPreviewTurn();t.mock.timers.reset();}
+});
+
+test('a device that wrote recently stays warm: a new stroke after a pause is read within 300 ms',async t=>{
+ t.mock.timers.enable({apis:['Date'],now:100000});
+ let frame=0;const reads=[];
+ const raw=()=>JSON.stringify({v:1,docId:'doc',actor:'writer',frame,at:Date.now(),packets:[packet(frame,0,[1,2])]});
+ const live=new LivePreview({store:memoryInkStore(),account:'a',docId:'doc',actor:'reader',
+  fetch:async()=>{reads.push(Date.now());return new Response(raw());},preview:()=>{}});
+ live.scheduleFrame=()=>{};live.schedulePoll=()=>{};
+ const source={next:0,retryAt:0,frame:0,activeUntil:0,wakeEpoch:0};live.previewSources.set('remote',source);
+ frame=1;await live.readPreview('remote',source);
+ assert.equal(source.frame,1);assert.equal(source.next-Date.now(),100);
+ // Ten seconds of pause: the activity window has closed, the device is warm.
+ t.mock.timers.setTime(110000);await live.readPreview('remote',source);
+ assert.equal(source.next-Date.now(),300);
+ // After two quiet minutes polling relaxes to the ordinary interval.
+ t.mock.timers.setTime(100000+120001);await live.readPreview('remote',source);
+ assert.equal(source.next-Date.now(),2000);
+ live.stop();
 });
