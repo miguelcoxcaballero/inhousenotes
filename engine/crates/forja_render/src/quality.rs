@@ -94,6 +94,9 @@ pub struct GraphicsConfig {
     pub max_texture_size: u32,
     /// Multiplies the LOD triangle budget (lower = coarser LODs sooner).
     pub lod_detail: f32,
+    /// Sun shadow casters with a bounding radius under this many cascade
+    /// texels are skipped (small facade details in the far cascades).
+    pub shadow_caster_texels: f32,
     /// Show the frame profiler overlay at start (F11 toggles it).
     pub profiler_overlay: bool,
     /// Write the per-frame profile to this CSV file (empty: off).
@@ -126,6 +129,7 @@ impl Default for GraphicsConfig {
             spot_shadows: 4,
             max_texture_size: 4096,
             lod_detail: 1.0,
+            shadow_caster_texels: 2.5,
             profiler_overlay: false,
             profiler_csv: String::new(),
         };
@@ -174,6 +178,12 @@ impl GraphicsConfig {
         };
         self.max_texture_size = tex;
         self.lod_detail = lod;
+        self.shadow_caster_texels = match p {
+            Preset::Low => 6.0,
+            Preset::Medium => 4.0,
+            Preset::High => 2.5,
+            _ => 1.5,
+        };
     }
 
     /// Clamps every value to what the renderer supports.
@@ -192,6 +202,7 @@ impl GraphicsConfig {
         self.spot_shadows = self.spot_shadows.min(crate::lights::MAX_SPOT_SHADOWS as u32);
         self.max_texture_size = self.max_texture_size.clamp(256, 16384);
         self.lod_detail = self.lod_detail.clamp(0.1, 4.0);
+        self.shadow_caster_texels = self.shadow_caster_texels.clamp(0.5, 16.0);
         self
     }
 

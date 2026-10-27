@@ -30,6 +30,9 @@ pub struct FrameSample {
     pub fixed_steps: u32,
     pub stats: RenderStats,
     pub render_scale: f32,
+    /// Scenes with most camera triangles `(name, instances, triangles)`
+    /// (filled only while the overlay is open).
+    pub heavy: Vec<(std::sync::Arc<str>, u32, u64)>,
 }
 
 pub struct PerfState {
@@ -238,6 +241,13 @@ pub fn draw_overlay(ctx: &egui::Context, p: &mut PerfState) {
                 cols[1].label("GPU timing unsupported");
             }
         });
+        if !s.heavy.is_empty() {
+            u.separator();
+            u.small("heaviest scenes (camera):");
+            for (name, n, tris) in &s.heavy {
+                u.small(format!("  {name} x{n}: {:.2} M tris", *tris as f64 / 1e6));
+            }
+        }
         u.separator();
         u.horizontal(|u| {
             if p.csv_active() {
@@ -337,6 +347,9 @@ pub fn draw_options(ctx: &egui::Context, p: &mut PerfState) {
             g.end_row();
             g.label("Shadowed spot lights");
             custom |= g.add(egui::Slider::new(&mut c.spot_shadows, 0..=4)).changed();
+            g.end_row();
+            g.label("Small shadow casters (texels)");
+            custom |= g.add(egui::Slider::new(&mut c.shadow_caster_texels, 1.0..=8.0)).changed();
             g.end_row();
             g.label("LOD detail");
             custom |= g.add(egui::Slider::new(&mut c.lod_detail, 0.25..=2.0)).changed();

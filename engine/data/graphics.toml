@@ -45,6 +45,9 @@ spot_shadows = 4
 # Largest texture side uploaded (bigger textures start at a smaller mip;
 # applies on the next map load).
 max_texture_size = 4096
+# Sun shadow casters smaller than this many shadow texels (bounding
+# radius) are skipped.
+shadow_caster_texels = 2.5
 # Multiplies the LOD triangle budget (lower = coarser LODs sooner).
 lod_detail = 1.0
 

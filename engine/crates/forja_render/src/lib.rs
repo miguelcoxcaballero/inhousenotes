@@ -361,6 +361,9 @@ pub struct RenderSettings {
     pub shadow_distance_scale: f32,
     /// Multiplies the LOD triangle budget.
     pub lod_detail: f32,
+    /// Sun shadow casters smaller than this many cascade texels (radius)
+    /// are skipped.
+    pub shadow_caster_texels: f32,
     /// Textures are uploaded from the first mip not larger than this.
     pub max_texture_size: u32,
 }
@@ -386,6 +389,7 @@ impl Default for RenderSettings {
             bloom: true,
             shadow_distance_scale: 1.0,
             lod_detail: 1.0,
+            shadow_caster_texels: 2.5,
             max_texture_size: 4096,
         }
     }
@@ -437,6 +441,7 @@ impl RenderSettings {
         self.bloom = g.bloom;
         self.shadow_distance_scale = g.shadow_distance_scale;
         self.lod_detail = g.lod_detail;
+        self.shadow_caster_texels = g.shadow_caster_texels;
         self.max_texture_size = g.max_texture_size;
     }
 
@@ -509,6 +514,8 @@ struct GpuMesh {
     lods: Vec<(wgpu::Buffer, u32)>,
     material: u32,
     aabb: Aabb,
+    /// Scene name (profiler reports).
+    name: Arc<str>,
 }
 
 impl GpuMesh {
@@ -690,6 +697,8 @@ pub struct Renderer {
     mesh_bytes: u64,
     target_bytes: u64,
     scratch: Vec<InstanceRaw>,
+    /// Batches of the last frame: camera, then every shadow view.
+    last_batches: (Vec<Batch>, Vec<Batch>),
 }
 
 /// Last rendered state of a shadow cascade (far cascades are refreshed
@@ -1362,6 +1371,7 @@ impl Renderer {
             mesh_bytes: 0,
             target_bytes: 0,
             scratch: Vec::new(),
+            last_batches: Default::default(),
         };
         r.resize(1280, 720);
         // `FORJA_PRESET=low|medium|high|ultra`: a quality preset for tools
@@ -1774,6 +1784,7 @@ impl Renderer {
             let gm = self.upload_material(&MaterialData::default(), &textures, &defaults);
             self.materials.push(gm);
         }
+        let name: Arc<str> = scene.name.as_str().into();
         let mesh_base = self.meshes.len() as u32;
         let mut mesh_ids: Vec<Vec<u32>> = Vec::new();
         for prims in &scene.meshes {
@@ -1802,7 +1813,7 @@ impl Renderer {
                     .map(|l| (self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("lod"), contents: bytemuck::cast_slice(l), usage: wgpu::BufferUsages::INDEX }), l.len() as u32))
                     .collect();
                 ids.push(self.meshes.len() as u32);
-                self.meshes.push(GpuMesh { vertex, skin, index, index_count: p.indices.len() as u32, lods, material, aabb: p.aabb });
+                self.meshes.push(GpuMesh { vertex, skin, index, index_count: p.indices.len() as u32, lods, material, aabb: p.aabb, name: name.clone() });
             }
             mesh_ids.push(ids);
         }
@@ -1898,6 +1909,23 @@ impl Renderer {
     /// targets and shadow maps.
     pub fn vram_estimate(&self) -> u64 {
         self.texture_bytes + self.mesh_bytes + self.target_bytes + self.shadow_size as u64 * self.shadow_size as u64 * 4 * 4 + self.instance_cap + self.joint_cap
+    }
+
+    /// The `n` scenes with most triangles drawn last frame, in the camera
+    /// (`shadow` false) or the shadow maps: `(scene, instances, triangles)`.
+    pub fn heaviest_meshes(&self, n: usize, shadow: bool) -> Vec<(Arc<str>, u32, u64)> {
+        let list = if shadow { &self.last_batches.1 } else { &self.last_batches.0 };
+        let mut by: std::collections::HashMap<&str, (Arc<str>, u32, u64)> = Default::default();
+        for b in list {
+            let m = &self.meshes[b.mesh as usize];
+            let e = by.entry(&*m.name).or_insert_with(|| (m.name.clone(), 0, 0));
+            e.1 += b.count;
+            e.2 += (m.indices(b.lod).1 / 3) as u64 * b.count as u64;
+        }
+        let mut v: Vec<_> = by.into_values().collect();
+        v.sort_by(|a, b| b.2.cmp(&a.2));
+        v.truncate(n);
+        v
     }
 
     /// Finest LOD of `mesh` with at most `budget` triangles, plus `bias`
@@ -2135,7 +2163,7 @@ impl Renderer {
         // not re-rendered this frame (cached far cascade, sun shadows off)
         // gathers nothing.
         const VIEWS: usize = 4 + lights::MAX_SPOT_SHADOWS;
-        let mut cascade_planes: Vec<([Vec4; 6], f32)> = cascade_vp.iter().zip(cascade_texel).map(|(m, t)| (camera::frustum_planes_standard(m), if sun_shadows { 2.5 * t } else { f32::INFINITY })).collect();
+        let mut cascade_planes: Vec<([Vec4; 6], f32)> = cascade_vp.iter().zip(cascade_texel).map(|(m, t)| (camera::frustum_planes_standard(m), if sun_shadows { s.shadow_caster_texels * t } else { f32::INFINITY })).collect();
         cascade_planes.extend(spot_vp[..n_spot].iter().map(|m| (camera::frustum_planes_standard(m), 0.05)));
         let drawn = |c: usize| if c < 4 { sun_shadows && refresh[c] } else { c < 4 + n_spot };
         let mut all = std::mem::take(&mut self.scratch);
@@ -2149,7 +2177,7 @@ impl Renderer {
         {
             let meshes = &self.meshes;
             let statics = &mut self.statics;
-            let main_view = static_scene::View { planes: &frustum.planes, eye: cam.position, min_radius_per_m: 0.6 / focal, min_radius: 0.0, lod_scale, shadow: false };
+            let main_view = static_scene::View { planes: &frustum.planes, eye: cam.position, min_radius_per_m: 0.6 / focal, min_radius: 0.0, lod_scale, texel_lod_scale: 0.0, shadow: false };
             statics.gather(&main_view, &|m, b| Self::lod_for(meshes, m, b, 0), &mut all, &mut main_batches);
             for (c, (planes, min_r)) in cascade_planes.iter().enumerate() {
                 if !drawn(c) {
@@ -2158,7 +2186,11 @@ impl Renderer {
                 // Casters are culled by their size in shadow texels, not by
                 // camera distance: facades are assembled from many small
                 // modules that together cast the large shadows.
-                let v = static_scene::View { planes, eye: cam.position, min_radius_per_m: 0.0, min_radius: *min_r, lod_scale, shadow: true };
+                // LOD: never finer than the camera's (plus the bias below),
+                // nor than one triangle per two shadow texels covered.
+                let texel = if c < 4 { cascade_texel[c] } else { 0.0 };
+                let texel_lod_scale = if texel > 0.0 { std::f32::consts::PI * 0.5 * s.lod_detail / (texel * texel) } else { 0.0 };
+                let v = static_scene::View { planes, eye: cam.position, min_radius_per_m: 0.0, min_radius: *min_r, lod_scale, texel_lod_scale, shadow: true };
                 // Shadow maps hide silhouette detail: one LOD coarser than
                 // the camera in the near cascades and spots, two in the far
                 // cascades.
@@ -2228,7 +2260,17 @@ impl Renderer {
                 }
                 if cmask != 0 && !self.materials[mesh.material as usize].blend {
                     let mut sraw = raw;
-                    sraw.extra[2] = (lod + 1).min(mesh.lods.len() as u32);
+                    // One level coarser than the camera, and no finer than one
+                    // triangle per two texels of the finest sun cascade it
+                    // falls in (spot views: the camera rule only).
+                    let c0 = cmask.trailing_zeros() as usize;
+                    let texel_lod = if c0 < 4 && cascade_texel[c0] > 0.0 {
+                        let r = wb.as_ref().map_or(radius, |b| b.half_extents().length()) / cascade_texel[c0];
+                        Self::lod_for(&self.meshes, part.mesh, std::f32::consts::PI * 0.5 * s.lod_detail * r * r, 0)
+                    } else {
+                        0
+                    };
+                    sraw.extra[2] = (lod + 1).max(texel_lod).min(mesh.lods.len() as u32);
                     for (c, (planes, _)) in cascade_planes.iter().enumerate() {
                         if cmask & (1 << c) != 0 && wb.as_ref().is_none_or(|wb| aabb_in_planes(wb, planes)) {
                             shadow[c].push((part.mesh, sraw));
@@ -2625,6 +2667,7 @@ impl Renderer {
         stats.vram_mb = self.vram_estimate() as f32 / (1024.0 * 1024.0);
         let _ = instance_bytes;
         self.stats = stats;
+        self.last_batches = (main_batches, shadow_batches.into_iter().flatten().collect());
     }
 
     /// Renders offscreen and reads back RGBA8 pixels (screenshots, tests).
