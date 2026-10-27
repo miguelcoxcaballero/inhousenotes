@@ -18,6 +18,7 @@ use rayon::prelude::*;
 use crate::geom::{Parts, Prim};
 use crate::macrotex::{self, Recipe};
 use crate::nightlight::{self, NightState};
+use crate::streettex;
 use crate::texgen::{self, GenSet, SignKind, TilePattern};
 use crate::weathering::{self, Decal, DecalTextures};
 
@@ -85,6 +86,22 @@ pub enum Mat {
     Neon(Rgb),
     /// Far-light glow point (see [`nightlight::glow_parts`]).
     Glow(Rgb),
+    /// Moulded HDPE of waste containers and bins (stipple, fading, grime,
+    /// scuffs), tinted.
+    Hdpe(Rgb),
+    /// Sticker atlas of the street furniture ([`streettex::Label`]):
+    /// opaque labels, cut-out emblem and tags.
+    StreetLabel,
+    /// Brushed stainless steel (underground bin mouths).
+    Stainless,
+    /// Powder-coated steel (litter bins, signal poles), satin, tinted.
+    PowderCoat(Rgb),
+    /// Rubber (castor tyres, gaskets, lid flaps).
+    Rubber,
+    /// Bicycle signal lens: 0 red, 1 amber, 2 green; lit.
+    BikeLens(u8, bool),
+    /// Pedestrian countdown display showing the given seconds.
+    Countdown(u8),
 }
 
 impl Mat {
@@ -263,6 +280,9 @@ pub struct Kit {
     interiors_lit: TextureData,
     curtains_lit: TextureData,
     shop_signs_lit: TextureData,
+    hdpe: GenSet,
+    street_atlas: TextureData,
+    bike_lenses: [TextureData; 3],
     /// Time of day the city is generated for (day by default). Set it with
     /// [`Kit::set_hour`] before building.
     pub night: NightState,
@@ -345,6 +365,9 @@ impl Kit {
             decals: DecalTextures::generate(),
             glass: texgen::glass(),
             road_paint: texgen::road_paint(),
+            hdpe: streettex::hdpe(),
+            street_atlas: streettex::street_atlas(),
+            bike_lenses: [streettex::bike_lens(0xff2a10), streettex::bike_lens(0xffa000), streettex::bike_lens(0x20ff70)],
             interior_ao: texgen::solid("interior_ao", 0.22),
             pbr,
         };
@@ -492,7 +515,8 @@ impl<'a> Assembler<'a> {
             Mat::SignFace(_) => d.emissive = Vec3::splat(mix(0.08, 0.004)),
             Mat::Lamp(c) => d.emissive = tint(c).truncate() * mix(12.0, NIGHT_BULB),
             Mat::Water => d.emissive = Vec3::new(0.05, 0.55, 0.75) * NIGHT_WATER * k,
-            Mat::PedLens(_) => d.emissive = Vec3::splat(mix(6.0, 3.0)),
+            Mat::PedLens(_) | Mat::BikeLens(_, true) => d.emissive = Vec3::splat(mix(6.0, 3.0)),
+            Mat::Countdown(_) => d.emissive = Vec3::splat(mix(4.0, 2.0)),
             _ => {}
         }
         d
@@ -672,6 +696,36 @@ impl<'a> Assembler<'a> {
             }
             Mat::Neon(c) => MaterialData { name: "neon".into(), base_color: tint(c) * 0.6, roughness: 0.25, emissive: tint(c).truncate() * NIGHT_NEON, ..Default::default() },
             Mat::Glow(c) => MaterialData { name: "glow".into(), base_color: Vec4::new(0.0, 0.0, 0.0, 1.0), roughness: 1.0, emissive: tint(c).truncate() * NIGHT_GLOW, ..Default::default() },
+            Mat::Hdpe(c) => {
+                let g = kit.hdpe.clone();
+                let mut d = self.generated(&g, "hdpe");
+                d.base_color = tint(c);
+                d.normal_scale = 0.5;
+                d
+            }
+            Mat::StreetLabel => {
+                let t = kit.street_atlas.clone();
+                let mut d = self.textured(&t, "street_label", 0.45, 0.0);
+                d.alpha = AlphaMode::Mask(128);
+                d
+            }
+            Mat::Stainless => flat("stainless", hex(0xb8bcc0), 0.32, 1.0),
+            Mat::PowderCoat(c) => flat("powder_coat", c, 0.45, 0.0),
+            Mat::Rubber => flat("rubber", hex(0x1c1c1c), 0.85, 0.0),
+            Mat::BikeLens(k, on) => {
+                let t = kit.bike_lenses[k as usize % 3].clone();
+                if on {
+                    self.textured(&t, "bike_lens_on", 0.2, 6.0)
+                } else {
+                    let mut d = self.textured(&t, "bike_lens_off", 0.15, 0.0);
+                    d.base_color = Vec4::new(0.12, 0.12, 0.12, 1.0);
+                    d
+                }
+            }
+            Mat::Countdown(secs) => {
+                let t = streettex::countdown(secs, 0x20ff70);
+                self.textured(&t, "countdown", 0.2, 4.0)
+            }
         };
         let mut data = self.night_adjust(m, data);
         data.specular *= porous_specular(m);
