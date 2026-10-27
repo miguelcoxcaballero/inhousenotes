@@ -1,6 +1,7 @@
 //! Street of procedural Spanish buildings, one per style, rendered at eye
 //! level: `cargo run --release -p forja_render --example street -- out_prefix`
-//! (`NIGHT=1` or `HOUR=<h>` for a night street with candelabras).
+//! (`NIGHT=1` or `HOUR=<h>` for a night street with candelabras,
+//! `STREET_CLOSE=1` adds facade close-ups).
 
 use std::path::PathBuf;
 
@@ -96,6 +97,12 @@ fn main() {
     let mut shots: Vec<(String, Vec3, Vec3)> = vec![("wide".into(), Vec3::new(-30.0, 1.7, 22.0), Vec3::new(10.0, 9.0, 0.0))];
     for (id, cx, h) in centers.iter().step_by(2) {
         shots.push((id.clone(), Vec3::new(cx + 6.0, 1.7, 13.0), Vec3::new(*cx + 2.0, h * 0.55, 0.0)));
+        // STREET_CLOSE=1: material close-ups, 4 m from the facade and
+        // grazing along it (where a plastic sheen shows first).
+        if std::env::var("STREET_CLOSE").is_ok() {
+            shots.push((format!("{id}_close"), Vec3::new(cx + 4.0, 1.7, 4.0), Vec3::new(*cx - 1.0, 4.5, 0.0)));
+            shots.push((format!("{id}_graze"), Vec3::new(cx + 9.0, 1.8, 1.6), Vec3::new(*cx - 5.0, 6.5, 0.0)));
+        }
     }
     for (name, eye, at) in shots {
         frame.camera = Camera::look_at(flip.transform_point3(eye), flip.transform_point3(at));

@@ -222,6 +222,24 @@ pub fn recipe(id: &str) -> Option<Recipe> {
     })
 }
 
+/// Specular factor (dielectric Fresnel scale, 1 = F0 0.04) of porous
+/// mineral surfaces. Lime render, unglazed brick and terracotta, sandstone
+/// and limestone trap part of the specular reflection in their pores and
+/// scatter it diffusely, so they reflect less than polished stone of the
+/// same mineral (F0 ~0.025-0.03 instead of 0.04). With rough GGX at a
+/// grazing view this is the difference between a matte wall and a
+/// plastic-coated one.
+pub fn porous_specular(m: Mat) -> f32 {
+    match m {
+        Mat::Stucco(_) | Mat::Plaster(_) | Mat::Moulding(_) => 0.7,
+        Mat::Brick(_) | Mat::Terracotta | Mat::RoofClay => 0.65,
+        Mat::Ashlar(_) | Mat::RoofTerrace => 0.75,
+        Mat::Asphalt | Mat::SidewalkHex | Mat::SidewalkSlab | Mat::Cobble => 0.8,
+        Mat::Granite | Mat::Curb => 0.9,
+        _ => 1.0,
+    }
+}
+
 /// Names on the street plates (`Mat::Plate(i)`).
 pub const STREETS: [&str; 8] = ["DE ALCALÁ", "DE COLÓN", "DE RUZAFA", "DEL CARMEN", "DE LA PAZ", "DE CIRILO AMORÓS", "DE LAVAPIÉS", "DE SORNÍ"];
 
@@ -655,7 +673,8 @@ impl<'a> Assembler<'a> {
             Mat::Neon(c) => MaterialData { name: "neon".into(), base_color: tint(c) * 0.6, roughness: 0.25, emissive: tint(c).truncate() * NIGHT_NEON, ..Default::default() },
             Mat::Glow(c) => MaterialData { name: "glow".into(), base_color: Vec4::new(0.0, 0.0, 0.0, 1.0), roughness: 1.0, emissive: tint(c).truncate() * NIGHT_GLOW, ..Default::default() },
         };
-        let data = self.night_adjust(m, data);
+        let mut data = self.night_adjust(m, data);
+        data.specular *= porous_specular(m);
         self.scene.materials.push(data);
         let i = self.scene.materials.len() - 1;
         self.mats.insert(m, i);

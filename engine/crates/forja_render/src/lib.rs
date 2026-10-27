@@ -26,8 +26,10 @@
 //! with instances every frame.
 
 pub mod atmosphere;
+pub mod brdf;
 pub mod camera;
 pub mod env;
+pub mod look;
 
 use std::sync::Arc;
 
@@ -37,6 +39,7 @@ use forja_math::{Aabb, Frustum, Mat4, Vec3, Vec4};
 use wgpu::util::DeviceExt;
 
 pub use camera::Camera;
+pub use look::{DepthOfField, Grade, Look};
 pub use wgpu;
 
 const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -91,6 +94,7 @@ struct MaterialUniforms {
     emissive: [f32; 4],
     params: [f32; 4],
     layers: [f32; 4],
+    extra: [f32; 4],
 }
 
 #[repr(C)]
@@ -232,17 +236,44 @@ pub struct RenderSettings {
     /// Post-TAA sharpening, 0..1.
     pub sharpen: f32,
     /// 0: lit image; 1: ambient occlusion; 2: sun shadow (map x contact);
-    /// 3: screen-space reflection hit confidence.
+    /// 3: screen-space reflection hit confidence; 4: specular radiance
+    /// only (sun + environment + SSR); 5: shading roughness after specular
+    /// anti-aliasing.
     pub debug_view: u32,
+    /// Camera stage of [`FrameDesc::look`] (`FORJA_FX=-look` skips it).
+    pub look: bool,
+    /// Depth of field of [`FrameDesc::look`] (`FORJA_FX=-dof`).
+    pub dof: bool,
+    /// Multiple-scattering energy compensation and the DFG LUT (`-ms`
+    /// falls back to the single-scattering analytic fit, for comparisons).
+    pub multiscatter: bool,
+    /// Geometric and normal-map specular anti-aliasing (`-specaa`).
+    pub specular_aa: bool,
+    /// Micro-shadowing of direct sun light by the material AO (`-micro`).
+    pub micro_shadow: bool,
+    /// Material specular factor (`-porous` renders every dielectric with
+    /// F0 0.04, for comparisons).
+    pub specular_factor: bool,
+    /// `FORJA_DOF=<focus m>,<f-stop>` forces a depth of field on every
+    /// frame (photo-mode previews of the examples).
+    pub dof_override: Option<DepthOfField>,
 }
 
 impl Default for RenderSettings {
     fn default() -> Self {
-        Self { taa: true, ssao: true, contact_shadows: true, ssr: true, capture_frames: 8, sharpen: 0.5, debug_view: 0 }
+        Self { taa: true, ssao: true, contact_shadows: true, ssr: true, capture_frames: 8, sharpen: 0.5, debug_view: 0, look: true, dof: true, multiscatter: true, specular_aa: true, micro_shadow: true, specular_factor: true, dof_override: None }
     }
 }
 
 impl RenderSettings {
+    /// Shader switches for before/after comparisons (`env_params.w`):
+    /// 1 = legacy box-filtered env lod, 2 = single scattering, 4 = no
+    /// specular anti-aliasing, 8 = no micro-shadowing, 16 = F0 0.04 for
+    /// every dielectric.
+    fn legacy_bits(&self, box_env: bool) -> f32 {
+        (box_env as u32 | (!self.multiscatter as u32) << 1 | (!self.specular_aa as u32) << 2 | (!self.micro_shadow as u32) << 3 | (!self.specular_factor as u32) << 4) as f32
+    }
+
     /// Defaults with the `FORJA_FX` / `FORJA_CAPTURE_FRAMES` overrides applied.
     pub fn from_env() -> Self {
         let mut s = Self::default();
@@ -252,11 +283,21 @@ impl RenderSettings {
         if let Some(n) = std::env::var("FORJA_CAPTURE_FRAMES").ok().and_then(|v| v.parse().ok()) {
             s.capture_frames = n;
         }
+        if let Ok(v) = std::env::var("FORJA_DOF") {
+            let n: Vec<f32> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+            if let [focus, f_stop] = n[..] {
+                s.dof_override = Some(DepthOfField::new(focus, f_stop));
+            } else {
+                log::warn!("FORJA_DOF: expected <focus m>,<f-stop>, got {v}");
+            }
+        }
         if let Ok(v) = std::env::var("FORJA_DEBUG") {
             s.debug_view = match v.trim() {
                 "ao" => 1,
                 "shadow" => 2,
                 "ssr" => 3,
+                "spec" => 4,
+                "rough" => 5,
                 other => {
                     log::warn!("FORJA_DEBUG: unknown view {other}");
                     0
@@ -267,7 +308,8 @@ impl RenderSettings {
     }
 
     /// Applies a `FORJA_FX` list: `name` or `+name` enables, `-name`
-    /// disables (`taa`, `ssao`/`ao`, `contact`, `ssr`).
+    /// disables (`taa`, `ssao`/`ao`, `contact`, `ssr`, `look`, `dof`, `ms`,
+    /// `specaa`, `micro`, `porous`, `ggx`).
     pub fn apply_fx(&mut self, fx: &str) {
         for item in fx.split(',').map(str::trim).filter(|i| !i.is_empty()) {
             let (on, name) = match item.strip_prefix('-') {
@@ -279,6 +321,14 @@ impl RenderSettings {
                 "ssao" | "ao" => self.ssao = on,
                 "contact" => self.contact_shadows = on,
                 "ssr" => self.ssr = on,
+                "look" | "cinematic" => self.look = on,
+                "dof" => self.dof = on,
+                "ms" => self.multiscatter = on,
+                "specaa" => self.specular_aa = on,
+                "micro" => self.micro_shadow = on,
+                "porous" => self.specular_factor = on,
+                // Read by `env::EnvMap::from_hdr` (box-filtered mips).
+                "ggx" => {}
                 _ => log::warn!("FORJA_FX: unknown effect {name}"),
             }
         }
@@ -293,6 +343,9 @@ pub struct FrameDesc {
     pub lights: Vec<PointLight>,
     pub lines: Vec<LineVertex>,
     pub time: f32,
+    /// Camera and film stage after tonemapping (grade, grain, lens
+    /// effects, depth of field); defaults to [`Look::cinematic`].
+    pub look: Look,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -365,6 +418,13 @@ struct Targets {
     blur_bind: wgpu::BindGroup,
     taa_bind: wgpu::BindGroup,
     screen_bind: wgpu::BindGroup,
+    /// Camera stage (look.rs): LDR input and depth-of-field bindings.
+    camera: look::CameraFxTargets,
+    /// Bloom's first downsample and the tonemap reading the depth of
+    /// field output (written into `hdr`, free after TAA) instead of
+    /// `resolved`.
+    dof_down: wgpu::BindGroup,
+    dof_tonemap: wgpu::BindGroup,
 }
 
 struct PostBinds {
@@ -403,6 +463,7 @@ struct EnvInfo {
     sun_color: Vec3,
     sh: [Vec3; 9],
     max_mip: f32,
+    prefiltered: bool,
     zenith: Vec3,
     horizon: Vec3,
     ground: Vec3,
@@ -433,6 +494,7 @@ pub struct Renderer {
     clamp_sampler: wgpu::Sampler,
     shadow_sampler: wgpu::Sampler,
     env_view: wgpu::TextureView,
+    dfg_view: wgpu::TextureView,
     env: Option<EnvInfo>,
     meshes: Vec<GpuMesh>,
     texture_cache: std::collections::HashMap<(usize, bool), (std::sync::Arc<[u8]>, wgpu::TextureView)>,
@@ -447,6 +509,7 @@ pub struct Renderer {
     line_buf: wgpu::Buffer,
     line_cap: u64,
     targets: Option<Targets>,
+    camera_fx: look::CameraFx,
     pub stats: RenderStats,
     pub settings: RenderSettings,
     temporal: TemporalState,
@@ -589,6 +652,7 @@ impl Renderer {
                 wgpu::BindGroupLayoutEntry { binding: 2, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison), count: None },
                 texture_entry(3),
                 sampler_entry(4),
+                texture_entry(5),
             ],
         });
         let material_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -904,7 +968,29 @@ impl Renderer {
                 view_formats: &[],
             })
             .create_view(&Default::default());
-        let frame_bind = make_frame_bind(&device, &frame_bgl, &frame_buf, &shadow_view, &shadow_sampler, &env_view, &linear_sampler);
+        // Split-sum DFG LUT (A, B) for image-based specular and its
+        // multiple-scattering compensation (see `brdf`).
+        let dfg_view = {
+            let n = brdf::DFG_SIZE as u32;
+            let tex = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("dfg"),
+                size: wgpu::Extent3d { width: n, height: n, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: HDR_FORMAT,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo { texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                bytemuck::cast_slice(&brdf::dfg_lut()),
+                wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(n * 8), rows_per_image: Some(n) },
+                wgpu::Extent3d { width: n, height: n, depth_or_array_layers: 1 },
+            );
+            tex.create_view(&Default::default())
+        };
+        let frame_bind = make_frame_bind(&device, &frame_bgl, &frame_buf, &shadow_view, &shadow_sampler, &env_view, &linear_sampler, &dfg_view);
         let cascade_bufs: Vec<wgpu::Buffer> = (0..4)
             .map(|_| device.create_buffer(&wgpu::BufferDescriptor { label: Some("cascade"), size: 64, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false }))
             .collect();
@@ -920,6 +1006,7 @@ impl Renderer {
         let line_cap = 65536 * std::mem::size_of::<LineVertex>() as u64;
         let line_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("lines"), size: line_cap, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let taa_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("taa"), size: 16, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let camera_fx = look::CameraFx::new(&device, output_format, &frame_bgl, &taa_bgl);
         let mut r = Self {
             device,
             queue,
@@ -945,6 +1032,7 @@ impl Renderer {
             clamp_sampler,
             shadow_sampler,
             env_view,
+            dfg_view,
             env: None,
             meshes: Vec::new(),
             texture_cache: Default::default(),
@@ -959,6 +1047,7 @@ impl Renderer {
             line_buf,
             line_cap,
             targets: None,
+            camera_fx,
             stats: RenderStats::default(),
             settings: RenderSettings::from_env(),
             temporal: TemporalState::default(),
@@ -1046,7 +1135,7 @@ impl Renderer {
             );
         }
         self.env_view = tex.create_view(&Default::default());
-        self.frame_bind = make_frame_bind(&self.device, &self.frame_bgl, &self.frame_buf, &self.shadow_view, &self.shadow_sampler, &self.env_view, &self.linear_sampler);
+        self.frame_bind = make_frame_bind(&self.device, &self.frame_bgl, &self.frame_buf, &self.shadow_view, &self.shadow_sampler, &self.env_view, &self.linear_sampler, &self.dfg_view);
         let horizon = (0..8).map(|i| {
             let a = i as f32 / 8.0 * std::f32::consts::TAU;
             e.irradiance(Vec3::new(a.cos(), 0.0, a.sin()))
@@ -1056,6 +1145,7 @@ impl Renderer {
             sun_color: e.sun_color,
             sh: e.sh,
             max_mip: (e.mips.len() - 1) as f32,
+            prefiltered: e.prefiltered,
             zenith: e.irradiance(Vec3::Y),
             horizon,
             ground: e.irradiance(Vec3::NEG_Y),
@@ -1165,6 +1255,9 @@ impl Renderer {
         // Tonemap uniform is rewritten each frame (exposure, bloom, vignette).
         let tu = mk_uniform([1.0 / width as f32, 1.0 / height as f32], [1.0, 0.04, 0.3, 0.0]);
         let tonemap = bind(&resolved, &tu, &bloom[0].0);
+        let dof_tonemap = bind(&hdr, &tu, &bloom[0].0);
+        let dof_down = bind(&hdr, &uniforms[0], &dummy);
+        let camera = self.camera_fx.targets(&self.device, self.output_format, (width, height), &self.taa_bgl, &resolved, &depth);
         uniforms.push(tu);
         // Final pass uniform is rewritten each frame (FXAA or sharpening).
         let fu = mk_uniform([1.0 / width as f32, 1.0 / height as f32], [1.0, 0.0, 0.0, 0.0]);
@@ -1188,6 +1281,9 @@ impl Renderer {
             blur_bind,
             taa_bind,
             screen_bind,
+            camera,
+            dof_down,
+            dof_tonemap,
         });
     }
 
@@ -1254,6 +1350,7 @@ impl Renderer {
                 m.unlit as u32 as f32,
             ],
             layers: [m.clearcoat, m.clearcoat_roughness, m.transmission, m.subsurface],
+            extra: [m.specular, 0.0, 0.0, 0.0],
         };
         let buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some(&m.name), contents: bytemuck::bytes_of(&uniforms), usage: wgpu::BufferUsages::UNIFORM });
         let base = pick(m.base_color_tex, white_srgb);
@@ -1439,7 +1536,7 @@ impl Renderer {
             params: [sorted.len().min(MAX_LIGHTS) as f32, 1.0 / self.shadow_size as f32, env.bloom, 0.0],
             screen: [width as f32, height as f32, 1.0 / width as f32, 1.0 / height as f32],
             sh,
-            env_params: [ibl.is_some() as u32 as f32, ibl.map_or(0.0, |e| e.max_mip), 1.0, 0.0],
+            env_params: [ibl.is_some() as u32 as f32, ibl.map_or(0.0, |e| e.max_mip), 1.0, self.settings.legacy_bits(ibl.is_some_and(|e| !e.prefiltered))],
             prev_view_proj: tf.prev_view_proj.to_cols_array_2d(),
             proj_params: [1.0 / proj.x_axis.x, 1.0 / proj.y_axis.y, cam.near, proj.y_axis.y * height as f32 * 0.5],
             jitter: [tf.jitter.x, tf.jitter.y, tf.frame_index as f32, fx_on(tf.history_valid)],
@@ -1606,6 +1703,15 @@ impl Renderer {
             bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0], params: [(!self.settings.taa) as u32 as f32, sharpen, 0.0, 0.0] }),
         );
 
+        let mut look = frame.look;
+        if self.settings.dof_override.is_some() {
+            look.dof = self.settings.dof_override;
+        }
+        if !self.settings.dof {
+            look.dof = None;
+        }
+        let (dof_on, camera_on) = self.camera_fx.prepare(&self.queue, &look, frame.camera.fov_y, (width, height), tf.frame_index, self.settings.look);
+        let t = self.targets.as_ref().expect("resized");
         let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("frame") });
         let mut stats = RenderStats { instances_culled: culled, ..Default::default() };
         // 1. Shadows (alpha-masked casters are alpha tested).
@@ -1831,6 +1937,10 @@ impl Renderer {
             wgpu::TexelCopyTextureInfo { texture: &t.history_tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
             wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
         );
+        // 5b. Depth of field (look.rs) into `hdr`, which is free after TAA.
+        if dof_on {
+            self.camera_fx.dof_pass(&mut enc, &t.hdr, &self.frame_bind, &t.camera);
+        }
         // 6. Bloom down/up chain.
         let fullscreen = |enc: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, pipe: &wgpu::RenderPipeline, bind: &wgpu::BindGroup, load: wgpu::LoadOp<wgpu::Color>| {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1846,14 +1956,21 @@ impl Renderer {
             pass.draw(0..3, 0..1);
         };
         for i in 0..BLOOM_MIPS {
-            fullscreen(&mut enc, &t.bloom[i].0, &self.pipelines.down, &t.post_bind.down[i], wgpu::LoadOp::Clear(wgpu::Color::BLACK));
+            let bind = if i == 0 && dof_on { &t.dof_down } else { &t.post_bind.down[i] };
+            fullscreen(&mut enc, &t.bloom[i].0, &self.pipelines.down, bind, wgpu::LoadOp::Clear(wgpu::Color::BLACK));
         }
         for (k, i) in (1..BLOOM_MIPS).rev().enumerate() {
             fullscreen(&mut enc, &t.bloom[i - 1].0, &self.pipelines.up, &t.post_bind.up[k], wgpu::LoadOp::Load);
         }
-        // 7. Tonemap, then FXAA or sharpening.
-        fullscreen(&mut enc, &t.ldr, &self.pipelines.tonemap, &t.post_bind.tonemap, wgpu::LoadOp::Clear(wgpu::Color::BLACK));
-        fullscreen(&mut enc, target, &self.pipelines.fxaa, &t.post_bind.fxaa, wgpu::LoadOp::Clear(wgpu::Color::BLACK));
+        // 7. Tonemap, then FXAA or sharpening, then the camera stage
+        // (grade, grain, lens) when the look has one.
+        let tonemap_bind = if dof_on { &t.dof_tonemap } else { &t.post_bind.tonemap };
+        fullscreen(&mut enc, &t.ldr, &self.pipelines.tonemap, tonemap_bind, wgpu::LoadOp::Clear(wgpu::Color::BLACK));
+        let aa_target = if camera_on { &t.camera.ldr2 } else { target };
+        fullscreen(&mut enc, aa_target, &self.pipelines.fxaa, &t.post_bind.fxaa, wgpu::LoadOp::Clear(wgpu::Color::BLACK));
+        if camera_on {
+            self.camera_fx.camera_pass(&mut enc, target, &t.camera);
+        }
         self.queue.submit([enc.finish()]);
         stats.cpu_ms = t0.elapsed().as_secs_f32() * 1000.0;
         self.stats = stats;
@@ -1944,6 +2061,7 @@ impl Renderer {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn make_frame_bind(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
@@ -1952,6 +2070,7 @@ fn make_frame_bind(
     shadow_sampler: &wgpu::Sampler,
     env_view: &wgpu::TextureView,
     env_sampler: &wgpu::Sampler,
+    dfg_view: &wgpu::TextureView,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("frame"),
@@ -1962,6 +2081,7 @@ fn make_frame_bind(
             wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(shadow_sampler) },
             wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(env_view) },
             wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::Sampler(env_sampler) },
+            wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::TextureView(dfg_view) },
         ],
     })
 }
