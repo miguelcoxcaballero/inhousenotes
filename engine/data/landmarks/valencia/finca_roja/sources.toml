@@ -22,6 +22,22 @@ catastro_use = { value = "1_residential", source = "https://www1.sedecatastro.go
 catastro_floor_area = { value = 5243.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5016309&rc2=YJ2751E", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 7, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 105 parts" }
 
+plan_outline = { value = "union of the 14 OSM outlines (relations 10512381-85, ways 6858091xx), 7377 m2; street ring 189 vertices, courtyard ring traced from the union (2399 m2); checked on the IGN PNOA orthophoto (WMS pnoa-ma, CC BY 4.0, 0.075 m/px, bbox E 724912-725062 N 4371395-4371545): base outline matches, roofs lean ~1.5 m", source = "https://www.ign.es/wms-inspire/pnoa-ma" }
+block_extent = { value = "x -72.5..54.8, z -110.9..14.8 (local); ~127 x 126 m; four unequal rounded chamfers S, W, N, E", unit = "m", source = "OSM outlines / footprint.json" }
+light_wells = { value = "64 OSM building:parts tagged 1-2 levels = light wells (dark on PNOA); cut through the roof terrace", source = "OSM parts + PNOA" }
+eave = { value = 21.4, unit = "m", source = "constrained bundle adjustment of Catastro facade photos 5016309 (S chamfer, Canon SX270 4.5 mm -> f 1167 px) and 5016313 (W chamfer, 6.05 mm -> f 1569 px), eye-height prior 1.6 m, plan points from OSM (tribune junctions, oriel jog corners); 21.39 +- 0.52" }
+attic_string_course = { value = 17.8, unit = "m", source = "same bundle adjustment, white band under the 5th-floor arched windows; 17.76 +- 0.47" }
+chamfer_gable_apex = { value = 25.6, unit = "m", source = "same bundle adjustment; 25.60 +- 0.60" }
+tower_top = { value = 32.5, unit = "m", source = "rays of the solved Catastro cameras to the dome apexes intersected 1.8 m behind the facade: 31.8-32.8 (4 towers)" }
+tower_layout = { value = "two towers per chamfer, centre 6.2 m (arc) beyond each tribune junction and 1.8 m behind the facade; drum D 4.6/4.1 m from the roof to 26.3 m, finned octagonal shaft 3.3 m to 30.6 m, green glazed dome 30.6-32.5 m", source = "BA positions S (-6.1, 12.8)/(11.5, 9.9), W (-67.1, -44.5)/(-69.7, -62.7); widths from Catastro photo pixels at solved distance; levels from solved rays (cap base 31.0-31.3, drum/shaft step 26.3-26.5)" }
+ground_floor = { value = 4.0, unit = "m", source = "tribune slab / first-floor line 3.3-3.8 m from solved rays; entrance arch top 3.0 m" }
+floor_levels = { value = "window sills 0.9 (ground), 4.7, 8.2, 11.7, 15.2, attic arched 18.5 m; storey ~3.5 m", source = "rays of the solved Catastro cameras on the tribune plane; window rows counted on photos 01, 06, 09, 13" }
+mansard = { value = "tile mansard 21.4 -> 24.3 m, 2.6 m deep (~48 deg), flat terrace with light wells", unit = "m", source = "roof line between the towers at 23.6 m on the facade plane (solved camera, Catastro 5016309); ratio of roof line to eave in photo 06; PNOA tile band 3-4 m wide" }
+chamfer_tribunes = { value = "S 6.04 m (az 171), W 6.72 m (az 263), N 6.64 m (az 342), E 7.93 m (az 71) wide between junctions; projecting 1.3-1.9 m; green hipped hood at the eave, bell gable above", source = "OSM outlines; BA solved half-widths 3.15 (S) and 3.25 (W) agree with OSM 3.02/3.36" }
+oriels = { value = "49 polygonal oriels detected in the OSM outline (29 on the street fronts), ~7-8 m spacing; each street oriel with a green hood and a pointed gable (apex ~24.6 m, estimated)", source = "OSM outline turn analysis; turquoise hoods on the PNOA (NE and SE fronts: 8-9 each)" }
+camera_cross_check = { value = "photos 06, 09 and 13 of the E chamfer solve independently to the same street-crossing camera (x 90-94, z -81..-85), RMS 6-8 px", source = "landmark check solved_views" }
+dwellings = { value = 378, source = "https://ca.wikipedia.org/wiki/Finca_Roja" }
+
 [[photo]]
 file = "photos/01_Finca_Roja_de_Valencia_Espana.jpg"
 title = "File:Finca Roja de Valencia, España.jpg"
@@ -31,8 +47,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 821
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/02_Finca_Roja_Valencia_02.jpg"
@@ -44,8 +60,8 @@ width = 1280
 height = 853
 camera = [-152.34, -107.91]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/03_Finca_Roja_facana.jpg"
@@ -56,8 +72,8 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/04_Fica_Roja_verd_roig.jpg"
@@ -68,8 +84,8 @@ license = "Public domain"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "ne"
 
 [[photo]]
 file = "photos/05_Valencia_Finca_Roja_2020_09_21_02.jpg"
@@ -80,8 +96,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 862
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/06_Valencia_2024_09_22_Finca_Roja.jpg"
@@ -92,8 +108,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 720
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/07_Enrique_Viedma_Vidal_La_Finca_Roja_2591906339.jpg"
@@ -128,8 +144,8 @@ license = "CC BY 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/10_Finca_Roja_Imagen_037.jpg"
@@ -140,8 +156,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/11_Finca_Roja_Valencia_01.jpg"
@@ -153,8 +169,8 @@ width = 1280
 height = 853
 camera = [-152.34, -107.91]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/12_Finca_Roja_torreta.jpg"
@@ -165,8 +181,8 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/13_Edificio_de_la_Finca_Roja.jpg"
@@ -177,8 +193,8 @@ license = "CC BY-SA 3.0"
 width = 960
 height = 720
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/14_Valencia_Finca_Roja_2020_09_21_01.jpg"
@@ -189,8 +205,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/15_Finca_Roja_exterior.jpg"
@@ -201,8 +217,8 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
 
 [[photo]]
 file = "photos/16_Enrique_Viedma_Vidal_La_Finca_Roja_2592748144.jpg"
@@ -214,8 +230,8 @@ width = 1280
 height = 1707
 camera = [-23.14, -53.78]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/catastro_5016309YJ2751E.jpg"
@@ -226,8 +242,8 @@ license = "Catastro open data (attribution required)"
 width = 1200
 height = 1600
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/catastro_5016313YJ2751E.jpg"
@@ -238,8 +254,8 @@ license = "Catastro open data (attribution required)"
 width = 1200
 height = 1600
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[plan]]
 file = "plans/01_3_10_FINCA_ROJA_firmado.jpg"
@@ -428,3 +444,8 @@ notes = "Wikidata P973"
 url = "https://eduwp.edu.gva.es/patrimonio-cultural/ficha-inmueble.php?id=4868"
 title = "Described at"
 notes = "Wikidata P973"
+
+[[reference]]
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+title = "IGN PNOA orthophoto (WMS, CC BY 4.0)"
+notes = "plan check, light wells, oriel hoods, roof bands"
