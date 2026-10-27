@@ -149,7 +149,7 @@ when the GPU is over budget).
 | Contact shadows | off | 8 steps | 10 steps | 10 steps |
 | Lights per frame (closest) | 512 | 2048 | 4096 | all |
 | Shadowed spot lights | 0 | 2 | 4 | 4 |
-| Texture cap | 1024 | 2048 | 4096 | 4096 |
+| Texture cap (normal/ORM maps: half, below Ultra) | 1024 | 2048 | 2048 | 4096 |
 | LOD detail | 0.5 | 0.75 | 1.0 | 1.5 |
 | Depth of field (cutscenes, photo mode) | off | off | on | on |
 | TAA, bloom, camera stage (grade, grain, aberration) | on | on | on | on |
@@ -197,6 +197,62 @@ here; the rest of the measured renderer time is lavapipe's `submit`
 (software rasterization), which a hardware driver does not have. On a
 desktop CPU the engine side should be ~4-7 ms, i.e. not the bottleneck at
 60 FPS.
+
+## Organic default map budget (v0.1.2)
+
+The organic default map (Austrias and Carmen old towns on hills, crossed by
+avenues, plus a Madrid grid, a Valencian Ensanche and the boulevard)
+measured headless on the shared 4-core VM (lavapipe, other jobs running).
+`sandbox` now logs the world build stages, a GPU upload estimate per
+texture cap, the real upload and the resident memory.
+
+| | Before (first organic merge) | After (v0.1.2) |
+|---|---|---|
+| Placements / instanced triangles | 183 807 / 103.7 M | 146 237 / 85.7 M |
+| Unique scenes | 10 285 (8 372 window modules) | 5 236 (3 491 window modules) |
+| Mesh memory (vertex + index + LOD) | 841 MB | 693 MB |
+| Textures on High | 1 344 MB world + ~700 MB people/cars = 2.05 GB | 1.45 GB total |
+| VRAM estimate on High at 1080p (F11) | ~3.3 GB | ~2.3 GB |
+| Resident RAM after load | 4.4 GB before upload, +2 GB staging spike, CPU copies kept | 2.8 GB after build, ~3.8 GB incl. lavapipe's GPU memory |
+| Peak of a headless run (RAM + lavapipe "VRAM") | > 6.8 GB (killed) | 4.6-4.9 GB |
+| World build (this VM, loaded) | 45-50 s (city) / 68-134 s total | 31-39 s (city) / 40-47 s total |
+| Camera / shadow triangles (plaza spawn, High) | n/a (did not fit) | 1.4 M / 3.2 M amortized (8.3 M all cascades) |
+| Camera / shadow draws | n/a | 2.1 k / 3.6-6.6 k |
+| Static grid | n/a | 269 700 parts in 3 423 cells, built in 0.17 s |
+
+What changed:
+
+1. **Shared window modules**: opening sizes snap to 10 cm, and a shutter
+   module only keys on what it draws (roller blinds have no colour, only
+   alicantinas hang over the balcony): 8 372 -> 3 491 unique window
+   meshes for the same placements.
+2. **No CPU copies after upload**: the world's scenes lose their vertex,
+   index and texture data as soon as the renderer has them (the game never
+   reads them back), the renderer forgets cached texture sources nobody
+   holds (`Renderer::prune_texture_cache`), and freed heap is returned to
+   the OS. Uploads are flushed every 64 MB (`Renderer::flush_uploads`):
+   `create_buffer_init` / `write_texture` staged the whole city in host
+   memory until the first submit.
+3. **Data maps at half the cap**: normal and ORM maps use half the
+   preset's texture cap below Ultra (`forja_render::texture_cap`); High's
+   cap is 2048 (no world texture is larger). -0.6 GB of VRAM on High.
+4. **Smaller grids, same old towns**: the Madrid grid is 3x4 blocks (was
+   4x5) and the Ensanche 2x3 (was 3x3); both old towns, their alleys,
+   stairs, plazas and avenues are unchanged.
+5. **Overlapped loading**: the kit (decoding and weathering the scans,
+   ~10 s) loads while the plan and fabric are generated, and the content
+   library while the city is meshed and the trees grown.
+6. Rebuilding the city at dusk/dawn (F3) frees the old map first.
+
+Budget on a GTX 1660 / RX 580 (6 GB) at 1080p High: ~2.3 GB VRAM (meshes
+0.7, textures 1.45, targets and shadow maps ~0.15), ~3 GB RAM. GPU frame
+estimate as in the table above (shadows 2.6 ms amortized with ~3.2 M caster
+triangles, main pass 4.5 ms): ~10 ms, i.e. 60 FPS with headroom; DRS
+covers the rest. Remaining risks: facade windows are still 60 % of the
+shadow triangles (an HLOD facade proxy for the far cascades would remove
+most), and the load is CPU-bound (city meshing and tree generation are
+single-threaded per stage; a disk cache of the kit and trees would cut
+~20 s).
 
 ## Moving and changing things
 

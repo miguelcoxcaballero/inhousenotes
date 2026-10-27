@@ -4,9 +4,24 @@ FORJA - version jugable (Windows)
 Mundo abierto en una ciudad procedural de Madrid y Valencia: camina, corre,
 conduce coches y usa armas e inventario.
 
-PROXIMAMENTE: una version con un casco antiguo organico (callejones
-estrechos e irregulares con cuestas) junto a grandes avenidas. Cada nueva
-version publicada incluye el mapa por defecto mas reciente del motor.
+NOVEDADES DE LA v0.1.2
+  - Mapa nuevo por defecto: cascos antiguos ORGANICOS (el Madrid de los
+    Austrias en una colina y el Barrio del Carmen de Valencia), con
+    callejones estrechos e irregulares en cuesta, calles de escaleras,
+    plazas y plazuelas, cruzados por grandes avenidas (Gran Via, Avenida
+    del Oeste), mas un barrio en cuadricula de Madrid, un Ensanche
+    valenciano y un bulevar entre ambos.
+  - Trafico con IA (carriles, cruces, semaforos y pasos de cebra),
+    peatones, mobiliario urbano valenciano, arboles procedurales.
+  - Camara diurna fisica y noche real (F3): farolas, ventanas y comercios
+    encendidos, adaptacion del ojo.
+  - Rendimiento: el mapa esta presupuestado para una GPU de gama media
+    (GTX 1660 / RX 580, 6 GB) a 1080p y 60 FPS en Alto: ~2,3 GB de VRAM en
+    Alto, ~3 GB de RAM, modulos de fachada compartidos, mundo estatico en
+    una rejilla de culling, LOD y sombras por preset. Carga en unos 30-45 s.
+  - F9: opciones graficas con presets Bajo / Medio / Alto / Ultra (Auto
+    elige segun la GPU; Guardar escribe data\graphics.toml).
+  - F11: perfilador (FPS, tiempos CPU/GPU por pase, triangulos, VRAM).
 
 COMO JUGAR
   1. Descomprime Forja-Windows.zip en cualquier carpeta (no hace falta instalar).
@@ -21,7 +36,9 @@ COMO JUGAR
 REQUISITOS
   - Windows 10 u 11 de 64 bits.
   - Tarjeta grafica compatible con DirectX 12 (o Vulkan) y drivers recientes.
-    Recomendado: 4 GB de VRAM, 8 GB de RAM.
+    Recomendado: GTX 1660 / RX 580 o superior con 4-6 GB de VRAM y 16 GB de
+    RAM para Alto a 1080p. Con 4 GB de VRAM o graficos integrados usa
+    Medio o Bajo (F9).
   - Unos 1,5 GB libres en disco y conexion a Internet en el primer arranque.
 
 CONTROLES
@@ -39,7 +56,11 @@ CONTROLES
   H                             guardar el arma
   Tab                           inventario      E  usar objeto
   V                             cambiar camara
-  F2                            siguiente mapa  F3  hora del dia
+  F2                            siguiente mapa
+  F3                            hora del dia (+3 h; al anochecer la ciudad
+                                se reconstruye con su iluminacion nocturna)
+  F9                            opciones graficas y presets
+  F11                           perfilador de rendimiento
   F10                           ayuda           F12 captura de pantalla
   Esc                           soltar el raton / salir
 
@@ -48,6 +69,7 @@ CONTROLES
 OPCIONES (desde una consola)
   Forja.exe --map spain|kit|osm|track|terrain   elegir mapa
   Forja.exe --size 1920x1080                     tamano de ventana
+  Forja.exe --preset low|medium|high|ultra       preset grafico
 
 LICENCIAS
   El codigo de Forja es MIT o Apache-2.0. El contenido descargado es de

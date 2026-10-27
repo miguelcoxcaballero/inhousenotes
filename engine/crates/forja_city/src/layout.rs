@@ -210,6 +210,26 @@ pub fn build_city_with(kit: &Kit, styles: &StyleLibrary, lib: &ProfileLibrary, c
     realize(kit, styles, fabric, &cfg.plan, lib, cfg.seed)
 }
 
+/// Builds the whole city while `load_kit` runs on another thread: the
+/// plan, the street graph and the fabric (lots, ground) need no kit, and
+/// the kit (decoding and weathering the scanned materials) is the other
+/// long stage of a load. Returns the kit and the city.
+pub fn build_city_loading(load_kit: impl FnOnce() -> Kit + Send, styles: &StyleLibrary, cfg: &CityConfig) -> (Kit, CityLayout) {
+    let lib = ProfileLibrary::builtin();
+    let (kit, fabric) = std::thread::scope(|s| {
+        let kit = s.spawn(load_kit);
+        let draft = generators::draft(&cfg.plan, &lib, cfg.seed);
+        let fabric = Fabric::build(&draft, &cfg.plan, &lib, cfg.seed);
+        (kit.join().expect("kit loader panicked"), fabric)
+    });
+    #[cfg(debug_assertions)]
+    if let Err(v) = fabric.validate() {
+        log::warn!("fabric: {} violations, first {:?}", v.len(), v.first());
+    }
+    let city = realize(&kit, styles, fabric, &cfg.plan, &lib, cfg.seed);
+    (kit, city)
+}
+
 /// Meshes a fabric.
 pub fn realize(kit: &Kit, styles: &StyleLibrary, fabric: Fabric, plan: &CityPlan, lib: &ProfileLibrary, seed: u64) -> CityLayout {
     let mut lay = CityLayout::default();
