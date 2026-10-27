@@ -28,6 +28,14 @@ struct Material {
 @group(3) @binding(3) var screen_samp: sampler;
 @group(3) @binding(4) var scene_normal: texture_2d<f32>;
 
+// Cost knobs of the quality preset (renderer-owned; see quality.rs).
+struct Quality {
+    // x: cascades below this index use PCSS, the rest a fixed 4-tap PCF;
+    // y: SSR ray steps; z: contact-shadow steps; w: AO scale.
+    params: vec4<f32>,
+};
+@group(3) @binding(5) var<uniform> quality: Quality;
+
 struct VertexIn {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
@@ -180,6 +188,18 @@ fn shadow_factor(world_pos: vec3<f32>, n: vec3<f32>, view_depth: f32, pix: vec2<
     let a = noise * 6.2831853;
     let rot = mat2x2<f32>(cos(a), sin(a), -sin(a), cos(a));
     var poisson = POISSON;
+    if (f32(cascade) >= quality.params.x) {
+        // Far cascades: a texel is wider than any sun penumbra there, so
+        // the blocker search would always pick the minimum kernel. Four
+        // rotated hardware-PCF taps of ~1 texel give the same result.
+        var sum = 0.0;
+        for (var i = 0; i < 4; i++) {
+            let o = rot * poisson[i * 3] * 1.1;
+            sum += textureSampleCompareLevel(shadow_map, shadow_sampler, uv + o / size, cascade, z + dot(gz, o));
+        }
+        let fade_far = clamp((frame.cascade_splits[3] - view_depth) / (frame.cascade_splits[3] * 0.1), 0.0, 1.0);
+        return mix(1.0, sum * 0.25, fade_far);
+    }
     // Blocker search sized for occluders up to ~30 m away.
     let sun_d = frame.fx.w;
     let search = clamp(30.0 * sun_d / wtexel, 1.5, 14.0);
@@ -219,7 +239,7 @@ fn contact_shadow(p: vec3<f32>, ng: vec3<f32>, view_depth: f32, pix: vec2<f32>) 
     let len = clamp(view_depth * 0.02, 0.03, 0.8);
     let jit = ign(pix + vec2<f32>(37.0, 11.0));
     let start = p + ng * (0.002 + view_depth * 0.0006);
-    const STEPS: i32 = 10;
+    let STEPS = i32(quality.params.z);
     for (var i = 0; i < STEPS; i++) {
         let t = (f32(i) + jit) / f32(STEPS);
         let q = start + l * (len * t * t);
@@ -276,7 +296,7 @@ fn ssr_trace(p: vec3<f32>, n: vec3<f32>, v: vec3<f32>, rough: f32, pix: vec2<f32
     t_end = max(t_end, 0.0);
     let span = length(d) * t_end;
     if (span < 2.0) { return vec4<f32>(0.0); }
-    const STEPS: i32 = 32;
+    let STEPS = i32(quality.params.y);
     // Steps grow quadratically: fine near the surface (contact), coarse far.
     let jit = ign(pix + vec2<f32>(91.0, 23.0));
     var t_prev = 0.0;
