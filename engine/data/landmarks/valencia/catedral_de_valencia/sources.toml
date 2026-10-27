@@ -26,6 +26,14 @@ catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatast
 catastro_floor_area = { value = 8024.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5830601&rc2=YJ2753B", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 3, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 7 parts" }
 
+micalet_height = { value = 50.85, unit = "m", source = "https://es.wikipedia.org/wiki/Catedral_de_Santa_Mar%C3%ADa_(Valencia)", note = "octagonal prism to the terrace; perimeter equals the height (side 6.36 m); OSM part el Micalet height 51" }
+micalet_total_height = { value = 66.5, unit = "m", source = "photo 32 (Fernando Pascullo) scaled by the 50.85 m prism: espadanya cornices 57 / 60 m, cap 61.8, iron cross/vane top ~66.6 m", note = "popular sources give 63 m (fotocommunity) to ~70 m (es.wikipedia) with the belfry; OSM parts espadanya 51-57 / 57-60 m" }
+cimborrio_height = { value = 40, unit = "m", source = "https://es.wikipedia.org/wiki/Catedral_de_Santa_Mar%C3%ADa_(Valencia)", note = "about 40 m with the cross; OSM part 21-36 m (body), octagon circumradius 7.84 m" }
+hierros_height = { value = 36, unit = "m", source = "https://es.wikipedia.org/wiki/Catedral_de_Santa_Mar%C3%ADa_(Valencia)", note = "more than 36 m; Konrad Rudolf 1703-1713" }
+apostoles_rose_diameter = { value = 6.45, unit = "m", source = "https://es.wikipedia.org/wiki/Catedral_de_Santa_Mar%C3%ADa_(Valencia)" }
+santo_caliz_size = { value = "13 m side, 16 m high (inside)", source = "https://es.wikipedia.org/wiki/Catedral_de_Santa_Mar%C3%ADa_(Valencia)", note = "aula capitular 1356-1369" }
+transept_width = { value = 53.65, unit = "m", source = "https://es.wikipedia.org/wiki/Catedral_de_Santa_Mar%C3%ADa_(Valencia)" }
+
 [[photo]]
 file = "photos/01_Catedral_de_Valencia_Valencia_Espana_2014_06_30_DD_160.jpg"
 title = "File:Catedral de Valencia, Valencia, España, 2014-06-30, DD 160.JPG"
@@ -35,8 +43,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 909
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NW: Puerta de los Apostoles (Gothic, rose 6.45 m) and the Renaissance Obra Nova from the Placa de la Virgen; view apostoles (padded pad/pad_01.jpg, level camera solved from 7 matches, rms ~22 px; perspective-corrected stitch). Measured: rose centre 16.6 m, portal apex 10.5 m, wimperg 13.2 m, front 21-24 m, Obra Nova cornices 6.6 / 12 / 17.8 m"
 
 [[photo]]
 file = "photos/02_Church_in_Valencia_Spain.jpg"
@@ -48,8 +56,8 @@ width = 1280
 height = 1927
 camera = [217.36, -143.26]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SW/S: Micalet and the Hierros front edge-on from the Placa de la Reina side, aula capitular wall at right (Commons camera position is wrong)"
 
 [[photo]]
 file = "photos/03_Crucero_y_cimborrio_gotico_de_la_catedral_de_Valencia_Espana.jpg"
@@ -62,8 +70,8 @@ height = 960
 camera = [-42.24, 17.38]
 heading = 45.0
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "aerial from the Micalet terrace looking NE: nave terraces, transverse arched buttress walls, blue chapel domes, cimborrio"
 
 [[photo]]
 file = "photos/04_Cupula_azulada_de_los_Desamparados_a_la_sombra_del_cimborrio.jpg"
@@ -76,8 +84,8 @@ height = 960
 camera = [-31.15, 28.47]
 heading = 45.0
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "aerial close-up of the cimborrio (two storeys of alabaster-glazed tracery windows, gablets, low tiled roof) with the Desemparats dome"
 
 [[photo]]
 file = "photos/05_Catedral_de_Valencia_panoramio_2.jpg"
@@ -116,8 +124,8 @@ height = 961
 camera = [-9.24, 40.25]
 heading = 308.0
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S: aula capitular (Santo Caliz) wall with tracery window, chapel dome and pinnacle, cimborrio behind"
 
 [[photo]]
 file = "photos/08_Valencia_Catedral_002.jpg"
@@ -129,8 +137,8 @@ width = 1280
 height = 720
 camera = [-30.45, -61.23]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NW: Placa de la Virgen, Apostoles front, Obra Nova and the arch to the Desemparats at left; view placa_de_la_virgen (padded pad/pad_08.jpg, rms ~27 px)"
 
 [[photo]]
 file = "photos/09_La_Seu_Valencia_Valencia_Spain_panoramio_9.jpg"
@@ -142,8 +150,8 @@ width = 1280
 height = 960
 camera = [18.67, 43.77]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NE/E: curved brick wall of the apse chapels on Placa de l'Almoina, ambulatory arches, cimborrio and pinnacle (Commons camera wrong); view barchilla (by hand)"
 
 [[photo]]
 file = "photos/10_Catedral_de_Valencia_Valencia_Espana_2014_06_30_DD_164.jpg"
@@ -154,8 +162,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 2667
 exterior = "unknown"
-selected = false
-side = ""
+selected = true
+side = "Micalet: shaft with string courses and slits, belfry, crown of tracery gables, terrace balustrade and espadanya (detail)"
 
 [[photo]]
 file = "photos/11_Cobertes_de_la_catedral_de_Valencia.jpg"
@@ -166,8 +174,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "roof terraces of the nave (brick-paved low gables), back of the Hierros crown and the Micalet"
 
 [[photo]]
 file = "photos/12_Terrasses_de_la_catedral_de_Valencia.jpg"
@@ -178,8 +186,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "roof terraces detail (paving)"
 
 [[photo]]
 file = "photos/13_Plaza_di_la_Reina_Valencia.jpg"
@@ -190,8 +198,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S: Placa de la Reina from far, telephoto: Micalet, Hierros, aula capitular, cimborrio; view reina_far (padded pad/pad_13.jpg)"
 
 [[photo]]
 file = "photos/14_Catedral_de_Valencia_P1130858.jpg"
@@ -202,8 +210,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "detail: Gothic lancet with stained glass and ashlar masonry"
 
 [[photo]]
 file = "photos/15_Arco_catedral_Valencia_01.jpg"
@@ -228,6 +236,201 @@ height = 793
 exterior = true
 selected = false
 side = ""
+
+[[photo]]
+file = "photos/20_Fachada_principal_de_la_Catedral_de_Valencia_desde_Plaza_de_.jpg"
+title = "File:Fachada principal de la Catedral de Valencia desde Plaza de la Reina.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Fachada_principal_de_la_Catedral_de_Valencia_desde_Plaza_de_la_Reina.jpg"
+author = "Pcb2mail"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "S: Placa de la Reina gardens: Micalet, Hierros, chapels, aula capitular with pinnacle; view reina_gardens (padded pad/pad_20.jpg, rms ~17 px)"
+note = "downloaded 2026-10-26 via Special:FilePath ?width=1280"
+
+[[photo]]
+file = "photos/21_023_Catedral_de_Valencia_el_Micalet_i_la_porta_dels_Ferros_p.jpg"
+title = "File:023 Catedral de València, el Micalet i la porta dels Ferros, pl. de la Reina.jpg"
+url = "https://commons.wikimedia.org/wiki/File:023_Catedral_de_València,_el_Micalet_i_la_porta_dels_Ferros,_pl._de_la_Reina.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "SW: Micalet and the Baroque Puerta de los Hierros from below (tiers, columns, oculus, crown)"
+note = "downloaded 2026-10-26 via Special:FilePath ?width=1280"
+
+[[photo]]
+file = "photos/22_Puerta_de_la_Almoina_y_Miguelete_Catedral_de_Valencia.jpg"
+title = "File:Puerta de la Almoina y Miguelete. Catedral de Valencia.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Puerta_de_la_Almoina_y_Miguelete._Catedral_de_Valencia.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "E: Palau/Almoina transept front lancet and corbel cornice with the Micalet crown and a chapel dome"
+note = "downloaded 2026-10-26 via Special:FilePath ?width=1280"
+
+[[photo]]
+file = "photos/23_224_Catedral_de_Valencia_porta_de_l_Almoina_cimbori_i_el_Miq.jpg"
+title = "File:224 Catedral de València, porta de l'Almoina, cimbori i el Miquelet.jpg"
+url = "https://commons.wikimedia.org/wiki/File:224_Catedral_de_València,_porta_de_l'Almoina,_cimbori_i_el_Miquelet.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "SE: Romanesque Puerta del Palau (l'Almoina) in its projecting frame under a tiled canopy, Gothic lancet above, cimborrio and Micalet; view palau_door (solved, rms ~19 px)"
+note = "downloaded 2026-10-26 via Special:FilePath ?width=1280"
+
+[[photo]]
+file = "photos/24_La_catedral_de_Valencia_vista_des_de_la_torre_de_santa_Cater.jpg"
+title = "File:La catedral de València vista des de la torre de santa Caterina.JPG"
+url = "https://commons.wikimedia.org/wiki/File:La_catedral_de_València_vista_des_de_la_torre_de_santa_Caterina.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 928
+exterior = true
+selected = true
+side = "aerial from the S (Santa Caterina tower): Hierros crown, cimborrio, aula capitular roof and pinnacle, chapel domes; view santa_caterina (solved, rms ~11 px)"
+note = "downloaded 2026-10-26 via Special:FilePath ?width=1280"
+
+[[photo]]
+file = "photos/25_Vista_de_la_catedral_de_Valencia_des_del_Micalet.jpg"
+title = "File:Vista de la catedral de València des del Micalet.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Vista_de_la_catedral_de_València_des_del_Micalet.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 954
+exterior = true
+selected = true
+side = "aerial from the Micalet terrace looking NE along the nave; view micalet_aerial (eye fixed on the terrace, rms ~17 px)"
+note = "downloaded 2026-10-26 via Special:FilePath ?width=1280"
+
+[[photo]]
+file = "photos/26_Valencia_Micalet_2025_05_18_Vista_desde_Torres_de_Serrans.jpg"
+title = "File:Valencia - Micalet - 2025-05-18 - Vista desde Torres de Serrans.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Micalet_-_2025-05-18_-_Vista_desde_Torres_de_Serrans.jpg"
+author = "Rafa Esteve"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 720
+exterior = true
+selected = true
+side = "N, distant (from Torres de Serrans): Micalet over the roofs; espadanya proportions"
+note = "downloaded 2026-10-26 via Special:FilePath ?width=1280"
+
+[[photo]]
+file = "photos/27_Catedral_i_basilica_des_de_la_placa_de_l_Almoina_Valencia.jpg"
+title = "File:Catedral i basílica des de la plaça de l'Almoina, València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Catedral_i_basílica_des_de_la_plaça_de_l'Almoina,_València.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "NE: apse from the Placa de l'Almoina: curved chapel wall, ambulatory arches, pinnacle, cimborrio, passage to the Basilica dels Desemparats; view almoina_apse (rms ~29 px)"
+note = "downloaded 2026-10-26 via Special:FilePath ?width=1280"
+
+[[photo]]
+file = "photos/28_078_Catedral_de_Valencia_facana_est_c_Barcella.jpg"
+title = "File:078 Catedral de València, façana est, c. Barcella.JPG"
+url = "https://commons.wikimedia.org/wiki/File:078_Catedral_de_València,_façana_est,_c._Barcella.JPG"
+author = "Enfo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1774
+exterior = true
+selected = true
+side = "E: c. de la Barcella, chapel with dome, elevated passage to the Palau Arquebisbal, cimborrio"
+note = "downloaded 2026-10-26 via Special:FilePath ?width=1280"
+
+[[photo]]
+file = "photos/29_047_Catedral_de_Valencia_facana_oest_c_del_Micalet.jpg"
+title = "File:047 Catedral de València, façana oest, c. del Micalet.jpg"
+url = "https://commons.wikimedia.org/wiki/File:047_Catedral_de_València,_façana_oest,_c._del_Micalet.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "W: c. del Micalet at dusk: gabled chapels with tall lancets, blue domes on octagonal drums, Micalet; view calle_micalet (solved, rms ~11 px)"
+note = "downloaded 2026-10-26 via Special:FilePath ?width=1280"
+
+[[photo]]
+file = "photos/30_Obra_nova_i_placa_de_la_Mare_de_Deu_Valencia.jpg"
+title = "File:Obra nova i plaça de la Mare de Déu, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Obra_nova_i_plaça_de_la_Mare_de_Déu,_València.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 947
+exterior = true
+selected = true
+side = "NW: upper loggia of the Obra Nova seen from above (arch rhythm)"
+note = "downloaded 2026-10-26 via Special:FilePath ?width=1280"
+
+[[photo]]
+file = "photos/31_024_Carrer_de_la_Barcella_pas_elevat.jpg"
+title = "File:024 Carrer de la Barcella (València), amb el pas elevat que uneix la Seu i el Palau Arquebisbal.jpg"
+url = "https://commons.wikimedia.org/wiki/File:024_Carrer_de_la_Barcella_(València),_amb_el_pas_elevat_que_uneix_la_Seu_i_el_Palau_Arquebisbal.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "E: c. de la Barcella with the elevated passage to the Palau Arquebisbal (outside the outline, not modelled)"
+note = "downloaded 2026-10-26 via Special:FilePath ?width=1280"
+
+[[photo]]
+file = "photos/32_Valencia_cathedral_2022_west_facade_micalet.jpg"
+title = "File:Valencia cathedral 2022 - west façade & micalet.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_cathedral_2022_-_west_façade_&_micalet.jpg"
+author = "Fernando Pascullo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1175
+exterior = true
+selected = true
+side = "SW/S: main view from the Placa de la Reina: Micalet, Hierros, chapels, aula capitular; view placa_de_la_reina (padded pad/pad_32.jpg, level camera, rms ~25 px; perspective-corrected stitch). Measured Micalet espadanya 52-66.6 m"
+note = "downloaded 2026-10-26 via Special:FilePath ?width=1280"
+
+[[photo]]
+file = "photos/33_Cupula_i_pinacle_de_l_aula_capitular_catedral_de_Valencia.jpg"
+title = "File:Cúpula i pinacle de l'aula capitular, catedral de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Cúpula_i_pinacle_de_l'aula_capitular,_catedral_de_València.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "roof detail: blue chapel dome with lantern and the crocketed pinnacle by the aula capitular"
+note = "downloaded 2026-10-26 via Special:FilePath ?width=1280"
+
+[[photo]]
+file = "photos/34_Vista_de_la_Catedral_y_la_Basilica_de_la_Virgen_de_los_Desam.jpg"
+title = "File:Vista de la Catedral y la Basílica de la Virgen de los Desamparados.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Vista_de_la_Catedral_y_la_Basílica_de_la_Virgen_de_los_Desamparados.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "N: cimborrio and Micalet over the apse from the Desemparats side"
+note = "downloaded 2026-10-26 via Special:FilePath ?width=1280"
 
 [[plan]]
 file = "plans/01_Plano_de_la_Catedral_de_Valencia_y_adyacentes_con_calles.png"
@@ -336,3 +539,24 @@ notes = "Wikidata P856"
 url = "https://eduwp.edu.gva.es/patrimonio-cultural/ficha-inmueble.php?id=1414"
 title = "Described at"
 notes = "Wikidata P973"
+
+[[reference]]
+url = "https://www.visitvalencia.com/que-hacer-valencia/cultura-valenciana/monumentos-en-valencia/miguelete"
+title = "Visit Valencia: El Miguelete"
+notes = "50.85 m tower, 1381-1424"
+
+[[reference]]
+url = "https://campaners.com/pdf/pdf3043.pdf"
+title = "Campaners de la Catedral: Micalet (citing Elias Tormo)"
+notes = "octagon 50.85 m high; the projected spire was never built"
+
+[[reference]]
+url = "https://www.openstreetmap.org/way/625039852"
+title = "OSM 3D parts of the cathedral (el Micalet way 625039852 and 52 other building:parts)"
+notes = "heights used for massing: nave/transept 21, aisles 13.5, chapels 10, ambulatory 14, cimborrio 21-36, espadanya 51-60"
+
+[[reference]]
+url = "local: engine/assets/downloaded/landmarks/valencia/catedral_de_valencia/pad/"
+title = "Padded copies of perspective-corrected photos 01, 08, 13, 20, 32"
+notes = "same pixels, grey padding at the bottom so that the horizon (eye 1.6 m) is the centre row; used by the views apostoles, placa_de_la_virgen, reina_far, reina_gardens, placa_de_la_reina"
+

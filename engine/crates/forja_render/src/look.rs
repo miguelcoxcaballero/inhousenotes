@@ -197,6 +197,15 @@ impl Look {
         Self { dof: Some(DepthOfField::new(focus_distance, f_stop)), ..Self::cinematic() }
     }
 
+    /// This look on a frame that the night grade (`Environment::night_grade`,
+    /// applied right after the tone curve) already grades with strength
+    /// `night_grade`: the colour grade fades out so night frames are not
+    /// graded twice; grain, vignette, aberration and depth of field stay.
+    pub fn under_night_grade(mut self, night_grade: f32) -> Self {
+        self.grade_strength *= 1.0 - night_grade.clamp(0.0, 1.0);
+        self
+    }
+
     /// True when the LDR camera pass has anything to do.
     pub fn has_camera_pass(&self) -> bool {
         self.grade_strength > 0.0 || self.grain > 0.0 || self.vignette > 0.0 || self.chromatic_aberration > 0.0
@@ -247,6 +256,16 @@ mod tests {
                 assert!((g.apply(c) - c).abs().max_element() < 0.1, "{c} -> {}", g.apply(c));
             }
         }
+    }
+
+    #[test]
+    fn night_grade_replaces_the_colour_grade() {
+        let day = Look::cinematic().under_night_grade(0.0);
+        assert_eq!(day, Look::cinematic());
+        let night = Look::cinematic().under_night_grade(1.0);
+        assert_eq!(night.grade_strength, 0.0);
+        assert!(night.grain > 0.0 && night.has_camera_pass());
+        assert!((Look::cinematic().under_night_grade(0.7).grade_strength - 0.3).abs() < 1e-6);
     }
 
     #[test]

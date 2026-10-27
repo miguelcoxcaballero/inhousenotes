@@ -18,7 +18,8 @@ fn fs_main(in: SkyOut) -> @location(0) vec4<f32> {
     let far = frame.inv_view_proj * vec4<f32>(in.ndc, 1e-6, 1.0);
     let d = normalize(far.xyz / far.w - frame.camera_pos.xyz);
     if (frame.env_params.x > 0.5) {
-        return vec4<f32>(textureSampleLevel(env_tex, env_samp, equirect_uv(d), 0.0).rgb, 1.0);
+        let photo = textureSampleLevel(env_tex, env_samp, equirect_uv(d), 0.0).rgb + local_inscatter(in.clip.xy, d, 1e9);
+        return vec4<f32>(min(photo * exposure_state.pre, vec3<f32>(60000.0)), 1.0);
     }
     let l = frame.sun_dir.xyz;
     let alt = frame.camera_pos.y * 0.001;
@@ -30,9 +31,13 @@ fn fs_main(in: SkyOut) -> @location(0) vec4<f32> {
         let ts = sun_transmittance(vec3<f32>(0.0, EARTH_R + max(alt, 0.001), 0.0), l);
         c += ts * frame.sun_dir.w * 40.0 * disc;
     }
+    // Night: dark zenith, light-pollution dome, stars (zero by day).
+    c += night_sky(d);
     // Below the horizon: darkened ground bounce so the bottom never goes black.
     if (d.y < 0.0) {
         c = mix(c, frame.ground_color.rgb * 0.5, clamp(-d.y * 4.0, 0.0, 1.0));
     }
-    return vec4<f32>(c, 1.0);
+    // Glow of the lamps in the haze in front of the sky.
+    c += local_inscatter(in.clip.xy, d, 1e9);
+    return vec4<f32>(min(c * exposure_state.pre, vec3<f32>(60000.0)), 1.0);
 }
