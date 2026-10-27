@@ -108,8 +108,9 @@ tint = "#c49a72"
 weathering = 0.4
 
 [material.garden]
-kind = "grass"
-tint = "#6f8f4c"
+kind = "paving"
+tint = "#b9785c"
+note = "red gravel walks between box hedges (photo 01)"
 
 [material.paving]
 kind = "paving"
