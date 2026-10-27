@@ -90,6 +90,9 @@ pub struct RenderScene {
     /// culling grid is built once from the others; these are submitted
     /// every frame like dynamic items.
     pub volatile_statics: Vec<usize>,
+    /// Far-distance groups of `statics`: `(group, is the HLOD)` by index
+    /// (missing or group 0: always drawn).
+    pub static_lod: Vec<(u32, bool)>,
     pub dynamic: Vec<RenderItem>,
     pub lights: Vec<PointLight>,
     /// Physical point and spot lights of this frame (the city at night).

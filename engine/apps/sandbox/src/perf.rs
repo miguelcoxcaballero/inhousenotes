@@ -354,6 +354,13 @@ pub fn draw_options(ctx: &egui::Context, p: &mut PerfState) {
             g.label("Small shadow casters (texels)");
             custom |= g.add(egui::Slider::new(&mut c.shadow_caster_texels, 1.0..=8.0)).changed();
             g.end_row();
+            g.label("City detail distance (HLOD beyond)");
+            g.horizontal(|g| {
+                for (n, label) in [(150.0, "150 m"), (250.0, "250 m"), (400.0, "400 m"), (0.0, "all detail")] {
+                    custom |= g.selectable_value(&mut c.hlod_distance, n, label).changed();
+                }
+            });
+            g.end_row();
             g.label("Building shadow proxies from");
             g.horizontal(|g| {
                 for (n, label) in [(1, "c1"), (2, "c2"), (3, "c3"), (4, "off")] {

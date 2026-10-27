@@ -223,6 +223,15 @@ pub struct PointLight {
     pub intensity: f32,
 }
 
+/// Far-distance group of a static instance (see
+/// [`Renderer::set_static_instances_lod`]): group 0 is always drawn.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct StaticLod {
+    pub group: u32,
+    /// The group's stand-in (drawn far) rather than its detail (near).
+    pub hlod: bool,
+}
+
 /// One model placed in the world.
 #[derive(Clone, Debug)]
 pub struct DrawInstance {
@@ -468,6 +477,9 @@ pub struct RenderSettings {
     /// thin detail ([`ShadowRole::Fine`]) in the first cascade only
     /// (`FORJA_FX=-stableshadow` restores the old behaviour, for A/B).
     pub stable_shadows: bool,
+    /// Distance (m) beyond which a city tile's detail is replaced by its
+    /// HLOD stand-in (0: never).
+    pub hlod_distance: f32,
     /// Depth of field of [`FrameDesc::look`] (`FORJA_FX=-dof`).
     pub dof: bool,
     /// Multiple-scattering energy compensation and the DFG LUT (`-ms`
@@ -512,6 +524,7 @@ impl Default for RenderSettings {
             look: true,
             texture_compression: true,
             stable_shadows: true,
+            hlod_distance: 250.0,
             dof: true,
             multiscatter: true,
             specular_aa: true,
@@ -586,6 +599,7 @@ impl RenderSettings {
         self.lod_detail = g.lod_detail;
         self.shadow_caster_texels = g.shadow_caster_texels;
         self.shadow_proxy_cascade = g.shadow_proxy_cascade;
+        self.hlod_distance = g.hlod_distance;
         self.max_texture_size = g.max_texture_size;
         self.dof = g.dof;
     }
@@ -611,6 +625,7 @@ impl RenderSettings {
                 "look" | "cinematic" => self.look = on,
                 "bc" => self.texture_compression = on,
                 "stableshadow" => self.stable_shadows = on,
+                "hlod" => self.hlod_distance = if on { self.hlod_distance.max(250.0) } else { 0.0 },
                 "dof" => self.dof = on,
                 "ms" => self.multiscatter = on,
                 "specaa" => self.specular_aa = on,
@@ -679,6 +694,8 @@ pub struct RenderStats {
     /// Static instances / grid cells uploaded with `set_static_instances`.
     pub static_instances: u32,
     pub static_cells: u32,
+    /// City tiles drawn as their HLOD stand-in this frame.
+    pub hlod_tiles: u32,
     /// Internal render resolution.
     pub width: u32,
     pub height: u32,
@@ -734,6 +751,10 @@ struct GpuModel {
     parts: Vec<ModelPart>,
     rest: Vec<Mat4>,
     bounds: Aabb,
+    /// GPU mesh of every primitive, in `SceneData::meshes` order.
+    prims: Vec<u32>,
+    /// Bytes of the mesh buffers while resident.
+    resident: Option<u64>,
 }
 
 struct Targets {
@@ -2226,8 +2247,85 @@ impl Renderer {
             }
         }
         let handle = ModelHandle(self.models.len() as u32);
-        self.models.push(GpuModel { parts, rest, bounds: scene.bounds() });
+        let prims: Vec<u32> = mesh_ids.iter().flatten().copied().collect();
+        let bytes = prims.iter().map(|&m| self.mesh_buffer_bytes(m)).sum();
+        self.models.push(GpuModel { parts, rest, bounds: scene.bounds(), prims, resident: Some(bytes) });
         handle
+    }
+
+    fn mesh_buffer_bytes(&self, m: u32) -> u64 {
+        let g = &self.meshes[m as usize];
+        g.vertex.size() + g.index.size() + g.skin.as_ref().map_or(0, |b| b.size()) + g.lods.iter().map(|l| l.0.size()).sum::<u64>()
+    }
+
+    /// Frees the vertex and index buffers of a model (streaming: a city
+    /// tile far away draws its HLOD instead). Materials and textures stay;
+    /// the model must not be drawn until [`Renderer::reload_model`].
+    /// Returns the bytes released.
+    pub fn release_model(&mut self, h: ModelHandle) -> u64 {
+        let Some(model) = self.models.get_mut(h.0 as usize) else { return 0 };
+        let Some(bytes) = model.resident.take() else { return 0 };
+        let prims = model.prims.clone();
+        let empty = |usage| self.device.create_buffer(&wgpu::BufferDescriptor { label: Some("released"), size: 4, usage, mapped_at_creation: false });
+        for m in prims {
+            let (v, i) = (empty(wgpu::BufferUsages::VERTEX), empty(wgpu::BufferUsages::INDEX));
+            let g = &mut self.meshes[m as usize];
+            g.vertex = v;
+            g.index = i;
+            g.index_count = 0;
+            g.skin = None;
+            g.lods.clear();
+        }
+        self.mesh_bytes = self.mesh_bytes.saturating_sub(bytes);
+        bytes
+    }
+
+    /// Uploads the meshes of a released model again from `scene` (the
+    /// scene it was uploaded from). Returns the bytes uploaded.
+    pub fn reload_model(&mut self, h: ModelHandle, scene: &SceneData) -> u64 {
+        let Some(model) = self.models.get(h.0 as usize) else { return 0 };
+        if model.resident.is_some() {
+            return 0;
+        }
+        let prims = model.prims.clone();
+        let mut bytes = 0;
+        for (&m, p) in prims.iter().zip(scene.meshes.iter().flatten()) {
+            if p.is_skinned() || p.positions.len() != p.normals.len() {
+                continue;
+            }
+            let verts: Vec<Vertex> = (0..p.positions.len())
+                .map(|i| Vertex { pos: p.positions[i].to_array(), normal: p.normals[i].to_array(), uv: p.uvs.get(i).copied().unwrap_or_default().to_array(), tangent: p.tangents.get(i).copied().unwrap_or(Vec4::X).to_array() })
+                .collect();
+            let vertex = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("vb"), contents: bytemuck::cast_slice(&verts), usage: wgpu::BufferUsages::VERTEX });
+            let index = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("ib"), contents: bytemuck::cast_slice(&p.indices), usage: wgpu::BufferUsages::INDEX });
+            let lods = p.lods.iter().map(|l| (self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("lod"), contents: bytemuck::cast_slice(l), usage: wgpu::BufferUsages::INDEX }), l.len() as u32)).collect();
+            let g = &mut self.meshes[m as usize];
+            g.vertex = vertex;
+            g.index = index;
+            g.index_count = p.indices.len() as u32;
+            g.lods = lods;
+            bytes += self.mesh_buffer_bytes(m);
+        }
+        self.mesh_bytes += bytes;
+        self.note_upload(bytes);
+        self.models[h.0 as usize].resident = Some(bytes);
+        bytes
+    }
+
+    /// Whether a far-distance group's detail can be drawn (its streamed
+    /// meshes are resident); a group that is not ready keeps its HLOD.
+    pub fn set_static_group_ready(&mut self, group: u32, ready: bool) {
+        self.statics.set_ready(group, ready);
+    }
+
+    /// Distance from `eye` to a far-distance group's bounds.
+    pub fn static_group_distance(&self, group: u32, eye: Vec3) -> Option<f32> {
+        self.statics.group_distance(group, eye)
+    }
+
+    /// Far-distance groups currently showing their detail.
+    pub fn static_groups_near(&self) -> Vec<u32> {
+        self.statics.near_groups()
     }
 
     /// Whether shadow view `c` (sun cascades 0-3, then spots) draws the
@@ -2258,10 +2356,19 @@ impl Renderer {
     /// then only holds what moves. Replaces the previous static set
     /// (an empty slice clears it). Skinned instances are not allowed here.
     pub fn set_static_instances(&mut self, instances: &[DrawInstance]) {
+        self.set_static_instances_lod(instances, &[]);
+    }
+
+    /// [`Self::set_static_instances`] with a far-distance group per
+    /// instance (parallel to `instances`; missing entries: no group). A
+    /// group draws its detail instances near the camera and its HLOD
+    /// instances beyond [`RenderSettings::hlod_distance`].
+    pub fn set_static_instances_lod(&mut self, instances: &[DrawInstance], lod: &[StaticLod]) {
         let t = std::time::Instant::now();
         let mut items = Vec::new();
-        for inst in instances {
+        for (ii, inst) in instances.iter().enumerate() {
             let Some(model) = self.models.get(inst.model.0 as usize) else { continue };
+            let tag = lod.get(ii).copied().unwrap_or_default();
             for part in &model.parts {
                 let mesh = &self.meshes[part.mesh as usize];
                 let node_m = inst.nodes.as_ref().and_then(|n| n.get(part.node).copied()).unwrap_or(model.rest[part.node]);
@@ -2280,6 +2387,8 @@ impl Renderer {
                     bounds,
                     no_shadow: mat.blend || !inst.cast_shadows,
                     role: mesh.shadow,
+                    group: tag.group,
+                    hlod: tag.hlod,
                 });
             }
         }
@@ -2640,6 +2749,7 @@ impl Renderer {
         // pixels; covered pixels = PI * (radius / distance * focal)^2.
         let focal = height as f32 * 0.5 / tan_half_fov;
         let lod_scale = std::f32::consts::PI * focal * focal * 0.5 * s.lod_detail;
+        self.statics.update_groups(cam.position, s.hlod_distance);
         {
             let meshes = &self.meshes;
             let statics = &mut self.statics;
@@ -2916,6 +3026,7 @@ impl Renderer {
             height,
             static_instances: self.statics.items as u32,
             static_cells: self.statics.cell_count() as u32,
+            hlod_tiles: self.statics.far_groups() as u32,
             ..Default::default()
         };
         let compute = |enc: &mut wgpu::CommandEncoder, pipe: &wgpu::ComputePipeline, bind: &wgpu::BindGroup, groups: (u32, u32), name: &'static str| {

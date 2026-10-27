@@ -116,6 +116,7 @@ impl SpanishCity {
         }
         // Placements first: the traffic lights index them.
         world.placements = out.placements;
+        world.hlod_tiles = out.hlod_tiles;
         world.traffic = Some(city.traffic.clone());
         let groups = CollisionGroups::new(layers::WORLD, u32::MAX);
         let ext = city.extent;

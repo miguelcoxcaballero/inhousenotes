@@ -142,11 +142,13 @@ struct Extract {
     /// Upload time spent in earlier slices of [`Extract::upload_for`].
     upload_ms: f64,
     freed: usize,
+    /// Streaming of the city tiles' block meshes (see `sandbox::stream`).
+    stream: Option<sandbox::stream::Streamer>,
 }
 
 impl Extract {
     fn new() -> Self {
-        Self { handles: Vec::new(), env_loaded: false, statics_uploaded: None, legacy: std::env::var_os("FORJA_LEGACY_STATICS").is_some(), upload_ms: 0.0, freed: 0 }
+        Self { handles: Vec::new(), env_loaded: false, statics_uploaded: None, legacy: std::env::var_os("FORJA_LEGACY_STATICS").is_some(), upload_ms: 0.0, freed: 0, stream: None }
     }
 
     /// Uploads the models added since the last frame. The world's scenes
@@ -165,7 +167,20 @@ impl Extract {
             return true;
         }
         let (t, first) = (Instant::now(), self.handles.len());
+        if first == 0
+            && let Some(gw) = app.world.resources.get::<game::world::GameWorld>()
+        {
+            let d = &gw.desc;
+            let tiles = d
+                .hlod_tiles
+                .iter()
+                .enumerate()
+                .map(|(k, tile)| (k as u32 + 1, tile.detail.clone().map(|i| d.placements[i].0).filter(|&s| d.scenes[s].name == "block").map(|s| gw.scene_base + s).collect()))
+                .collect();
+            self.stream = sandbox::stream::Streamer::new(tiles);
+        }
         let deadline = budget.map(|b| t + b);
+        let stream = &self.stream;
         let mut freed = 0usize;
         let handles = &mut self.handles;
         let mut upload = |rs: &mut RenderScene, mut world: Option<(&mut game::world::GameWorld, usize)>| {
@@ -178,6 +193,11 @@ impl Extract {
                 if let Some((gw, base)) = world.as_mut()
                     && let Some(d) = i.checked_sub(*base).and_then(|j| gw.desc.scenes.get_mut(j))
                 {
+                    if let Some(st) = stream
+                        && st.streams(i)
+                    {
+                        st.keep(i, Arc::clone(&rs.models[i]));
+                    }
                     let (s, b) = game::world::strip(&rs.models[i]);
                     freed += b;
                     let s = Arc::new(s);
@@ -244,15 +264,14 @@ impl Extract {
         // time and are submitted per frame instead.
         let key = (rs.statics.len(), rs.volatile_statics.len());
         if !self.legacy && self.statics_uploaded != Some(key) {
-            let statics: Vec<DrawInstance> = rs
-                .statics
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| rs.volatile_statics.binary_search(i).is_err())
-                .map(|(_, item)| DrawInstance { model: self.handles[item.model], transform: item.transform, nodes: item.nodes.clone(), joints: None, tint: item.tint, cast_shadows: true })
-                .collect();
-            renderer.set_static_instances(&statics);
+            let kept = || rs.statics.iter().enumerate().filter(|(i, _)| rs.volatile_statics.binary_search(i).is_err());
+            let statics: Vec<DrawInstance> = kept().map(|(_, item)| DrawInstance { model: self.handles[item.model], transform: item.transform, nodes: item.nodes.clone(), joints: None, tint: item.tint, cast_shadows: true }).collect();
+            let lod: Vec<forja_render::StaticLod> = kept().map(|(i, _)| rs.static_lod.get(i).map_or(forja_render::StaticLod::default(), |&(group, hlod)| forja_render::StaticLod { group, hlod })).collect();
+            renderer.set_static_instances_lod(&statics, &lod);
             self.statics_uploaded = Some(key);
+        }
+        if let Some(st) = &mut self.stream {
+            st.update(renderer, &self.handles, rs.camera.position);
         }
         let mut frame = FrameDesc { camera: rs.camera, env: rs.env.clone(), lights: rs.lights.clone(), local_lights: rs.local_lights.clone(), lines: rs.lines.clone(), time: app.world.res::<forja_core::Time>().elapsed as f32, ..Default::default() };
         if frame.env.camera == forja_render::CameraModel::Night {
@@ -360,6 +379,9 @@ fn bench(args: &Args, app: &mut App, renderer: &mut Renderer, extract: &mut Extr
     }
     perf_state.stop_csv();
     print_bench(&acc);
+    if let Some(st) = &extract.stream {
+        println!("  stream: {} tiles' blocks released ({:.0} MB), {} reloaded; meshes resident {:.0} MB", st.released_tiles, st.released_bytes as f64 / 1048576.0, st.loads, renderer.uploaded_bytes().0 as f64 / 1048576.0);
+    }
     for shadow in [false, true] {
         let list: Vec<String> = renderer.heaviest_meshes(10, shadow).iter().map(|(n, k, t)| format!("{n} x{k} {:.2}M", *t as f64 / 1e6)).collect();
         println!("  heaviest {}: {}", if shadow { "shadow" } else { "camera" }, list.join(", "));
@@ -391,7 +413,7 @@ fn print_bench(acc: &[FrameSample]) {
     if let Some(s) = acc.last() {
         let st = &s.stats;
         println!(
-            "  last: draws {} shadow draws {} | instances {} shadow {} culled {} | tris {:.2} M shadow {:.2} M | lights {} | static {} in {} cells | vram ~{:.0} MB",
+            "  last: draws {} shadow draws {} | instances {} shadow {} culled {} | tris {:.2} M shadow {:.2} M | lights {} | static {} in {} cells, {} HLOD tiles | vram ~{:.0} MB",
             st.draw_calls,
             st.shadow_draws,
             st.instances_drawn,
@@ -402,6 +424,7 @@ fn print_bench(acc: &[FrameSample]) {
             st.lights,
             st.static_instances,
             st.static_cells,
+            st.hlod_tiles,
             st.vram_mb
         );
     }
@@ -417,6 +440,18 @@ fn run_headless(args: &Args) {
         let (mesh, tex) = perf::upload_estimate(&app.world.res::<RenderScene>().models, &[1024, 2048, 4096]);
         let mb = |b: u64| b as f64 / 1048576.0;
         log::info!("GPU upload estimate: meshes {:.0} MB, textures {:.0} / {:.0} / {:.0} MB (cap 1024 / 2048 / 4096)", mb(mesh), mb(tex[0]), mb(tex[1]), mb(tex[2]));
+        // Mesh memory by scene name (what streaming could release).
+        let mut by: std::collections::BTreeMap<String, (u64, usize)> = Default::default();
+        for m in &app.world.res::<RenderScene>().models {
+            let b: u64 = m.meshes.iter().flatten().map(|p| (p.positions.len() * 48 + p.indices.len() * 4 + p.lods.iter().map(|l| l.len() * 4).sum::<usize>()) as u64).sum();
+            let key = m.name.split(|c: char| c.is_ascii_digit() || c == '_').next().unwrap_or("").to_string();
+            let e = by.entry(key).or_default();
+            e.0 += b;
+            e.1 += 1;
+        }
+        let mut v: Vec<_> = by.into_iter().collect();
+        v.sort_by(|a, b| b.1.0.cmp(&a.1.0));
+        log::info!("mesh memory by scene: {}", v.iter().take(12).map(|(k, (b, n))| format!("{k} x{n} {:.0} MB", mb(*b))).collect::<Vec<_>>().join(", "));
     }
     if let Some(h) = args.hours {
         let t = app.world.res_mut::<game::env::TimeOfDay>();
@@ -551,15 +586,27 @@ fn stability(args: &Args, app: &mut App, renderer: &mut Renderer, extract: &mut 
         d.sort_by(f32::total_cmp);
         (mean, d[(d.len() as f32 * 0.999) as usize % d.len().max(1)], changed)
     };
+    // Per-frame noise (TAA jitter, rotating GTAO and PCF patterns) is
+    // averaged out over 8 frames, so what remains is the shadow itself.
+    let avg = |app: &mut App, renderer: &mut Renderer, extract: &mut Extract, eye: Vec3, look: Vec3| -> Vec<f32> {
+        let mut acc = shot(app, renderer, extract, eye, look);
+        for _ in 1..8 {
+            for (a, b) in acc.iter_mut().zip(shot(app, renderer, extract, eye, look)) {
+                *a += b;
+            }
+        }
+        acc.iter_mut().for_each(|a| *a /= 8.0);
+        acc
+    };
     {
         let t = app.world.res_mut::<game::env::TimeOfDay>();
         t.photo_sky = false;
         t.speed = 0.0;
     }
-    // Settle (TAA history, cached cascades).
-    for _ in 0..4 {
-        shot(app, renderer, extract, eye, look);
-    }
+    let shot = avg;
+    // Settle (TAA history, cached cascades), then the noise floor.
+    shot(app, renderer, extract, eye, look);
+    let floor = diff(&shot(app, renderer, extract, eye, look), &shot(app, renderer, extract, eye, look));
     let mut prev = shot(app, renderer, extract, eye, look);
     let (mut sm, mut sp, mut sc) = (0.0, 0.0f32, 0.0);
     for _ in 0..n {
@@ -573,22 +620,25 @@ fn stability(args: &Args, app: &mut App, renderer: &mut Renderer, extract: &mut 
     }
     let first = prev.clone();
     let dir = (look - eye).normalize_or_zero().cross(Vec3::Y).normalize_or_zero() * 3.0;
+    let step = |app: &mut App, renderer: &mut Renderer, extract: &mut Extract, t: f32| {
+        app.world.res_mut::<game::camera::CameraRig>().fixed = Some((eye + dir * t, look + dir * t));
+        app.update_with_dt(0.0);
+        let frame = extract.frame(renderer, app);
+        let _ = renderer.render_offscreen(&frame, w, h);
+    };
     for i in 1..=n {
-        let t = i as f32 / n as f32;
-        shot(app, renderer, extract, eye + dir * t, look + dir * t);
+        step(app, renderer, extract, i as f32 / n as f32);
     }
     for i in (0..n).rev() {
-        let t = i as f32 / n as f32;
-        shot(app, renderer, extract, eye + dir * t, look + dir * t);
+        step(app, renderer, extract, i as f32 / n as f32);
     }
-    // A few frames at the pose so TAA converges as it had before.
-    let mut back = Vec::new();
-    for _ in 0..4 {
-        back = shot(app, renderer, extract, eye, look);
-    }
+    shot(app, renderer, extract, eye, look);
+    let back = shot(app, renderer, extract, eye, look);
     let (rm, rp, rc) = diff(&back, &first);
     println!(
-        "stability ({n} frames): sun creep mean {sm:.3} p99.9 {sp:.0} changed {:.3}% | walk away and back: mean {rm:.3} p99.9 {rp:.0} changed {:.3}%",
+        "stability ({n} steps, 8-frame means): noise floor mean {:.3} changed {:.3}% | sun creep mean {sm:.3} p99.9 {sp:.0} changed {:.3}% | walk away and back: mean {rm:.3} p99.9 {rp:.0} changed {:.3}%",
+        floor.0,
+        floor.2 * 100.0,
         sc * 100.0,
         rc * 100.0
     );

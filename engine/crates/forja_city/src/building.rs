@@ -51,6 +51,8 @@ pub struct CityOut {
     /// Closed masses of the buildings built so far, for their far-cascade
     /// shadow proxies (see [`proxy_scene`]).
     pub shadow_masses: Vec<ShadowMass>,
+    /// Tiles with a far-distance stand-in (see [`crate::hlod`]).
+    pub hlod_tiles: Vec<crate::hlod::HlodTile>,
 }
 
 /// A prism `ring x [bottom, top]` standing in for a building (or its
@@ -60,6 +62,24 @@ pub struct ShadowMass {
     pub ring: Vec<Vec2>,
     pub bottom: f32,
     pub top: f32,
+    /// What its far-distance stand-in shows ([`crate::hlod`]).
+    pub facade: Option<MassFacade>,
+}
+
+/// The look of a [`ShadowMass`] for its HLOD box.
+#[derive(Clone, Debug)]
+pub struct MassFacade {
+    /// Ground level of the facade (the mass starts below the plinth).
+    pub base: f32,
+    pub wall: Mat,
+    pub roof: Mat,
+    pub storeys: u32,
+    pub ground_height: f32,
+    /// Height of the roof cap above the eave (pitched roofs).
+    pub roof_rise: f32,
+    /// Edge kinds of `ring` (party walls get no windows).
+    pub edges: Vec<EdgeKind>,
+    pub seed: u64,
 }
 
 /// The far-cascade shadow proxy of `masses`: side walls and a cap per
@@ -806,11 +826,18 @@ fn build_body(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>, lo
     // Far-cascade shadow mass: the footprint up to the eave (the roof
     // keeps casting itself), from below the plinth; an ático adds its
     // own block on the setback ring.
-    out.shadow_masses.push(ShadowMass { ring: lot.ring.clone(), bottom: base - SKIRT - 3.0, top: base + top });
-    if c.atico
-        && let Some(ring) = setback_ring(lot, ATICO_SETBACK)
-    {
-        out.shadow_masses.push(ShadowMass { ring, bottom: base + top - 0.1, top: base + top + 0.5 + ATICO_H });
+    let atico = if c.atico { setback_ring(lot, ATICO_SETBACK) } else { None };
+    let roof_mat = match c.roof.as_str() {
+        "clay" => Mat::RoofClay,
+        "mansard" | "slate" => Mat::RoofSlate,
+        "zinc" => Mat::Zinc,
+        _ => Mat::RoofTerrace,
+    };
+    let look = |base: f32, storeys: u32, gh: f32, rise: f32| MassFacade { base, wall: c.wall, roof: roof_mat, storeys, ground_height: gh, roof_rise: rise, edges: lot.edges.clone(), seed };
+    let rise = if atico.is_none() && matches!(roof_mat, Mat::RoofClay | Mat::RoofSlate) { 1.2 } else { 0.0 };
+    out.shadow_masses.push(ShadowMass { ring: lot.ring.clone(), bottom: base - SKIRT - 3.0, top: base + top, facade: Some(look(base, c.levels.len() as u32, c.gh, rise)) });
+    if let Some(ring) = atico {
+        out.shadow_masses.push(ShadowMass { ring, bottom: base + top - 0.1, top: base + top + 0.5 + ATICO_H, facade: Some(look(base + top, 1, 0.0, 0.0)) });
     }
     mouldings(lib, out, parts, lot, style, &c, top, &mut rng);
     roof(lib, out, parts, lot, style, &c, top, &mut rng);

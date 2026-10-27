@@ -31,6 +31,7 @@ pub mod furniture;
 pub mod generators;
 pub mod geom;
 pub mod ground;
+pub mod hlod;
 pub mod kit;
 pub mod landmark;
 pub mod layout;

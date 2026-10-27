@@ -349,6 +349,93 @@ dusk as the game does and report the background build, the frames
 rendered meanwhile and the main-thread stall; saves `<shot>_switched.png`),
 `FORJA_TIMING=1` (fabric stage laps).
 
+## Shadow stability, city HLOD and streaming (integrated GPUs)
+
+Target: the user's Galaxy Book4 Pro (Meteor Lake, integrated Arc, shared
+memory) ran v0.1.2 at ~10 FPS, and the shadows of the iron window grilles
+flickered. Render scale and upscaling are handled separately (gfx3); this
+part cuts what the city costs and makes the shadows stable.
+
+### Shadow flicker
+
+Causes found in the code (the cascades themselves were already
+texel-snapped, with rotation-invariant bounding spheres, receiver-plane
+bias, normal offset and a rotated Poisson PCF resolved by TAA):
+
+1. **Shadow LOD followed the camera.** Casters picked their shadow LOD from
+   the camera distance of their grid cell (one level coarser than the
+   camera), so while walking, facade modules switched LOD *inside* the
+   same cascade and their shadows popped (grilles and railings lose bars
+   at coarse levels). Now the shadow LOD comes only from the cascade's
+   texel size (one triangle per two texels), which does not change while
+   the camera moves (`View::stable_lod`; dynamic instances the same).
+2. **Thin casters in coarse cascades.** Grille and railing bars (2-3 cm)
+   are thinner than a texel beyond the first cascade (c1 ~1.2 cm, c2
+   ~3.5 cm, c3 ~7 cm on High), where they only alias. The facade's iron
+   (`Mat::Iron` inside `build_into`) is now `ShadowRole::Fine`: camera,
+   first cascade and spot shadows only (the GTA V approach of simplified
+   casters). Beyond ~10 m their shadow is a sub-texel pattern anyway; the
+   balcony slabs, the walls and the building masses still cast.
+3. Far cascades use the building masses (above), so window modules no
+   longer rasterise at 7 cm texels.
+
+`FORJA_FX=-stableshadow` restores the old behaviour for A/B comparisons.
+Measurement: `sandbox --stability N` (8-frame means remove the TAA,
+GTAO and PCF noise; then N steps of the sun creeping 0.03° per step, and
+the camera walking 3 m away and back). Plaza spawn, High, 480x270:
+
+STABILITY_TABLE
+
+### HLOD per city tile
+
+Every 64 m city tile gets an HLOD scene (`forja_city::hlod`): each
+building as one box (footprint to the eave, plus its ático), one mesh,
+one material and a 512² atlas baked at build time with each street
+facade's wall colour (mean of the scanned material x tint) and its real
+grid of storeys and bays, shop fronts on the ground floor, roof colours,
+and at night an emissive copy with lit windows. The renderer draws the
+tile's detail (its block scene, window/shop/portal modules, shadow
+masses) near the camera and the HLOD beyond `hlod_distance` (Low 150 m,
+Medium 200, High 250, Ultra 400; F9 "City detail distance"), per tile with
+10 % hysteresis, in the camera and in every shadow cascade
+(`Renderer::set_static_instances_lod`, `StaticLod`; one flag per run, so
+no per-instance cost). 70 tiles on the default map, 9 MB of HLOD meshes
+and 70 atlases.
+
+### Streaming
+
+`sandbox::stream`: at the first upload every tile's block scene (walls,
+mouldings, roofs: 313 MB of the 710 MB of meshes) is written to
+`cache/stream/<process>/` by a writer thread; beyond 1.4x the HLOD
+distance a tile's blocks leave the GPU (`Renderer::release_model`) and
+the tile is held at its HLOD (`set_static_group_ready`); within 1.2x a
+worker reads and decodes them and the main thread re-uploads at most two
+tiles per frame, so a tile is resident before the 1.0x / 0.9x switch and
+nothing pops or stalls. Window and shop modules are shared by all tiles
+(223 MB) and stay resident. `FORJA_NO_STREAM=1` keeps everything.
+
+Measured (lavapipe, 960x540, High, same build with `FORJA_FX=-hlod`):
+
+| View | | Detail everywhere | HLOD + streaming |
+|---|---|---|---|
+| Plaza spawn | camera draws / tris | 2 074 / 1.22 M | 2 074 / 1.22 M |
+| | shadow draws / tris | 2 130 / 1.85 M | 2 130 / 1.85 M |
+| | tiles at HLOD / blocks streamed out | 0 / 0 | 32 / 29 (153 MB) |
+| | resident meshes, VRAM estimate | 710 MB, ~1.37 GB | 556 MB, ~1.21 GB |
+| Old-town aerial (60 m up) | camera draws / tris | 4 943 / 4.69 M | 4 828 / 4.53 M |
+| | resident meshes, VRAM estimate | 710 MB, ~1.37 GB | 569 MB, ~1.23 GB |
+| Whole city (650 m away, 180 m up) | camera draws / tris | HIGH_NO | 1 357 / 1.07 M |
+| | shadow draws / tris | HIGH_NO_SH | 3 067 / 1.84 M |
+| | resident meshes, VRAM estimate | 710 MB | 406 MB, ~1.06 GB |
+
+Budget for the integrated GPU (draws < 1.5 k, < 2 M triangles camera +
+shadows): met by the far views; near the ground the detail within the
+HLOD distance (window modules: 3 491 unique meshes, one draw each when
+visible) keeps ~2 k camera draws. Next steps there: fewer module
+variants (paint colours as instance tints instead of materials), merged
+per-tile batches of the modules at mid distance, and a shorter HLOD
+distance plus proxies from c2 in the integrated-GPU preset.
+
 ## Moving and changing things
 
 The static culling grid holds only what never changes. Traffic AI cars,

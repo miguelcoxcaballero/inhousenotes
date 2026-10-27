@@ -116,6 +116,16 @@ impl Plugin for WorldPlugin {
             for (s, m) in &desc.placements {
                 rs.statics.push(RenderItem::new(base + s, *m));
             }
+            if !desc.hlod_tiles.is_empty() {
+                rs.static_lod.resize(rs.statics.len(), (0, false));
+                for (t, tile) in desc.hlod_tiles.iter().enumerate() {
+                    let g = t as u32 + 1;
+                    for i in tile.detail.clone() {
+                        rs.static_lod[static_base + i] = (g, false);
+                    }
+                    rs.static_lod[static_base + tile.hlod] = (g, true);
+                }
+            }
             (base, static_base)
         };
         let hud = app.world.res_mut::<Hud>();

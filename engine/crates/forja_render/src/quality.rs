@@ -103,6 +103,9 @@ pub struct GraphicsConfig {
     /// First sun cascade (0-3) where facade detail is replaced by the
     /// city's shadow proxies (building masses); 4 never uses them.
     pub shadow_proxy_cascade: u32,
+    /// Distance (m) beyond which city tiles draw their HLOD stand-in
+    /// instead of their facade detail (0: never).
+    pub hlod_distance: f32,
     /// Show the frame profiler overlay at start (F11 toggles it).
     pub profiler_overlay: bool,
     /// Write the per-frame profile to this CSV file (empty: off).
@@ -138,6 +141,7 @@ impl Default for GraphicsConfig {
             lod_detail: 1.0,
             shadow_caster_texels: 2.5,
             shadow_proxy_cascade: 3,
+            hlod_distance: 250.0,
             profiler_overlay: false,
             profiler_csv: String::new(),
         };
@@ -203,6 +207,12 @@ impl GraphicsConfig {
             Preset::Low | Preset::Medium => 2,
             _ => 3,
         };
+        self.hlod_distance = match p {
+            Preset::Low => 150.0,
+            Preset::Medium => 200.0,
+            Preset::High => 250.0,
+            _ => 400.0,
+        };
     }
 
     /// Clamps every value to what the renderer supports.
@@ -223,6 +233,7 @@ impl GraphicsConfig {
         self.lod_detail = self.lod_detail.clamp(0.1, 4.0);
         self.shadow_caster_texels = self.shadow_caster_texels.clamp(0.5, 16.0);
         self.shadow_proxy_cascade = self.shadow_proxy_cascade.min(4);
+        self.hlod_distance = if self.hlod_distance <= 0.0 { 0.0 } else { self.hlod_distance.clamp(60.0, 2000.0) };
         self
     }
 

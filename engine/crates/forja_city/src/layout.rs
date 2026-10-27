@@ -283,6 +283,7 @@ pub fn realize(kit: &Kit, styles: &StyleLibrary, fabric: Fabric, plan: &CityPlan
         forja_assets::progress::advance(0.3 + 0.25 * ti as f32 / tiles as f32);
         let mut parts: Parts<Mat> = Parts::new();
         let masses = lay.out.shadow_masses.len();
+        let first_placement = lay.out.placements.len();
         for bi in blocks {
             let b = &fabric.blocks[bi];
             let first_wall = lay.out.party_walls.len();
@@ -309,6 +310,13 @@ pub fn realize(kit: &Kit, styles: &StyleLibrary, fabric: Fabric, plan: &CityPlan
         if let Some(p) = building::proxy_scene(kit, &lay.out.shadow_masses[masses..]) {
             let pi = lay.out.add_scene(p);
             lay.out.placements.push((pi, Mat4::IDENTITY));
+        }
+        // The tile's far stand-in: everything placed above is its detail.
+        if let Some(h) = crate::hlod::tile_scene(kit, &lay.out.shadow_masses[masses..]) {
+            let detail = first_placement..lay.out.placements.len();
+            let hi = lay.out.add_scene(h);
+            lay.out.hlod_tiles.push(crate::hlod::HlodTile { detail, hlod: lay.out.placements.len() });
+            lay.out.placements.push((hi, Mat4::IDENTITY));
         }
     }
     {
