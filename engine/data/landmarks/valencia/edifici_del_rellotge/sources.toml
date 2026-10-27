@@ -72,7 +72,69 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Facana_de_la_seu_de_l_Autoritat_Portuaria_Valencia.jpg"
+file = "photos/05_Valencia_Edificio_del_Reloj_2018_09_26.jpg"
+title = "File:Valencia - Edificio del Reloj 2018-09-26.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Edificio_del_Reloj_2018-09-26.jpg"
+author = "Rafa Esteve"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Port_Authority_Building_Valencia_P1430339_Flickr_ianpreston.jpg"
+title = "File:Port Authority Building-Valencia P1430339 - Flickr - ianpreston.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Port_Authority_Building-Valencia_P1430339_-_Flickr_-_ianpreston.jpg"
+author = "ianpreston from England, UK"
+license = "CC BY 2.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_Edifici_del_Rellotge_Valencia.jpg"
+title = "File:Edifici del Rellotge València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edifici_del_Rellotge_Val%C3%A8ncia.jpg"
+author = "Josu PV"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/08_Valencia_Valencia_192.jpg"
+title = "File:València - Valencia 192.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia_-_Valencia_192.jpg"
+author = "FrDr"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1920
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/09_Edifici_del_Rellotge_Port_de_Valencia_04_2025_1.jpg"
+title = "File:Edifici del Rellotge (Port de València), 04 2025 (1).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edifici_del_Rellotge_%28Port_de_Val%C3%A8ncia%29%2C_04_2025_%281%29.jpg"
+author = "Artvill"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 845
+camera = [-11.38, -7.67]
+heading = 17.0
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/10_Facana_de_la_seu_de_l_Autoritat_Portuaria_Valencia.jpg"
 title = "File:Façana de la seu de l'Autoritat Portuària, València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_de_la_seu_de_l%27Autoritat_Portu%C3%A0ria%2C_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -84,7 +146,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Edificio_del_Reloj_del_Puerto_de_Valencia_Spain.jpg"
+file = "photos/11_Edifici_del_Rellotge_Valencia_1.jpg"
+title = "File:Edifici del Rellotge València (1).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edifici_del_Rellotge_Val%C3%A8ncia_%281%29.jpg"
+author = "Josu PV"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/12_Edificio_del_Reloj_del_Puerto_de_Valencia_Spain.jpg"
 title = "File:Edificio del Reloj del Puerto de Valencia - Spain.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Edificio_del_Reloj_del_Puerto_de_Valencia_-_Spain.jpg"
 author = "MCAE Consulting"
@@ -96,7 +170,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Torre_del_rellotge_port_de_Valencia.jpg"
+file = "photos/13_Edificio_Reloj.jpg"
+title = "File:Edificio Reloj.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_Reloj.jpg"
+author = "Rafesmar"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 871
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/14_Torre_del_rellotge_port_de_Valencia.jpg"
 title = "File:Torre del rellotge, port de València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Torre_del_rellotge%2C_port_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -108,67 +194,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Alinghi5_Valencia_o.jpg"
-title = "File:Alinghi5 Valencia o.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Alinghi5_Valencia_o.jpg"
-author = "chatani"
-license = "CC BY 2.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Valencia_Edificio_del_Reloj_2018_09_26.jpg"
-title = "File:Valencia - Edificio del Reloj 2018-09-26.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Edificio_del_Reloj_2018-09-26.jpg"
-author = "Rafa Esteve"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Port_Authority_Building_Valencia_P1430339_Flickr_ianpreston.jpg"
-title = "File:Port Authority Building-Valencia P1430339 - Flickr - ianpreston.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Port_Authority_Building-Valencia_P1430339_-_Flickr_-_ianpreston.jpg"
-author = "ianpreston from England, UK"
-license = "CC BY 2.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Edifici_del_Rellotge_Valencia.jpg"
-title = "File:Edifici del Rellotge València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Edifici_del_Rellotge_Val%C3%A8ncia.jpg"
-author = "Josu PV"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_Valencia_Valencia_192.jpg"
-title = "File:València - Valencia 192.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia_-_Valencia_192.jpg"
-author = "FrDr"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1920
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Torre_de_l_antiga_estacio_maritima_port_de_Valencia.jpg"
+file = "photos/15_Torre_de_l_antiga_estacio_maritima_port_de_Valencia.jpg"
 title = "File:Torre de l'antiga estació marítima, port de València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Torre_de_l%27antiga_estaci%C3%B3_mar%C3%ADtima%2C_port_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -180,19 +206,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_Edifici_del_Rellotge_Valencia_1.jpg"
-title = "File:Edifici del Rellotge València (1).jpg"
-url = "https://commons.wikimedia.org/wiki/File:Edifici_del_Rellotge_Val%C3%A8ncia_%281%29.jpg"
-author = "Josu PV"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Torre_i_lateral_de_l_edifici_del_rellotge_del_port_de_Valenc.jpg"
+file = "photos/16_Torre_i_lateral_de_l_edifici_del_rellotge_del_port_de_Valenc.jpg"
 title = "File:Torre i lateral de l'edifici del rellotge del port de València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Torre_i_lateral_de_l%27edifici_del_rellotge_del_port_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -200,18 +214,6 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 2054
 exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_Edificio_Reloj.jpg"
-title = "File:Edificio Reloj.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Edificio_Reloj.jpg"
-author = "Rafesmar"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 871
-exterior = "unknown"
 selected = false
 side = ""
 

@@ -23,13 +23,14 @@ catastro_floor_area = { value = 771.0, unit = "m2", source = "https://www1.sedec
 catastro_floors_max = { value = 1, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 5 parts" }
 
 [[photo]]
-file = "photos/01_Drassanes_del_Grau_Valencia.jpg"
-title = "File:Drassanes del Grau, València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Drassanes_del_Grau%2C_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "Public domain"
+file = "photos/01_El_Grau_Valencia_Valencia_Spain_panoramio_4.jpg"
+title = "File:El Grau, València, Valencia, Spain - panoramio (4).jpg"
+url = "https://commons.wikimedia.org/wiki/File:El_Grau%2C_Val%C3%A8ncia%2C_Valencia%2C_Spain_-_panoramio_%284%29.jpg"
+author = "Santi Garcia"
+license = "CC BY 3.0"
 width = 1280
 height = 960
+camera = [50.46, -29.35]
 exterior = true
 selected = false
 side = ""
@@ -47,7 +48,79 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Exterior_de_les_drassanes_del_Grau_Valencia.jpg"
+file = "photos/03_Drassanes_de_Valencia_Grau.jpg"
+title = "File:Drassanes de València, Grau.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Drassanes_de_Val%C3%A8ncia%2C_Grau.JPG"
+author = "Joanbanjo"
+license = "Public domain"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/04_Atarazanas_Reales.jpg"
+title = "File:Atarazanas Reales.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Atarazanas_Reales.JPG"
+author = "Feranza"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_Atarazanas_Derecha.jpg"
+title = "File:Atarazanas Derecha.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Atarazanas_Derecha.jpg"
+author = "Rafesmar"
+license = "CC BY-SA 3.0 es"
+width = 1280
+height = 720
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Atarazanas_Izquierda.jpg"
+title = "File:Atarazanas Izquierda.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Atarazanas_Izquierda.jpg"
+author = "Rafesmar"
+license = "CC BY-SA 3.0 es"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_Atarazanas_del_Grao_Valencia_01.jpg"
+title = "File:Atarazanas del Grao, València 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Atarazanas_del_Grao%2C_Val%C3%A8ncia_01.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/08_Parte_trasera_de_las_atarazanas_de_Valencia_01.jpg"
+title = "File:Parte trasera de las atarazanas de Valencia 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Parte_trasera_de_las_atarazanas_de_Valencia_01.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/09_Exterior_de_les_drassanes_del_Grau_Valencia.jpg"
 title = "File:Exterior de les drassanes del Grau (València).JPG"
 url = "https://commons.wikimedia.org/wiki/File:Exterior_de_les_drassanes_del_Grau_%28Val%C3%A8ncia%29.JPG"
 author = "Joanbanjo"
@@ -59,92 +132,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_El_Grau_Valencia_Valencia_Spain_panoramio_4.jpg"
-title = "File:El Grau, València, Valencia, Spain - panoramio (4).jpg"
-url = "https://commons.wikimedia.org/wiki/File:El_Grau%2C_Val%C3%A8ncia%2C_Valencia%2C_Spain_-_panoramio_%284%29.jpg"
-author = "Santi Garcia"
-license = "CC BY 3.0"
-width = 1280
-height = 960
-camera = [50.46, -29.35]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/05_Atarazanas_Reales.jpg"
-title = "File:Atarazanas Reales.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Atarazanas_Reales.JPG"
-author = "Feranza"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/06_Atarazanas_Derecha.jpg"
-title = "File:Atarazanas Derecha.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Atarazanas_Derecha.jpg"
-author = "Rafesmar"
-license = "CC BY-SA 3.0 es"
-width = 1280
-height = 720
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/07_Atarazanas_Izquierda.jpg"
-title = "File:Atarazanas Izquierda.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Atarazanas_Izquierda.jpg"
-author = "Rafesmar"
-license = "CC BY-SA 3.0 es"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Atarazanas_del_Grao_Valencia_01.jpg"
-title = "File:Atarazanas del Grao, València 01.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Atarazanas_del_Grao%2C_Val%C3%A8ncia_01.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Parte_trasera_de_las_atarazanas_de_Valencia_01.jpg"
-title = "File:Parte trasera de las atarazanas de Valencia 01.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Parte_trasera_de_las_atarazanas_de_Valencia_01.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Exterior_de_les_drassanes_del_Grau.jpg"
-title = "File:Exterior de les drassanes del Grau.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Exterior_de_les_drassanes_del_Grau.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 875
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_El_Grau_Valencia_Valencia_Spain_panoramio_6.jpg"
+file = "photos/10_El_Grau_Valencia_Valencia_Spain_panoramio_6.jpg"
 title = "File:El Grau, València, Valencia, Spain - panoramio (6).jpg"
 url = "https://commons.wikimedia.org/wiki/File:El_Grau%2C_Val%C3%A8ncia%2C_Valencia%2C_Spain_-_panoramio_%286%29.jpg"
 author = "Santi Garcia"
@@ -152,7 +140,19 @@ license = "CC BY 3.0"
 width = 1280
 height = 960
 camera = [50.46, -29.35]
-exterior = "unknown"
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/11_Porxo_de_les_drassanes_del_Grau.jpg"
+title = "File:Porxo de les drassanes del Grau.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Porxo_de_les_drassanes_del_Grau.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1757
+exterior = true
 selected = false
 side = ""
 
@@ -164,55 +164,31 @@ author = "19Tarrestnom65"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Drassanes_de_Valencia_Grau.jpg"
-title = "File:Drassanes de València, Grau.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Drassanes_de_Val%C3%A8ncia%2C_Grau.JPG"
-author = "Joanbanjo"
-license = "Public domain"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Parte_trasera_de_las_atarazanas_de_Valencia_02.jpg"
+file = "photos/13_Parte_trasera_de_las_atarazanas_de_Valencia_02.jpg"
 title = "File:Parte trasera de las atarazanas de Valencia 02.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Parte_trasera_de_las_atarazanas_de_Valencia_02.jpg"
 author = "19Tarrestnom65"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Maqueta_de_les_drassanes_del_Grau_de_Valencia.jpg"
-title = "File:Maqueta de les drassanes del Grau de València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Maqueta_de_les_drassanes_del_Grau_de_Val%C3%A8ncia.JPG"
+file = "photos/14_Exterior_de_les_drassanes_del_Grau.jpg"
+title = "File:Exterior de les drassanes del Grau.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Exterior_de_les_drassanes_del_Grau.JPG"
 author = "Joanbanjo"
-license = "CC BY-SA 3.0"
+license = "CC BY-SA 4.0"
 width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_Porxo_de_les_drassanes_del_Grau.jpg"
-title = "File:Porxo de les drassanes del Grau.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Porxo_de_les_drassanes_del_Grau.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 1757
-exterior = "unknown"
+height = 875
+exterior = true
 selected = false
 side = ""
 

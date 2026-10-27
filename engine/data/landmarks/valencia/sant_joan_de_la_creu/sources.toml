@@ -84,7 +84,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Valencia_52043018229.jpg"
+file = "photos/06_Puerta_lateral_de_Sant_Joan_de_la_Creu.jpg"
+title = "File:Puerta lateral de Sant Joan de la Creu.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Puerta_lateral_de_Sant_Joan_de_la_Creu.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_Valencia_52043018229.jpg"
 title = "File:Valencia (52043018229).jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_%2852043018229%29.jpg"
 author = "Kent Wang from Barcelona, Spain"
@@ -96,7 +108,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Campanar_de_l_esglesia_de_Sant_Joan_de_la_Creu_Valencia.jpg"
+file = "photos/08_Campanar_de_l_esglesia_de_Sant_Joan_de_la_Creu_Valencia.jpg"
 title = "File:Campanar de l'església de Sant Joan de la Creu València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Campanar_de_l%27esgl%C3%A9sia_de_Sant_Joan_de_la_Creu_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -108,7 +120,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Efectes_dels_bombardejos_de_la_Guerra_Civil_Esglesia_de_Sant.jpg"
+file = "photos/09_Efectes_dels_bombardejos_de_la_Guerra_Civil_Esglesia_de_Sant.jpg"
 title = "File:Efectes dels bombardejos de la Guerra Civil, Església de Sant Joan de la Creu 02.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Efectes_dels_bombardejos_de_la_Guerra_Civil%2C_Esgl%C3%A9sia_de_Sant_Joan_de_la_Creu_02.jpg"
 author = "B25es"
@@ -120,7 +132,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_Esglesia_de_Sant_Joan_de_la_Creu_P1130905.jpg"
+file = "photos/10_Esglesia_de_Sant_Joan_de_la_Creu_P1130905.jpg"
 title = "File:Església de Sant Joan de la Creu P1130905.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_de_Sant_Joan_de_la_Creu_P1130905.JPG"
 author = "Pere López"
@@ -132,7 +144,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/10_Iglesia_de_San_Juan_de_la_Cruz_Valencia_01.jpg"
+file = "photos/11_Iglesia_de_San_Juan_de_la_Cruz_Valencia_01.jpg"
 title = "File:Iglesia de San Juan de la Cruz, Valencia 01.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Iglesia_de_San_Juan_de_la_Cruz%2C_Valencia_01.JPG"
 author = "Dorieo"
@@ -144,7 +156,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/11_Portalada_de_l_esglesia_de_sant_Joan_de_la_Creu_de_Valencia.jpg"
+file = "photos/12_Portalada_de_l_esglesia_de_sant_Joan_de_la_Creu_de_Valencia.jpg"
 title = "File:Portalada de l'església de sant Joan de la Creu de València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Portalada_de_l%27esgl%C3%A9sia_de_sant_Joan_de_la_Creu_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -156,22 +168,10 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_Efectes_dels_bombardejos_de_la_Guerra_Civil_Esglesia_de_Sant_2.jpg"
+file = "photos/13_Efectes_dels_bombardejos_de_la_Guerra_Civil_Esglesia_de_Sant_2.jpg"
 title = "File:Efectes dels bombardejos de la Guerra Civil, Església de Sant Joan de la Creu 01.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Efectes_dels_bombardejos_de_la_Guerra_Civil%2C_Esgl%C3%A9sia_de_Sant_Joan_de_la_Creu_01.jpg"
 author = "B25es"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Puerta_lateral_de_Sant_Joan_de_la_Creu.jpg"
-title = "File:Puerta lateral de Sant Joan de la Creu.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Puerta_lateral_de_Sant_Joan_de_la_Creu.jpg"
-author = "19Tarrestnom65"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 1707

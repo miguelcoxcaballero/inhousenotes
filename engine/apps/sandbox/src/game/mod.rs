@@ -10,6 +10,7 @@ pub mod humans;
 pub mod people;
 pub mod player;
 pub mod props;
+pub mod traffic;
 pub mod vehicles;
 pub mod walkable;
 pub mod world;
@@ -84,8 +85,15 @@ pub struct RenderScene {
     pub models: Vec<Arc<SceneData>>,
     paths: HashMap<PathBuf, Option<usize>>,
     pub statics: Vec<RenderItem>,
+    /// Indices of `statics` whose model or transform changes at run time
+    /// (traffic signal heads switching aspect). The renderer's static
+    /// culling grid is built once from the others; these are submitted
+    /// every frame like dynamic items.
+    pub volatile_statics: Vec<usize>,
     pub dynamic: Vec<RenderItem>,
     pub lights: Vec<PointLight>,
+    /// Physical point and spot lights of this frame (the city at night).
+    pub local_lights: Vec<forja_render::Light>,
     pub lines: Vec<LineVertex>,
     pub camera: Camera,
     pub env: Environment,
@@ -106,8 +114,11 @@ impl RenderScene {
         }
         let r = match forja_assets::load_model(path) {
             Ok(mut s) => {
-                // Scanned assets are dense: build LOD chains for big meshes.
-                forja_assets::lod::generate_lods(&mut s, 6, 20_000);
+                // Scanned assets are dense: build LOD chains. Parts from 1 k
+                // triangles get them too: cars (~1.7 k per part, hundreds
+                // of instances in the shadow maps) were drawn at full detail
+                // at any distance.
+                forja_assets::lod::generate_lods(&mut s, 8, 1_000);
                 Some(self.add_model(Arc::new(s)))
             }
             Err(e) => {
@@ -212,6 +223,12 @@ impl MapKind {
 
 /// Builds the game for one map.
 pub fn build(map: MapKind, paths: Paths) -> App {
+    build_at(map, paths, None)
+}
+
+/// [`build`] at a clock hour (`None`: the photo sky of the afternoon). The
+/// procedural city bakes its night content (lit windows, lamps) for it.
+pub fn build_at(map: MapKind, paths: Paths, hour: Option<f32>) -> App {
     let mut app = App::new();
     app.insert_resource(paths.clone())
         .insert_resource(Intent::default())
@@ -220,18 +237,20 @@ pub fn build(map: MapKind, paths: Paths) -> App {
         .insert_resource(humans::HumanLibrary::default())
         .insert_resource(people::PeopleLibrary::default())
         .add_plugin(forja_physics::PhysicsPlugin::default())
-        .add_plugin(world::WorldPlugin { map })
+        .add_plugin(world::WorldPlugin { map, hour: hour.and_then(env::content_hour) })
         .add_plugin(env::EnvPlugin)
         .add_plugin(props::PropsPlugin)
         .add_plugin(vehicles::VehiclesPlugin)
         .add_plugin(player::PlayerPlugin)
         .add_plugin(combat::CombatPlugin)
+        .add_plugin(traffic::TrafficPlugin)
         .add_plugin(crowd::CrowdPlugin)
         .add_plugin(camera::CameraPlugin);
     app.add_system(Stage::PreUpdate, "clear_frame", |w| {
         let rs = w.res_mut::<RenderScene>();
         rs.dynamic.clear();
         rs.lights.clear();
+        rs.local_lights.clear();
         rs.lines.clear();
         let dt = w.res::<forja_core::Time>().delta;
         let hud = w.res_mut::<Hud>();
@@ -241,5 +260,10 @@ pub fn build(map: MapKind, paths: Paths) -> App {
         hud.messages.retain(|m| m.1 > 0.0);
         hud.hit_marker = (hud.hit_marker - dt * 4.0).max(0.0);
     });
+    if let Some(h) = hour {
+        let t = app.world.res_mut::<env::TimeOfDay>();
+        t.hours = h;
+        t.photo_sky = false;
+    }
     app
 }

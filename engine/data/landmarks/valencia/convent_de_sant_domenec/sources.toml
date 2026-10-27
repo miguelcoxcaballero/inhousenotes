@@ -207,13 +207,13 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Valencia_skyline_sunset_4262234180.jpg"
-title = "File:Valencia skyline sunset (4262234180).jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_skyline_sunset_%284262234180%29.jpg"
-author = "Weldon Kennedy from London, UK"
-license = "CC BY 2.0"
+file = "photos/16_Convento_Santo_Domingo_Valencia.jpg"
+title = "File:Convento Santo Domingo Valencia.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Convento_Santo_Domingo_Valencia.JPG"
+author = "Un valencià"
+license = "Public domain"
 width = 1280
-height = 853
+height = 960
 exterior = true
 selected = false
 side = ""

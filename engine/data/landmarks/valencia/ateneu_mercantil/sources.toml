@@ -35,7 +35,21 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Placa_de_l_Ajuntament_de_Valencia_Ateneu_Mercantil_i_el_Rial.jpg"
+file = "photos/02_Rialto_Building_and_Ateneu_Mercantil_de_Valencia_building_04.jpg"
+title = "File:Rialto Building and Ateneu Mercantil de València building, 04 2025.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Rialto_Building_and_Ateneu_Mercantil_de_Val%C3%A8ncia_building%2C_04_2025.jpg"
+author = "Artvill"
+license = "CC BY 4.0"
+width = 1280
+height = 1705
+camera = [-6.59, -3.53]
+heading = 260.0
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/03_Placa_de_l_Ajuntament_de_Valencia_Ateneu_Mercantil_i_el_Rial.jpg"
 title = "File:Plaça de l'Ajuntament de València, Ateneu Mercantil i el Rialto.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Pla%C3%A7a_de_l%27Ajuntament_de_Val%C3%A8ncia%2C_Ateneu_Mercantil_i_el_Rialto.jpg"
 author = "Joanbanjo"
@@ -47,7 +61,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Placa_de_l_Ajuntament_Vinatea.jpg"
+file = "photos/04_Edificio_Rialto_y_Ateneo_mercantil_de_Valencia_1.jpg"
+title = "File:Edificio Rialto y Ateneo mercantil de Valencia 1.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_Rialto_y_Ateneo_mercantil_de_Valencia_1.JPG"
+author = "Dorieo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_Placa_de_l_Ajuntament_Vinatea.jpg"
 title = "File:Plaça de l'Ajuntament (Vinatea).jpg"
 url = "https://commons.wikimedia.org/wiki/File:Pla%C3%A7a_de_l%27Ajuntament_%28Vinatea%29.jpg"
 author = "Coentor"
@@ -59,7 +85,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_016_Font_de_la_placa_de_l_Ajuntament_Valencia_amb_l_Ateneu_M.jpg"
+file = "photos/06_014_Ateneu_Mercantil_pl_de_l_Ajuntament_18_Valencia.jpg"
+title = "File:014 Ateneu Mercantil, pl. de l'Ajuntament 18 (València).jpg"
+url = "https://commons.wikimedia.org/wiki/File:014_Ateneu_Mercantil%2C_pl._de_l%27Ajuntament_18_%28Val%C3%A8ncia%29.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_016_Font_de_la_placa_de_l_Ajuntament_Valencia_amb_l_Ateneu_M.jpg"
 title = "File:016 Font de la plaça de l'Ajuntament (València), amb l'Ateneu Mercantil al fons.jpg"
 url = "https://commons.wikimedia.org/wiki/File:016_Font_de_la_pla%C3%A7a_de_l%27Ajuntament_%28Val%C3%A8ncia%29%2C_amb_l%27Ateneu_Mercantil_al_fons.jpg"
 author = "Enric"
@@ -71,23 +109,23 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Remats_de_l_edifici_de_l_ateneu_Mercantil_des_de_la_terrassa.jpg"
-title = "File:Remats de l'edifici de l'ateneu Mercantil des de la terrassa, València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Remats_de_l%27edifici_de_l%27ateneu_Mercantil_des_de_la_terrassa%2C_Val%C3%A8ncia.jpg"
+file = "photos/08_Remats_decoratius_de_l_edifici_de_l_Ateneu_Mercantil.jpg"
+title = "File:Remats decoratius de l'edifici de l'Ateneu Mercantil.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Remats_decoratius_de_l%27edifici_de_l%27Ateneu_Mercantil.jpg"
 author = "Joanbanjo"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 853
+height = 1956
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Placa_de_l_Ajuntament_de_Valencia_2.jpg"
-title = "File:Plaça de l'Ajuntament de València 2.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Pla%C3%A7a_de_l%27Ajuntament_de_Val%C3%A8ncia_2.JPG"
+file = "photos/09_Edificio_Rialto_y_Ateneo_mercantil_de_Valencia_2.jpg"
+title = "File:Edificio Rialto y Ateneo mercantil de Valencia 2.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_Rialto_y_Ateneo_mercantil_de_Valencia_2.JPG"
 author = "Dorieo"
-license = "CC BY-SA 4.0"
+license = "CC BY-SA 3.0"
 width = 1280
 height = 853
 exterior = true
@@ -95,49 +133,13 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Edifici_de_l_Ateneu_Mercantil_de_Valencia_cropped.jpg"
+file = "photos/10_Edifici_de_l_Ateneu_Mercantil_de_Valencia_cropped.jpg"
 title = "File:Edifici de l'Ateneu Mercantil de València (cropped).jpg"
 url = "https://commons.wikimedia.org/wiki/File:Edifici_de_l%27Ateneu_Mercantil_de_Val%C3%A8ncia_%28cropped%29.jpg"
 author = "Rafael Zink"
 license = "CC BY-SA 4.0"
 width = 1280
 height = 1067
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Edificio_Rialto_y_Ateneo_mercantil_de_Valencia_1.jpg"
-title = "File:Edificio Rialto y Ateneo mercantil de Valencia 1.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Edificio_Rialto_y_Ateneo_mercantil_de_Valencia_1.JPG"
-author = "Dorieo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_014_Ateneu_Mercantil_pl_de_l_Ajuntament_18_Valencia.jpg"
-title = "File:014 Ateneu Mercantil, pl. de l'Ajuntament 18 (València).jpg"
-url = "https://commons.wikimedia.org/wiki/File:014_Ateneu_Mercantil%2C_pl._de_l%27Ajuntament_18_%28Val%C3%A8ncia%29.jpg"
-author = "Enric"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Placa_de_l_Ajuntament_de_Valencia_3.jpg"
-title = "File:Plaça de l'Ajuntament de València 3.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Pla%C3%A7a_de_l%27Ajuntament_de_Val%C3%A8ncia_3.JPG"
-author = "Dorieo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 853
 exterior = true
 selected = false
 side = ""
@@ -150,7 +152,7 @@ author = "Zarateman"
 license = "CC0"
 width = 1280
 height = 1707
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
@@ -162,40 +164,26 @@ author = "Carlesmari"
 license = "CC BY 3.0"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Rialto_Building_and_Ateneu_Mercantil_de_Valencia_building_04.jpg"
-title = "File:Rialto Building and Ateneu Mercantil de València building, 04 2025.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Rialto_Building_and_Ateneu_Mercantil_de_Val%C3%A8ncia_building%2C_04_2025.jpg"
-author = "Artvill"
-license = "CC BY 4.0"
-width = 1280
-height = 1705
-camera = [-6.59, -3.53]
-heading = 260.0
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Edificio_Rialto_y_Ateneo_mercantil_de_Valencia_2.jpg"
-title = "File:Edificio Rialto y Ateneo mercantil de Valencia 2.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Edificio_Rialto_y_Ateneo_mercantil_de_Valencia_2.JPG"
-author = "Dorieo"
-license = "CC BY-SA 3.0"
+file = "photos/13_Remats_de_l_edifici_de_l_ateneu_Mercantil_des_de_la_terrassa.jpg"
+title = "File:Remats de l'edifici de l'ateneu Mercantil des de la terrassa, València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Remats_de_l%27edifici_de_l%27ateneu_Mercantil_des_de_la_terrassa%2C_Val%C3%A8ncia.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
 width = 1280
 height = 853
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Placa_de_l_Ajuntament_de_Valencia_4.jpg"
-title = "File:Plaça de l'Ajuntament de València 4.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Pla%C3%A7a_de_l%27Ajuntament_de_Val%C3%A8ncia_4.JPG"
+file = "photos/14_Placa_de_l_Ajuntament_de_Valencia_2.jpg"
+title = "File:Plaça de l'Ajuntament de València 2.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Pla%C3%A7a_de_l%27Ajuntament_de_Val%C3%A8ncia_2.JPG"
 author = "Dorieo"
 license = "CC BY-SA 4.0"
 width = 1280
@@ -205,14 +193,26 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Remats_decoratius_de_l_edifici_de_l_Ateneu_Mercantil.jpg"
-title = "File:Remats decoratius de l'edifici de l'Ateneu Mercantil.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Remats_decoratius_de_l%27edifici_de_l%27Ateneu_Mercantil.jpg"
-author = "Joanbanjo"
+file = "photos/15_Placa_de_l_Ajuntament_de_Valencia_3.jpg"
+title = "File:Plaça de l'Ajuntament de València 3.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Pla%C3%A7a_de_l%27Ajuntament_de_Val%C3%A8ncia_3.JPG"
+author = "Dorieo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/16_Placa_de_l_Ajuntament_de_Valencia_4.jpg"
+title = "File:Plaça de l'Ajuntament de València 4.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Pla%C3%A7a_de_l%27Ajuntament_de_Val%C3%A8ncia_4.JPG"
+author = "Dorieo"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 1956
-exterior = "unknown"
+height = 853
+exterior = true
 selected = false
 side = ""
 

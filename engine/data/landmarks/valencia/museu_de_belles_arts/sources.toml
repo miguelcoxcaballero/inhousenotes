@@ -36,19 +36,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Luis_de_Madrazo_y_Kuntz_Retrato_de_dama_Museo_de_Bellas_Arte.jpg"
-title = "File:Luis de Madrazo y Kuntz - Retrato de dama - Museo de Bellas Artes de Valencia.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Luis_de_Madrazo_y_Kuntz_-_Retrato_de_dama_-_Museo_de_Bellas_Artes_de_Valencia.JPG"
-author = "Esniom"
-license = "Public domain"
-width = 1280
-height = 1920
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/03_Museo_de_Bellas_artes_San_Pio_V_panoramio.jpg"
+file = "photos/02_Museo_de_Bellas_artes_San_Pio_V_panoramio.jpg"
 title = "File:Museo de Bellas artes, San Pio V. - panoramio.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Museo_de_Bellas_artes%2C_San_Pio_V._-_panoramio.jpg"
 author = "Frank Baulo"
@@ -61,7 +49,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Valence_panoramio_7.jpg"
+file = "photos/03_Valence_panoramio_7.jpg"
 title = "File:Valence - panoramio (7).jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valence_-_panoramio_%287%29.jpg"
 author = "chisloup"
@@ -74,19 +62,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Relleu_amb_la_figura_orant_de_Sant_Pius_V_Col_legi_de_Sant_P.jpg"
-title = "File:Relleu amb la figura orant de Sant Pius V, Col·legi de Sant Pius V, Museu de Belles Arts de València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Relleu_amb_la_figura_orant_de_Sant_Pius_V%2C_Col%C2%B7legi_de_Sant_Pius_V%2C_Museu_de_Belles_Arts_de_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
-license = "Public domain"
-width = 1280
-height = 960
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/06_Part_superior_de_la_facana_del_Sant_Pius_V_Museu_de_Belles_A.jpg"
+file = "photos/04_Part_superior_de_la_facana_del_Sant_Pius_V_Museu_de_Belles_A.jpg"
 title = "File:Part superior de la façana del Sant Pius V, Museu de Belles Arts de València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Part_superior_de_la_fa%C3%A7ana_del_Sant_Pius_V%2C_Museu_de_Belles_Arts_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -98,7 +74,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Museu_de_Belles_Arts_P1130754.jpg"
+file = "photos/05_Exterior_Museu_de_Belles_Arts_de_Valencia.jpg"
+title = "File:Exterior, Museu de Belles Arts de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Exterior%2C_Museu_de_Belles_Arts_de_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Museu_de_Belles_Arts_P1130754.jpg"
 title = "File:Museu de Belles Arts P1130754.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Museu_de_Belles_Arts_P1130754.JPG"
 author = "Pere López"
@@ -110,7 +98,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Museu_de_Belles_Arts_de_Valencia_14.jpg"
+file = "photos/07_Museu_de_Belles_Arts_de_Valencia_14.jpg"
 title = "File:Museu de Belles Arts de València 14.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Museu_de_Belles_Arts_de_Val%C3%A8ncia_14.JPG"
 author = "Dorieo"
@@ -122,7 +110,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_Valencia_Spain_26461226731.jpg"
+file = "photos/08_Valencia_Spain_26461226731.jpg"
 title = "File:Valencia, Spain (26461226731).jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia%2C_Spain_%2826461226731%29.jpg"
 author = "Brett Hodnett"
@@ -134,7 +122,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/10_Pius_V_i_Universitat_des_de_les_Torres_de_Serrans_Valencia_2.jpg"
+file = "photos/09_Pius_V_i_Universitat_des_de_les_Torres_de_Serrans_Valencia_2.jpg"
 title = "File:Pius V i Universitat des de les Torres de Serrans (València) 2008.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Pius_V_i_Universitat_des_de_les_Torres_de_Serrans_%28Val%C3%A8ncia%29_2008.JPG"
 author = "Carlesmari"
@@ -146,7 +134,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/11_Jardins_du_turia.jpg"
+file = "photos/10_Jardins_du_turia.jpg"
 title = "File:Jardins du turia.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Jardins_du_turia.JPG"
 author = "Toutaitanous"
@@ -158,7 +146,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_Museu_pius1.jpg"
+file = "photos/11_Museu_pius1.jpg"
 title = "File:Museu pius1.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Museu_pius1.jpg"
 author = "Felivet"
@@ -170,7 +158,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Valencia_la_Saidia_Museu_de_Belles_Arts_de_Valencia_IMG_2836.jpg"
+file = "photos/12_Valencia_la_Saidia_Museu_de_Belles_Arts_de_Valencia_IMG_2836.jpg"
 title = "File:Valencia-la Saïdia, Museu de Belles Arts de València IMG 2836 2026-08-24 13.49.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia-la_Sa%C3%AFdia%2C_Museu_de_Belles_Arts_de_Val%C3%A8ncia_IMG_2836_2026-08-24_13.49.jpg"
 author = "Michielverbeek"
@@ -183,7 +171,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_151_Museu_de_Belles_Arts_de_Sant_Pius_V_Valencia_des_del_pon.jpg"
+file = "photos/13_151_Museu_de_Belles_Arts_de_Sant_Pius_V_Valencia_des_del_pon.jpg"
 title = "File:151 Museu de Belles Arts de Sant Pius V (València), des del pont dels Serrans.jpg"
 url = "https://commons.wikimedia.org/wiki/File:151_Museu_de_Belles_Arts_de_Sant_Pius_V_%28Val%C3%A8ncia%29%2C_des_del_pont_dels_Serrans.jpg"
 author = "Enric"
@@ -195,7 +183,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_162_Pont_de_la_Trinitat_Valencia_al_fons_el_Museu_de_Belles_.jpg"
+file = "photos/14_162_Pont_de_la_Trinitat_Valencia_al_fons_el_Museu_de_Belles_.jpg"
 title = "File:162 Pont de la Trinitat (València), al fons el Museu de Belles Arts.jpg"
 url = "https://commons.wikimedia.org/wiki/File:162_Pont_de_la_Trinitat_%28Val%C3%A8ncia%29%2C_al_fons_el_Museu_de_Belles_Arts.jpg"
 author = "Enric"
@@ -207,7 +195,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Museo_de_Bellas_Artes_San_Pio_V_de_Valencia_2262044745.jpg"
+file = "photos/15_Museo_de_Bellas_Artes_San_Pio_V_de_Valencia_2262044745.jpg"
 title = "File:Museo de Bellas Artes San Pio V de Valencia (2262044745).jpg"
 url = "https://commons.wikimedia.org/wiki/File:Museo_de_Bellas_Artes_San_Pio_V_de_Valencia_%282262044745%29.jpg"
 author = "Dan from Brussels, Europe"

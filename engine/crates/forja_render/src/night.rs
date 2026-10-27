@@ -84,6 +84,7 @@ impl Environment {
             // 1/400000 of the sunlight gives the blue moonlit sky.
             sun_dir: Vec3::new(-0.35, 0.55, -0.45).normalize(),
             sun_illuminance: 14.0 * 2.5e-6,
+            camera: crate::CameraModel::Night,
             exposure: 1500.0,
             fog_density: 0.0006,
             fog_falloff: 0.01,
@@ -114,6 +115,7 @@ impl Environment {
         Self {
             sun_dir: Vec3::new(0.82, -0.035, 0.57).normalize(),
             sun_illuminance: 14.0,
+            camera: crate::CameraModel::Night,
             exposure: 60.0,
             fog_density: 0.0016,
             fog_falloff: 0.012,
@@ -187,6 +189,7 @@ mod tests {
         assert!(r.wetness > 0.9 && r.puddles > 0.0 && r.fog_density > n.fog_density);
         // Daytime defaults keep every night feature off.
         let d = Environment::default();
+        assert!(d.camera == crate::CameraModel::Physical && n.camera == crate::CameraModel::Night && Environment::dusk().camera == crate::CameraModel::Night && r.camera == crate::CameraModel::Night);
         assert!(!d.is_night_aware() && d.emissive_scale == 1.0 && d.bloom_radius == 1.0 && d.night_grade == 0.0);
         assert!(n.night_grade > 0.0 && n.auto_exposure.is_some_and(|a| a.compensation_ev.abs() <= 1.0));
     }

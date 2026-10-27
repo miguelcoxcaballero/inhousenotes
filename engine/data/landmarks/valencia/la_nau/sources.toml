@@ -35,7 +35,34 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_110_Font_de_la_placa_del_Col_legi_del_Patriarca_Valencia_ado.jpg"
+file = "photos/02_Fronto_d_una_finestra_de_l_edifici_de_La_Nau_Valencia.jpg"
+title = "File:Frontó d'una finestra de l'edifici de La Nau, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Front%C3%B3_d%27una_finestra_de_l%27edifici_de_La_Nau%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 943
+camera = [3.38, -2.64]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/03_La_Nau_Universitat_de_Valencia_6813_02.jpg"
+title = "File:La Nau (Universitat de València) 6813 02.jpg"
+url = "https://commons.wikimedia.org/wiki/File:La_Nau_%28Universitat_de_Val%C3%A8ncia%29_6813_02.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+camera = [-11.8, -24.42]
+heading = 277.2
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/04_110_Font_de_la_placa_del_Col_legi_del_Patriarca_Valencia_ado.jpg"
 title = "File:110 Font de la plaça del Col·legi del Patriarca (València), adossada a l'edifici de la Nau.jpg"
 url = "https://commons.wikimedia.org/wiki/File:110_Font_de_la_pla%C3%A7a_del_Col%C2%B7legi_del_Patriarca_%28Val%C3%A8ncia%29%2C_adossada_a_l%27edifici_de_la_Nau.jpg"
 author = "Enric"
@@ -48,7 +75,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_109_Placa_del_Col_legi_del_Patriarca_Valencia_amb_el_Col_leg.jpg"
+file = "photos/05_109_Placa_del_Col_legi_del_Patriarca_Valencia_amb_el_Col_leg.jpg"
 title = "File:109 Plaça del Col·legi del Patriarca (València), amb el Col·legi del Corpus Christi i la Nau.jpg"
 url = "https://commons.wikimedia.org/wiki/File:109_Pla%C3%A7a_del_Col%C2%B7legi_del_Patriarca_%28Val%C3%A8ncia%29%2C_amb_el_Col%C2%B7legi_del_Corpus_Christi_i_la_Nau.jpg"
 author = "Enric"
@@ -61,19 +88,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Facana_de_la_Nau_al_carrer_de_la_Universitat_Valencia.jpg"
-title = "File:Façana de la Nau al carrer de la Universitat, València.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_de_la_Nau_al_carrer_de_la_Universitat%2C_Val%C3%A8ncia.JPG"
-author = "Joanbanjo"
+file = "photos/06_Universitat_de_Valencia_P1130910.jpg"
+title = "File:Universitat de València P1130910.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Universitat_de_Val%C3%A8ncia_P1130910.JPG"
+author = "Pere López"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 915
+height = 960
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Universitat_de_Valencia_Carrer_la_Nau_IMG_1553.jpg"
+file = "photos/07_Universitat_de_Valencia_Carrer_la_Nau_IMG_1553.jpg"
 title = "File:Universitat de València Carrer la Nau IMG 1553.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Universitat_de_Val%C3%A8ncia_Carrer_la_Nau_IMG_1553.jpg"
 author = "B25es"
@@ -85,7 +112,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_Universitat_Literaria_de_Valencia_png.jpg"
+file = "photos/08_Universitat_Literaria_de_Valencia_png.jpg"
 title = "File:Universitat Literària de Valencia.png"
 url = "https://commons.wikimedia.org/wiki/File:Universitat_Liter%C3%A0ria_de_Valencia.png"
 author = "Sea Olive"
@@ -97,127 +124,61 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Pictograma_gegant_Adam_Liu.jpg"
-title = "File:Pictograma gegant - Adam Liu.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Pictograma_gegant_-_Adam_Liu.jpg"
-author = "Francesc Fort"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 961
-camera = [9.34, -8.15]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Laura_Perez_Verneti.jpg"
-title = "File:Laura Pérez Verneti.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Laura_P%C3%A9rez_Verneti.jpg"
-author = "Francesc Fort"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1705
-camera = [2.51, 35.16]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_La_Nau_Universitat_de_Valencia_6813_04.jpg"
-title = "File:La Nau (Universitat de València) 6813 04.jpg"
-url = "https://commons.wikimedia.org/wiki/File:La_Nau_%28Universitat_de_Val%C3%A8ncia%29_6813_04.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-camera = [-14.63, -21.0]
-heading = 347.8
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Universitat_de_Valencia_P1130910.jpg"
-title = "File:Universitat de València P1130910.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Universitat_de_Val%C3%A8ncia_P1130910.JPG"
-author = "Pere López"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_La_Nau_Universitat_de_Valencia_6813_05.jpg"
-title = "File:La Nau (Universitat de València) 6813 05.jpg"
-url = "https://commons.wikimedia.org/wiki/File:La_Nau_%28Universitat_de_Val%C3%A8ncia%29_6813_05.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-camera = [-8.91, -22.73]
-heading = 233.4
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_Finestres_de_la_Nau_Universitat_de_Valencia.jpg"
+file = "photos/09_Finestres_de_la_Nau_Universitat_de_Valencia.jpg"
 title = "File:Finestres de la Nau, Universitat de València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Finestres_de_la_Nau%2C_Universitat_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Universitat_de_Valencia_P1130924.jpg"
+file = "photos/10_Universitat_de_Valencia_P1130924.jpg"
 title = "File:Universitat de València P1130924.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Universitat_de_Val%C3%A8ncia_P1130924.JPG"
 author = "Pere López"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Miguelanxo_Prado_en_la_Universitat_de_Valencia_1.jpg"
-title = "File:Miguelanxo Prado en la Universitat de València - 1.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Miguelanxo_Prado_en_la_Universitat_de_Val%C3%A8ncia_-_1.jpg"
-author = "Francesc Fort"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_Pontano_De_oboedientia.jpg"
-title = "File:Pontano, De oboedientia.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Pontano%2C_De_oboedientia.jpg"
-author = "Iovianus Pontanus"
-license = "Public domain"
-width = 960
-height = 1392
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Sacando_barro_esquina_de_cl_Universidad_y_Pintor_Sorolla_a.jpg"
-title = "File:Sacando barro esquina de cl Universidad y Pintor Sorolla a.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Sacando_barro_esquina_de_cl_Universidad_y_Pintor_Sorolla_a.jpg"
-author = "B25es"
+file = "photos/11_Facana_de_la_Nau_al_carrer_de_la_Universitat_Valencia.jpg"
+title = "File:Façana de la Nau al carrer de la Universitat, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ana_de_la_Nau_al_carrer_de_la_Universitat%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
 license = "CC BY-SA 3.0"
 width = 1280
-height = 940
+height = 915
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/12_Universitat_de_Valencia_P1130925.jpg"
+title = "File:Universitat de València P1130925.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Universitat_de_Val%C3%A8ncia_P1130925.JPG"
+author = "Pere López"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/13_Valencia_LA_NAU4.jpg"
+title = "File:Valencia-LA NAU4.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Valencia-LA_NAU4.JPG"
+author = "Diegrane ( talk )"
+license = "Public domain"
+width = 330
+height = 220
 exterior = true
 selected = false
 side = ""

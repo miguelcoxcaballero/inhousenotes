@@ -29,7 +29,9 @@ pub enum ItemKind {
     Sign(SignKind),
     Plate(u8),
     Bollard { valencia: bool },
-    Bin,
+    /// Litter bin: Valencia's municipal double drum, or a single one.
+    Bin { valencia: bool },
+    /// Kerbside container of a fraction (`street_waste` numbering).
     Container(u8),
     Tree,
     Palm,
@@ -198,14 +200,19 @@ fn along_street(env: &Env, plan: &CityPlan, si: StreetId, seed: u64, out: &mut V
             }
         }
         if p.containers && p.parking != Parking::None && s.len() > 40.0 {
-            let t = s.len() * 0.5 + rng.range(-8.0, 8.0);
-            for k in 0..4u8 {
-                let tt = t + k as f32 * 2.0;
+            // An island ("illa") in the parking lane against the kerb:
+            // general waste, packaging, paper, glass, side by side, fronts
+            // to the pavement.
+            let mut t = s.len() * 0.5 + rng.range(-8.0, 8.0);
+            for f in [3u8, 0, 1, 2] {
+                let size = crate::street_waste::container_size(crate::street_waste::ContainerModel::Kerbside, f);
+                let tt = t + size.x * 0.5;
                 let n = line.normal(tt);
-                let q = line.at(tt) - n * (road - 1.1);
+                let q = line.at(tt) - n * (road - 0.05 - size.y * 0.5);
                 if env.f.ground.in_carriage(q) && env.junction_clear(q, 3.0) {
-                    out.push(Item { kind: ItemKind::Container(k), pos: Vec3::new(q.x, 0.0, q.y), yaw: yaw_of(n) });
+                    out.push(Item { kind: ItemKind::Container(f), pos: Vec3::new(q.x, env.f.ground.relief.elev(q), q.y), yaw: yaw_of(-n) });
                 }
+                t += size.x + 0.3;
             }
         }
     }
@@ -217,7 +224,7 @@ fn along_street(env: &Env, plan: &CityPlan, si: StreetId, seed: u64, out: &mut V
                 let wide = if s.carriageway > 0.0 { walk_width(t) >= 1.6 } else { s.width_at(t) >= 4.5 };
                 let q = if s.carriageway > 0.0 { q } else { line.at(t) + (q - line.at(t)).normalize_or(Vec2::X) * (s.width_at(t) * 0.5 - 0.35) };
                 if wide && env.paved.contains_disc(q, 0.22) && env.junction_clear(q, 1.0) && env.shop_clear(q) {
-                    out.push(env.at(ItemKind::Bin, q, if s.carriageway > 0.0 { face } else { -face }));
+                    out.push(env.at(ItemKind::Bin { valencia }, q, if s.carriageway > 0.0 { face } else { -face }));
                 }
             }
             k += 1;
@@ -261,17 +268,18 @@ fn along_street(env: &Env, plan: &CityPlan, si: StreetId, seed: u64, out: &mut V
     }
 }
 
-/// Car arms of a node: (street, end, heading into the street).
-fn car_arms(env: &Env, n: NodeId) -> Vec<(StreetId, End, Vec2)> {
-    env.f
-        .graph
-        .star(n)
+/// Car arms of a junction (the nodes `members`, joined by links):
+/// (street, end, heading into the street, node), links left out.
+fn car_arms(env: &Env, members: &[NodeId], rep: &[NodeId]) -> Vec<(StreetId, End, Vec2, NodeId)> {
+    let g = &env.f.graph;
+    members
         .iter()
-        .filter(|a| {
-            let s = env.f.graph.street(a.0);
-            env.lib.get(s.profile).vehicles && s.carriageway > 0.0
+        .flat_map(|&n| g.star(n).iter().map(move |a| (a, n)))
+        .filter(|(a, _)| {
+            let s = g.street(a.0);
+            env.lib.get(s.profile).vehicles && s.carriageway > 0.0 && rep[s.a as usize] != rep[s.b as usize]
         })
-        .map(|a| (a.0, a.1, env.f.graph.street(a.0).heading(a.1, 6.0)))
+        .map(|(a, n)| (a.0, a.1, g.street(a.0).heading(a.1, 6.0), n))
         .collect()
 }
 
@@ -285,16 +293,25 @@ fn arriving(env: &Env, s: StreetId, e: End) -> bool {
 }
 
 /// Traffic lights or STOP / yield signs at every junction of three or
-/// more car arms, one per arriving approach.
+/// more car arms, one per arriving approach. Nodes joined by links are
+/// one junction: its lights stand at its outer approaches only.
 fn junction_control(env: &Env, out: &mut Vec<Item>) {
     let g = &env.f.graph;
-    for n in 0..g.nodes.len() as NodeId {
-        let arms = car_arms(env, n);
+    let rep = g.junctions(env.lib);
+    let mut members: std::collections::BTreeMap<NodeId, Vec<NodeId>> = std::collections::BTreeMap::new();
+    for (n, r) in rep.iter().enumerate() {
+        members.entry(*r).or_default().push(n as NodeId);
+    }
+    for nodes in members.values() {
+        let arms = car_arms(env, nodes, &rep);
         if arms.len() < 3 {
             continue;
         }
-        let signals = g.nodes[n as usize].signals || arms.iter().any(|a| env.lib.get(g.street(a.0).profile).control == Control::Signals);
-        let rank = |a: &(StreetId, End, Vec2)| env.lib.get(g.street(a.0).profile).rank;
+        // Lights stand at approaches with a zebra (their pedestrian head
+        // serves it): a junction with none is controlled by signs.
+        let signals = (nodes.iter().any(|&n| g.nodes[n as usize].signals) || arms.iter().any(|a| env.lib.get(g.street(a.0).profile).control == Control::Signals))
+            && arms.iter().any(|a| arriving(env, a.0, a.1) && crate::ground::has_zebra(g, env.lib, a.0, a.1));
+        let rank = |a: &(StreetId, End, Vec2, NodeId)| env.lib.get(g.street(a.0).profile).rank;
         // The straightest pair: green, or priority.
         let mut best = (0usize, 1usize, f32::INFINITY);
         for i in 0..arms.len() {
@@ -308,7 +325,7 @@ fn junction_control(env: &Env, out: &mut Vec<Item>) {
         }
         let straight = arms[best.0].2.dot(arms[best.1].2) < -0.866;
         let top = arms.iter().map(rank).max().unwrap_or(0);
-        for (k, &(s, e, d)) in arms.iter().enumerate() {
+        for (k, &(s, e, d, n)) in arms.iter().enumerate() {
             if !arriving(env, s, e) {
                 continue;
             }
@@ -316,11 +333,17 @@ fn junction_control(env: &Env, out: &mut Vec<Item>) {
             let m = g.mouth(s, e, env.lib);
             let travel = -d;
             let p0 = g.nodes[n as usize].p;
-            let q = p0 + d * (m + 0.5) + right(travel) * (st.carriageway * 0.5 + 0.45);
-            if !env.paved.contains_disc(q, 0.15) {
+            // At the kerb just before the mouth, or where the paving allows
+            // (old-town kerbs are narrow: further back, or by the wall).
+            let half = st.width_at(st.end_s(e)) * 0.5;
+            let spots = [0.5f32, 1.5, 3.0].into_iter().flat_map(|a| [st.carriageway * 0.5 + 0.45, st.carriageway * 0.5 + 0.25, half - 0.3].map(|o| (a, o)));
+            let Some(q) = spots.map(|(a, o)| p0 + d * (m + a) + right(travel) * o).find(|q| env.paved.contains_disc(*q, 0.15)) else { continue };
+            let green = k == best.0 || k == best.1;
+            // Approaches without a zebra are held by the junction's other
+            // lights.
+            if signals && !crate::ground::has_zebra(g, env.lib, s, e) {
                 continue;
             }
-            let green = k == best.0 || k == best.1;
             if signals {
                 let avenue = env.lib.get(st.profile).class == Class::Avenue && env.lib.get(st.profile).median > 0.0;
                 out.push(env.at(ItemKind::TrafficLight { aspect: if green { Aspect::Green } else { Aspect::Red }, ped_walk: !green, arm: if avenue { 5.0 } else { 0.0 } }, q, d));
