@@ -47,7 +47,7 @@ fn from_ycocg(c: vec3<f32>) -> vec3<f32> {
 
 fn load_color(p: vec2<i32>) -> vec3<f32> {
     let q = clamp(p, vec2<i32>(0), vec2<i32>(frame.screen.xy) - vec2<i32>(1));
-    return max(textureLoad(cur_tex, q, 0).rgb, vec3<f32>(0.0));
+    return clamp(textureLoad(cur_tex, q, 0).rgb, vec3<f32>(0.0), vec3<f32>(60000.0));
 }
 
 fn history_catmull_rom(uv: vec2<f32>) -> vec3<f32> {
@@ -108,7 +108,9 @@ fn fs_taa(in: FsIn) -> @location(0) vec4<f32> {
     let jitter_pix = frame.jitter.xy * vec2<f32>(0.5, -0.5) * frame.screen.xy;
     let hist_pix = in.pos.xy + (prev_pix - (pc - jitter_pix));
     if (any(hist_pix < vec2<f32>(0.0)) || any(hist_pix > frame.screen.xy)) { return vec4<f32>(cur, 1.0); }
-    let hist = to_ycocg(tm(history_catmull_rom(hist_pix * frame.screen.zw)));
+    // History rendered with last frame's pre-exposure (eye adaptation).
+    let hist_scale = exposure_state.pre / max(exposure_state.prev_pre, 1e-8);
+    let hist = to_ycocg(tm(history_catmull_rom(hist_pix * frame.screen.zw) * hist_scale));
     // Variance clipping toward the neighborhood mean.
     let gamma = taa.params.y;
     let lo = mean - sigma * gamma;

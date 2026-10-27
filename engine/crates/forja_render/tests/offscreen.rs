@@ -99,3 +99,34 @@ fn sunset_is_warm() {
     let horizon = img.get_pixel(320, 150).0;
     assert!(horizon[0] > horizon[2], "sunset horizon should be warm: {horizon:?}");
 }
+
+#[test]
+fn rainy_night_with_clustered_lights() {
+    let Some(mut r) = renderer() else { return };
+    let world = TestTrack::default().build().unwrap();
+    let mut frame = FrameDesc::default();
+    for (_, scene, m) in world.instances() {
+        let h = r.upload_scene(scene);
+        frame.instances.push(DrawInstance::new(h, m));
+    }
+    frame.env = Environment::rainy_night();
+    // A sodium street lamp aimed down, a warm point light, and a row of
+    // distant lamps that only show up as sprites.
+    frame.local_lights.push(Light::spot(Vec3::new(0.0, 6.0, 4.0), Vec3::NEG_Y, LightColor::sodium(), 16000.0, 0.7, 1.2).with_shadows());
+    frame.local_lights.push(Light::point(Vec3::new(6.0, 1.5, 0.0), kelvin(2700.0), 3000.0));
+    for i in 0..200 {
+        frame.local_lights.push(Light::point(Vec3::new(-40.0 + i as f32 * 2.0, 5.0, -250.0), LightColor::led(), 8000.0));
+    }
+    frame.camera = Camera::look_at(Vec3::new(-6.0, 3.0, 14.0), Vec3::new(3.0, 0.8, 4.0));
+    let img = r.render_to_image(&frame, 480, 270);
+    save(&img, "rainy_night.png");
+    let luma = |p: [u8; 4]| 0.2126 * p[0] as f32 + 0.7152 * p[1] as f32 + 0.0722 * p[2] as f32;
+    let mean = img.pixels().map(|p| luma(p.0)).sum::<f32>() / (480.0 * 270.0);
+    let brightest = img.pixels().map(|p| luma(p.0)).fold(0.0f32, f32::max);
+    // Night: a dark frame with bright, warm lamp-lit areas.
+    assert!(mean < 90.0, "night too bright: mean luma {mean}");
+    assert!(brightest > 180.0, "no lamp-lit highlight (max luma {brightest})");
+    let warm = img.pixels().filter(|p| luma(p.0) > 100.0 && p.0[0] as f32 > p.0[2] as f32 * 1.3).count();
+    assert!(warm > 50, "sodium light should look warm ({warm} warm pixels)");
+    assert!(r.stats.lights >= 2 && r.stats.spot_shadows == 1, "{:?}", r.stats);
+}

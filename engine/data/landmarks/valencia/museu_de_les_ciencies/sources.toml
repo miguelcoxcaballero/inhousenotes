@@ -12,6 +12,17 @@ commons_category = "Museo de las Ciencias Príncipe Felipe"
 wikipedia = { es = "https://es.wikipedia.org/wiki/Museo_de_las_Ciencias_Pr%C3%ADncipe_Felipe", ca = "https://ca.wikipedia.org/wiki/Museu_de_les_Ci%C3%A8ncies_Pr%C3%ADncep_Felip", en = "https://en.wikipedia.org/wiki/Museu_de_les_Ci%C3%A8ncies_Pr%C3%ADncipe_Felipe" }
 
 [facts]
+length_m = { value = 202.0, unit = "m", source = "OSM relation 14693200 (north ground edge 202.5 m) + PNOA orthophoto roof (end frames at s = -100.75 / +101.25 m)", note = "between the end frames; leaning end struts reach ~12-18 m further out (PNOA). Published '220 m' includes them" }
+width_m = { value = 80.0, unit = "m", source = "OSM outline 0 (north edge to rib feet 77-83 m) + PNOA south arches at t~82 m corrected for relief displacement", note = "north ground line to south facade; 98.5 m with the upper promenade (OSM outline 1, t 74-99 m)" }
+height_m = { value = 41.0, unit = "m", source = "photo 16 (end elevation, 14.1 px/m) and literature", note = "top of the north truss visors; north glazing top ~34 m (photo 16)" }
+frame_spacing_m = { value = 10.1, unit = "m", source = "OSM outline 0 rib notches every 20.15 m (2 modules) + PNOA roof ribs ~10.1 m", note = "21 transverse frames, 20 bays" }
+axis_azimuth_deg = { value = 128.83, unit = "deg", source = "OSM outline 0 north edge (local frame)" }
+promenade_level_m = { value = 10.8, unit = "m", source = "photo 08: ~70 steps x 0.15 m on the NW stair; camera fit photos 08 and 12" }
+south_peaks_m = { value = 25.5, unit = "m", source = "camera solved from 11 point matches on photo 12 (rms 3.2 px, camera agrees with the Commons location); tip of the outward hooks, t ~ 83 m" }
+north_terrace_m = { value = 6.5, unit = "m", source = "photo 16 (end elevation) and PNOA light strip t -16..0 m", note = "cantilevered north terrace over the ground-floor arcade" }
+roof_profile = { value = "36.8 m at t=22 -> 24 m at t=79.5, convex (exponent 1.8)", source = "photo 16 end top edge (35.8 m at t~41, 27 m beak at t~64) and aerial photo 15 (convex ribs)" }
+end_struts = { value = "Warren zigzag, feet up to ~14 m beyond the end frame", source = "photos 07, 09, 16; PNOA fan of struts at the west end" }
+pnoa_relief_displacement = { value = "(-0.12, +0.20) m per m of height in (s, t)", source = "IGN PNOA WMS (CC BY 4.0): roof features vs OSM ground features", note = "used to correct roof-level plan measurements" }
 built = { value = 2000, source = "https://www.wikidata.org/wiki/Q939288#P571" }
 architect = { value = "Santiago Calatrava", source = "https://www.wikidata.org/wiki/Q939288#P84" }
 area = { value = 26000.0, unit = "m2", source = "https://www.wikidata.org/wiki/Q939288#P2046", note = "applies to part: whole" }
@@ -31,9 +42,9 @@ author = "Diego Delso"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 854
-exterior = "unknown"
-selected = false
-side = ""
+exterior = true
+selected = true
+side = "ne"
 
 [[photo]]
 file = "photos/02_Museo_Principe_Felipe_Ciudad_de_las_Artes_y_las_Ciencias_Val_2.jpg"
@@ -43,9 +54,9 @@ author = "Diego Delso"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 779
-exterior = "unknown"
-selected = false
-side = ""
+exterior = true
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/03_Museo_principe_felipe_valencia_2009_6.jpg"
@@ -56,9 +67,9 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 850
 camera = [-96.62, 86.74]
-exterior = "unknown"
-selected = false
-side = ""
+exterior = true
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/04_Museo_principe_felipe_valencia_2009_7.jpg"
@@ -69,24 +80,12 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 850
 camera = [-6.77, 156.62]
-exterior = "unknown"
-selected = false
-side = ""
+exterior = true
+selected = true
+side = "s"
 
 [[photo]]
-file = "photos/05_Valencia_Ciudad_de_las_Artes_y_las_Ciencias_20100203_RM_1740.jpg"
-title = "File:Valencia Ciudad de las Artes y las Ciencias-20100203-RM-174013.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_Ciudad_de_las_Artes_y_las_Ciencias-20100203-RM-174013.jpg"
-author = "Ermell"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/06_Sciences_museum_of_valencia.jpg"
+file = "photos/05_Sciences_museum_of_valencia.jpg"
 title = "File:Sciences museum of valencia.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Sciences_museum_of_valencia.jpg"
 author = "Aiolia del Leone"
@@ -94,23 +93,11 @@ license = "GPL"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
-file = "photos/07_Ciudad_de_las_Artes_y_las_Ciencias_Valencia_Espana_2014_06_2.jpg"
-title = "File:Ciudad de las Artes y las Ciencias, Valencia, España, 2014-06-29, DD 39.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Ciudad_de_las_Artes_y_las_Ciencias%2C_Valencia%2C_Espa%C3%B1a%2C_2014-06-29%2C_DD_39.JPG"
-author = "Diego Delso"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 760
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Museo_de_las_Ciencias_Principe_Felipe_Valencia.jpg"
+file = "photos/06_Museo_de_las_Ciencias_Principe_Felipe_Valencia.jpg"
 title = "File:Museo de las Ciencias Príncipe Felipe. Valencia.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Museo_de_las_Ciencias_Pr%C3%ADncipe_Felipe._Valencia.jpg"
 author = "José Luis Filpo Cabana"
@@ -119,37 +106,11 @@ width = 1280
 height = 720
 camera = [-29.42, -223.53]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
-file = "photos/09_Valencia_Pool_southeast_of_Museo_de_las_Ciencias_Principe_Fe.jpg"
-title = "File:Valencia Pool southeast of Museo de las Ciencias Príncipe Felipe.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_Pool_southeast_of_Museo_de_las_Ciencias_Pr%C3%ADncipe_Felipe.jpg"
-author = "Ymblanter"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 854
-camera = [148.35, 49.11]
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_Valencia_L_Umbracle_southern_entrance_seen_from_the_east.jpg"
-title = "File:Valencia L'Umbracle southern entrance seen from the east.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Valencia_L%27Umbracle_southern_entrance_seen_from_the_east.jpg"
-author = "Ymblanter"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 842
-camera = [131.29, 84.05]
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/11_Museu_de_les_Ciencies_Principe_Felipe_Valencia_August_2026.jpg"
+file = "photos/07_Museu_de_les_Ciencies_Principe_Felipe_Valencia_August_2026.jpg"
 title = "File:Museu de les Ciències Príncipe Felipe, Valencia, August 2026.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Museu_de_les_Ci%C3%A8ncies_Pr%C3%ADncipe_Felipe%2C_Valencia%2C_August_2026.jpg"
 author = "Esniom"
@@ -159,11 +120,11 @@ height = 853
 camera = [-107.14, -181.13]
 heading = 45.0
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
-file = "photos/12_Valencia_Quartre_Carreres_de_trap_van_het_noordwestelijk_dee.jpg"
+file = "photos/08_Valencia_Quartre_Carreres_de_trap_van_het_noordwestelijk_dee.jpg"
 title = "File:Valencia-Quartre Carreres, de trap van het noordwestelijk deel van het Museu de les Ciències Príncep Felip IMG 3047 2026-08-25 16.43.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia-Quartre_Carreres%2C_de_trap_van_het_noordwestelijk_deel_van_het_Museu_de_les_Ci%C3%A8ncies_Pr%C3%ADncep_Felip_IMG_3047_2026-08-25_16.43.jpg"
 author = "Michielverbeek"
@@ -172,11 +133,24 @@ width = 1280
 height = 2008
 camera = [-148.59, 36.11]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
-file = "photos/13_07112008_0085Museo_principe_felipe.jpg"
+file = "photos/09_Frontal_del_Museo_de_las_Ciencias_Principe_Felipe_Valencia.jpg"
+title = "File:Frontal del Museo de las Ciencias Príncipe Felipe (Valencia).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Frontal_del_Museo_de_las_Ciencias_Pr%C3%ADncipe_Felipe_%28Valencia%29.jpg"
+author = "José Luis Filpo Cabana"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 720
+camera = [137.21, 106.44]
+exterior = true
+selected = true
+side = "e"
+
+[[photo]]
+file = "photos/10_07112008_0085Museo_principe_felipe.jpg"
 title = "File:07112008 0085Museo príncipe felipe.jpg"
 url = "https://commons.wikimedia.org/wiki/File:07112008_0085Museo_pr%C3%ADncipe_felipe.jpg"
 author = "Anual"
@@ -188,7 +162,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_The_City_of_Arts_and_Sciences_complex_by_Santiago_Calatrava_.jpg"
+file = "photos/11_The_City_of_Arts_and_Sciences_complex_by_Santiago_Calatrava_.jpg"
 title = "File:The City of Arts and Sciences complex by Santiago Calatrava and Félix Candela. Valencia, Spain, Southwestern Europe. September 28, 2014-5.jpg"
 url = "https://commons.wikimedia.org/wiki/File:The_City_of_Arts_and_Sciences_complex_by_Santiago_Calatrava_and_F%C3%A9lix_Candela._Valencia%2C_Spain%2C_Southwestern_Europe._September_28%2C_2014-5.jpg"
 author = "Mstyslav Chernov"
@@ -200,20 +174,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Frontal_del_Museo_de_las_Ciencias_Principe_Felipe_Valencia.jpg"
-title = "File:Frontal del Museo de las Ciencias Príncipe Felipe (Valencia).jpg"
-url = "https://commons.wikimedia.org/wiki/File:Frontal_del_Museo_de_las_Ciencias_Pr%C3%ADncipe_Felipe_%28Valencia%29.jpg"
-author = "José Luis Filpo Cabana"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 720
-camera = [137.21, 106.44]
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/16_Estanque_del_Museo_de_las_Ciencias_Principe_Felipe_Valencia.jpg"
+file = "photos/12_Estanque_del_Museo_de_las_Ciencias_Principe_Felipe_Valencia.jpg"
 title = "File:Estanque del Museo de las Ciencias Príncipe Felipe, Valencia.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Estanque_del_Museo_de_las_Ciencias_Pr%C3%ADncipe_Felipe%2C_Valencia.jpg"
 author = "Jl FilpoC"
@@ -222,8 +183,59 @@ width = 1280
 height = 720
 camera = [2.08, 171.18]
 exterior = true
+selected = true
+side = "s"
+
+[[photo]]
+file = "photos/13_Valencia_Museo_de_las_Ciencias_Principe_Felipe_from_the_east.jpg"
+title = "File:Valencia Museo de las Ciencias Príncipe Felipe from the east.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_Museo_de_las_Ciencias_Pr%C3%ADncipe_Felipe_from_the_east.jpg"
+author = "Ymblanter"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 982
+camera = [192.56, 0.04]
+exterior = true
+selected = true
+side = "n"
+
+[[photo]]
+file = "photos/14_Valencia06_flickr.jpg"
+title = "File:Valencia06 flickr.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia06_flickr.jpg"
+author = "Visentico"
+license = "CC BY-SA 2.0"
+width = 1280
+height = 960
+exterior = true
 selected = false
 side = ""
+
+[[photo]]
+file = "photos/15_Ciutat_de_les_Arts_i_les_Ciencies.jpg"
+title = "File:Ciutat de les Arts i les Ciències.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Ciutat_de_les_Arts_i_les_Ci%C3%A8ncies.jpg"
+author = "Photograph by Mike Lowe of the architecture of Santiago Calatrava in collaboration with Félix Candela"
+license = "Public domain"
+width = 1280
+height = 853
+camera = [-150.46, -108.88]
+exterior = true
+selected = true
+side = "aerial"
+
+[[photo]]
+file = "photos/16_Ciudad_de_las_Artes_y_las_Ciencias_07.jpg"
+title = "File:Ciudad de las Artes y las Ciencias 07.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Ciudad_de_las_Artes_y_las_Ciencias_07.jpg"
+author = "Cayetano -"
+license = "CC BY-SA 2.0"
+width = 1280
+height = 960
+camera = [82.07, -72.7]
+exterior = true
+selected = true
+side = "w"
 
 [[plan]]
 file = "plans/catastro_wms.png"
@@ -273,3 +285,12 @@ notes = "built=2000; use=4_3_publicServices; area=66927; area_in_outline=18006.4
 url = "http://www.cac.es/museo/"
 title = "Official website"
 notes = "Wikidata P856"
+
+[[plan]]
+file = "plans/pnoa_ortho.jpg"
+title = "IGN PNOA orthophoto (WMS), 300 x 300 m at 0.15 m/px around the anchor"
+url = "https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&REQUEST=GetMap&LAYERS=OI.OrthoimageCoverage&SRS=EPSG:25830&BBOX=727716.99,4370561.79,728016.99,4370861.79&WIDTH=2000&HEIGHT=2000&FORMAT=image/jpeg"
+author = "Instituto Geográfico Nacional (PNOA)"
+license = "CC BY 4.0"
+kind = "orthophoto"
+notes = "Used for: 21 frames at 10.1 m, roof extent s -104..+101 (apparent), north terrace t -16..0, end strut fans to s ~ -125, relief displacement estimate. Raw image in the gitignored plans folder."
