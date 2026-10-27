@@ -18,5 +18,5 @@ fn vs_main(v: LineIn) -> LineOut {
 
 @fragment
 fn fs_main(in: LineOut) -> @location(0) vec4<f32> {
-    return in.color;
+    return vec4<f32>(in.color.rgb * exposure_state.pre, in.color.a);
 }
