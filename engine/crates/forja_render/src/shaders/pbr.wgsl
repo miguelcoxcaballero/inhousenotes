@@ -1,4 +1,5 @@
-// Forward PBR with cascaded sun shadows, sky ambient, point lights and fog.
+// Forward PBR with cascaded sun shadows, sky ambient, clustered point and
+// spot lights, wet surfaces and fog.
 // `common.wgsl` is prepended at load time.
 
 struct Material {
@@ -10,6 +11,7 @@ struct Material {
 
 @group(0) @binding(1) var shadow_map: texture_depth_2d_array;
 @group(0) @binding(2) var shadow_sampler: sampler_comparison;
+@group(0) @binding(8) var spot_shadow_map: texture_depth_2d_array;
 
 @group(1) @binding(0) var<uniform> material: Material;
 @group(1) @binding(1) var base_tex: texture_2d<f32>;
@@ -324,7 +326,8 @@ fn ssr_trace(p: vec3<f32>, n: vec3<f32>, v: vec3<f32>, rough: f32, pix: vec2<f32
     if (prev.w <= 1e-5) { return vec4<f32>(0.0); }
     let puv = vec2<f32>(prev.x / prev.w * 0.5 + 0.5, 0.5 - prev.y / prev.w * 0.5);
     if (any(puv <= vec2<f32>(0.0)) || any(puv >= vec2<f32>(1.0))) { return vec4<f32>(0.0); }
-    let col = textureSampleLevel(history_tex, screen_samp, puv, 0.0).rgb;
+    // The history is pre-exposed by last frame's exposure.
+    let col = textureSampleLevel(history_tex, screen_samp, puv, 0.0).rgb / max(exposure_state.prev_pre, 1e-8);
     // Fade toward the screen border, the end of the ray and grazing
     // directions toward the camera (likely to be hidden by the foreground).
     let edge = min(min(puv.x, 1.0 - puv.x), min(puv.y, 1.0 - puv.y));
@@ -380,13 +383,127 @@ fn screen_ao(clip: vec4<f32>, on_surface: bool) -> f32 {
     return pow(ao, frame.fx.x);
 }
 
+
+// ---- Wet surfaces -------------------------------------------------------------
+
+fn hash21(p: vec2<f32>) -> f32 {
+    let q = fract(p * vec2<f32>(0.1031, 0.1030));
+    let r = q + dot(q, q.yx + 33.33);
+    return fract((r.x + r.y) * r.x);
+}
+
+fn value_noise(p: vec2<f32>) -> f32 {
+    let i = floor(p);
+    let f = fract(p);
+    let u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash21(i), hash21(i + vec2<f32>(1.0, 0.0)), u.x), mix(hash21(i + vec2<f32>(0.0, 1.0)), hash21(i + vec2<f32>(1.0, 1.0)), u.x), u.y);
+}
+
+// Puddle coverage noise by world position (0..1, smooth at 1 m scale).
+fn puddle_noise(xz: vec2<f32>) -> f32 {
+    let p = xz * frame.wet.z;
+    return value_noise(p) * 0.55 + value_noise(p * 2.07 + vec2<f32>(5.2, 1.3)) * 0.3 + value_noise(p * 4.3 + vec2<f32>(9.1, 7.7)) * 0.15;
+}
+
+struct WetSurface {
+    albedo: vec3<f32>,
+    rough: f32,
+    n: vec3<f32>,
+};
+
+// Rain-wet surface (Lagarde 2013): water fills porous materials, which
+// darken and turn glossy; non-porous ones (metal, paint, glass) just get a
+// smoother film. Upward faces are fully wet, walls a little (rain hits them
+// slantwise), undersides stay dry. Flat ground also collects puddles: a
+// world-space noise mask where the surface becomes a near-mirror with a
+// flat normal, which is what stretches lamps and neon into the long
+// reflections of a wet street (direct specular of the clustered lights plus
+// SSR of the emissive signs).
+fn wet_surface(albedo: vec3<f32>, rough: f32, metallic: f32, n: vec3<f32>, ng: vec3<f32>, p: vec3<f32>) -> WetSurface {
+    var o = WetSurface(albedo, rough, n);
+    let up = ng.y;
+    let wet = frame.wet.x * mix(0.2, 1.0, smoothstep(0.25, 0.85, up)) * smoothstep(-0.6, -0.2, up);
+    if (wet <= 0.0) { return o; }
+    let porosity = clamp((rough - 0.25) / 0.5, 0.0, 1.0) * (1.0 - metallic);
+    o.albedo = albedo * mix(1.0, 0.42, wet * porosity);
+    o.rough = mix(rough, min(rough, mix(0.1, 0.24, porosity)), wet);
+    // Water fills the small relief of the normal map.
+    o.n = normalize(mix(n, ng, wet * (0.6 + 0.35 * porosity)));
+    if (frame.wet.y > 0.0 && up > 0.9) {
+        let th = 1.0 - 0.5 * frame.wet.y;
+        let m = smoothstep(th - 0.05, th + 0.05, puddle_noise(p.xz)) * frame.wet.x * smoothstep(0.9, 0.98, up);
+        o.rough = mix(o.rough, 0.025, m);
+        o.n = normalize(mix(o.n, ng, m));
+        o.albedo = o.albedo * mix(1.0, 0.7, m);
+    }
+    return o;
+}
+
+// ---- Clustered local lights -----------------------------------------------------
+
+// Shadow of a shadow-mapped spot light (5-tap hardware PCF).
+fn spot_shadow(layer: i32, p: vec3<f32>, ng: vec3<f32>, dist: f32) -> f32 {
+    let texel = dist * 2.5 / 1024.0;
+    let q = p + ng * (texel * 1.5);
+    let c = frame.spot_vp[layer] * vec4<f32>(q, 1.0);
+    if (c.w <= 1e-4) { return 1.0; }
+    let s = c.xyz / c.w;
+    let uv = vec2<f32>(s.x * 0.5 + 0.5, 0.5 - s.y * 0.5);
+    if (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0)) || s.z > 1.0) { return 1.0; }
+    let t = 1.0 / 1024.0;
+    var sum = textureSampleCompareLevel(spot_shadow_map, shadow_sampler, uv, layer, s.z);
+    sum += textureSampleCompareLevel(spot_shadow_map, shadow_sampler, uv + vec2<f32>(t, t), layer, s.z);
+    sum += textureSampleCompareLevel(spot_shadow_map, shadow_sampler, uv + vec2<f32>(-t, t), layer, s.z);
+    sum += textureSampleCompareLevel(spot_shadow_map, shadow_sampler, uv + vec2<f32>(t, -t), layer, s.z);
+    sum += textureSampleCompareLevel(spot_shadow_map, shadow_sampler, uv + vec2<f32>(-t, -t), layer, s.z);
+    return sum / 5.0;
+}
+
+// Direct light of the cluster's point and spot lights: inverse square with
+// the source radius softening (1 / (d² + r²)), a smooth range window, spot
+// cones, and GGX highlights widened by the source size (sphere-light
+// roughness, Karis 2013).
+// Cost: one light read + ~60 ALU per light in the cluster.
+fn shade_local(p: vec3<f32>, n: vec3<f32>, ng: vec3<f32>, v: vec3<f32>, nv: f32, a: f32, f0: vec3<f32>, diffuse_color: vec3<f32>, pix: vec2<f32>, view_depth: f32) -> vec3<f32> {
+    let base = cluster_of(pix, view_depth);
+    let count = min(clusters[base], 96u);
+    var sum = vec3<f32>(0.0);
+    for (var i = 0u; i < count; i++) {
+        let l = local_lights[cluster_light(base, i)];
+        let to_l = l.pos_range.xyz - p;
+        let d2 = dot(to_l, to_l);
+        let r = l.pos_range.w;
+        if (d2 >= r * r) { continue; }
+        let inv_d = inverseSqrt(max(d2, 1e-8));
+        let ll = to_l * inv_d;
+        let pnl = dot(n, ll);
+        if (pnl <= 0.0) { continue; }
+        let cone = spot_cone(l, -ll);
+        if (cone <= 0.0) { continue; }
+        let rs = l.color.w;
+        var atten = range_window(d2, r) * cone / (d2 + rs * rs);
+        if (l.params.z >= 0.0) {
+            atten *= spot_shadow(i32(l.params.z + 0.5), p, ng, d2 * inv_d);
+        }
+        let a2 = clamp(a + 0.5 * rs * inv_d, 0.0, 1.0);
+        let ph = normalize(v + ll);
+        let pf = f_schlick(f0, max(dot(v, ph), 0.0));
+        let pspec = pf * d_ggx(max(dot(n, ph), 0.0), a2) * v_smith(nv, pnl, a);
+        let pdiff = (vec3<f32>(1.0) - pf) * diffuse_color / PI;
+        sum += (pdiff + pspec) * l.color.rgb * (pnl * atten);
+    }
+    return sum;
+}
+
 @fragment
 fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
     let base_s = textureSample(base_tex, tex_sampler, in.uv);
     let base = base_s * material.base_color * in.tint;
     if (base.a < material.params.z) { discard; }
     if (material.params.w > 0.5) {
-        return vec4<f32>(height_fog(base.rgb * frame.sun_color.w * 3.0, in.world_pos, normalize(in.world_pos - frame.camera_pos.xyz)), base.a);
+        // Unlit: constant on screen (auto exposure: exposure / pre ~ 1).
+        let k = select(frame.sun_color.w, 1.0, frame.lighting.y > 0.5);
+        return vec4<f32>(height_fog(base.rgb * k * 3.0, in.world_pos, normalize(in.world_pos - frame.camera_pos.xyz)), base.a);
     }
     var ng = normalize(in.normal);
     if (!front) { ng = -ng; }
@@ -394,14 +511,20 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
     let b = cross(ng, t) * in.tangent.w;
     var nm = textureSample(normal_tex, tex_sampler, in.uv).xyz * 2.0 - vec3<f32>(1.0);
     nm = vec3<f32>(nm.xy * material.emissive.w, nm.z);
-    let n = normalize(mat3x3<f32>(t, b, ng) * nm);
+    var n = normalize(mat3x3<f32>(t, b, ng) * nm);
 
     let mr = textureSample(mr_tex, tex_sampler, in.uv);
     let metallic = clamp(material.params.x * mr.b, 0.0, 1.0);
-    let rough = clamp(material.params.y * mr.g, 0.045, 1.0);
+    var rough = clamp(material.params.y * mr.g, 0.045, 1.0);
+    var albedo = base.rgb;
+    if (frame.scatter.w > 0.5 && material.layers.z <= 0.0 && material.layers.w <= 0.0) {
+        let w = wet_surface(albedo, rough, metallic, n, ng, in.world_pos);
+        albedo = w.albedo;
+        rough = w.rough;
+        n = w.n;
+    }
     let a = rough * rough;
     let ao = textureSample(occlusion_tex, tex_sampler, in.uv).r;
-    let albedo = base.rgb;
     let f0 = mix(vec3<f32>(0.04), albedo, metallic);
     let diffuse_color = albedo * (1.0 - metallic);
 
@@ -461,24 +584,9 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
         color += lit * frame.sun_color.rgb;
     }
     color += (vec3<f32>(1.0) - f_schlick(f0, max(dot(nd, normalize(v + l)), 0.0))) * diffuse_color / PI * dterm * frame.sun_color.rgb;
-    // Point lights with smooth range falloff (Karis).
-    let count = i32(frame.params.x);
-    for (var i = 0; i < count; i++) {
-        let light = frame.lights[i];
-        let to_l = light.pos_radius.xyz - in.world_pos;
-        let d2 = dot(to_l, to_l);
-        let r = light.pos_radius.w;
-        if (d2 > r * r) { continue; }
-        let ll = to_l * inverseSqrt(d2);
-        let pnl = max(dot(n, ll), 0.0);
-        if (pnl <= 0.0) { continue; }
-        let w = clamp(1.0 - pow(d2 / (r * r), 2.0), 0.0, 1.0);
-        let atten = w * w / (d2 + 1.0);
-        let ph = normalize(v + ll);
-        let pf = f_schlick(f0, max(dot(v, ph), 0.0));
-        let pspec = pf * d_ggx(max(dot(n, ph), 0.0), a) * v_smith(nv, pnl, a);
-        let pdiff = (vec3<f32>(1.0) - pf) * diffuse_color / PI;
-        color += (pdiff + pspec) * light.color.rgb * light.color.w * pnl * atten;
+    // Clustered point and spot lights.
+    if (frame.lighting.x > 0.0) {
+        color += shade_local(in.world_pos, n, ng, v, nv, a, f0, diffuse_color, in.clip.xy, in.view_depth);
     }
     // Image-based ambient (HDRI or analytic sky). Diffuse is occluded by the
     // material AO and GTAO (with multi-bounce); reflections by specular
@@ -516,9 +624,11 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
         // hits (confidence) rather than what it reflects.
         return vec4<f32>(ssr.a, ssr.a, ssr.a * 0.3, 1.0);
     }
-    color += textureSample(emissive_tex, tex_sampler, in.uv).rgb * material.emissive.rgb * 4.0;
+    color += textureSample(emissive_tex, tex_sampler, in.uv).rgb * material.emissive.rgb * (4.0 * frame.wet.w);
 
-    color = height_fog(color, in.world_pos, -v);
+    let dist = length(in.world_pos - frame.camera_pos.xyz);
+    let glow = local_inscatter(in.clip.xy, -v, dist);
+    color = height_fog(color, in.world_pos, -v) + glow;
     var alpha = base.a;
     let tr = material.layers.z;
     if (tr > 0.0) {
@@ -528,7 +638,7 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
         let fr = f_schlick(vec3<f32>(0.04), nv).x;
         alpha = clamp(fr + (1.0 - tr) * (1.0 - fr), 0.03, 1.0);
         let refl = mix(env_reflection(r, rough), ssr.rgb, ssr.a) + glass_sun * fr / max(alpha, 0.03);
-        color = height_fog(refl * (fr / alpha) + albedo * ambient_sky(n) * (1.0 - fr / alpha) * 0.3, in.world_pos, -v);
+        color = height_fog(refl * (fr / alpha) + albedo * ambient_sky(n) * (1.0 - fr / alpha) * 0.3, in.world_pos, -v) + glow;
     }
-    return vec4<f32>(color, alpha);
+    return vec4<f32>(min(color * exposure_state.pre, vec3<f32>(60000.0)), alpha);
 }
