@@ -1,5 +1,11 @@
 import {test,expect} from '@playwright/test';
-test.beforeEach(async({page})=>{await page.goto('/?e2e=1');await page.evaluate(()=>__IHN_TEST_API__.ready());});
+test.beforeEach(async({page})=>{
+ // These cases simulate online upload failures. Keep the connectivity probe
+ // deterministic so a host-network outage does not select the offline UI.
+ await page.route('https://www.googleapis.com/drive/v3/about?fields=kind',route=>route.fulfill({status:401,json:{error:'Authentication required'}}));
+ await page.goto('/?e2e=1');await page.evaluate(()=>__IHN_TEST_API__.ready());
+ await expect.poll(()=>page.evaluate(()=>InhouseOfflineLibrary.offline())).toBe(false);
+});
 test('equal-size PDFs with the same logical hash never reuse each other’s upload session',async({page})=>{
  const result=await page.evaluate(async()=>{
   const old=driveFetch;let sessions=0,fail=true;const sent=[];
