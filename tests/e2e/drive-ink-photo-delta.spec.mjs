@@ -210,3 +210,127 @@ test('two newly added photo pages are fully materialized on a replica with only 
   expect(actual.photos).toEqual([original,...added]);expect(actual.stored.slice(1)).toEqual(added);
  }finally{await ca.close();await cb.close();}
 });
+
+async function seedEditablePhotoInk(page){
+ await page.evaluate(async()=>{
+  InhouseDriveInk.stop();
+  state.pages[0].strokes=[{id:'editable-ink',tool:'pen',color:'#000000',width:2,
+   points:[{x:10,y:20,p:.5},{x:20,y:30,p:.6}],syncStamp:{clock:10,actor:'original-writer'}}];
+  driveDirty=false;resetDriveContentSyncVersion();InhouseDriveInk.start();await InhouseDriveInk.capture();
+ });
+}
+
+for(const edit of ['width','color','geometry'])test(`changing existing ink ${edit} does not retransmit a one-megabyte photo`,async({page})=>{
+ const api=fakeInkDrive();await setup(page,api);await seedEditablePhotoInk(page);
+ const result=await page.evaluate(async edit=>{
+  const item=state.pages[0].strokes[0];
+  if(edit==='width')item.width=4;
+  if(edit==='color')item.color='#ff0000';
+  if(edit==='geometry')item.points=[{x:30,y:40,p:.7},{x:50,y:60,p:.8},{x:60,y:65,p:.6}];
+  item.__pendingOpId='local-only';stampCollaborativeItems([item]);markPageDirty(0);
+  const expected={id:item.id,tool:item.tool,color:item.color,width:item.width,points:item.points,syncStamp:item.syncStamp};
+  await InhouseDriveInk.capture();const ops=photoOperations();
+  const before=InhouseDriveInk.status().ackVersion,version=driveContentVersion;
+  photoJournal.lastWrite=0;await photoJournal.flush();
+  return {ops,expected,bytes:JSON.stringify(ops).length,before,version,after:InhouseDriveInk.status().ackVersion,
+   photo:state.pages[0].backgroundImage===originalPhoto};
+ },edit);
+ expect(result.ops).toEqual([{v:1,kind:'stroke',pageId:'photo-page',stroke:result.expected}]);
+ expect(result.bytes).toBeLessThan(2000);expect(result.photo).toBe(true);
+ expect(result.before).toBeLessThan(result.version);expect(result.after).toBe(result.version);
+ expect([...api.files.values()].filter(f=>f.raw).every(f=>!f.raw.includes('data:image/png'))).toBe(true);
+ console.log('EDITED_PHOTO_INK_BYTES',edit,result.bytes);
+});
+
+test('edited stroke deltas update another replica and persist without replacing its photo',async({browser})=>{
+ const api=fakeInkDrive(),ca=await browser.newContext(),cb=await browser.newContext(),a=await ca.newPage(),b=await cb.newPage();
+ try{
+  await setup(a,api,'edit-photo-sender');await setup(b,api,'edit-photo-reader');
+  const [photo]=await coloredPhotoState(a,['#eeccee'],10);await coloredPhotoState(b,['#eeccee'],10);
+  await seedEditablePhotoInk(a);await seedEditablePhotoInk(b);
+  const expected=await a.evaluate(async()=>{
+   const item=state.pages[0].strokes[0];item.color='#0000ff';item.width=4;
+   item.points=[{x:25,y:45,p:.7},{x:40,y:65,p:.8},{x:65,y:70,p:.6}];
+   stampCollaborativeItems([item]);markPageDirty(0);await InhouseDriveInk.capture();
+   return {stroke:cloneStroke(item),ops:photoOperations()};
+  });
+  expect(expected.ops).toHaveLength(1);expect(expected.ops[0].kind).toBe('stroke');
+  await pushPhotoJournal(a);await pullPhotoJournal(b);
+  const actual=await b.evaluate(async()=>{
+   const stored=await loadPageFromIndexedDb(0);
+   return {photo:state.pages[0].backgroundImage,strokes:state.pages[0].strokes.map(cloneStroke),
+    storedPhoto:stored?.backgroundImage,storedStrokes:stored?.strokes.map(cloneStroke)};
+  });
+  expect(actual).toEqual({photo,strokes:[expected.stroke],storedPhoto:photo,storedStrokes:[expected.stroke]});
+ }finally{await ca.close();await cb.close();}
+});
+
+for(const change of ['tombstone','page-field','document','image'])test(`an ink edit with a ${change} change retains the full page payload`,async({page})=>{
+ const api=fakeInkDrive();await setup(page,api);await seedEditablePhotoInk(page);
+ const result=await page.evaluate(async change=>{
+  const page=state.pages[0],item=page.strokes[0];item.width=4;stampCollaborativeItems([item]);
+  if(change==='tombstone'){
+   page.deletedStrokeIds=['removed-ink'];page.deletedStrokeStamps={'removed-ink':{clock:20,actor:'eraser'}};
+  }else if(change==='page-field'){
+   // Even a field whose value returned to baseline still needs its winning
+   // register to accompany the full page payload.
+   noteCollabPageFieldChanged(page,'background');
+  }else if(change==='document'){
+   state.exportName='Edited photo name';noteCollabDocumentFieldChanged('exportName');
+  }else{
+   page.images=[{id:'new-image',src:'data:image/png;base64,BBBB',x:4,y:8,width:20,height:30}];
+   stampCollaborativeItems(page.images);
+  }
+  markPageDirty(0);await InhouseDriveInk.capture();const ops=photoOperations();
+  return {count:ops.length,kind:ops[0]?.kind||null,photo:ops[0]?.pages?.[0]?.backgroundImage===originalPhoto,
+   strokes:ops[0]?.pages?.[0]?.strokes.map(s=>s.id),deleted:ops[0]?.pages?.[0]?.deletedStrokeIds,
+   images:ops[0]?.pages?.[0]?.images.map(image=>image.id),name:ops[0]?.name,
+   field:ops[0]?.fields?.fields[getCollabPageFieldKey(page.pageId,'background')],
+   expectedField:getCollabFieldSnapshot().fields[getCollabPageFieldKey(page.pageId,'background')]};
+ },change);
+ expect(result.count).toBe(1);expect(result.kind).toBeNull();expect(result.photo).toBe(true);expect(result.strokes).toEqual(['editable-ink']);
+ if(change==='tombstone')expect(result.deleted).toEqual(['removed-ink']);
+ if(change==='page-field')expect(result.field).toEqual(result.expectedField);
+ if(change==='document')expect(result.name).toBe('Edited photo name');
+ if(change==='image')expect(result.images).toEqual(['new-image']);
+});
+
+test('capture-only new strokes retain the page shell needed by a receiver without that page',async({page})=>{
+ const api=fakeInkDrive();await setup(page,api);await seedEditablePhotoInk(page);
+ const result=await page.evaluate(async()=>{
+  const item={...cloneStroke(state.pages[0].strokes[0]),id:'new-captured-ink'};
+  stampCollaborativeItems([item]);state.pages[0].strokes.push(item);markPageDirty(0);await InhouseDriveInk.capture();
+  const ops=photoOperations();return {count:ops.length,kind:ops[0]?.kind||null,
+   photo:ops[0]?.pages?.[0]?.backgroundImage===originalPhoto,ids:ops[0]?.pages?.[0]?.strokes.map(s=>s.id)};
+ });
+ expect(result).toEqual({count:1,kind:null,photo:true,ids:['new-captured-ink']});
+});
+
+test('an edited stroke is immutable during persistence and a newer revision is captured again',async({page})=>{
+ const api=fakeInkDrive();await setup(page,api);await seedEditablePhotoInk(page);
+ const result=await page.evaluate(async()=>{
+  const item=state.pages[0].strokes[0];item.width=4;stampCollaborativeItems([item]);markPageDirty(0);
+  const original=cloneStroke(item),enqueue=photoJournal.enqueue;let release,entered=false;
+  const gate=new Promise(resolve=>release=resolve);
+  photoJournal.enqueue=function(...args){
+   const pending=enqueue.apply(this,args);
+   if(entered)return pending;entered=true;return pending.then(()=>gate);
+  };
+  const capture=InhouseDriveInk.capture();
+  try{
+   const deadline=performance.now()+3000;
+   while(!entered){if(performance.now()>deadline)throw Error('stroke capture did not enter');await new Promise(r=>setTimeout(r,5));}
+   item.points[0].x=99;item.points.push({x:80,y:90,p:.9});item.color='#ff0000';
+   // Mutate the same stamp object as well as points, after serialization.
+   item.syncStamp.clock++;item.syncStamp.actor='newer-writer';markPageDirty(0);
+   const latest=cloneStroke(item),version=driveContentVersion;
+   const during={pending:InhouseDriveInk.status().pendingCapture,ack:InhouseDriveInk.status().ackVersion};
+   release();await capture;photoJournal.enqueue=enqueue;await InhouseDriveInk.capture();
+   const ops=photoOperations();photoJournal.lastWrite=0;await photoJournal.flush();
+   return {ops,original,latest,version,during,after:InhouseDriveInk.status().ackVersion};
+  }finally{release();photoJournal.enqueue=enqueue;}
+ });
+ expect(result.during.pending).toBe(true);expect(result.during.ack).toBeLessThan(result.version);
+ expect(result.ops).toEqual([result.original,result.latest].map(stroke=>({v:1,kind:'stroke',pageId:'photo-page',stroke})));
+ expect(result.after).toBe(result.version);
+});

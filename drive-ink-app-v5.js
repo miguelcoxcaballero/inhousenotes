@@ -13,6 +13,10 @@
         &&session===getDocumentSessionToken()&&journal.docId===(usable()?state.driveFileId:'');
     function context(){return {structure:getCollabStructureSnapshot(),fields:getCollabFieldSnapshot(),
         name:state.exportName,calendar:state.calendarPageConfig||null};}
+    function strokeOperation(pageId,item){
+        return {v:1,kind:'stroke',pageId,stroke:{id:item.id,tool:item.tool,color:item.color,width:item.width,points:item.points,
+            ...(item.syncStamp?{syncStamp:item.syncStamp}:{})}};
+    }
     function shell(page){return buildTimelineSnapshotFromPages([{...page,strokes:[],images:[],legacyCoverStrokes:null}])[0];}
     function metadataSnapshot(patch){
         const {backgroundImage,...metadata}=patch;
@@ -182,18 +186,33 @@
                 const images=(page.images||[]).filter(item=>known.get(item.id)!==stamp(item));
                 const pageShell=shell(page),capturedMetadata=metadataSnapshot(pageShell);
                 const capturedFields=pageFieldsKey(page.pageId,capturedDocument.fields);
-                if(!strokes.length&&!images.length&&sameMetadata(metadataBaseline.get(page.pageId),capturedMetadata)
-                    &&fieldBaseline.get(page.pageId)===capturedFields)continue;
-                // Bound each operation so receiving a long offline session does
-                // not decode the whole document in a single task.
-                const count=Math.max(1,Math.ceil(strokes.length/32),Math.ceil(images.length/4));
-                for(let part=0;part<count;part++){
-                    if(deferChangedCapture())return;
-                    const patch={...pageShell,strokes:strokes.slice(part*32,(part+1)*32),images:images.slice(part*4,(part+1)*4)};
-                    const operationContext=contextForPage(capturedDocument,page.pageId);
-                    await journal.enqueue({v:1,...operationContext,pages:[patch]},version);
-                    capturedContext=capturedDocumentKey;
-                    await yieldProcessingForUi();
+                const unchangedPage=sameMetadata(metadataBaseline.get(page.pageId),capturedMetadata)
+                    &&fieldBaseline.get(page.pageId)===capturedFields;
+                if(!strokes.length&&!images.length&&unchangedPage)continue;
+                // Editing existing ink does not need to retransmit its photo.
+                // Only an established, otherwise unchanged page can use this
+                // envelope; metadata/tombstones, images and recovery stay full.
+                const strokeOnly=unchangedPage&&!images.length&&baseline.has(page.pageId)
+                    &&capturedDocumentKey===contextBaseline&&strokes.every(item=>known.has(item.id));
+                if(strokeOnly){
+                    for(const item of strokes){
+                        if(deferChangedCapture())return;
+                        // enqueue freezes points and causal identity synchronously.
+                        await journal.enqueue(strokeOperation(page.pageId,item),version);
+                        await yieldProcessingForUi();
+                    }
+                }else{
+                    // Bound each operation so receiving a long offline session
+                    // does not decode the whole document in a single task.
+                    const count=Math.max(1,Math.ceil(strokes.length/32),Math.ceil(images.length/4));
+                    for(let part=0;part<count;part++){
+                        if(deferChangedCapture())return;
+                        const patch={...pageShell,strokes:strokes.slice(part*32,(part+1)*32),images:images.slice(part*4,(part+1)*4)};
+                        const operationContext=contextForPage(capturedDocument,page.pageId);
+                        await journal.enqueue({v:1,...operationContext,pages:[patch]},version);
+                        capturedContext=capturedDocumentKey;
+                        await yieldProcessingForUi();
+                    }
                 }
                 if(deferChangedCapture())return;
                 baseline.set(page.pageId,capturedStamps);
@@ -220,9 +239,7 @@
         // enqueue freezes the operation synchronously as JSON. Capture the
         // identity/stamp now, without copying every point a second time.
         const itemId=item.id,capturedStamp=stamp(item),version=driveContentVersion;
-        const wireStroke={id:itemId,tool:item.tool,color:item.color,width:item.width,points:item.points,
-            ...(item.syncStamp?{syncStamp:item.syncStamp}:{})};
-        void journal.enqueue({v:1,kind:'stroke',pageId:page.pageId,stroke:wireStroke},version)
+        void journal.enqueue(strokeOperation(page.pageId,item),version)
             .then(()=>{if(current(journal)&&baselineReady){const known=baseline.get(page.pageId);known?.set(itemId,capturedStamp);}})
             .catch(error=>{if(current(journal)){pages.add(index);schedule();console.warn('Ink stroke checkpoint:',error.message);}});
     }
