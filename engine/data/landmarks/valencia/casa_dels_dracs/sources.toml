@@ -19,6 +19,29 @@ catastro_refcat = { value = ["6424601YJ2762C", "6424624YJ2762C"], source = "http
 catastro_built = { value = 1910, source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6424601&rc2=YJ2762C", note = "Catastro dateOfConstruction (often the last major works)" }
 catastro_use = { value = "1_residential", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6424601&rc2=YJ2762C" }
 catastro_floor_area = { value = 1403.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6424601&rc2=YJ2762C", note = "Catastro officialArea (gross floor area)" }
+location = { value = "Carrer de Sorní 4, corner of Carrer de Jorge Juan, Pla del Remei (Eixample), València", source = "OSM street names around way/496338533; street plates in photos 08, 09, 13", note = "not Russafa / Sueca-Dènia: the photos and OSM put it at Sorní / Jorge Juan" }
+built = { value = 1901, source = "https://es.wikipedia.org/wiki/Casa_de_los_Dragones_(Valencia)", note = "Catastro dateOfConstruction 1910 for 6424601" }
+outline = { value = "OSM way 496338533 street lines; Dracs = Catastro parcel 6424601, rest of the outline = neighbour 6424624 (Jorge Juan 3, 1914)", source = "OSM + Catastro INSPIRE parcels, PNOA orthophoto (IGN, CC BY 4.0)" }
+chamfer_length = { value = 6.05, unit = "m", source = "Catastro BuildingPart corner (parts 2/3/5)", note = "OSM 5.32 m; PNOA orthophoto roof parapet ~6.1 m; photo checks: 0.86 m railings, 2.37 m portal, persons in photos 10 and d05" }
+jorge_juan_front = { value = 20.48, unit = "m", source = "OSM street line from the chamfer to the Catastro 6424601/6424624 party wall" }
+sorni_front = { value = 20.0, unit = "m", source = "OSM street line from the chamfer to the east party wall (OSM node)" }
+neighbour_front = { value = 12.85, unit = "m", source = "OSM / Catastro 6424624 on Jorge Juan" }
+first_floor_slab = { value = 7.0, unit = "m", tolerance = 0.11, source = "constrained bundle adjustment (scratchpad dracs/ba.py) of photos 08 (f 1232 px EXIF), 01 (f 1033 px) and 10 (f 997 px EXIF), 50 matches, scale from the 6.05 m chamfer, eye-height prior 1.6 m" }
+second_floor_slab = { value = 10.37, unit = "m", tolerance = 0.11, source = "bundle adjustment, as above" }
+second_floor_window_top = { value = 13.11, unit = "m", tolerance = 0.13, source = "bundle adjustment, as above" }
+terrace_parapet_base = { value = 13.95, unit = "m", source = "photo 07 proportions (cornice band above the second-floor windows) scaled to the BA" }
+crenel_top = { value = 14.76, unit = "m", source = "merlon top minus the 0.64 m merlon step measured on the upright photo 07" }
+merlon_top = { value = 15.4, unit = "m", tolerance = 0.15, source = "bundle adjustment, as above" }
+corner_pinnacles = { value = 16.3, unit = "m", tolerance = 0.17, source = "bundle adjustment, as above" }
+urn_pinnacle = { value = 17.2, unit = "m", tolerance = 0.19, source = "bundle adjustment, as above" }
+portal = { value = [2.37, 3.55], unit = "m", source = "width from the upright photo 07 (0.39 x chamfer), height from the BA" }
+rose_window = { value = { centre = 4.88, diameter = 1.7 }, unit = "m", source = "BA centre; diameter from photo 07 (0.28 x chamfer)" }
+chamfer_windows = { value = { width = 1.18, offsets = [-1.52, 1.52], height = 2.7 }, unit = "m", source = "upright photo 07 horizontal ratios x 6.05 m chamfer; heights from the BA" }
+red_section_heights = { value = { cornice = 14.2, parapet = 14.8 }, unit = "m", source = "photos 01/03 (red sections lower than the crenellated pavilions); PNOA-LiDAR 14.8-15.0 along the Sorní front" }
+jorge_juan_bays = { value = { red_section_bays = [5.0, 7.9, 10.8], red_pavilion_boundary = 13.0, pavilion_windows = [14.94, 18.54], dragon_column = 16.74 }, unit = "m from the chamfer corner", tolerance = 0.45, source = "bundle adjustment of photo 03 (Pixel 8a ultrawide, f 518 px EXIF) with the Catastro party wall at 20.48 m" }
+sorni_bays = { value = "assumed to mirror Jorge Juan (corner bay 3.2 m, 3 red bays, 2-bay end pavilion 13.0-20.0)", source = "photos 08 (left), 12, 13, d07: continuous first-floor balcony, red brick above, twisted columns on corbels; the upper floors are hidden by trees" }
+lidar = { value = { corner = [15.2, 15.4], fronts = [14.8, 15.7], stair_house = [17.3, 18.1] }, unit = "m", source = "IGN PNOA-LiDAR WMS GetFeatureInfo, layer edificios-h30, 63 cells of 2.5 m (scratchpad dracs/lidar.json)", note = "street cells return no building value, so no street bias could be fitted; the roof cells agree with the photo heights (merlons 15.4, red parapets 14.8) within 0.5 m with zero bias; the raster is shifted ~1 m west of the facades" }
+neighbour_heights = { value = { cornice = 14.2, penthouse = 16.8 }, unit = "m", source = "Catastro facade photo 6424624 (four storeys + set-back roof storey), LiDAR 15.7-16.5" }
 catastro_floors_max = { value = 5, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 9 parts" }
 
 [[photo]]
@@ -30,8 +53,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 810
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/02_Casa_de_los_Dragones_Valencia.jpg"
@@ -44,8 +67,8 @@ height = 1707
 camera = [3.58, -25.48]
 heading = 305.3
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/03_Casa_dels_Dracs_avril_2025_2.jpg"
@@ -58,8 +81,8 @@ height = 961
 camera = [-5.97, -1.54]
 heading = 333.0
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/04_Casa_dels_Dracs_de_Valencia_drac.jpg"
@@ -70,8 +93,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1764
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/05_Drac_a_la_casa_dels_Dracs_de_Valencia.jpg"
@@ -94,8 +117,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/07_Valencia_2024_09_18_Casa_del_Drac.jpg"
@@ -106,8 +129,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1920
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/08_Casa_dels_Dracs_avril_2025.jpg"
@@ -120,8 +143,8 @@ height = 1705
 camera = [-10.81, -13.95]
 heading = 306.0
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/09_Edifici_o_casa_dels_Dracs_Valencia.jpg"
@@ -132,8 +155,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1757
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/10_Casa_de_los_Dragones_Valencia_01.jpg"
@@ -144,8 +167,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/11_Drac_alat_al_carrer_Sorni_de_Valencia.jpg"
@@ -168,8 +191,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/13_Casa_de_los_Dragones_Valencia_Calle_Sorni_4_1.jpg"
@@ -180,8 +203,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/14_Valencia_Edifici_del_Nord.jpg"
@@ -192,8 +215,8 @@ license = "Public domain"
 width = 500
 height = 411
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/15_Casa_de_los_Dragones_Valencia_03.jpg"
@@ -204,8 +227,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1920
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/16_Casa_de_los_Dragones_Valencia_04.jpg"
@@ -216,8 +239,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1920
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/catastro_6424601YJ2762C.jpg"
@@ -228,8 +251,8 @@ license = "Catastro open data (attribution required)"
 width = 1200
 height = 1600
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/catastro_6424624YJ2762C.jpg"
@@ -240,8 +263,56 @@ license = "Catastro open data (attribution required)"
 width = 1200
 height = 1600
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
+
+[[photo]]
+file = "photos/d05_Casa_de_los_Dragones_Valencia_05.jpg"
+title = "File:Casa de los Dragones, Valencia 05.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Casa_de_los_Dragones%2C_Valencia_05.JPG"
+author = "Dorieo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1920
+exterior = true
+selected = true
+side = "nw"
+
+[[photo]]
+file = "photos/d02_Casa_de_los_Dragones_Valencia_02.jpg"
+title = "File:Casa de los Dragones, Valencia 02.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Casa_de_los_Dragones%2C_Valencia_02.JPG"
+author = "Dorieo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1920
+exterior = true
+selected = true
+side = "nw"
+
+[[photo]]
+file = "photos/d14_Casa_de_los_Dragones_Valencia_14.jpg"
+title = "File:Casa de los Dragones, Valencia 14.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Casa_de_los_Dragones%2C_Valencia_14.JPG"
+author = "Dorieo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1920
+exterior = true
+selected = true
+side = "nw"
+
+[[photo]]
+file = "photos/d07_Casa_de_los_Dragones_Valencia_07.jpg"
+title = "File:Casa de los -Dragones, Valencia 07.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Casa_de_los_-Dragones%2C_Valencia_07.JPG"
+author = "Dorieo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1920
+exterior = true
+selected = true
+side = "n"
 
 [[plan]]
 file = "plans/01_2_32_Calle_Sorni_4_firmado.jpg"
