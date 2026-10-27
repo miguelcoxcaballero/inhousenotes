@@ -978,6 +978,10 @@ pub struct Renderer {
     pub cpu: profiler::CpuScopes,
     statics: StaticScene,
     cascade_cache: [CascadeCache; 4],
+    /// Sun direction the shadow maps are fitted to: follows the sun in
+    /// steps of 0.1° (stable shadows), so a moving sun does not make
+    /// every frame's shadow maps rasterise thin casters differently.
+    shadow_sun: Vec3,
     /// Bytes of uploaded textures and meshes (VRAM estimate).
     texture_bytes: u64,
     mesh_bytes: u64,
@@ -1720,6 +1724,7 @@ impl Renderer {
             cpu: Default::default(),
             statics: StaticScene::default(),
             cascade_cache: Default::default(),
+            shadow_sun: Vec3::Y,
             texture_bytes: 0,
             mesh_bytes: 0,
             target_bytes: 0,
@@ -2797,6 +2802,11 @@ impl Renderer {
         // matrix they were rendered with. Their fit is padded by 4% so the
         // stale map still covers the moving slice.
         let interval = s.far_cascade_interval.max(1);
+        if !s.stable_shadows || self.shadow_sun.dot(sun) < 0.1f32.to_radians().cos() {
+            self.shadow_sun = sun;
+        }
+        let sun_exact = sun;
+        let sun = self.shadow_sun;
         let mut refresh = [true; 4];
         for (i, split) in splits.iter().enumerate() {
             let cached = self.cascade_cache[i];
@@ -2829,6 +2839,8 @@ impl Renderer {
                 self.targets.as_mut().expect("resized").screen_bind = b;
             }
         }
+        // Lighting uses the exact sun (only the shadow maps are stepped).
+        let sun = sun_exact;
         // Low dawn/dusk haze: zero above ~20 degrees of sun and with the
         // night camera, 6e-4 1/m at the horizon (80 m scale height).
         let haze = env.haze.unwrap_or_else(|| if daylight { 6.0e-4 * (1.0 - ((sun.y - 0.05) / 0.3).clamp(0.0, 1.0)).powi(2) } else { 0.0 });

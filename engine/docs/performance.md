@@ -475,9 +475,10 @@ Measured (lavapipe, 960x540, High, same build with `FORJA_FX=-hlod`):
 | | resident meshes, VRAM estimate | 710 MB, ~1.37 GB | 556 MB, ~1.21 GB |
 | Old-town aerial (60 m up) | camera draws / tris | 4 943 / 4.69 M | 4 828 / 4.53 M |
 | | resident meshes, VRAM estimate | 710 MB, ~1.37 GB | 569 MB, ~1.23 GB |
-| Whole city (650 m away, 180 m up) | camera draws / tris | HIGH_NO | 1 357 / 1.07 M |
-| | shadow draws / tris | HIGH_NO_SH | 3 067 / 1.84 M |
-| | resident meshes, VRAM estimate | 710 MB | 406 MB, ~1.06 GB |
+| Whole city (650 m away, 180 m up) | camera draws / tris | 12 226 / 14.88 M | 1 357 / 1.07 M |
+| | shadow draws / tris | 10 576 / 9.62 M | 3 062 / 1.84 M |
+| | lavapipe GPU per frame (proportion) | 7.1 s | 1.5 s |
+| | resident meshes, VRAM estimate | 710 MB, ~1.40 GB | 406 MB, ~1.07 GB |
 
 Budget for the integrated GPU (draws < 1.5 k, < 2 M triangles camera +
 shadows): met by the far views; near the ground the detail within the

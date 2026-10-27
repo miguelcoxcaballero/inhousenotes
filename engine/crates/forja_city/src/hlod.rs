@@ -159,7 +159,7 @@ impl Atlas {
                     let fl = upper as f32 / floors as f32;
                     let fy = y as f32 % fl / fl;
                     let row = (y as f32 / fl) as u32;
-                    if (0.3..0.7).contains(&bx) && (0.25..0.8).contains(&fy) {
+                    if (0.35..0.65).contains(&bx) && (0.3..0.75).contains(&fy) {
                         c = glass;
                         if lit(row, col) {
                             g = warm;
@@ -200,7 +200,9 @@ pub fn tile_scene(kit: &Kit, masses: &[ShadowMass]) -> Option<SceneData> {
     };
     for (mi, m) in masses.iter().enumerate() {
         let f = m.facade.as_ref().expect("filtered");
-        let wall = mat_color(kit, f.wall).map(linear_to_srgb8);
+        // Seen from afar a facade also shows its light mouldings, frames
+        // and sills: the wall colour lifted a little towards them.
+        let wall = mat_color(kit, f.wall).map(|c| linear_to_srgb8(c * 0.85 + 0.12));
         let roof = mat_color(kit, f.roof).map(linear_to_srgb8);
         let n = m.ring.len();
         // The ring runs clockwise seen from above for lots; pick the
