@@ -5,7 +5,16 @@
 //! towns), `classic`, `small`, `carmen`, `austrias`, `organic`,
 //! `osm:<file.json|file.osm>`. Shots are picked from the realized streets:
 //! aerial, avenue, ensanche, madrid, curved, alley (eye level 1.7 m),
+//! slope (a sloping 2-3.5 m alley), stairs, plaza (the main square),
 //! plazuela, acute (corner), deadend, overview.
+//!
+//! `NIGHT=1` renders the city at 22:30 (`HOUR=<0..24>` picks the time)
+//! with lamps, lit windows, shops, neon and floodlights; until the
+//! renderer has clustered lighting each shot gets the most important
+//! lights ([`forja_city::nightlight::select`]) plus far glow points.
+//! `CITY_MOTION=30` also saves `<shot>_motion.png`, the last of 30
+//! real-time 60 fps frames walking into the shot (TAA and screen-space
+//! effects in motion).
 
 use std::path::PathBuf;
 
@@ -25,7 +34,11 @@ fn main() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let dl = root.join("assets/downloaded");
     let t0 = std::time::Instant::now();
-    let kit = Kit::load(Some(&dl));
+    let mut kit = Kit::load(Some(&dl));
+    let hour = night_hour();
+    if let Some(h) = hour {
+        kit.set_hour(h);
+    }
     let styles = StyleLibrary::load(Some(&root.join("data/city/styles.toml")));
     let cfg = if let Some(path) = preset.strip_prefix("osm:") {
         forja_world::spain::SpanishCity::config_from_osm(std::path::Path::new(path)).unwrap_or_else(|e| panic!("osm {path}: {e}"))
@@ -60,18 +73,82 @@ fn main() {
         }
     }
     frame.env.shadow_distance = 120.0;
+    let night = hour.is_some_and(|_| kit.night.is_night());
+    if night {
+        night_env(&mut frame.env, kit.night.dark);
+        println!("night at {:.1} h: {} city lights", kit.night.hour, out.city_lights.len());
+    }
+    let base_instances = frame.instances.clone();
     let shots = shots(&city);
     for (name, eye, at) in shots {
         if only.as_ref().is_some_and(|o| !o.iter().any(|x| x == name)) {
             continue;
         }
         frame.camera = Camera::look_at(eye, at);
-        frame.camera.fov_y = if name == "alley" || name == "deadend" { 70f32.to_radians() } else { 60f32.to_radians() };
+        frame.camera.fov_y = if matches!(name, "alley" | "deadend" | "slope" | "stairs") { 70f32.to_radians() } else { 60f32.to_radians() };
+        let fov = frame.camera.fov_y;
+        if night {
+            frame.instances = base_instances.clone();
+            frame.lights = night_lights(&out.city_lights, eye, at - eye);
+            let glow = forja_city::nightlight::glow_parts(&out.city_lights, eye, 45.0, 2.0 * (fov * 0.5).tan() / 720.0, 1.6);
+            let h = r.upload_scene(&forja_city::kit::assemble(&kit, "glow", glow, None));
+            frame.instances.push(DrawInstance { cast_shadows: false, ..DrawInstance::new(h, Mat4::IDENTITY) });
+        }
         let img = r.render_to_image(&frame, 1280, 720);
         let path = format!("{prefix}_{name}.png");
         img.save(&path).unwrap();
         println!("{path}: eye {eye} at {at} {:?}", r.stats);
+        if let Some(n) = std::env::var("CITY_MOTION").ok().and_then(|v| v.parse::<u32>().ok()) {
+            // Walk (1.4 m/s) toward the shot while turning slightly.
+            let fwd = (at - eye).normalize();
+            let side = fwd.cross(Vec3::Y).normalize();
+            r.reset_history();
+            let mut img = None;
+            for i in 0..n {
+                let k = (n - 1 - i) as f32 / 60.0;
+                let e = eye - fwd * 1.4 * k + Vec3::Y * (0.03 * (k * 11.0).sin());
+                frame.camera = Camera::look_at(e, at + side * (2.0 * k));
+                frame.camera.fov_y = fov;
+                frame.time = i as f32 / 60.0;
+                img = Some(r.render_live_to_image(&frame, 1280, 720));
+            }
+            frame.time = 0.0;
+            if let Some(img) = img {
+                let path = format!("{prefix}_{name}_motion.png");
+                img.save(&path).unwrap();
+                println!("{path}");
+            }
+        }
     }
+}
+
+/// `NIGHT=1` (22:30) or `HOUR=<h>`.
+fn night_hour() -> Option<f32> {
+    if let Some(h) = std::env::var("HOUR").ok().and_then(|v| v.parse::<f32>().ok()) {
+        return Some(h);
+    }
+    std::env::var("NIGHT").ok().filter(|v| v != "0").map(|_| 22.5)
+}
+
+/// Test night for the current renderer: a dim moon as the sun, a dark
+/// analytic sky, exposure for streets lit at ~15 lux.
+fn night_env(env: &mut Environment, dark: f32) {
+    env.use_ibl = false;
+    env.sun_dir = Vec3::new(-0.35, 0.72, -0.55).normalize();
+    env.sun_illuminance = 0.025 + 14.0 * (1.0 - dark).powi(3);
+    env.exposure = 0.55 + 3.0 * dark;
+    env.bloom = 0.04 + 0.04 * dark;
+}
+
+/// The lights the current renderer can take, chosen by importance.
+fn night_lights(all: &[forja_city::CityLight], eye: Vec3, fwd: Vec3) -> Vec<PointLight> {
+    forja_city::nightlight::select(all, eye, fwd, MAX_LIGHTS)
+        .into_iter()
+        .map(|i| {
+            let (position, color, intensity, radius) = all[i].as_point();
+            PointLight { position, radius, color, intensity }
+        })
+        .collect()
 }
 
 fn v3(p: Vec2, y: f32) -> Vec3 {
@@ -103,8 +180,9 @@ fn shots(city: &forja_city::layout::CityLayout) -> Vec<(&'static str, Vec3, Vec3
         let t = (0..40).map(|k| t + 1.5 * k as f32).filter(|t| *t < len - 2.0).find(|t| clear(at(*t))).unwrap_or(t);
         let p = at(t);
         let q = st.line.at((t + look).min(len)) + st.line.normal((t + look).min(len)) * side * 0.2;
-        (v3(p, eye_h + f.ground.height_at(p)), v3(q, eye_h + 3.0))
+        (v3(p, eye_h + f.ground.height_at(p)), v3(q, eye_h + 1.5 + f.ground.height_at(q)))
     };
+    let relief = &f.ground.relief;
     let longest = |pred: &dyn Fn(&forja_city::plan::Street) -> bool| g.streets.iter().enumerate().filter(|(_, s)| pred(s)).max_by(|a, b| a.1.len().total_cmp(&b.1.len())).map(|x| x.0);
     let prof = |s: &forja_city::plan::Street| forja_city::profile::ProfileLibrary::builtin().get(s.profile).clone();
     let lib = forja_city::profile::ProfileLibrary::builtin();
@@ -141,12 +219,45 @@ fn shots(city: &forja_city::layout::CityLayout) -> Vec<(&'static str, Vec3, Vec3
         out.push(("alley", e, a));
         let _ = st;
     }
-    // A plazuela: the smallest plaza, seen from its edge.
+    // A sloping narrow alley (2-3.5 m, a ramp, the steepest), looking up
+    // from its low end.
+    let uphill = |s: usize, back: f32| {
+        let st = &g.streets[s];
+        let len = st.len();
+        let up = relief.street_z(s as u32, len) > relief.street_z(s as u32, 0.0);
+        let t_of = |k: f32| if up { k } else { len - k };
+        let t = (0..20).map(|k| t_of(back + k as f32)).find(|t| clear(st.line.at(*t))).unwrap_or(t_of(back));
+        let look = t_of(back + (len - 2.0 * back).clamp(8.0, 30.0));
+        let (p, q) = (st.line.at(t), st.line.at(look));
+        (v3(p, 1.7 + f.ground.height_at(p)), v3(q, 1.7 + f.ground.height_at(q)))
+    };
+    if !relief.is_flat() {
+        if let Some((s, _)) = g.streets.iter().enumerate().filter(|(i, s)| lib.get(s.profile).class == Class::Alley && s.len() > 25.0 && s.min_width() <= 3.6 && relief.steps(*i as u32).is_none()).max_by(|a, b| relief.grade(a.0 as u32).total_cmp(&relief.grade(b.0 as u32))) {
+            let (e, a) = uphill(s, 3.0);
+            out.push(("slope", e, a));
+        }
+        // A stair street: the one with most steps, from the foot of them.
+        if let Some((s, _)) = g.streets.iter().enumerate().filter_map(|(i, s)| relief.steps(i as u32).map(|st| (i, st.n)).filter(|_| s.len() > 12.0)).max_by_key(|x| x.1) {
+            let st = relief.steps(s as u32).unwrap();
+            let up = relief.street_z(s as u32, st.s1 + 0.1) > relief.street_z(s as u32, st.s0 - 0.1);
+            let line = &g.streets[s].line;
+            let foot = if up { st.s0 - 5.0 } else { st.s1 + 5.0 }.clamp(0.5, line.len() - 0.5);
+            let head = if up { st.s1 + 4.0 } else { st.s0 - 4.0 }.clamp(0.5, line.len() - 0.5);
+            let (p, q) = (line.at(foot), line.at(head));
+            out.push(("stairs", v3(p, 1.7 + f.ground.height_at(p)), v3(q, 1.2 + f.ground.height_at(q))));
+        }
+    }
+    // The main square (the largest plaza), seen from across it.
     let mut plazas: Vec<(Vec2, f32)> = f.ground.plaza.components().iter().filter_map(|c| c.pole()).filter(|p| p.1 > 5.0).collect();
     plazas.sort_by(|a, b| a.1.total_cmp(&b.1));
+    if let Some(&(p, r)) = plazas.last() {
+        let eye = (0..24).map(|k| p + Vec2::from_angle(2.0 + k as f32 * 0.9) * r * (0.9 - 0.02 * k as f32)).find(|q| clear(*q)).unwrap_or(p + Vec2::new(r * 0.8, r * 0.5));
+        out.push(("plaza", v3(eye, 1.7 + f.ground.height_at(eye)), v3(p, 2.5 + f.ground.height_at(p))));
+    }
+    // A plazuela: the smallest plaza, seen from its edge.
     if let Some(&(p, r)) = plazas.first() {
         let eye = (0..24).map(|k| p + Vec2::from_angle(k as f32 * 0.9) * r * (0.85 - 0.02 * k as f32)).find(|q| clear(*q)).unwrap_or(p + Vec2::new(r * 0.8, r * 0.5));
-        out.push(("plazuela", v3(eye, 1.7 + f.ground.height_at(eye)), v3(p, 2.0)));
+        out.push(("plazuela", v3(eye, 1.7 + f.ground.height_at(eye)), v3(p, 2.0 + f.ground.height_at(p))));
     }
     // The sharpest corner, from across its junction.
     let mut best: Option<(f32, Vec2, Vec2)> = None;
@@ -162,7 +273,7 @@ fn shots(city: &forja_city::layout::CityLayout) -> Vec<(&'static str, Vec3, Vec3
     }
     if let Some((_, apex, out_dir)) = best {
         let eye = (0..30).map(|k| apex + out_dir.rotate(Vec2::from_angle((k as f32 * 0.7).sin() * 0.5)) * (14.0 + k as f32 * 0.5)).find(|p| open(*p, 2.5)).unwrap_or(apex + out_dir * 18.0);
-        out.push(("acute", v3(eye, 1.7 + f.ground.height_at(eye)), v3(apex, 6.0)));
+        out.push(("acute", v3(eye, 1.7 + f.ground.height_at(eye)), v3(apex, 6.0 + f.ground.height_at(apex))));
     }
     // A dead end (an adarve, the longest), from 15 m back.
     let dead = g.streets.iter().flat_map(|s| [End::A, End::B].map(|e| (s, e))).filter(|(s, e)| g.degree(s.node(*e)) == 1 && s.len() > 18.0);
@@ -171,7 +282,7 @@ fn shots(city: &forja_city::layout::CityLayout) -> Vec<(&'static str, Vec3, Vec3
         let t = (0..10).map(toward).find(|t| clear(s.line.at(*t))).unwrap_or(toward(0));
         let (p, end) = (s.line.at(t), s.line.at(s.end_s(e)));
         let _ = prof(s);
-        out.push(("deadend", v3(p, 1.7 + f.ground.height_at(p)), v3(end, 3.0)));
+        out.push(("deadend", v3(p, 1.7 + f.ground.height_at(p)), v3(end, 3.0 + f.ground.height_at(end))));
     }
     out
 }

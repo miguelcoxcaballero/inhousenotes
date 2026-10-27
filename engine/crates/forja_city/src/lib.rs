@@ -13,26 +13,42 @@
 //!
 //! Everything is modular: a module is an instanced scene built once per
 //! variant, a style is data, and the city layout only hands out lots.
+//!
+//! Surfaces are weathered so they read as photographed, not generated:
+//! scanned materials become larger anti-tiling textures with mottling,
+//! repairs, stains, cracks and gum ([`macrotex`]), and every street facade
+//! gets dirt decals (rising damp, sill streaks, cornice soot,
+//! [`weathering`]).
+//!
+//! At night ([`Kit::set_hour`]) lamps, lit windows, shops, signs, neon and
+//! floodlit civic facades emit light: see [`nightlight`] for the light
+//! records, the reusable floodlight fixtures and the per-frame budget.
 
 pub mod building;
 pub mod dress;
 pub mod fabric;
-pub mod generators;
-pub mod ground;
-pub mod parcel;
 pub mod furniture;
-pub mod layout;
+pub mod generators;
 pub mod geom;
+pub mod ground;
 pub mod kit;
+pub mod landmark;
+pub mod layout;
 pub mod lot;
+pub mod macrotex;
 pub mod modules;
+pub mod nightlight;
+pub mod noise;
+pub mod parcel;
 pub mod plan;
 pub mod profile;
 pub mod style;
 pub mod svg;
 pub mod texgen;
+pub mod weathering;
 
 pub use building::{CityOut, EdgeKind, Frontage, Lot, ModuleLib};
 pub use kit::{Kit, Mat};
 pub use lot::{Front, FrontRules, Rhythm};
+pub use nightlight::{CityLight, LightKind, NightState, Spot};
 pub use style::{Style, StyleLibrary};

@@ -21,12 +21,31 @@ struct Frame {
     screen: vec4<f32>,          // xy: size, zw: 1 / size
     sh: array<vec4<f32>, 9>,    // irradiance / pi (HDRI mode)
     env_params: vec4<f32>,      // x: 1 = HDRI image lighting, y: max mip, z: intensity
+    prev_view_proj: mat4x4<f32>,// previous frame, unjittered (TAA / SSR reprojection)
+    proj_params: vec4<f32>,     // x: 1/P00, y: 1/P11, z: near, w: pixels per world unit at distance 1
+    jitter: vec4<f32>,          // xy: sub-pixel jitter (NDC), z: frame index, w: 1 = history valid
+    cascade_texel: vec4<f32>,   // world size of one shadow texel per cascade
+    cascade_range: vec4<f32>,   // world depth range of each cascade (light space)
+    fx: vec4<f32>,              // x: SSAO strength, y: contact shadows, z: SSR, w: sun angular diameter (rad)
+    ao_params: vec4<f32>,       // x: AO radius (m), y: specular occlusion strength, z: SSR max distance (m), w: unused
     lights: array<Light, 64>,
 };
 
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(3) var env_tex: texture_2d<f32>;
 @group(0) @binding(4) var env_samp: sampler;
+
+// Interleaved gradient noise (Jimenez 2014), animated per frame so TAA
+// integrates it.
+fn ign(p: vec2<f32>) -> f32 {
+    let q = p + vec2<f32>(5.588238) * (frame.jitter.z % 64.0);
+    return fract(52.9829189 * fract(dot(q, vec2<f32>(0.06711056, 0.00583715))));
+}
+
+// Linear view distance from a reverse-Z infinite-projection depth value.
+fn linear_depth(d: f32) -> f32 {
+    return frame.proj_params.z / max(d, 1e-9);
+}
 
 fn equirect_uv(d: vec3<f32>) -> vec2<f32> {
     return vec2<f32>(atan2(d.x, -d.z) / (2.0 * PI) + 0.5, acos(clamp(d.y, -1.0, 1.0)) / PI);

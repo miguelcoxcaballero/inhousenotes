@@ -4,11 +4,14 @@
 
 pub mod camera;
 pub mod combat;
+pub mod crowd;
 pub mod env;
 pub mod humans;
+pub mod people;
 pub mod player;
 pub mod props;
 pub mod vehicles;
+pub mod walkable;
 pub mod world;
 
 use std::collections::HashMap;
@@ -215,6 +218,7 @@ pub fn build(map: MapKind, paths: Paths) -> App {
         .insert_resource(RenderScene { hdri: Some(paths.asset("hdri_wide_street/wide_street_01_2k.hdr")).filter(|p| p.exists()), ..Default::default() })
         .insert_resource(Hud::default())
         .insert_resource(humans::HumanLibrary::default())
+        .insert_resource(people::PeopleLibrary::default())
         .add_plugin(forja_physics::PhysicsPlugin::default())
         .add_plugin(world::WorldPlugin { map })
         .add_plugin(env::EnvPlugin)
@@ -222,6 +226,7 @@ pub fn build(map: MapKind, paths: Paths) -> App {
         .add_plugin(vehicles::VehiclesPlugin)
         .add_plugin(player::PlayerPlugin)
         .add_plugin(combat::CombatPlugin)
+        .add_plugin(crowd::CrowdPlugin)
         .add_plugin(camera::CameraPlugin);
     app.add_system(Stage::PreUpdate, "clear_frame", |w| {
         let rs = w.res_mut::<RenderScene>();

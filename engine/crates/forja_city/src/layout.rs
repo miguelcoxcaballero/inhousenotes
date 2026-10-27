@@ -19,6 +19,7 @@ use crate::generators::{self, CityPlan};
 use crate::geom::{Parts, Rng};
 use crate::ground;
 use crate::kit::{Kit, Mat, assemble};
+use crate::nightlight::{self, FloodOptions};
 use crate::plan::{Draft, End};
 use crate::profile::{Class, ProfileLibrary};
 use crate::style::{Style, StyleLibrary};
@@ -198,6 +199,10 @@ pub fn realize(kit: &Kit, styles: &StyleLibrary, fabric: Fabric, plan: &CityPlan
                 let mut rng = Rng::keyed(seed, stage::LOT ^ 0x99, info.key);
                 eaves[li] = building::build_into(&mut mlib, &mut lay.out, &mut parts, lot, style, rng.next_u32() as u64 | (rng.next_u32() as u64) << 32);
                 plinths += plinth(&mut parts, &mut lay.out, lot, &fabric.ground);
+                // Fronts on a plaza are floodlit at night.
+                if kit.night.is_night() {
+                    floodlight_lot(&mut lay.out, lot, eaves[li]);
+                }
                 built += 1;
             }
             building::medianeras(&mut mlib, &mut lay.out, &mut parts, first_wall);
@@ -306,31 +311,82 @@ fn style_for<'a>(styles: &'a StyleLibrary, plan: &'a CityPlan, zone: u16, pool: 
     styles.styles.first()
 }
 
+/// Floodlights for the plaza fronts of a lot (`top`: the absolute eave
+/// height).
+fn floodlight_lot(out: &mut CityOut, lot: &crate::lot::Lot, top: f32) {
+    let opts = FloodOptions::default();
+    for i in 0..lot.ring.len() {
+        if !lot.edges[i].is_street() || !lot.front(i).open {
+            continue;
+        }
+        let (a, b) = lot.edge(i);
+        let d = b - a;
+        if d.length() < 3.0 {
+            continue;
+        }
+        let outn = Vec3::new(d.y, 0.0, -d.x).normalize_or(Vec3::Z);
+        let (pa, pb) = (Vec3::new(a.x, lot.base, a.y), Vec3::new(b.x, lot.base, b.y));
+        out.city_lights.extend(nightlight::facade_floodlights(pa, pb, outn, top - lot.base, &opts));
+    }
+}
+
+fn frame(it: &Item) -> Mat4 {
+    Mat4::from_rotation_translation(Quat::from_rotation_y(it.yaw), it.pos)
+}
+
 fn place(lay: &mut CityLayout, m: usize, it: &Item) {
-    lay.out.placements.push((m, Mat4::from_rotation_translation(Quat::from_rotation_y(it.yaw), it.pos)));
+    lay.out.placements.push((m, frame(it)));
 }
 
 /// Turns planned items into module placements, lights and props.
 fn place_items(lib: &mut ModuleLib, lay: &mut CityLayout, items: &[Item], seed: u64) {
+    let night = lib.kit.night.is_night();
     for it in items {
         let p = it.pos;
         match it.kind {
             ItemKind::Lamp { candelabra } => {
-                let m = lib.named(&mut lay.out, &format!("street_lamp_{candelabra}"), || furniture::street_lamp(candelabra));
+                // Sodium or LED by lamp; at night a module tinted with it.
+                let bulb = p + Vec3::Y * furniture::street_lamp_bulb(candelabra);
+                let (color, _) = nightlight::street_lamp_color(bulb, !candelabra);
+                lay.out.city_lights.push(nightlight::street_lamp(bulb, color, candelabra));
+                let m = if night {
+                    let g = nightlight::to_rgb(color);
+                    lib.named(&mut lay.out, &format!("street_lamp_{candelabra}_{g:?}"), || furniture::street_lamp_lit(candelabra, g))
+                } else {
+                    lib.named(&mut lay.out, &format!("street_lamp_{candelabra}"), || furniture::street_lamp(candelabra))
+                };
                 place(lay, m, it);
                 let h = if candelabra { 4.4 } else { 3.6 };
                 lay.out.lights.push((p + Vec3::Y * h, Vec3::new(1.0, 0.82, 0.58)));
             }
             ItemKind::RoadLight => {
-                let m = lib.named(&mut lay.out, "road_light", furniture::road_light);
+                // Modern LED road lights (3000 K).
+                let led = nightlight::kelvin(3000.0);
+                let m = if night {
+                    let g = nightlight::to_rgb(led);
+                    lib.named(&mut lay.out, "road_light_lit", || furniture::road_light_lit(g))
+                } else {
+                    lib.named(&mut lay.out, "road_light", furniture::road_light)
+                };
                 place(lay, m, it);
                 let fwd = Vec3::new(it.yaw.sin(), 0.0, it.yaw.cos());
                 lay.out.lights.push((p + Vec3::Y * 9.4 + fwd * 1.8, Vec3::new(1.0, 0.92, 0.8)));
+                lay.out.city_lights.push(nightlight::road_light(frame(it).transform_point3(furniture::ROAD_LIGHT_HEAD) - Vec3::Y * 0.05, led));
             }
             ItemKind::TrafficLight { aspect, ped_walk, arm } => {
                 let key = format!("tl_{aspect:?}_{ped_walk}_{arm}");
                 let m = lib.named(&mut lay.out, &key, || furniture::traffic_light(aspect, ped_walk, -std::f32::consts::FRAC_PI_2, arm));
                 place(lay, m, it);
+                if night {
+                    let at = frame(it);
+                    lay.out.city_lights.extend(furniture::signal_lights(aspect, ped_walk, -std::f32::consts::FRAC_PI_2, arm).into_iter().map(|mut l| {
+                        l.pos = at.transform_point3(l.pos);
+                        if let Some(s) = &mut l.spot {
+                            s.dir = at.transform_vector3(s.dir);
+                        }
+                        l
+                    }));
+                }
             }
             ItemKind::Sign(kind) => {
                 let h = if kind == crate::texgen::SignKind::Crossing { 2.6 } else { 2.3 };
@@ -365,11 +421,21 @@ fn place_items(lib: &mut ModuleLib, lay: &mut CityLayout, items: &[Item], seed: 
                 let r = (r * 2.0).round() * 0.5;
                 let m = lib.named(&mut lay.out, &format!("fountain_{r}"), || furniture::fountain(r));
                 place(lay, m, it);
+                if night {
+                    lay.out.city_lights.extend(nightlight::fountain_lights(p + Vec3::Y * 0.4, r));
+                }
             }
             ItemKind::Parterre(s) => {
                 let s = s.round();
                 let m = lib.named(&mut lay.out, &format!("parterre_{s}"), || furniture::parterre(s));
                 place(lay, m, it);
+                if night {
+                    // The centrepiece lit from four points of the bed.
+                    for q in 0..4 {
+                        let o = Vec2::from_angle(std::f32::consts::FRAC_PI_2 * q as f32 + 0.8) * 1.6;
+                        lay.out.city_lights.push(nightlight::accent(p + Vec3::new(o.x, 0.35, o.y), p + Vec3::Y * 2.0, 2800.0, 30.0));
+                    }
+                }
             }
             ItemKind::FlowerBed(r) => {
                 let m = lib.named(&mut lay.out, &format!("flower_bed_{r}"), || {
@@ -465,6 +531,33 @@ fn spawns(lay: &mut CityLayout, f: &Fabric, lib: &ProfileLibrary, start: Option<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::nightlight::LightKind;
+
+    #[test]
+    fn night_lights_the_city_and_day_is_untouched() {
+        let styles = StyleLibrary::builtin();
+        let mut kit = Kit::load(None);
+        let day = build_city(&kit, &styles, &CityConfig::small());
+        kit.set_hour(14.0);
+        let afternoon = build_city(&kit, &styles, &CityConfig::small());
+        assert_eq!(day.out.placements.len(), afternoon.out.placements.len());
+        assert_eq!(day.out.scenes.len(), afternoon.out.scenes.len());
+        let night_mats = ["room_lit", "neon", "shop_sign_lit", "lantern_glass"];
+        let has = |c: &CityLayout, n: &str| c.out.scenes.iter().any(|s| s.materials.iter().any(|m| m.name == n));
+        for n in night_mats {
+            assert!(!has(&day, n), "day city has night material {n}");
+        }
+        kit.set_hour(22.5);
+        let night = build_city(&kit, &styles, &CityConfig::small());
+        // Same city, same layout: only modules and lights differ.
+        assert_eq!(day.out.buildings, night.out.buildings);
+        assert_eq!(day.out.lights.len(), night.out.lights.len());
+        assert!(has(&night, "room_lit") && has(&night, "lantern_glass"));
+        let count = |k: LightKind| night.out.city_lights.iter().filter(|l| l.kind == k).count();
+        assert!(count(LightKind::Window) > 50, "{} lit windows", count(LightKind::Window));
+        assert!(count(LightKind::Street) > 0 && count(LightKind::Wall) > 0);
+        assert!(night.out.city_lights.len() > day.out.city_lights.len() * 3);
+    }
 
     #[test]
     fn terraces_stay_on_the_sidewalk() {

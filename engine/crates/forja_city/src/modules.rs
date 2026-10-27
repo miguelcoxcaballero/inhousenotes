@@ -519,8 +519,14 @@ pub struct WindowKey {
     /// Mirador height in cm (replaces the balcony).
     pub mirador: Option<u16>,
     pub interior: u8,
+    /// Room light at night: 0 off, else `1 + tone` (see
+    /// [`crate::nightlight::room_tone`]) plus [`LIGHT_CURTAIN`] when drawn.
+    pub light: u8,
     pub grille: bool,
 }
+
+/// Flag in [`WindowKey::light`]: curtains or blinds drawn over the lit room.
+pub const LIGHT_CURTAIN: u8 = 8;
 
 /// Separately instanced pieces of an opening, so variants combine at
 /// placement time instead of multiplying into unique meshes.
@@ -543,12 +549,12 @@ impl Piece {
 impl WindowKey {
     /// The key reduced to what `piece` depends on.
     pub fn for_piece(&self, piece: Piece) -> WindowKey {
-        let blank = WindowKey { w_cm: self.w_cm, h_cm: self.h_cm, door: self.door, surround: Mat::Iron, surround_kind: SurroundKind::None, frame: [0; 3], shutter: None, balcony: None, mirador: None, interior: 0, grille: false };
+        let blank = WindowKey { w_cm: self.w_cm, h_cm: self.h_cm, door: self.door, surround: Mat::Iron, surround_kind: SurroundKind::None, frame: [0; 3], shutter: None, balcony: None, mirador: None, interior: 0, light: 0, grille: false };
         let has_balcony = self.balcony.map(|_| BalconyKey { width_cm: 0, depth_cm: 0, belly: false, ends: (false, false), pots: 0, awning: None, terrace: 0 });
         match piece {
             Piece::Surround => WindowKey { surround: self.surround, surround_kind: self.surround_kind, balcony: has_balcony, grille: self.grille, ..blank },
             Piece::Glazing => WindowKey { frame: self.frame, mirador: self.mirador, surround: if self.mirador.is_some() { self.surround } else { Mat::Iron }, ..blank },
-            Piece::Interior => WindowKey { interior: self.interior, ..blank },
+            Piece::Interior => WindowKey { interior: self.interior, light: self.light, ..blank },
             Piece::Shutter => WindowKey {
                 shutter: self.shutter,
                 balcony: if self.mirador.is_some() { None } else { self.balcony.map(|b| BalconyKey { width_cm: 0, depth_cm: b.depth_cm, belly: false, ends: (false, false), pots: 0, awning: None, terrace: 0 }) },
@@ -584,8 +590,11 @@ pub fn window_piece(k: &WindowKey, piece: Piece) -> P {
                 mirador(&mut p, frame, k.surround, w, hcm as f32 / 100.0);
             }
         }
-        // Interiors 4-7 are shallow rooms for thin lots.
-        Piece::Interior => interior(&mut p, Mat::Interior, w, h, k.interior % 4, if k.interior >= 4 { 0.6 } else { 1.6 }),
+        // Interiors 4-7 are shallow rooms for thin lots; lit at night.
+        Piece::Interior => {
+            let m = if k.light == 0 { Mat::Interior } else { Mat::RoomLit((k.light & 7) - 1, k.light & LIGHT_CURTAIN != 0) };
+            interior(&mut p, m, w, h, k.interior % 4, if k.interior >= 4 { 0.6 } else { 1.6 })
+        }
         Piece::Balcony => {
             if let (Some(b), None) = (&k.balcony, k.mirador) {
                 balcony(&mut p, k.surround, b, h);
@@ -651,7 +660,17 @@ pub struct ShopKey {
     pub frame: Rgb,
     pub awning: Option<u8>,
     pub interior: u8,
+    /// Sign letters lit (night).
+    pub lit_sign: bool,
+    /// Neon tubes: 0 none, else 1 + color index into [`NEON`]; add
+    /// [`NEON_FRAME`] to also outline the shopfront (night).
+    pub neon: u8,
 }
+
+/// Neon and LED tube colors: red, cyan, green, pink, amber, blue, white.
+pub const NEON: [Rgb; 7] = [hex(0xff2a2a), hex(0x2ae8ff), hex(0x3dff6a), hex(0xff3fbf), hex(0xffa62a), hex(0x3a6bff), hex(0xfff4e0)];
+/// Flag in [`ShopKey::neon`]: tube outline around the whole shopfront.
+pub const NEON_FRAME: u8 = 16;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ShopPiece {
@@ -671,13 +690,13 @@ impl ShopPiece {
 
 impl ShopKey {
     pub fn for_piece(&self, piece: ShopPiece) -> ShopKey {
-        let blank = ShopKey { w_cm: self.w_cm, h_cm: self.h_cm, surround: Mat::Iron, sign: 0, shutter: 0, graffiti: 0, frame: [0; 3], awning: None, interior: 0 };
+        let blank = ShopKey { w_cm: self.w_cm, h_cm: self.h_cm, surround: Mat::Iron, sign: 0, shutter: 0, graffiti: 0, frame: [0; 3], awning: None, interior: 0, lit_sign: false, neon: 0 };
         match piece {
             ShopPiece::Surround => ShopKey { surround: self.surround, ..blank },
             ShopPiece::Front => ShopKey { frame: self.frame, sign: self.sign % 3, ..blank },
             // Atlas column from the sign, + 4 for a shallow room.
             ShopPiece::Interior => ShopKey { interior: self.sign % 4 + if self.interior > 0 { 4 } else { 0 }, ..blank },
-            ShopPiece::Sign => ShopKey { sign: self.sign, ..blank },
+            ShopPiece::Sign => ShopKey { sign: self.sign, lit_sign: self.lit_sign, neon: self.neon, ..blank },
             ShopPiece::Shutter => ShopKey { shutter: self.shutter, graffiti: if self.shutter == 3 { self.graffiti } else { 0 }, ..blank },
             ShopPiece::Awning => ShopKey { awning: self.awning, ..blank },
         }
@@ -726,8 +745,11 @@ pub fn shop_piece(k: &ShopKey, piece: ShopPiece) -> P {
         }
         ShopPiece::Sign => {
             let row = (k.sign % 16) as f32;
-            let sgn = p.get(Mat::ShopSign);
+            let sgn = p.get(if k.lit_sign { Mat::ShopSignLit } else { Mat::ShopSign });
             sgn.quad_uv([v(-hw, ys, -0.06), v(hw, ys, -0.06), v(hw, h, -0.06), v(-hw, h, -0.06)], [Vec2::new(0.0, (row + 1.0) / 16.0), Vec2::new(1.0, (row + 1.0) / 16.0), Vec2::new(1.0, row / 16.0), Vec2::new(0.0, row / 16.0)]);
+            if k.neon & 15 != 0 {
+                neon_tubes(&mut p, NEON[((k.neon & 15) as usize - 1) % NEON.len()], hw, ys, h, k.neon & NEON_FRAME != 0);
+            }
         }
         ShopPiece::Shutter => {
             if k.shutter > 0 {
@@ -747,6 +769,35 @@ pub fn shop_piece(k: &ShopKey, piece: ShopPiece) -> P {
         }
     }
     p
+}
+
+/// Neon tube outline around the sign board (`-hw..hw`, `ys..h`) and,
+/// with `frame`, up the jambs and across the lintel of the shopfront like
+/// the lit arches of a bar front. Tubes stand 3 cm proud on small clips.
+fn neon_tubes(p: &mut P, c: Rgb, hw: f32, ys: f32, h: f32, frame: bool) {
+    let tube = p.get(Mat::Neon(c));
+    let r = 0.014;
+    let z = 0.0;
+    let (x0, x1, y0, y1) = (-hw + 0.05, hw - 0.05, ys + 0.05, h - 0.04);
+    let loop_ = [v(x0, y0, z), v(x1, y0, z), v(x1, y1, z), v(x0, y1, z), v(x0, y0, z)];
+    for s in loop_.windows(2) {
+        tube.cylinder(s[0], s[1], r, 6, false);
+    }
+    if frame {
+        // Jambs from knee height and an arch over the opening.
+        let (fx, top) = (hw + 0.12, ys - 0.1);
+        let fz = 0.09;
+        tube.cylinder(v(-fx, 0.45, fz), v(-fx, top - 0.4, fz), r, 6, false);
+        tube.cylinder(v(fx, 0.45, fz), v(fx, top - 0.4, fz), r, 6, false);
+        let n = 14;
+        let mut prev = v(-fx, top - 0.4, fz);
+        for i in 1..=n {
+            let a = std::f32::consts::PI * (1.0 - i as f32 / n as f32);
+            let q = v(a.cos() * fx, top - 0.4 + a.sin() * 0.4, fz);
+            tube.cylinder(prev, q, r, 6, false);
+            prev = q;
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -1224,9 +1275,19 @@ pub fn wall_lantern() -> P {
     wall_lantern_arm(0.7)
 }
 
+/// [`wall_lantern`] glowing with `glow` at night.
+pub fn wall_lantern_lit(glow: Rgb) -> P {
+    wall_lantern_arm_lit(0.7, glow)
+}
+
 /// Wall lantern whose bracket reaches `arm` metres out of the wall (0.7
 /// on wide streets, shorter in alleys).
 pub fn wall_lantern_arm(arm: f32) -> P {
+    wall_lantern_arm_lit(arm, hex(0xffd9a0))
+}
+
+/// [`wall_lantern_arm`] glowing with `glow` at night.
+pub fn wall_lantern_arm_lit(arm: f32, glow: Rgb) -> P {
     let mut p = P::new();
     let iron = Mat::Iron;
     let k = arm / 0.7;
@@ -1247,7 +1308,7 @@ pub fn wall_lantern_arm(arm: f32) -> P {
         }
         a.beam(v(0.0, 0.0, 0.68 * k), v(0.0, -0.12, 0.68 * k), Vec3::X, 0.015, 0.015, 1.0);
     }
-    lantern(&mut p, v(0.0, -0.72, 0.68 * k), 0.9, true);
+    lantern_lit(&mut p, v(0.0, -0.72, 0.68 * k), 0.9, true, glow);
     p
 }
 
@@ -1286,12 +1347,17 @@ pub fn door_pot(variant: u8) -> P {
 
 /// Tapered four-sided lantern ("fernandino"), base at `at`.
 pub fn lantern(p: &mut P, at: Vec3, s: f32, hanging: bool) {
+    lantern_lit(p, at, s, hanging, hex(0xffd9a0));
+}
+
+/// [`lantern`] whose bulb and (at night) panes glow with `glow`.
+pub fn lantern_lit(p: &mut P, at: Vec3, s: f32, hanging: bool, glow: Rgb) {
     let (b, t, h) = (0.09 * s, 0.16 * s, 0.5 * s);
     let corners = |r: f32, y: f32| [at + v(-r, y, -r), at + v(r, y, -r), at + v(r, y, r), at + v(-r, y, r)];
     let lo = corners(b, 0.0);
     let hi = corners(t, h);
     {
-        let g = p.get(Mat::Glass);
+        let g = p.get(Mat::LanternGlass(glow));
         for i in 0..4 {
             let j = (i + 1) % 4;
             g.quad_uv([lo[j], lo[i], hi[i], hi[j]], [Vec2::new(0.0, 1.0), Vec2::new(1.0, 1.0), Vec2::new(1.0, 0.0), Vec2::ZERO]);
@@ -1315,7 +1381,7 @@ pub fn lantern(p: &mut P, at: Vec3, s: f32, hanging: bool) {
             iron.beam(apex, apex + v(0.0, 0.1 * s, 0.0), Vec3::X, 0.012, 0.012, 1.0);
         }
     }
-    let bulb = p.get(Mat::Lamp(hex(0xffd9a0)));
+    let bulb = p.get(Mat::Lamp(glow));
     bulb.lathe(at + v(0.0, h * 0.25, 0.0), &[(0.0, 0.0), (0.04 * s, 0.05 * s), (0.04 * s, 0.14 * s), (0.0, 0.2 * s)], 8);
 }
 
@@ -1350,6 +1416,7 @@ mod tests {
             balcony: Some(BalconyKey { width_cm: 185, depth_cm: 50, belly: true, ends: (true, true), pots: 3, awning: Some(0), terrace: 0 }),
             mirador: None,
             interior: 1,
+            light: 0,
             grille: false,
         }
     }
@@ -1376,7 +1443,7 @@ mod tests {
                 assert!(prim_count(&window(&k)) > 0);
             }
         }
-        let s = shop(&ShopKey { w_cm: 300, h_cm: 330, surround: Mat::Ashlar([255; 3]), sign: 3, shutter: 3, graffiti: 1, frame: hex(0x222222), awning: Some(1), interior: 0 });
+        let s = shop(&ShopKey { w_cm: 300, h_cm: 330, surround: Mat::Ashlar([255; 3]), sign: 3, shutter: 3, graffiti: 1, frame: hex(0x222222), awning: Some(1), interior: 0, lit_sign: false, neon: 0 });
         assert!(s.prims.contains_key(&Mat::MetalShutter(1)));
         let d = portal(&PortalKey { w_cm: 200, h_cm: 360, surround: Mat::Granite, door: hex(0x4a2e1c) });
         assert!(prim_count(&d) > 100);

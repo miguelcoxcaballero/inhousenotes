@@ -4,13 +4,22 @@
 //! (Vulkan as fallback). Frame graph:
 //!
 //! 1. **Shadows**: 4 stable cascades (texel-snapped bounding spheres) into a
-//!    depth array, culled per cascade.
-//! 2. **Main**: reverse-Z HDR pass; PBR (GGX, height-correlated Smith,
-//!    Schlick) with normal/metal-rough/occlusion/emissive maps, cascaded PCF,
-//!    analytic sky ambient and reflections, point lights, height fog. Static,
+//!    depth array, culled per cascade; alpha-masked casters are alpha tested.
+//! 2. **Depth/normal prepass**: reverse-Z depth plus geometric normals for
+//!    every opaque surface (the main pass then shades each pixel once).
+//! 3. **GTAO**: ground-truth ambient occlusion from depth + normals with a
+//!    4x4 bilateral denoise.
+//! 4. **Main**: HDR forward pass against the prepass depth (read-only); PBR
+//!    (GGX, height-correlated Smith, Schlick) with normal/metal-rough/
+//!    occlusion/emissive maps, PCSS sun shadows with screen-space contact
+//!    shadows, HDRI or analytic sky ambient with GTAO multi-bounce and
+//!    specular occlusion, point lights, aerial perspective. Static,
 //!    double-sided, GPU-skinned and blended variants.
-//! 3. **Sky**: per-pixel Rayleigh + Mie single scattering at the far plane.
-//! 4. **Post**: bloom chain, AgX tonemapping, vignette, FXAA.
+//! 5. **Sky**: HDRI or per-pixel Rayleigh + Mie single scattering.
+//! 6. **TAA**: Halton-jittered frames resolved with reprojected, variance
+//!    clipped history; still cameras converge to a supersampled image.
+//! 7. **Post**: bloom chain, AgX tonemapping, vignette, CAS sharpening (FXAA
+//!    when TAA is off).
 //!
 //! The renderer knows nothing about worlds or gameplay: callers upload
 //! [`SceneData`] once ([`Renderer::upload_scene`]) and submit a [`FrameDesc`]
@@ -33,6 +42,8 @@ pub use wgpu;
 const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const SHADOW_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+const NORMAL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+const AO_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
 const BLOOM_MIPS: usize = 6;
 pub const MAX_LIGHTS: usize = 64;
 
@@ -63,6 +74,13 @@ struct FrameUniforms {
     screen: [f32; 4],
     sh: [[f32; 4]; 9],
     env_params: [f32; 4],
+    prev_view_proj: [[f32; 4]; 4],
+    proj_params: [f32; 4],
+    jitter: [f32; 4],
+    cascade_texel: [f32; 4],
+    cascade_range: [f32; 4],
+    fx: [f32; 4],
+    ao_params: [f32; 4],
     lights: [GpuLight; MAX_LIGHTS],
 }
 
@@ -159,6 +177,18 @@ pub struct Environment {
     /// Light with the loaded HDRI ([`Renderer::set_environment`]) instead of
     /// the analytic atmosphere. Its sun drives the shadows.
     pub use_ibl: bool,
+    /// World radius of the screen-space ambient occlusion (m). Screen space
+    /// misses what is hidden or off screen, so like XeGTAO (radius
+    /// multiplier 1.457) this is larger than the true occlusion distance.
+    pub ao_radius: f32,
+    /// Exponent applied to the ambient occlusion (1 = raw GTAO visibility;
+    /// XeGTAO's default, matched to a ray-traced reference, is 2.2).
+    pub ao_strength: f32,
+    /// 0..1: how much ambient occlusion also occludes reflections.
+    pub specular_occlusion: f32,
+    /// Angular diameter of the sun (radians): sets the shadow penumbra
+    /// (0.0093 is the real sun; a little more mimics forward-scattering haze).
+    pub sun_angular_diameter: f32,
 }
 
 impl Default for Environment {
@@ -173,6 +203,84 @@ impl Default for Environment {
             vignette: 0.35,
             shadow_distance: 220.0,
             use_ibl: true,
+            ao_radius: 1.5,
+            ao_strength: 2.0,
+            specular_occlusion: 1.0,
+            sun_angular_diameter: 0.012,
+        }
+    }
+}
+
+/// Quality switches of the renderer (`Renderer::settings`). `FORJA_FX`
+/// overrides them for comparisons, e.g. `FORJA_FX=-taa,-ssao`,
+/// `FORJA_CAPTURE_FRAMES` the number of frames accumulated per screenshot and
+/// `FORJA_DEBUG` shows one term instead of the lit image (`ao`, `shadow`,
+/// `ssr`).
+#[derive(Clone, Debug)]
+pub struct RenderSettings {
+    /// Temporal anti-aliasing (with Halton jitter). Off: FXAA.
+    pub taa: bool,
+    /// Ground-truth ambient occlusion.
+    pub ssao: bool,
+    /// Screen-space contact shadows for the sun.
+    pub contact_shadows: bool,
+    /// Screen-space reflections (needs TAA history).
+    pub ssr: bool,
+    /// Jittered frames accumulated by [`Renderer::render_offscreen`] and
+    /// [`Renderer::render_to_image`] (TAA converges to a supersampled image).
+    pub capture_frames: u32,
+    /// Post-TAA sharpening, 0..1.
+    pub sharpen: f32,
+    /// 0: lit image; 1: ambient occlusion; 2: sun shadow (map x contact);
+    /// 3: screen-space reflection hit confidence.
+    pub debug_view: u32,
+}
+
+impl Default for RenderSettings {
+    fn default() -> Self {
+        Self { taa: true, ssao: true, contact_shadows: true, ssr: true, capture_frames: 8, sharpen: 0.5, debug_view: 0 }
+    }
+}
+
+impl RenderSettings {
+    /// Defaults with the `FORJA_FX` / `FORJA_CAPTURE_FRAMES` overrides applied.
+    pub fn from_env() -> Self {
+        let mut s = Self::default();
+        if let Ok(fx) = std::env::var("FORJA_FX") {
+            s.apply_fx(&fx);
+        }
+        if let Some(n) = std::env::var("FORJA_CAPTURE_FRAMES").ok().and_then(|v| v.parse().ok()) {
+            s.capture_frames = n;
+        }
+        if let Ok(v) = std::env::var("FORJA_DEBUG") {
+            s.debug_view = match v.trim() {
+                "ao" => 1,
+                "shadow" => 2,
+                "ssr" => 3,
+                other => {
+                    log::warn!("FORJA_DEBUG: unknown view {other}");
+                    0
+                }
+            };
+        }
+        s
+    }
+
+    /// Applies a `FORJA_FX` list: `name` or `+name` enables, `-name`
+    /// disables (`taa`, `ssao`/`ao`, `contact`, `ssr`).
+    pub fn apply_fx(&mut self, fx: &str) {
+        for item in fx.split(',').map(str::trim).filter(|i| !i.is_empty()) {
+            let (on, name) = match item.strip_prefix('-') {
+                Some(n) => (false, n),
+                None => (true, item.trim_start_matches('+')),
+            };
+            match name {
+                "taa" => self.taa = on,
+                "ssao" | "ao" => self.ssao = on,
+                "contact" => self.contact_shadows = on,
+                "ssr" => self.ssr = on,
+                _ => log::warn!("FORJA_FX: unknown effect {name}"),
+            }
         }
     }
 }
@@ -220,6 +328,8 @@ impl GpuMesh {
 struct GpuMaterial {
     bind_group: wgpu::BindGroup,
     blend: bool,
+    /// Alpha-tested (leaves, hair cards): needs the texture in depth passes.
+    masked: bool,
     double_sided: bool,
 }
 
@@ -239,9 +349,22 @@ struct Targets {
     height: u32,
     hdr: wgpu::TextureView,
     depth: wgpu::TextureView,
+    /// Geometric normals of the depth prepass (world space).
+    normal: wgpu::TextureView,
+    ao_raw: wgpu::TextureView,
+    ao: wgpu::TextureView,
+    /// TAA output of this frame (bloom and tonemap read it).
+    resolved_tex: wgpu::Texture,
+    resolved: wgpu::TextureView,
+    /// Last frame's resolved image (TAA history, SSR source).
+    history_tex: wgpu::Texture,
     ldr: wgpu::TextureView,
     bloom: Vec<(wgpu::TextureView, u32, u32)>,
     post_bind: PostBinds,
+    gtao_bind: wgpu::BindGroup,
+    blur_bind: wgpu::BindGroup,
+    taa_bind: wgpu::BindGroup,
+    screen_bind: wgpu::BindGroup,
 }
 
 struct PostBinds {
@@ -258,8 +381,15 @@ struct Pipelines {
     skinned: wgpu::RenderPipeline,
     blend: wgpu::RenderPipeline,
     skinned_blend: wgpu::RenderPipeline,
+    /// Depth/normal prepass: [opaque, double-sided, skinned] x [plain, masked].
+    prepass: [[wgpu::RenderPipeline; 2]; 3],
     shadow: wgpu::RenderPipeline,
     shadow_skinned: wgpu::RenderPipeline,
+    shadow_masked: wgpu::RenderPipeline,
+    shadow_skinned_masked: wgpu::RenderPipeline,
+    gtao: wgpu::RenderPipeline,
+    ao_blur: wgpu::RenderPipeline,
+    taa: wgpu::RenderPipeline,
     sky: wgpu::RenderPipeline,
     lines: wgpu::RenderPipeline,
     down: wgpu::RenderPipeline,
@@ -288,6 +418,10 @@ pub struct Renderer {
     material_bgl: wgpu::BindGroupLayout,
     joints_bgl: wgpu::BindGroupLayout,
     post_bgl: wgpu::BindGroupLayout,
+    screen_bgl: wgpu::BindGroupLayout,
+    gtao_bgl: wgpu::BindGroupLayout,
+    taa_bgl: wgpu::BindGroupLayout,
+    taa_buf: wgpu::Buffer,
     frame_buf: wgpu::Buffer,
     frame_bind: wgpu::BindGroup,
     shadow_view: wgpu::TextureView,
@@ -314,6 +448,43 @@ pub struct Renderer {
     line_cap: u64,
     targets: Option<Targets>,
     pub stats: RenderStats,
+    pub settings: RenderSettings,
+    temporal: TemporalState,
+}
+
+/// Frame-to-frame state of the temporal passes.
+#[derive(Default)]
+struct TemporalState {
+    frame_index: u32,
+    history_valid: bool,
+    prev_view_proj: Mat4,
+    /// Camera, time and size of the last frame; equal means a still image.
+    prev_key: Option<[f32; 11]>,
+    still_frames: u32,
+    /// Keep the history for reprojection (SSR) but restart the
+    /// accumulation: the next frame replaces it.
+    restart: bool,
+}
+
+/// Per-frame output of [`Renderer::temporal_frame`].
+struct TemporalFrame {
+    view_proj: Mat4,
+    prev_view_proj: Mat4,
+    jitter: forja_math::Vec2,
+    frame_index: u32,
+    history_valid: bool,
+    taa_params: [f32; 4],
+}
+
+/// Radical inverse (Halton sequence) used for the TAA sub-pixel jitter.
+fn halton(mut i: u32, base: u32) -> f32 {
+    let (mut f, mut r) = (1.0f32, 0.0f32);
+    while i > 0 {
+        f /= base as f32;
+        r += f * (i % base) as f32;
+        i /= base;
+    }
+    r
 }
 
 /// DX12 first on Windows (Vulkan fallback); the platform's primary APIs
@@ -438,21 +609,42 @@ impl Renderer {
             label: Some("post"),
             entries: &[texture_entry(0), sampler_entry(1), uniform_entry(2, wgpu::ShaderStages::FRAGMENT), texture_entry(3)],
         });
+        let depth_entry = |binding: u32| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Depth, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false },
+            count: None,
+        };
+        // Main pass screen inputs: GTAO, prepass depth (read-only attachment
+        // at the same time), last frame's image and the prepass normals
+        // (screen-space reflections).
+        let screen_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("screen"), entries: &[texture_entry(0), depth_entry(1), texture_entry(2), sampler_entry(3), texture_entry(4)] });
+        let gtao_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("gtao"), entries: &[depth_entry(0), texture_entry(1), texture_entry(2)] });
+        let taa_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("taa"),
+            entries: &[texture_entry(0), texture_entry(1), depth_entry(2), sampler_entry(3), uniform_entry(4, wgpu::ShaderStages::FRAGMENT)],
+        });
 
         let pbr = shader(&device, "pbr", include_str!("shaders/pbr.wgsl"), true);
         let sky = shader(&device, "sky", include_str!("shaders/sky.wgsl"), true);
         let lines = shader(&device, "lines", include_str!("shaders/lines.wgsl"), true);
         let shadow = shader(&device, "shadow", include_str!("shaders/shadow.wgsl"), false);
         let post = shader(&device, "post", include_str!("shaders/post.wgsl"), false);
+        let gtao = shader(&device, "gtao", include_str!("shaders/gtao.wgsl"), true);
+        let taa = shader(&device, "taa", include_str!("shaders/taa.wgsl"), true);
 
         let layout = |bgls: &[&wgpu::BindGroupLayout]| {
             let v: Vec<Option<&wgpu::BindGroupLayout>> = bgls.iter().map(|b| Some(*b)).collect();
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: None, bind_group_layouts: &v, immediate_size: 0 })
         };
-        let scene_layout = layout(&[&frame_bgl, &material_bgl, &joints_bgl]);
+        let scene_layout = layout(&[&frame_bgl, &material_bgl, &joints_bgl, &screen_bgl]);
+        let prepass_layout = layout(&[&frame_bgl, &material_bgl, &joints_bgl]);
         let frame_layout = layout(&[&frame_bgl]);
         let shadow_layout = layout(&[&cascade_bgl, &joints_bgl]);
+        let shadow_masked_layout = layout(&[&cascade_bgl, &joints_bgl, &material_bgl]);
         let post_layout = layout(&[&post_bgl]);
+        let gtao_layout = layout(&[&frame_bgl, &gtao_bgl]);
+        let taa_layout = layout(&[&frame_bgl, &taa_bgl]);
 
         let depth_state = |write: bool| wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
@@ -461,6 +653,7 @@ impl Renderer {
             stencil: Default::default(),
             bias: Default::default(),
         };
+        // The main pass tests against the prepass depth without writing it.
         let scene_pipeline = |label: &str, vs: &str, skinned: bool, cull: Option<wgpu::Face>, blend: bool| {
             let buffers = vertex_layouts(skinned);
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -468,7 +661,7 @@ impl Renderer {
                 layout: Some(&scene_layout),
                 vertex: wgpu::VertexState { module: &pbr, entry_point: Some(vs), compilation_options: Default::default(), buffers: &buffers },
                 primitive: wgpu::PrimitiveState { cull_mode: cull, ..Default::default() },
-                depth_stencil: Some(depth_state(!blend)),
+                depth_stencil: Some(depth_state(false)),
                 multisample: Default::default(),
                 fragment: Some(wgpu::FragmentState {
                     module: &pbr,
@@ -490,11 +683,37 @@ impl Renderer {
         let blend = scene_pipeline("blend", "vs_main", false, None, true);
         let skinned_blend = scene_pipeline("skinned_blend", "vs_skinned", true, None, true);
 
-        let shadow_pipeline = |vs: &str, skinned: bool| {
+        let prepass_pipeline = |vs: &str, skinned: bool, cull: Option<wgpu::Face>, masked: bool| {
             let buffers = vertex_layouts(skinned);
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("prepass"),
+                layout: Some(&prepass_layout),
+                vertex: wgpu::VertexState { module: &pbr, entry_point: Some(vs), compilation_options: Default::default(), buffers: &buffers },
+                primitive: wgpu::PrimitiveState { cull_mode: cull, ..Default::default() },
+                depth_stencil: Some(depth_state(true)),
+                multisample: Default::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &pbr,
+                    entry_point: Some(if masked { "fs_prepass_masked" } else { "fs_prepass" }),
+                    compilation_options: Default::default(),
+                    targets: &[Some(NORMAL_FORMAT.into())],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let prepass = [
+            [prepass_pipeline("vs_main", false, Some(wgpu::Face::Back), false), prepass_pipeline("vs_main", false, Some(wgpu::Face::Back), true)],
+            [prepass_pipeline("vs_main", false, None, false), prepass_pipeline("vs_main", false, None, true)],
+            [prepass_pipeline("vs_skinned", true, None, false), prepass_pipeline("vs_skinned", true, None, true)],
+        ];
+
+        let shadow_pipeline = |vs: &str, skinned: bool, masked: bool| {
+            let buffers = vertex_layouts(skinned);
+            let fragment = masked.then(|| wgpu::FragmentState { module: &shadow, entry_point: Some("fs_masked"), compilation_options: Default::default(), targets: &[] });
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("shadow"),
-                layout: Some(&shadow_layout),
+                layout: Some(if masked { &shadow_masked_layout } else { &shadow_layout }),
                 vertex: wgpu::VertexState { module: &shadow, entry_point: Some(vs), compilation_options: Default::default(), buffers: &buffers },
                 primitive: wgpu::PrimitiveState { cull_mode: None, unclipped_depth: false, ..Default::default() },
                 depth_stencil: Some(wgpu::DepthStencilState {
@@ -502,16 +721,37 @@ impl Renderer {
                     depth_write_enabled: Some(true),
                     depth_compare: Some(wgpu::CompareFunction::LessEqual),
                     stencil: Default::default(),
-                    bias: wgpu::DepthBiasState { constant: 2, slope_scale: 2.0, clamp: 0.0 },
+                    // Small slope bias only: receivers apply an exact
+                    // receiver-plane bias in the shader.
+                    bias: wgpu::DepthBiasState { constant: 2, slope_scale: 1.0, clamp: 0.0 },
                 }),
                 multisample: Default::default(),
-                fragment: None,
+                fragment,
                 multiview_mask: None,
                 cache: None,
             })
         };
-        let shadow_static = shadow_pipeline("vs_main", false);
-        let shadow_skinned = shadow_pipeline("vs_skinned", true);
+        let shadow_static = shadow_pipeline("vs_main", false, false);
+        let shadow_skinned = shadow_pipeline("vs_skinned", true, false);
+        let shadow_masked = shadow_pipeline("vs_masked", false, true);
+        let shadow_skinned_masked = shadow_pipeline("vs_skinned_masked", true, true);
+
+        let screen_pipeline = |module: &wgpu::ShaderModule, layout: &wgpu::PipelineLayout, entry: &str, format: wgpu::TextureFormat| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(entry),
+                layout: Some(layout),
+                vertex: wgpu::VertexState { module, entry_point: Some("vs_fullscreen"), compilation_options: Default::default(), buffers: &[] },
+                primitive: Default::default(),
+                depth_stencil: None,
+                multisample: Default::default(),
+                fragment: Some(wgpu::FragmentState { module, entry_point: Some(entry), compilation_options: Default::default(), targets: &[Some(format.into())] }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let gtao_pipeline = screen_pipeline(&gtao, &gtao_layout, "fs_gtao", AO_FORMAT);
+        let ao_blur_pipeline = screen_pipeline(&gtao, &gtao_layout, "fs_ao_blur", AO_FORMAT);
+        let taa_pipeline = screen_pipeline(&taa, &taa_layout, "fs_taa", HDR_FORMAT);
 
         let sky_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("sky"),
@@ -584,9 +824,15 @@ impl Renderer {
             double_sided,
             skinned,
             blend,
-                skinned_blend,
+            skinned_blend,
+            prepass,
             shadow: shadow_static,
             shadow_skinned,
+            shadow_masked,
+            shadow_skinned_masked,
+            gtao: gtao_pipeline,
+            ao_blur: ao_blur_pipeline,
+            taa: taa_pipeline,
             sky: sky_pipeline,
             lines: lines_pipeline,
             down: post_pipeline("fs_downsample", HDR_FORMAT, false),
@@ -673,6 +919,7 @@ impl Renderer {
         let joint_bind = device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("joints"), layout: &joints_bgl, entries: &[wgpu::BindGroupEntry { binding: 0, resource: joint_buf.as_entire_binding() }] });
         let line_cap = 65536 * std::mem::size_of::<LineVertex>() as u64;
         let line_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("lines"), size: line_cap, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let taa_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("taa"), size: 16, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let mut r = Self {
             device,
             queue,
@@ -683,6 +930,10 @@ impl Renderer {
             material_bgl,
             joints_bgl,
             post_bgl,
+            screen_bgl,
+            gtao_bgl,
+            taa_bgl,
+            taa_buf,
             frame_buf,
             frame_bind,
             shadow_view,
@@ -709,9 +960,63 @@ impl Renderer {
             line_cap,
             targets: None,
             stats: RenderStats::default(),
+            settings: RenderSettings::from_env(),
+            temporal: TemporalState::default(),
         };
         r.resize(1280, 720);
         r
+    }
+
+    /// Forgets the temporal history (camera cut, new scene): the next frame
+    /// starts TAA accumulation from scratch.
+    pub fn reset_history(&mut self) {
+        self.temporal.history_valid = false;
+        self.temporal.still_frames = 0;
+        self.temporal.prev_key = None;
+    }
+
+    /// Jitter, reprojection matrices and TAA weights for this frame; also
+    /// advances the temporal state.
+    fn temporal_frame(&mut self, cam: &Camera, time: f32, width: u32, height: u32) -> TemporalFrame {
+        let t = &mut self.temporal;
+        let taa = self.settings.taa;
+        let unjittered = cam.view_proj();
+        let q = cam.rotation;
+        let key = [cam.position.x, cam.position.y, cam.position.z, q.x, q.y, q.z, q.w, cam.fov_y, time, width as f32, height as f32];
+        let still = t.history_valid && t.prev_key == Some(key);
+        let restart = std::mem::take(&mut t.restart);
+        t.still_frames = if still && !restart { t.still_frames + 1 } else { 0 };
+        t.prev_key = Some(key);
+        t.frame_index = t.frame_index.wrapping_add(1);
+        // Halton(2,3), 16-frame cycle, in NDC units.
+        let i = t.frame_index % 16 + 1;
+        let jitter = if taa {
+            forja_math::Vec2::new((halton(i, 2) - 0.5) * 2.0 / width as f32, (halton(i, 3) - 0.5) * 2.0 / height as f32)
+        } else {
+            forja_math::Vec2::ZERO
+        };
+        let view_proj = Mat4::from_translation(Vec3::new(jitter.x, jitter.y, 0.0)) * unjittered;
+        let history_valid = t.history_valid;
+        let prev_view_proj = if history_valid { t.prev_view_proj } else { unjittered };
+        // Still camera: running average (converges); moving: exponential
+        // 10% with tight variance clipping.
+        let (alpha, gamma) = if !taa || !history_valid || restart {
+            (1.0, 1.0)
+        } else if still {
+            ((1.0 / (t.still_frames + 1) as f32).max(1.0 / 24.0), 2.5)
+        } else {
+            (0.1, 1.0)
+        };
+        t.prev_view_proj = unjittered;
+        t.history_valid = true;
+        TemporalFrame {
+            view_proj,
+            prev_view_proj,
+            jitter,
+            frame_index: t.frame_index,
+            history_valid,
+            taa_params: [alpha, gamma, (taa && history_valid) as u32 as f32, still as u32 as f32],
+        }
     }
 
     /// Uses an HDR photo for sky, reflections and ambient light (`None`
@@ -771,23 +1076,49 @@ impl Renderer {
         if self.targets.as_ref().is_some_and(|t| t.width == width && t.height == height) {
             return;
         }
-        let tex = |label: &str, w: u32, h: u32, format: wgpu::TextureFormat| {
-            self.device
-                .create_texture(&wgpu::TextureDescriptor {
-                    label: Some(label),
-                    size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format,
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-                    view_formats: &[],
-                })
-                .create_view(&Default::default())
+        let raw_tex = |label: &str, w: u32, h: u32, format: wgpu::TextureFormat, extra: wgpu::TextureUsages| {
+            self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some(label),
+                size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | extra,
+                view_formats: &[],
+            })
         };
+        let tex = |label: &str, w: u32, h: u32, format: wgpu::TextureFormat| raw_tex(label, w, h, format, wgpu::TextureUsages::empty()).create_view(&Default::default());
         let hdr = tex("hdr", width, height, HDR_FORMAT);
         let depth = tex("depth", width, height, DEPTH_FORMAT);
+        let normal = tex("normal", width, height, NORMAL_FORMAT);
+        let ao_raw = tex("ao_raw", width, height, AO_FORMAT);
+        let ao = tex("ao", width, height, AO_FORMAT);
+        let resolved_tex = raw_tex("resolved", width, height, HDR_FORMAT, wgpu::TextureUsages::COPY_SRC);
+        let resolved = resolved_tex.create_view(&Default::default());
+        let history_tex = raw_tex("history", width, height, HDR_FORMAT, wgpu::TextureUsages::COPY_DST);
+        let history = history_tex.create_view(&Default::default());
         let ldr = tex("ldr", width, height, wgpu::TextureFormat::Rgba8UnormSrgb);
+        let entry = view_entry;
+        let gtao_bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("gtao"), layout: &self.gtao_bgl, entries: &[entry(0, &depth), entry(1, &normal), entry(2, &ao)] });
+        let blur_bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("ao_blur"), layout: &self.gtao_bgl, entries: &[entry(0, &depth), entry(1, &normal), entry(2, &ao_raw)] });
+        let taa_bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("taa"),
+            layout: &self.taa_bgl,
+            entries: &[
+                entry(0, &hdr),
+                entry(1, &history),
+                entry(2, &depth),
+                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.clamp_sampler) },
+                wgpu::BindGroupEntry { binding: 4, resource: self.taa_buf.as_entire_binding() },
+            ],
+        });
+        let screen_bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("screen"),
+            layout: &self.screen_bgl,
+            entries: &[entry(0, &ao), entry(1, &depth), entry(2, &history), wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.clamp_sampler) }, entry(4, &normal)],
+        });
+        self.temporal.history_valid = false;
         let mut bloom = Vec::new();
         let (mut w, mut h) = (width, height);
         for _ in 0..BLOOM_MIPS {
@@ -819,7 +1150,7 @@ impl Renderer {
         let mut uniforms = Vec::new();
         let mut down = Vec::new();
         for i in 0..BLOOM_MIPS {
-            let (src, sw, sh) = if i == 0 { (&hdr, width, height) } else { (&bloom[i - 1].0, bloom[i - 1].1, bloom[i - 1].2) };
+            let (src, sw, sh) = if i == 0 { (&resolved, width, height) } else { (&bloom[i - 1].0, bloom[i - 1].1, bloom[i - 1].2) };
             let u = mk_uniform([1.0 / sw as f32, 1.0 / sh as f32], [0.0, 0.0, 0.0, if i == 0 { 1.0 } else { 0.0 }]);
             down.push(bind(src, &u, &dummy));
             uniforms.push(u);
@@ -833,12 +1164,31 @@ impl Renderer {
         }
         // Tonemap uniform is rewritten each frame (exposure, bloom, vignette).
         let tu = mk_uniform([1.0 / width as f32, 1.0 / height as f32], [1.0, 0.04, 0.3, 0.0]);
-        let tonemap = bind(&hdr, &tu, &bloom[0].0);
+        let tonemap = bind(&resolved, &tu, &bloom[0].0);
         uniforms.push(tu);
-        let fu = mk_uniform([1.0 / width as f32, 1.0 / height as f32], [0.0; 4]);
+        // Final pass uniform is rewritten each frame (FXAA or sharpening).
+        let fu = mk_uniform([1.0 / width as f32, 1.0 / height as f32], [1.0, 0.0, 0.0, 0.0]);
         let fxaa = bind(&ldr, &fu, &dummy);
         uniforms.push(fu);
-        self.targets = Some(Targets { width, height, hdr, depth, ldr, bloom, post_bind: PostBinds { down, up, tonemap, fxaa, uniforms } });
+        self.targets = Some(Targets {
+            width,
+            height,
+            hdr,
+            depth,
+            normal,
+            ao_raw,
+            ao,
+            resolved_tex,
+            resolved,
+            history_tex,
+            ldr,
+            bloom,
+            post_bind: PostBinds { down, up, tonemap, fxaa, uniforms },
+            gtao_bind,
+            blur_bind,
+            taa_bind,
+            screen_bind,
+        });
     }
 
     // ---------------------------------------------------------------- upload
@@ -924,7 +1274,8 @@ impl Renderer {
                 wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::Sampler(&self.linear_sampler) },
             ],
         });
-        GpuMaterial { bind_group, blend: m.alpha == AlphaMode::Blend || m.transmission > 0.0, double_sided: m.double_sided }
+        let blend = m.alpha == AlphaMode::Blend || m.transmission > 0.0;
+        GpuMaterial { bind_group, blend, masked: !blend && matches!(m.alpha, AlphaMode::Mask(_)), double_sided: m.double_sided }
     }
 
     /// Uploads a scene once; draw it with [`DrawInstance`]s.
@@ -998,6 +1349,7 @@ impl Renderer {
         let t0 = std::time::Instant::now();
         let (width, height) = self.size();
         let cam = Camera { aspect: width as f32 / height as f32, ..frame.camera };
+        let tf = self.temporal_frame(&cam, frame.time, width, height);
         let env = &frame.env;
         let ibl = self.env.as_ref().filter(|_| env.use_ibl);
         let (sun, sky) = match ibl {
@@ -1014,15 +1366,58 @@ impl Renderer {
             }
         }
         let view = cam.view();
-        let view_proj = cam.view_proj();
-        let splits = camera::cascade_splits(cam.near.max(0.1), env.shadow_distance, 0.8);
+        // Rendering uses the jittered matrix; culling is unaffected by a
+        // sub-pixel shift.
+        let view_proj = tf.view_proj;
+        let frustum = Frustum::from_view_proj(&view_proj);
+        // Fit the cascades to the visible depth range from a lower bound of
+        // the distance to the closest visible geometry: bounding spheres for
+        // ordinary instances, the box for large ones (a ground plane's
+        // sphere would contain an aerial camera). Bounded cost: one point
+        // transform and a sphere test per instance, stopping as soon as
+        // something is near the camera, as it always is at street level.
+        let near = cam.near.max(0.1);
+        let mut nearest = f32::INFINITY;
+        for inst in &frame.instances {
+            let Some(model) = self.models.get(inst.model.0 as usize) else { continue };
+            if model.bounds.is_empty() {
+                continue;
+            }
+            let m = &inst.transform;
+            let scale = m.x_axis.truncate().length().max(m.y_axis.truncate().length()).max(m.z_axis.truncate().length());
+            let animated = inst.joints.is_some() || inst.nodes.is_some();
+            let r = model.bounds.half_extents().length() * scale + if animated { 0.5 } else { 0.0 };
+            let c = m.transform_point3(model.bounds.center());
+            if frustum.intersects_sphere(c, r) {
+                let d = if r > 50.0 {
+                    let b = transform_aabb(&model.bounds, m);
+                    (b.min - cam.position).max(cam.position - b.max).max(Vec3::ZERO).length()
+                } else {
+                    (c - cam.position).length() - r
+                };
+                nearest = nearest.min(d);
+                if nearest <= near * 1.2 {
+                    break;
+                }
+            }
+        }
+        let (shadow_near, shadow_far) = camera::fitted_shadow_range(near, nearest, cam.fov_y, cam.aspect, env.shadow_distance);
+        let splits = camera::cascade_splits(shadow_near, shadow_far, 0.8);
         let mut cascade_vp = [Mat4::IDENTITY; 4];
-        let mut prev = cam.near;
+        let mut cascade_texel = [0.0f32; 4];
+        let mut cascade_range = [0.0f32; 4];
+        let mut prev = shadow_near.max(cam.near);
         let caster_reach = 400.0;
         for (i, s) in splits.iter().enumerate() {
-            cascade_vp[i] = camera::cascade_matrix(&cam, prev, *s, sun, self.shadow_size, caster_reach);
+            let (m, radius) = camera::cascade_fit(&cam, prev, *s, sun, self.shadow_size, caster_reach);
+            cascade_vp[i] = m;
+            cascade_texel[i] = 2.0 * radius / self.shadow_size as f32;
+            cascade_range[i] = 2.0 * radius + caster_reach;
             prev = *s;
         }
+        let proj = cam.proj();
+        let fx_on = |b: bool| b as u32 as f32;
+        let s = &self.settings;
         let mut lights = [GpuLight::zeroed(); MAX_LIGHTS];
         let mut sorted: Vec<&PointLight> = frame.lights.iter().collect();
         sorted.sort_by(|a, b| (a.position - cam.position).length_squared().total_cmp(&(b.position - cam.position).length_squared()));
@@ -1045,15 +1440,22 @@ impl Renderer {
             screen: [width as f32, height as f32, 1.0 / width as f32, 1.0 / height as f32],
             sh,
             env_params: [ibl.is_some() as u32 as f32, ibl.map_or(0.0, |e| e.max_mip), 1.0, 0.0],
+            prev_view_proj: tf.prev_view_proj.to_cols_array_2d(),
+            proj_params: [1.0 / proj.x_axis.x, 1.0 / proj.y_axis.y, cam.near, proj.y_axis.y * height as f32 * 0.5],
+            jitter: [tf.jitter.x, tf.jitter.y, tf.frame_index as f32, fx_on(tf.history_valid)],
+            cascade_texel,
+            cascade_range,
+            fx: [if s.ssao { env.ao_strength } else { 0.0 }, fx_on(s.contact_shadows), fx_on(s.ssr && tf.history_valid), env.sun_angular_diameter],
+            ao_params: [env.ao_radius, env.specular_occlusion, 60.0, s.debug_view as f32],
             lights,
         };
         self.queue.write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&uniforms));
+        self.queue.write_buffer(&self.taa_buf, 0, bytemuck::bytes_of(&tf.taa_params));
         for (i, m) in cascade_vp.iter().enumerate() {
             self.queue.write_buffer(&self.cascade_bufs[i], 0, bytemuck::bytes_of(&m.to_cols_array_2d()));
         }
 
         // Build instance batches: main view + one list per cascade.
-        let frustum = Frustum::from_view_proj(&view_proj);
         let tan_half_fov = (cam.fov_y * 0.5).tan();
         let cascade_planes: Vec<[Vec4; 6]> = cascade_vp.iter().map(camera::frustum_planes_standard).collect();
         let mut joints: Vec<[[f32; 4]; 4]> = Vec::new();
@@ -1072,11 +1474,14 @@ impl Renderer {
             let dist = (wbi.center() - cam.position).length().max(0.1);
             let px_radius = radius / (dist * tan_half_fov) * height as f32 * 0.5;
             let in_main = px_radius > 0.6 && frustum.intersects_aabb(&wbi);
-            let shadow_ok = inst.cast_shadows && !(radius < 0.8 && dist > 35.0) && !(radius < 3.0 && dist > 90.0);
+            // Shadow casters are culled by their size in shadow texels of
+            // each cascade, not by camera distance: buildings are assembled
+            // from many small modules, which together cast the large shadows
+            // that still matter far away and from the air.
             let mut cmask = 0u8;
-            if shadow_ok {
+            if inst.cast_shadows {
                 for (c, planes) in cascade_planes.iter().enumerate() {
-                    if aabb_in_planes(&wbi, planes) {
+                    if radius >= 2.5 * cascade_texel[c] && aabb_in_planes(&wbi, planes) {
                         cmask |= 1 << c;
                     }
                 }
@@ -1141,8 +1546,14 @@ impl Renderer {
             (pipe, m.material, mesh, raw.extra[2])
         };
         main.sort_by_key(|(m, raw)| key(self, *m, raw));
+        // Shadow casters: (alpha-masked, skinned, material when masked, mesh, lod).
+        let shadow_key = |r: &Renderer, mesh: u32, raw: &InstanceRaw| {
+            let mat = r.meshes[mesh as usize].material;
+            let masked = r.materials[mat as usize].masked;
+            (masked, raw.extra[1], if masked { mat } else { 0 }, mesh, raw.extra[2])
+        };
         for s in &mut shadow {
-            s.sort_by_key(|(m, raw)| (raw.extra[1], *m, raw.extra[2]));
+            s.sort_by_key(|(m, raw)| shadow_key(self, *m, raw));
         }
         let mut all: Vec<InstanceRaw> = Vec::with_capacity(main.len() + shadow.iter().map(Vec::len).sum::<usize>());
         all.extend(main.iter().map(|(_, r)| *r));
@@ -1185,10 +1596,19 @@ impl Renderer {
             0,
             bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0], params: [env.exposure, env.bloom, env.vignette, 0.0] }),
         );
+        // Final pass: FXAA without TAA, CAS sharpening with it (stronger
+        // while the camera moves, when the temporal filter is softer).
+        let still = tf.taa_params[3] > 0.5;
+        let sharpen = if still { self.settings.sharpen } else { (self.settings.sharpen * 1.6).min(1.0) };
+        self.queue.write_buffer(
+            &pu[pu.len() - 1],
+            0,
+            bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0], params: [(!self.settings.taa) as u32 as f32, sharpen, 0.0, 0.0] }),
+        );
 
         let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("frame") });
         let mut stats = RenderStats { instances_culled: culled, ..Default::default() };
-        // 1. Shadows.
+        // 1. Shadows (alpha-masked casters are alpha tested).
         for c in 0..4 {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("shadow"),
@@ -1202,28 +1622,38 @@ impl Renderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            pass.set_bind_group(0, &self.cascade_binds[c], &[]);
-            pass.set_bind_group(1, &self.joint_bind, &[]);
             pass.set_vertex_buffer(1, self.instance_buf.slice(..));
             let base = shadow_ranges[c];
             let list = &shadow[c];
             let mut i = 0;
-            let mut skinned_bound: Option<bool> = None;
+            let mut bound: Option<(bool, u32)> = None;
+            let mut bound_mat = u32::MAX;
             while i < list.len() {
-                let mesh_id = list[i].0;
-                let sk = list[i].1.extra[1] == 1;
-                let lod = list[i].1.extra[2];
+                let k = shadow_key(self, list[i].0, &list[i].1);
                 let mut j = i + 1;
-                while j < list.len() && list[j].0 == mesh_id && (list[j].1.extra[1] == 1) == sk && list[j].1.extra[2] == lod {
+                while j < list.len() && shadow_key(self, list[j].0, &list[j].1) == k {
                     j += 1;
                 }
+                let (masked, sk, mat, mesh_id, lod) = k;
                 let mesh = &self.meshes[mesh_id as usize];
-                if skinned_bound != Some(sk) {
-                    pass.set_pipeline(if sk { &self.pipelines.shadow_skinned } else { &self.pipelines.shadow });
-                    skinned_bound = Some(sk);
+                if bound != Some((masked, sk)) {
+                    pass.set_pipeline(match (masked, sk == 1) {
+                        (false, false) => &self.pipelines.shadow,
+                        (false, true) => &self.pipelines.shadow_skinned,
+                        (true, false) => &self.pipelines.shadow_masked,
+                        (true, true) => &self.pipelines.shadow_skinned_masked,
+                    });
+                    pass.set_bind_group(0, &self.cascade_binds[c], &[]);
+                    pass.set_bind_group(1, &self.joint_bind, &[]);
+                    bound = Some((masked, sk));
+                    bound_mat = u32::MAX;
+                }
+                if masked && mat != bound_mat {
+                    pass.set_bind_group(2, &self.materials[mat as usize].bind_group, &[]);
+                    bound_mat = mat;
                 }
                 pass.set_vertex_buffer(0, mesh.vertex.slice(..));
-                if sk && let Some(s) = &mesh.skin {
+                if sk == 1 && let Some(s) = &mesh.skin {
                     pass.set_vertex_buffer(2, s.slice(..));
                 }
                 let (ib, count) = mesh.indices(lod);
@@ -1233,15 +1663,17 @@ impl Renderer {
                 i = j;
             }
         }
-        // 2. Main HDR pass + sky + lines.
+        // 2. Depth + normal prepass of the opaque surfaces (blended ones are
+        // sorted last and skipped). Opaque materials keep whatever material
+        // group is bound: their prepass shader reads no texture.
         {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("main"),
+                label: Some("prepass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &t.hdr,
+                    view: &t.normal,
                     depth_slice: None,
                     resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store },
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.0, g: 1.0, b: 0.0, a: 0.0 }), store: wgpu::StoreOp::Store },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &t.depth,
@@ -1252,8 +1684,83 @@ impl Renderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+            pass.set_vertex_buffer(1, self.instance_buf.slice(..));
+            let mut i = 0;
+            let mut bound_pipe = usize::MAX;
+            let mut bound_mat = u32::MAX;
+            while i < main.len() {
+                let k = key(self, main[i].0, &main[i].1);
+                if k.0 >= 3 {
+                    break;
+                }
+                let mut j = i + 1;
+                while j < main.len() && key(self, main[j].0, &main[j].1) == k {
+                    j += 1;
+                }
+                let (pipe, mat, mesh_id, lod) = k;
+                let masked = self.materials[mat as usize].masked;
+                let pp = pipe * 2 + masked as usize;
+                if pp != bound_pipe {
+                    pass.set_pipeline(&self.pipelines.prepass[pipe][masked as usize]);
+                    pass.set_bind_group(0, &self.frame_bind, &[]);
+                    pass.set_bind_group(2, &self.joint_bind, &[]);
+                    bound_pipe = pp;
+                }
+                if (masked || bound_mat == u32::MAX) && mat != bound_mat {
+                    pass.set_bind_group(1, &self.materials[mat as usize].bind_group, &[]);
+                    bound_mat = mat;
+                }
+                let mesh = &self.meshes[mesh_id as usize];
+                pass.set_vertex_buffer(0, mesh.vertex.slice(..));
+                if pipe == 2 && let Some(s) = &mesh.skin {
+                    pass.set_vertex_buffer(2, s.slice(..));
+                }
+                let (ib, count) = mesh.indices(lod);
+                pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..count, 0, i as u32..j as u32);
+                i = j;
+            }
+        }
+        let screen_pass = |enc: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, pipe: &wgpu::RenderPipeline, bind: &wgpu::BindGroup| {
+            let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("screen"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::WHITE), store: wgpu::StoreOp::Store },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(pipe);
             pass.set_bind_group(0, &self.frame_bind, &[]);
-            pass.set_bind_group(2, &self.joint_bind, &[]);
+            pass.set_bind_group(1, bind, &[]);
+            pass.draw(0..3, 0..1);
+        };
+        // 3. Ambient occlusion (GTAO + bilateral denoise).
+        if self.settings.ssao {
+            screen_pass(&mut enc, &t.ao_raw, &self.pipelines.gtao, &t.gtao_bind);
+            screen_pass(&mut enc, &t.ao, &self.pipelines.ao_blur, &t.blur_bind);
+        }
+        // 4. Main HDR pass + sky + lines, depth-tested against the prepass
+        // (read-only, so the shaders can also sample it).
+        {
+            let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("main"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &t.hdr,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &t.depth, depth_ops: None, stencil_ops: None }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
             pass.set_vertex_buffer(1, self.instance_buf.slice(..));
             let mut i = 0;
             let mut bound_pipe = usize::MAX;
@@ -1264,6 +1771,7 @@ impl Renderer {
                 let blend_start = i == main.len() || key(self, main[i].0, &main[i].1).0 >= 3;
                 if blend_start && !sky_drawn {
                     pass.set_pipeline(&self.pipelines.sky);
+                    pass.set_bind_group(0, &self.frame_bind, &[]);
                     pass.draw(0..3, 0..1);
                     bound_pipe = usize::MAX;
                     sky_drawn = true;
@@ -1288,6 +1796,7 @@ impl Renderer {
                     });
                     pass.set_bind_group(0, &self.frame_bind, &[]);
                     pass.set_bind_group(2, &self.joint_bind, &[]);
+                    pass.set_bind_group(3, &t.screen_bind, &[]);
                     bound_pipe = pipe;
                     bound_mat = u32::MAX;
                 }
@@ -1315,7 +1824,14 @@ impl Renderer {
                 pass.draw(0..frame.lines.len() as u32, 0..1);
             }
         }
-        // 3. Bloom down/up chain.
+        // 5. TAA resolve into `resolved`, which becomes next frame's history.
+        screen_pass(&mut enc, &t.resolved, &self.pipelines.taa, &t.taa_bind);
+        enc.copy_texture_to_texture(
+            wgpu::TexelCopyTextureInfo { texture: &t.resolved_tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            wgpu::TexelCopyTextureInfo { texture: &t.history_tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        );
+        // 6. Bloom down/up chain.
         let fullscreen = |enc: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, pipe: &wgpu::RenderPipeline, bind: &wgpu::BindGroup, load: wgpu::LoadOp<wgpu::Color>| {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("post"),
@@ -1335,7 +1851,7 @@ impl Renderer {
         for (k, i) in (1..BLOOM_MIPS).rev().enumerate() {
             fullscreen(&mut enc, &t.bloom[i - 1].0, &self.pipelines.up, &t.post_bind.up[k], wgpu::LoadOp::Load);
         }
-        // 4. Tonemap and FXAA.
+        // 7. Tonemap, then FXAA or sharpening.
         fullscreen(&mut enc, &t.ldr, &self.pipelines.tonemap, &t.post_bind.tonemap, wgpu::LoadOp::Clear(wgpu::Color::BLACK));
         fullscreen(&mut enc, target, &self.pipelines.fxaa, &t.post_bind.fxaa, wgpu::LoadOp::Clear(wgpu::Color::BLACK));
         self.queue.submit([enc.finish()]);
@@ -1349,10 +1865,19 @@ impl Renderer {
         self.read_image(&tex)
     }
 
-    /// Renders into a new texture (so callers can draw UI on top before reading it back).
-    pub fn render_offscreen(&mut self, frame: &FrameDesc, width: u32, height: u32) -> wgpu::Texture {
+    /// One real-time frame read back to RGBA8: unlike
+    /// [`Renderer::render_to_image`] it keeps the temporal history, so a
+    /// sequence of calls shows TAA, SSR and the noise of the screen-space
+    /// effects as a moving game camera sees them.
+    pub fn render_live_to_image(&mut self, frame: &FrameDesc, width: u32, height: u32) -> image::RgbaImage {
         self.resize(width, height);
-        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+        let tex = self.offscreen_texture(width, height);
+        self.render(frame, &tex.create_view(&Default::default()));
+        self.read_image(&tex)
+    }
+
+    fn offscreen_texture(&self, width: u32, height: u32) -> wgpu::Texture {
+        self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("offscreen"),
             size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
             mip_level_count: 1,
@@ -1361,8 +1886,31 @@ impl Renderer {
             format: self.output_format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
-        });
-        self.render(frame, &tex.create_view(&Default::default()));
+        })
+    }
+
+    /// Renders into a new texture (so callers can draw UI on top before reading it back).
+    pub fn render_offscreen(&mut self, frame: &FrameDesc, width: u32, height: u32) -> wgpu::Texture {
+        self.resize(width, height);
+        let tex = self.offscreen_texture(width, height);
+        // A still image: start a fresh history and accumulate jittered
+        // frames so TAA (and the per-frame noise of GTAO, PCSS and contact
+        // shadows) converges to a supersampled result.
+        self.reset_history();
+        let view = tex.create_view(&Default::default());
+        let frames = if self.settings.taa { self.settings.capture_frames.max(1) } else { 1 };
+        // Screen-space reflections read the previous frame: render one
+        // warm-up frame, then accumulate from scratch with it as history.
+        if self.settings.ssr {
+            self.render(frame, &view);
+            self.temporal.restart = true;
+        }
+        let mut cpu_ms = 0.0;
+        for _ in 0..frames {
+            self.render(frame, &view);
+            cpu_ms += self.stats.cpu_ms;
+        }
+        self.stats.cpu_ms = cpu_ms / frames as f32;
         tex
     }
 
@@ -1416,6 +1964,10 @@ fn make_frame_bind(
             wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::Sampler(env_sampler) },
         ],
     })
+}
+
+fn view_entry(binding: u32, view: &wgpu::TextureView) -> wgpu::BindGroupEntry<'_> {
+    wgpu::BindGroupEntry { binding, resource: wgpu::BindingResource::TextureView(view) }
 }
 
 fn transform_aabb(b: &Aabb, m: &Mat4) -> Aabb {
@@ -1491,5 +2043,45 @@ pub mod debug {
         for (a, d) in [(0, 1), (2, 3), (4, 5), (6, 7), (0, 2), (1, 3), (4, 6), (5, 7), (0, 4), (1, 5), (2, 6), (3, 7)] {
             line(out, c(a), c(d), color);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn halton_jitter_is_stratified() {
+        // The first 16 Halton(2,3) points cover the pixel evenly: every 4x4
+        // cell of base 2 and every third of base 3 receives samples.
+        let xs: Vec<f32> = (1..=16).map(|i| halton(i, 2)).collect();
+        let ys: Vec<f32> = (1..=16).map(|i| halton(i, 3)).collect();
+        assert!(xs.iter().chain(&ys).all(|v| (0.0..1.0).contains(v)));
+        assert_eq!(halton(1, 2), 0.5);
+        assert!((halton(2, 3) - 2.0 / 3.0).abs() < 1e-6);
+        let mut cells = [0; 4];
+        for x in &xs {
+            cells[(x * 4.0) as usize] += 1;
+        }
+        assert_eq!(cells, [4, 4, 4, 4]);
+        let mean = |v: &[f32]| v.iter().sum::<f32>() / v.len() as f32;
+        assert!((mean(&xs) - 0.5).abs() < 0.05 && (mean(&ys) - 0.5).abs() < 0.05);
+    }
+
+    #[test]
+    fn fx_list_toggles_effects() {
+        let mut s = RenderSettings::default();
+        s.apply_fx("-taa, -ao,+ssr, contact, bogus");
+        assert!(!s.taa && !s.ssao && s.ssr && s.contact_shadows);
+        s.apply_fx("taa,-contact,-ssr");
+        assert!(s.taa && !s.contact_shadows && !s.ssr);
+    }
+
+    #[test]
+    fn frame_uniforms_match_wgsl_layout() {
+        // WGSL uniform structs are 16-byte aligned; `lights` follows the
+        // vec4 fields directly.
+        assert_eq!(std::mem::size_of::<FrameUniforms>() % 16, 0);
+        assert_eq!(std::mem::offset_of!(FrameUniforms, lights) % 16, 0);
     }
 }

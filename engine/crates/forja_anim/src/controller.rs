@@ -13,6 +13,13 @@
 //! clip = "Jump"
 //! looping = false
 //!
+//! [[state]]
+//! name = "move"
+//! blend = { param = "gait", points = [[1.0, "Walking"], [2.0, "Running"]] }
+//! # Playback speed multiplier read from a parameter (stride matching:
+//! # movement speed / the clip's natural speed). 1 when unset.
+//! rate = "stride"
+//!
 //! [[transition]]
 //! from = "*"
 //! to = "jump"
@@ -33,6 +40,7 @@
 //! ```
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use forja_math::Vec3;
 use serde::Deserialize;
@@ -72,6 +80,9 @@ pub struct StateDef {
     pub speed: f32,
     #[serde(default = "yes")]
     pub looping: bool,
+    /// Parameter that scales playback speed on top of `speed` (1 when unset).
+    #[serde(default)]
+    pub rate: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -131,6 +142,7 @@ struct State {
     source: Source,
     speed: f32,
     looping: bool,
+    rate: Option<String>,
 }
 
 struct Layer {
@@ -152,7 +164,8 @@ pub struct AnimController {
     states: Vec<State>,
     transitions: Vec<(Option<usize>, usize, Vec<CondDef>, bool, f32)>,
     layers: Vec<Layer>,
-    clips: Vec<Clip>,
+    /// Shared by every controller built from the same set (crowds).
+    clips: Arc<[Clip]>,
     params: HashMap<String, f32>,
     current: Playing,
     previous: Option<(Playing, f32, f32)>,
@@ -166,7 +179,9 @@ pub struct AnimController {
 impl AnimController {
     /// Resolves clip names; fails with the list of missing clips so a pack
     /// that does not fit the definition is reported, not silently broken.
-    pub fn new(def: &ControllerDef, skeleton: &Skeleton, clips: Vec<Clip>) -> Result<Self, String> {
+    /// `clips` may be an `Arc<[Clip]>` shared by many controllers.
+    pub fn new(def: &ControllerDef, skeleton: &Skeleton, clips: impl Into<Arc<[Clip]>>) -> Result<Self, String> {
+        let clips: Arc<[Clip]> = clips.into();
         let find_clip = |name: &str| clips.iter().position(|c| c.name == name).ok_or_else(|| format!("missing clip {name:?}"));
         let mut errors = Vec::new();
         let mut states = Vec::new();
@@ -193,7 +208,7 @@ impl AnimController {
                 errors.push(format!("state {} needs `clip` or `blend`", s.name));
                 Source::Clip(0)
             };
-            states.push(State { name: s.name.clone(), source, speed: s.speed, looping: s.looping });
+            states.push(State { name: s.name.clone(), source, speed: s.speed, looping: s.looping, rate: s.rate.clone() });
         }
         let state_index = |n: &str| states.iter().position(|s| s.name == n);
         let mut transitions = Vec::new();
@@ -290,6 +305,7 @@ impl AnimController {
 
     fn advance(&self, p: &mut Playing, dt: f32) -> Vec3 {
         let s = &self.states[p.state];
+        let dt = dt * s.rate.as_ref().map_or(1.0, |r| self.params.get(r).copied().unwrap_or(1.0)).max(0.0);
         let t0 = p.time;
         match &s.source {
             Source::Clip(c) => {
@@ -408,6 +424,7 @@ mod tests {
         [[state]]
         name = "rest"
         blend = { param = "speed", points = [[0.0, "bend"], [1.0, "slide"]] }
+        rate = "stride"
 
         [[state]]
         name = "once"
@@ -466,6 +483,32 @@ mod tests {
         assert!((moved.x - 2.0).abs() < 0.1, "root motion over one loop: {moved:?}");
         // The root bone itself stays locked in place.
         assert!(c.pose().local[0].t.x.abs() < 1e-5);
+    }
+
+    #[test]
+    fn rate_parameter_scales_playback() {
+        let travel = |rate: Option<f32>| {
+            let mut c = controller();
+            c.set("speed", 1.0);
+            if let Some(r) = rate {
+                c.set("stride", r);
+            }
+            (0..15).map(|_| c.update(1.0 / 30.0)).sum::<Vec3>().x
+        };
+        let (normal, unset, double) = (travel(Some(1.0)), travel(None), travel(Some(2.0)));
+        assert!((normal - unset).abs() < 1e-5, "unset rate must mean 1");
+        assert!((double - 2.0 * normal).abs() < 0.05, "{double} vs {normal}");
+    }
+
+    #[test]
+    fn controllers_share_one_clip_set() {
+        let scene = arm();
+        let skel = Skeleton::from_scene(&scene, 0).unwrap();
+        let clips: Arc<[Clip]> = Clip::bind_all(&scene, &skel, None).into();
+        let def = ControllerDef::from_toml(DEF).unwrap();
+        let a = AnimController::new(&def, &skel, clips.clone()).unwrap();
+        let b = AnimController::new(&def, &skel, clips.clone()).unwrap();
+        assert!(std::ptr::eq(a.clips().as_ptr(), b.clips().as_ptr()));
     }
 
     #[test]

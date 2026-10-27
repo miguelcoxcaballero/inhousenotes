@@ -3,6 +3,7 @@
 //! ```text
 //! cargo run -p forja_fetch -- list
 //! cargo run -p forja_fetch -- fetch --all
+//! cargo run -p forja_fetch -- fetch --play --missing   # what the game needs
 //! cargo run -p forja_fetch -- fetch kenney_car_kit map_miami_beach_osm
 //! cargo run -p forja_fetch -- fetch --kind animation
 //! cargo run -p forja_fetch -- import quaternius_universal_animation_library ~/Downloads/ual.zip
@@ -333,21 +334,35 @@ fn main() -> ExitCode {
         "fetch" => {
             let kind = args.iter().position(|a| a == "--kind").and_then(|i| args.get(i + 1)).and_then(|k| parse_kind(k));
             let all = args.iter().any(|a| a == "--all");
-            let selected: Vec<&AssetEntry> = manifest
-                .assets
-                .iter()
-                .filter(|a| {
-                    if let Some(k) = kind {
-                        return a.kind == k;
-                    }
-                    all || positional.iter().any(|p| **p == a.id)
-                })
-                .collect();
+            let play = args.iter().any(|a| a == "--play");
+            let missing = args.iter().any(|a| a == "--missing");
+            let mut selected: Vec<&AssetEntry> = if play {
+                manifest.play_set()
+            } else {
+                manifest
+                    .assets
+                    .iter()
+                    .filter(|a| {
+                        if let Some(k) = kind {
+                            return a.kind == k;
+                        }
+                        all || positional.iter().any(|p| **p == a.id)
+                    })
+                    .collect()
+            };
+            if missing {
+                selected.retain(|a| !asset_dir(&root, &a.id).exists());
+            }
             if selected.is_empty() {
-                eprintln!("nothing selected; pass ids, --kind <kind> or --all");
+                if missing {
+                    println!("all selected assets are already downloaded");
+                    return ExitCode::SUCCESS;
+                }
+                eprintln!("nothing selected; pass ids, --kind <kind>, --play or --all");
                 return ExitCode::FAILURE;
             }
-            for a in selected {
+            let total = selected.len();
+            for (i, a) in selected.into_iter().enumerate() {
                 if a.sketchfab.is_some() && all && std::env::var("SKETCHFAB_TOKEN").is_err() {
                     println!("- {}: Sketchfab (set SKETCHFAB_TOKEN to download)", a.id);
                     continue;
@@ -357,12 +372,20 @@ fn main() -> ExitCode {
                     println!("- {}: manual download from {}", a.id, m.url);
                     continue;
                 }
-                print!("- {} ... ", a.id);
+                print!("[{}/{total}] {} ... ", i + 1, a.id);
+                let _ = std::io::Write::flush(&mut std::io::stdout());
+                let dir = asset_dir(&root, &a.id);
+                let fresh = !dir.exists();
                 match fetch_entry(&mut ctx, a) {
                     Ok(n) => println!("{n} files"),
                     Err(e) => {
                         println!("FAILED\n  {e}");
                         failed = true;
+                        // Never leave a half-downloaded asset behind, so a
+                        // rerun with --missing retries it.
+                        if fresh {
+                            let _ = std::fs::remove_dir_all(&dir);
+                        }
                     }
                 }
                 let _ = ctx.lock.save(&lock_path);
@@ -390,7 +413,7 @@ fn main() -> ExitCode {
             write_attribution(&root, &manifest);
         }
         _ => {
-            println!("forja_fetch list | fetch <ids..> [--all] [--kind <kind>] [--force] | import <id> <zip>  [--root <dir>]");
+            println!("forja_fetch list | fetch <ids..> [--all] [--play] [--kind <kind>] [--missing] [--force] | import <id> <zip>  [--root <dir>]");
         }
     }
     if failed { ExitCode::FAILURE } else { ExitCode::SUCCESS }
