@@ -1,0 +1,4652 @@
+# Palau del Marqués de Dos Aigües (Palacio del Marqués de Dos Aguas), Valencia.
+# Museo Nacional de Cerámica y Artes Suntuarias González Martí. Gothic house of the
+# Rabassa de Perellós rebuilt 1740-44 by Hipólito Rovira (design) with the alabaster
+# portal carved by Ignacio Vergara; facades re-stuccoed in imitation marble 1854-67;
+# Poeta Querol wing and SE tower 1969-72 (ca.wikipedia).
+#
+# Written by a small generator so that every height is K x the value measured on
+# photo 02; K = 0.90 after the compare-and-fix cycles (see SCALE below).
+#
+# PLAN (all from data, not guessed):
+#   outline osm:way/515082661 (IoU 1.0); PNOA 2024-05 orthophoto (IGN WMS, CC BY 4.0)
+#   overlaid on it matches within ~0.5 m. Main facade = edge 20 (25.0 m, faces az 29,
+#   Carrer de la Cultura / Rinconada García Sanchiz) with the portal; Poeta Querol
+#   facade = edge 21 (34.2 m, az 100). Towers = Catastro 5-floor parts 10 (NE corner,
+#   7.3 x 5.1 m), 6 (NW end of the main facade, 4.5 m) and 7 (SE, 8 x 7 m); 3-floor
+#   parts 0/4 = inner wings, 1-floor parts 8/9 = covered courtyards (glass roofs and
+#   the radial skylight seen on PNOA), 1-2 floor parts 3/5 = low SW block (red tiles).
+# HEIGHTS: photo 02 (Canon 6D, EXIF 24 mm, level / perspective-corrected): camera
+#   solved from three facade ends (NE corner u=785, west end u=1172, SE end u=183),
+#   eye (55.3, 1.6, -28.6) on Carrer dels Llibrers; horizon from the corner base;
+#   checks: west-end base at 0.13 m, a man on the crossing at 1.70 m. Photo-02 values:
+#   grey ground floor top 6.4, piano nobile 6.9-11.4, 2nd floor 14.5-18.4, oculi 20.6,
+#   wall top 21.0 (crest to 21.9-22.5), NE tower cornice 26.6 at the corner (+1.0 for
+#   the set-back of the tower, from the tower/wall ratio on photo 23), crown 29.5-30.6.
+# SCALE K = 0.90: the visitors standing at the door on photos 23 and 34 give a door
+#   of about 4.3 m (photo 02: 4.9 m), and photo 14 (Nikon, EXIF 27 mm-eq) solved
+#   independently comes out about 8-10 % lower; photo 06 (EXIF 24 mm-eq) overlays
+#   bay, balcony and plinth lines within a few pixels at K = 0.90. So every height in
+#   this file is 0.90 x the photo-02 value: wall top 18.9 m, tower cornice 24.8 m,
+#   portal 12.1 m, door 4.4 m (uncertainty about +-8 %).
+# BAYS: north facade, from the NE corner: 2.7, 7.9, portal 13.2 (door 3.0 x 4.9 m,
+#   ornament 8 m wide at the base, 13.4 m high), 18.3, 22.9 (under the NW tower);
+#   Poeta Querol, from the NE corner: 3.8, 12.1, 17.7 (side door), 23.2, (SE tower) 30.5.
+
+[landmark]
+name = "Palau del Marqués de Dosaigües"
+slug = "palau_del_marques_de_dos_aigues"
+main_facade = 20
+notes = "Rococo palace (Museo Nacional de Cerámica): alabaster portal with the two Atlantes pouring water and the Virgin of the Rosary, stucco imitation-marble facades, three towers with sculpted crowns, stone balconies."
+
+[landmark.info]
+architect = "Hipólito Rovira (design), Ignacio Vergara (portal sculpture)"
+built = "15th c.; rebuilt 1740-1744; restyled 1854-1867; wing and SE tower 1969-1972"
+style = "Rococo"
+heritage = "Bien de Interés Cultural RI-51-0001106"
+
+[defaults]
+material = "stucco"
+roof_material = "roof"
+glass_material = "glass"
+door_material = "door"
+iron_material = "iron"
+
+[render]
+sun = [70, 38]   # summer morning: lights the main (NNE) and Poeta Querol (E) facades
+paving = 70
+
+# ------------------------------------------------------------ materials
+# Tints sampled on photos 02/14/23 (sunlit and shaded patches averaged).
+[material.stucco]
+kind = "plaster"
+tint = "#d99a62"
+roughness = 0.7
+weathering = 0.25
+uv_scale = 3.0
+
+[material.marble_panel]
+kind = "marble"
+colors = ["#3f393c", "#5d5558", "#857b7c"]
+tint = "#6a625e"
+roughness = 0.75
+weathering = 0.15
+
+[material.stucco_white]
+kind = "plaster"
+tint = "#ebe4d6"
+weathering = 0.2
+
+[material.pilaster_red]
+kind = "plaster"
+tint = "#b5644c"
+weathering = 0.2
+
+[material.frieze]
+kind = "plaster"
+tint = "#b88470"
+weathering = 0.2
+
+[material.bands]
+kind = "granite"
+tint = "#69737d"
+weathering = 0.15
+uv_scale = 2.0
+
+[material.band_line]
+kind = "plaster"
+tint = "#d8d4cc"
+
+[material.socle]
+kind = "limestone"
+tint = "#d6cbb8"
+weathering = 0.35
+
+[material.alabaster]
+kind = "plaster"
+tint = "#d9c5a6"
+roughness = 0.45
+weathering = 0.45
+
+[material.alabaster_water]
+kind = "marble"
+colors = ["#f4eee4", "#e9ddca"]
+tint = "#f2ebe0"
+roughness = 0.25
+
+[material.terracotta]
+kind = "terracotta"
+tint = "#8e7a6a"
+weathering = 0.4
+
+[material.shutters]
+kind = "painted_wood"
+color = "#e9e3d2"
+tint = "#e9e3d2"
+uv_rotate = 90
+
+[material.door]
+kind = "painted_wood"
+color = "#2f2a26"
+tint = "#2f2a26"
+
+[material.niche_back]
+kind = "flat"
+color = "#2a3040"
+roughness = 0.8
+
+[material.roof]
+kind = "roof_tiles"
+tint = "#a36a4f"
+weathering = 0.4
+
+[material.terrace]
+kind = "paving"
+tint = "#e6d6bc"
+uv_scale = 2.0
+
+[material.glass]
+kind = "glass"
+
+[material.iron]
+kind = "iron"
+
+# ------------------------------------------------------------ components
+# Frames: x along the wall, y up, z out of the wall (outer wall face at z = 0).
+
+[component.crest]
+material = "terracotta"
+[[component.crest.children]]
+type = "extrude"
+plane = "xy"
+origin = [0.0, 0.0, -0.35]
+length = 0.3
+profile = [[-0.770, 0.000], [0.770, 0.000], [0.784, 0.277], [0.644, 0.454], [0.420, 0.479], [0.308, 0.693], [0.140, 0.857], [0.000, 0.907], [-0.168, 0.832], [-0.336, 0.655], [-0.476, 0.504], [-0.672, 0.454], [-0.798, 0.302]]
+
+[component.crest_w1]
+material = "stucco_white"
+[[component.crest_w1.children]]
+type = "extrude"
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.2
+profile = [[-1.440, 0.000], [1.440, 0.000], [1.380, 0.378], [1.020, 0.324], [1.140, 0.756], [0.720, 0.702], [0.540, 1.134], [0.240, 1.026], [0.000, 1.620], [-0.240, 1.026], [-0.540, 1.134], [-0.720, 0.702], [-1.140, 0.756], [-1.020, 0.324], [-1.380, 0.378]]
+[[component.crest_w1.children]]
+type = "sphere"
+center = [0.0, 0.810, 0.2]
+radii = [0.384, 0.324, 0.16]
+segments = 10
+[[component.crest_w1.children]]
+type = "torus"
+center = [-1.000, -0.225, 0.12]
+radius = 0.22
+tube = 0.07
+axis = [0, 0, 1]
+segments = 12
+[[component.crest_w1.children]]
+type = "box"
+min = [-1.220, -2.376, 0.0]
+max = [-1.040, -0.270, 0.16]
+[[component.crest_w1.children]]
+type = "torus"
+center = [1.000, -0.225, 0.12]
+radius = 0.22
+tube = 0.07
+axis = [0, 0, 1]
+segments = 12
+[[component.crest_w1.children]]
+type = "box"
+min = [1.040, -2.376, 0.0]
+max = [1.220, -0.270, 0.16]
+
+[component.crest_w2]
+material = "stucco_white"
+[[component.crest_w2.children]]
+type = "extrude"
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.2
+profile = [[-1.200, 0.000], [1.200, 0.000], [1.150, 0.315], [0.850, 0.270], [0.950, 0.630], [0.600, 0.585], [0.450, 0.945], [0.200, 0.855], [0.000, 1.350], [-0.200, 0.855], [-0.450, 0.945], [-0.600, 0.585], [-0.950, 0.630], [-0.850, 0.270], [-1.150, 0.315]]
+[[component.crest_w2.children]]
+type = "sphere"
+center = [0.0, 0.675, 0.2]
+radii = [0.320, 0.270, 0.16]
+segments = 10
+[[component.crest_w2.children]]
+type = "torus"
+center = [-0.900, -0.225, 0.12]
+radius = 0.22
+tube = 0.07
+axis = [0, 0, 1]
+segments = 12
+[[component.crest_w2.children]]
+type = "box"
+min = [-1.120, -1.980, 0.0]
+max = [-0.940, -0.270, 0.16]
+[[component.crest_w2.children]]
+type = "torus"
+center = [0.900, -0.225, 0.12]
+radius = 0.22
+tube = 0.07
+axis = [0, 0, 1]
+segments = 12
+[[component.crest_w2.children]]
+type = "box"
+min = [0.940, -1.980, 0.0]
+max = [1.120, -0.270, 0.16]
+
+[component.crest_g]
+material = "stucco_white"
+[[component.crest_g.children]]
+type = "extrude"
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.2
+profile = [[-0.660, 0.000], [0.660, 0.000], [0.632, 0.173], [0.468, 0.149], [0.522, 0.347], [0.330, 0.322], [0.248, 0.520], [0.110, 0.470], [0.000, 0.743], [-0.110, 0.470], [-0.248, 0.520], [-0.330, 0.322], [-0.522, 0.347], [-0.468, 0.149], [-0.632, 0.173]]
+[[component.crest_g.children]]
+type = "sphere"
+center = [0.0, 0.371, 0.2]
+radii = [0.176, 0.149, 0.16]
+segments = 10
+[[component.crest_g.children]]
+type = "torus"
+center = [-0.950, -0.225, 0.12]
+radius = 0.22
+tube = 0.07
+axis = [0, 0, 1]
+segments = 12
+[[component.crest_g.children]]
+type = "box"
+min = [-1.170, -1.089, 0.0]
+max = [-0.990, -0.270, 0.16]
+[[component.crest_g.children]]
+type = "torus"
+center = [0.950, -0.225, 0.12]
+radius = 0.22
+tube = 0.07
+axis = [0, 0, 1]
+segments = 12
+[[component.crest_g.children]]
+type = "box"
+min = [0.990, -1.089, 0.0]
+max = [1.170, -0.270, 0.16]
+
+[component.tower_group]
+material = "terracotta"
+[[component.tower_group.children]]
+type = "box"
+min = [-0.4, 0.0, -0.4]
+max = [0.4, 0.450, 0.4]
+material = "stucco_white"
+[[component.tower_group.children]]
+type = "statue"
+at = [0.0, 0.450, 0.0]
+facing = "s"
+height = 1.800
+style = "group"
+
+# ===================================================================== masses
+
+# Main (north) facade wing, a 7 m deep strip on outline edge 20 (A = NE corner,
+# B = west end); ground floor in grey bands, upper floors stucco.
+[[element]]
+type = "mass"
+name = "north_base"
+polygon = [[20.710, -17.840], [-1.250, -29.840], [-4.640, -23.720], [17.320, -11.720]]
+y0 = 0.000
+y1 = 5.760
+material = "bands"
+top = false
+
+  [[element.openings]]
+  edges = "facing:29:10"
+  kind = "window"
+  width = 1.6
+  height = 3.240
+  levels = [1.980]
+  bays = { at = [2.700, 7.900, 18.300, 22.900] }
+  infill = "grille"
+  depth = 0.4
+  surround = { width = 0.22, projection = 0.08, material = "stucco_white" }
+  [[element.openings]]
+  edges = "facing:29:10"
+  kind = "oculus"
+  width = 0.6
+  height = 0.6
+  levels = [0.180]
+  bays = { at = [2.700, 7.900, 18.300, 22.900] }
+  infill = "grille"
+  surround = { width = 0.12, projection = 0.05, material = "socle" }
+  [[element.openings]]
+  edges = "facing:29:10"
+  kind = "door"
+  arch = "flat"
+  width = 3.000
+  height = 4.410
+  levels = [0.0]
+  bays = { at = [13.200] }
+  depth = 0.6
+
+[[element]]
+type = "mass"
+name = "north_body"
+polygon = [[20.710, -17.840], [-1.250, -29.840], [-4.640, -23.720], [17.320, -11.720]]
+y0 = 5.760
+y1 = 18.900
+material = "stucco"
+top_material = "terrace"
+  [[element.openings]]
+  edges = "facing:29:10"
+  kind = "window"
+  arch = "segmental"
+  rise = 0.25
+  width = 1.7
+  height = 4.050
+  levels = [6.210]
+  bays = { at = [2.700, 7.900, 18.300, 22.900] }
+  infill = "louvres"
+  frame_material = "shutters"
+  depth = 0.35
+  surround = { width = 0.5, projection = 0.16, ears = true, material = "stucco_white" }
+  balcony = { depth = 0.8, extend = 0.35, railing = "balustrade" }
+  material = "stucco_white"
+  [[element.openings]]
+  edges = "facing:29:10"
+  kind = "window"
+  arch = "segmental"
+  rise = 0.2
+  width = 1.5
+  height = 3.420
+  levels = [13.095]
+  bays = { at = [2.700, 7.900, 18.300, 22.900, 13.200] }
+  infill = "louvres"
+  frame_material = "shutters"
+  depth = 0.35
+  surround = { width = 0.45, projection = 0.14, ears = true, material = "stucco_white" }
+  balcony = { depth = 0.6, extend = 0.25, railing = "balustrade" }
+  material = "stucco_white"
+  [[element.openings]]
+  edges = "facing:29:10"
+  kind = "oculus"
+  width = 0.75
+  height = 0.75
+  levels = [17.955]
+  bays = { at = [2.700, 7.900, 18.300, 22.900, 13.200] }
+  infill = "glass"
+  surround = { width = 0.16, projection = 0.08, material = "stucco_white" }
+
+# Poeta Querol wing, 7 m strip on outline edge 21 (C = south end, A = NE corner).
+[[element]]
+type = "mass"
+name = "east_base"
+polygon = [[14.890, 15.870], [20.710, -17.840], [13.820, -19.060], [8.000, 14.650]]
+y0 = 0.000
+y1 = 5.740
+material = "bands"
+top = false
+  [[element.openings]]
+  edges = "facing:100:10"
+  kind = "window"
+  width = 1.6
+  height = 3.240
+  levels = [1.980]
+  bays = { at = [3.700, 11.000, 22.100, 30.400] }
+  infill = "grille"
+  depth = 0.4
+  surround = { width = 0.22, projection = 0.08, material = "stucco_white" }
+  [[element.openings]]
+  edges = "facing:100:10"
+  kind = "oculus"
+  width = 0.6
+  height = 0.6
+  levels = [0.180]
+  bays = { at = [3.700, 11.000, 22.100, 30.400] }
+  infill = "grille"
+  surround = { width = 0.12, projection = 0.05, material = "socle" }
+  [[element.openings]]
+  edges = "facing:100:10"
+  kind = "door"
+  arch = "flat"
+  width = 2.000
+  height = 3.600
+  levels = [0.0]
+  bays = { at = [16.500] }
+  depth = 0.6
+
+[[element]]
+type = "mass"
+name = "east_body"
+polygon = [[14.890, 15.870], [20.710, -17.840], [13.820, -19.060], [8.000, 14.650]]
+y0 = 5.740
+y1 = 18.920
+material = "stucco"
+top_material = "terrace"
+  [[element.openings]]
+  edges = "facing:100:10"
+  kind = "window"
+  arch = "segmental"
+  rise = 0.25
+  width = 1.7
+  height = 4.050
+  levels = [6.210]
+  bays = { at = [3.700, 11.000, 16.500, 22.100, 30.400] }
+  infill = "louvres"
+  frame_material = "shutters"
+  depth = 0.35
+  surround = { width = 0.5, projection = 0.16, ears = true, material = "stucco_white" }
+  balcony = { depth = 0.8, extend = 0.35, railing = "balustrade" }
+  material = "stucco_white"
+  [[element.openings]]
+  edges = "facing:100:10"
+  kind = "window"
+  arch = "segmental"
+  rise = 0.2
+  width = 1.5
+  height = 3.420
+  levels = [13.095]
+  bays = { at = [3.700, 11.000, 16.500, 22.100, 30.400] }
+  infill = "louvres"
+  frame_material = "shutters"
+  depth = 0.35
+  surround = { width = 0.45, projection = 0.14, ears = true, material = "stucco_white" }
+  balcony = { depth = 0.6, extend = 0.25, railing = "balustrade" }
+  material = "stucco_white"
+  [[element.openings]]
+  edges = "facing:100:10"
+  kind = "oculus"
+  width = 0.75
+  height = 0.75
+  levels = [17.955]
+  bays = { at = [3.700, 11.000, 16.500, 22.100, 30.400] }
+  infill = "glass"
+  surround = { width = 0.16, projection = 0.08, material = "stucco_white" }
+
+# Rest of the palace at full height (party walls, Rinconada front west of the NW tower).
+[[element]]
+type = "mass"
+name = "core"
+polygon = { ref = "outline:0", subtract = [[[-5.700, 31.000], [-23.000, 31.000], [-23.000, 5.300], [-16.200, 5.500], [-4.800, 7.600], [-5.600, 11.700], [1.900, 12.900], [1.200, 23.000], [-5.600, 22.700]], { ref = "catastro:4", union = ["catastro:0", "catastro:8", "catastro:9", [[-23.000, -15.500], [-12.200, -11.000], [-13.500, -2.500], [-16.200, 5.500], [-23.000, 5.300]]] }, { points = [[-5.700, 22.000], [1.200, 23.000], [1.600, 17.000], [24.000, 17.000], [24.000, 33.000], [-5.700, 33.000]], clip = "outline:0" }, [[20.710, -17.840], [-1.250, -29.840], [-4.640, -23.720], [17.320, -11.720]], [[14.890, 15.870], [20.710, -17.840], [13.820, -19.060], [8.000, 14.650]]] }
+y0 = 0.000
+y1 = 18.800
+material = "stucco"
+top_material = "terrace"
+plinth = { profile = "plinth", size = 1.305 }
+  [[element.openings]]
+  edges = "facing:20:8"
+  kind = "window"
+  width = 1.4
+  height = 3.060
+  levels = [6.210, 13.095]
+  bays = { spacing = 4.6 }
+  infill = "shutters"
+  surround = { width = 0.3, projection = 0.1, ears = true, material = "stucco_white" }
+  balcony = { depth = 0.6, railing = "balustrade" }
+  material = "stucco_white"
+
+# Inner wings (Catastro parts 0 and 4, 3 floors) around the covered courtyards.
+[[element]]
+type = "mass"
+name = "inner_wings"
+polygon = { ref = "catastro:4", union = ["catastro:0", [[-23.000, -15.500], [-12.200, -11.000], [-13.500, -2.500], [-16.200, 5.500], [-23.000, 5.300]]], subtract = ["catastro:8", "catastro:9"], clip = "outline:0" }
+y0 = 0.000
+y1 = 14.850
+material = "stucco"
+top_material = "terrace"
+parapet = { height = 0.9, thickness = 0.25 }
+
+# Covered courtyards (Catastro 1-floor parts 8 and 9): glass roofs, radial skylight.
+[[element]]
+type = "mass"
+name = "court_w"
+polygon = { ref = "catastro:8", clip = "outline:0" }
+y0 = 0.000
+y1 = 4.500
+material = "stucco"
+roof = { shape = "hip", pitch = 22, overhang = 0.0, material = "glass" }
+
+[[element]]
+type = "mass"
+name = "court_e"
+polygon = { ref = "catastro:9", clip = "outline:0" }
+y0 = 0.000
+y1 = 4.500
+material = "stucco"
+top_material = "terrace"
+
+[[element]]
+type = "dome"
+name = "skylight"
+center = [6.6, -12.6]
+y = 4.500
+radius = 2.6
+height = 1.1
+profile = "segmental"
+material = "glass"
+ribs = { count = 16, width = 0.12, depth = 0.08, material = "iron" }
+
+# Stair lantern (Catastro part 1, 5 floors) in the middle of the block.
+[[element]]
+type = "mass"
+name = "stair_tower"
+polygon = "catastro:1"
+y0 = 0.000
+y1 = 21.150
+material = "stucco"
+roof = { shape = "pyramid", pitch = 25, overhang = 0.3 }
+
+# Low SW block (Catastro parts 3 and 5, 1-2 floors, red tile roofs on PNOA).
+[[element]]
+type = "mass"
+name = "sw_block"
+polygon = { points = [[-5.700, 31.000], [-23.000, 31.000], [-23.000, 5.300], [-16.200, 5.500], [-4.800, 7.600], [-5.600, 11.700], [1.900, 12.900], [1.200, 23.000], [-5.600, 22.700]], clip = "outline:0" }
+y0 = 0.000
+y1 = 7.200
+material = "stucco"
+roof = { shape = "hip", pitch = 24, overhang = 0.3 }
+
+# South wing on Carrer de Sant Andreu (4 floors in Catastro part 2; tiled roof).
+[[element]]
+type = "mass"
+name = "south_base"
+polygon = { points = [[-5.700, 22.000], [1.200, 23.000], [1.600, 17.000], [24.000, 17.000], [24.000, 33.000], [-5.700, 33.000]], clip = "outline:0", subtract = [[[-5.700, 31.000], [-23.000, 31.000], [-23.000, 5.300], [-16.200, 5.500], [-4.800, 7.600], [-5.600, 11.700], [1.900, 12.900], [1.200, 23.000], [-5.600, 22.700]]] }
+y0 = 0.000
+y1 = 5.760
+material = "bands"
+top = false
+  [[element.openings]]
+  edges = "facing:78:10"
+  kind = "window"
+  width = 1.6
+  height = 3.240
+  levels = [1.980]
+  bays = { at = [3.500] }
+  infill = "grille"
+  depth = 0.4
+  surround = { width = 0.22, projection = 0.08, material = "stucco_white" }
+  [[element.openings]]
+  edges = "facing:78:10"
+  kind = "oculus"
+  width = 0.6
+  height = 0.6
+  levels = [0.180]
+  bays = { at = [3.500] }
+  infill = "grille"
+  surround = { width = 0.12, projection = 0.05, material = "socle" }
+
+[[element]]
+type = "mass"
+name = "south_body"
+polygon = { points = [[-5.700, 22.000], [1.200, 23.000], [1.600, 17.000], [24.000, 17.000], [24.000, 33.000], [-5.700, 33.000]], clip = "outline:0", subtract = [[[-5.700, 31.000], [-23.000, 31.000], [-23.000, 5.300], [-16.200, 5.500], [-4.800, 7.600], [-5.600, 11.700], [1.900, 12.900], [1.200, 23.000], [-5.600, 22.700]]] }
+y0 = 5.760
+y1 = 14.850
+material = "stucco"
+roof = { shape = "hip", pitch = 22, overhang = 0.35 }
+  [[element.openings]]
+  edges = ["facing:78:10", "facing:169:10"]
+  kind = "window"
+  width = 1.5
+  height = 3.420
+  levels = [6.210]
+  bays = { spacing = 5.0 }
+  infill = "shutters"
+  material = "stucco_white"
+  surround = { width = 0.32, projection = 0.1, ears = true, material = "stucco_white" }
+  balcony = { depth = 0.6, railing = "balustrade" }
+
+# ============================================================ facade details
+[[element]]
+type = "cornice"
+on = "north_body"
+edges = "facing:29:10"
+profile = "classical"
+size = 0.810
+projection = 0.75
+modillions = { spacing = 0.9, width = 0.16, height = 0.28, style = "console" }
+material = "stucco_white"
+
+[[element]]
+type = "string_course"
+on = "north_body"
+edges = "facing:29:10"
+y = 12.330
+profile = "band"
+size = 0.3
+material = "stucco_white"
+
+[[element]]
+type = "array"
+name = "north_body_crest"
+mode = "edges"
+on = "north_body"
+edges = "facing:29:10"
+spacing = 1.2
+y = 18.900
+component = "crest"
+
+[[element]]
+type = "string_course"
+on = "north_base"
+edges = "facing:29:10"
+y = 5.460
+profile = "band"
+size = 0.32
+material = "stucco_white"
+
+[[element]]
+type = "plinth"
+on = "north_base"
+edges = "facing:29:10"
+profile = "plinth"
+size = 1.305
+material = "socle"
+
+[[element]]
+type = "cornice"
+on = "east_body"
+edges = "facing:100:10"
+profile = "classical"
+size = 0.810
+projection = 0.75
+modillions = { spacing = 0.9, width = 0.16, height = 0.28, style = "console" }
+material = "stucco_white"
+
+[[element]]
+type = "string_course"
+on = "east_body"
+edges = "facing:100:10"
+y = 12.330
+profile = "band"
+size = 0.3
+material = "stucco_white"
+
+[[element]]
+type = "array"
+name = "east_body_crest"
+mode = "edges"
+on = "east_body"
+edges = "facing:100:10"
+spacing = 1.2
+y = 18.900
+component = "crest"
+
+[[element]]
+type = "string_course"
+on = "east_base"
+edges = "facing:100:10"
+y = 5.460
+profile = "band"
+size = 0.32
+material = "stucco_white"
+
+[[element]]
+type = "plinth"
+on = "east_base"
+edges = "facing:100:10"
+profile = "plinth"
+size = 1.305
+material = "socle"
+
+[[element]]
+type = "cornice"
+on = "core"
+edges = "facing:20:8"
+profile = "classical"
+size = 0.810
+projection = 0.75
+modillions = { spacing = 0.9, width = 0.16, height = 0.28, style = "console" }
+material = "stucco_white"
+
+[[element]]
+type = "string_course"
+on = "core"
+edges = "facing:20:8"
+y = 12.330
+profile = "band"
+size = 0.3
+material = "stucco_white"
+
+[[element]]
+type = "array"
+name = "core_crest"
+mode = "edges"
+on = "core"
+edges = "facing:20:8"
+spacing = 1.2
+y = 18.900
+component = "crest"
+
+[[element]]
+type = "string_course"
+on = "south_base"
+edges = "facing:78:10"
+y = 5.460
+profile = "band"
+size = 0.32
+material = "stucco_white"
+
+[[element]]
+type = "plinth"
+on = "south_base"
+edges = "facing:78:10"
+profile = "plinth"
+size = 1.305
+material = "socle"
+
+[[element]]
+type = "group"
+name = "north_facade_decor"
+note = "frame: x = metres from the NE corner along edge 20, z out of the wall"
+transform = { translate = [20.710, 0.0, -17.840], rotate_y = 151 }
+  [[element.children]]
+  type = "box"
+  min = [0.250, 5.760, 0.000]
+  max = [5.000, 18.300, 0.030]
+  material = "marble_panel"
+  [[element.children]]
+  type = "box"
+  min = [0.000, 6.060, 0.000]
+  max = [0.500, 18.400, 0.090]
+  material = "stucco_white"
+  [[element.children]]
+  type = "box"
+  min = [0.150, 6.710, 0.000]
+  max = [0.350, 17.500, 0.110]
+  material = "pilaster_red"
+  [[element.children]]
+  type = "box"
+  min = [4.750, 6.060, 0.000]
+  max = [5.250, 18.400, 0.090]
+  material = "stucco_white"
+  [[element.children]]
+  type = "box"
+  min = [4.900, 6.710, 0.000]
+  max = [5.100, 17.500, 0.110]
+  material = "pilaster_red"
+  [[element.children]]
+  type = "box"
+  min = [20.350, 6.060, 0.000]
+  max = [20.850, 18.400, 0.090]
+  material = "stucco_white"
+  [[element.children]]
+  type = "box"
+  min = [20.500, 6.710, 0.000]
+  max = [20.700, 17.500, 0.110]
+  material = "pilaster_red"
+  [[element.children]]
+  type = "box"
+  min = [1.840, 6.210, -0.140]
+  max = [3.560, 10.110, -0.100]
+  material = "shutters"
+  [[element.children]]
+  type = "box"
+  min = [7.040, 6.210, -0.140]
+  max = [8.760, 10.110, -0.100]
+  material = "shutters"
+  [[element.children]]
+  type = "box"
+  min = [17.440, 6.210, -0.140]
+  max = [19.160, 10.110, -0.100]
+  material = "shutters"
+  [[element.children]]
+  type = "box"
+  min = [22.040, 6.210, -0.140]
+  max = [23.760, 10.110, -0.100]
+  material = "shutters"
+  [[element.children]]
+  type = "box"
+  min = [1.940, 13.095, -0.140]
+  max = [3.460, 16.395, -0.100]
+  material = "shutters"
+  [[element.children]]
+  type = "box"
+  min = [7.140, 13.095, -0.140]
+  max = [8.660, 16.395, -0.100]
+  material = "shutters"
+  [[element.children]]
+  type = "box"
+  min = [17.540, 13.095, -0.140]
+  max = [19.060, 16.395, -0.100]
+  material = "shutters"
+  [[element.children]]
+  type = "box"
+  min = [22.140, 13.095, -0.140]
+  max = [23.660, 16.395, -0.100]
+  material = "shutters"
+  [[element.children]]
+  type = "box"
+  min = [12.440, 13.095, -0.140]
+  max = [13.960, 16.395, -0.100]
+  material = "shutters"
+  [[element.children]]
+  type = "instance"
+  component = "crest_w1"
+  at = [2.700, 10.410, 0.100]
+  facing = "s"
+  [[element.children]]
+  type = "instance"
+  component = "crest_g"
+  at = [2.700, 5.320, 0.070]
+  facing = "s"
+  [[element.children]]
+  type = "instance"
+  component = "crest_w1"
+  at = [7.900, 10.410, 0.100]
+  facing = "s"
+  [[element.children]]
+  type = "instance"
+  component = "crest_g"
+  at = [7.900, 5.320, 0.070]
+  facing = "s"
+  [[element.children]]
+  type = "instance"
+  component = "crest_w1"
+  at = [18.300, 10.410, 0.100]
+  facing = "s"
+  [[element.children]]
+  type = "instance"
+  component = "crest_g"
+  at = [18.300, 5.320, 0.070]
+  facing = "s"
+  [[element.children]]
+  type = "instance"
+  component = "crest_w1"
+  at = [22.900, 10.410, 0.100]
+  facing = "s"
+  [[element.children]]
+  type = "instance"
+  component = "crest_g"
+  at = [22.900, 5.320, 0.070]
+  facing = "s"
+  [[element.children]]
+  type = "instance"
+  component = "crest_w2"
+  at = [2.700, 16.635, 0.090]
+  facing = "s"
+  [[element.children]]
+  type = "instance"
+  component = "crest_w2"
+  at = [7.900, 16.635, 0.090]
+  facing = "s"
+  [[element.children]]
+  type = "instance"
+  component = "crest_w2"
+  at = [18.300, 16.635, 0.090]
+  facing = "s"
+  [[element.children]]
+  type = "instance"
+  component = "crest_w2"
+  at = [22.900, 16.635, 0.090]
+  facing = "s"
+  [[element.children]]
+  type = "instance"
+  component = "crest_w2"
+  at = [13.200, 16.635, 0.090]
+  facing = "s"
+  [[element.children]]
+  type = "box"
+  min = [5.000, 16.715, 0.000]
+  max = [24.925, 17.855, 0.015]
+  material = "frieze"
+  [[element.children]]
+  type = "box"
+  min = [0.150, 1.683, 0.000]
+  max = [1.650, 1.733, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [0.150, 2.061, 0.000]
+  max = [1.650, 2.111, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [0.150, 2.439, 0.000]
+  max = [1.650, 2.489, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [0.150, 2.817, 0.000]
+  max = [1.650, 2.867, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [0.150, 3.195, 0.000]
+  max = [1.650, 3.245, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [0.150, 3.573, 0.000]
+  max = [1.650, 3.623, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [0.150, 3.951, 0.000]
+  max = [1.650, 4.001, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [0.150, 4.329, 0.000]
+  max = [1.650, 4.379, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [0.150, 4.707, 0.000]
+  max = [1.650, 4.757, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [0.150, 5.085, 0.000]
+  max = [1.650, 5.135, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [3.750, 1.683, 0.000]
+  max = [6.850, 1.733, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [3.750, 2.061, 0.000]
+  max = [6.850, 2.111, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [3.750, 2.439, 0.000]
+  max = [6.850, 2.489, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [3.750, 2.817, 0.000]
+  max = [6.850, 2.867, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [3.750, 3.195, 0.000]
+  max = [6.850, 3.245, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [3.750, 3.573, 0.000]
+  max = [6.850, 3.623, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [3.750, 3.951, 0.000]
+  max = [6.850, 4.001, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [3.750, 4.329, 0.000]
+  max = [6.850, 4.379, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [3.750, 4.707, 0.000]
+  max = [6.850, 4.757, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [3.750, 5.085, 0.000]
+  max = [6.850, 5.135, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [8.950, 1.683, 0.000]
+  max = [9.100, 1.733, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [8.950, 2.061, 0.000]
+  max = [9.100, 2.111, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [8.950, 2.439, 0.000]
+  max = [9.100, 2.489, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [8.950, 2.817, 0.000]
+  max = [9.100, 2.867, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [8.950, 3.195, 0.000]
+  max = [9.100, 3.245, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [8.950, 3.573, 0.000]
+  max = [9.100, 3.623, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [8.950, 3.951, 0.000]
+  max = [9.100, 4.001, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [8.950, 4.329, 0.000]
+  max = [9.100, 4.379, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [8.950, 4.707, 0.000]
+  max = [9.100, 4.757, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [8.950, 5.085, 0.000]
+  max = [9.100, 5.135, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [19.350, 1.683, 0.000]
+  max = [21.850, 1.733, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [19.350, 2.061, 0.000]
+  max = [21.850, 2.111, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [19.350, 2.439, 0.000]
+  max = [21.850, 2.489, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [19.350, 2.817, 0.000]
+  max = [21.850, 2.867, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [19.350, 3.195, 0.000]
+  max = [21.850, 3.245, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [19.350, 3.573, 0.000]
+  max = [21.850, 3.623, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [19.350, 3.951, 0.000]
+  max = [21.850, 4.001, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [19.350, 4.329, 0.000]
+  max = [21.850, 4.379, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [19.350, 4.707, 0.000]
+  max = [21.850, 4.757, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [19.350, 5.085, 0.000]
+  max = [21.850, 5.135, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [23.950, 1.683, 0.000]
+  max = [24.875, 1.733, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [23.950, 2.061, 0.000]
+  max = [24.875, 2.111, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [23.950, 2.439, 0.000]
+  max = [24.875, 2.489, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [23.950, 2.817, 0.000]
+  max = [24.875, 2.867, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [23.950, 3.195, 0.000]
+  max = [24.875, 3.245, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [23.950, 3.573, 0.000]
+  max = [24.875, 3.623, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [23.950, 3.951, 0.000]
+  max = [24.875, 4.001, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [23.950, 4.329, 0.000]
+  max = [24.875, 4.379, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [23.950, 4.707, 0.000]
+  max = [24.875, 4.757, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [23.950, 5.085, 0.000]
+  max = [24.875, 5.135, 0.025]
+  material = "band_line"
+
+[[element]]
+type = "group"
+name = "east_facade_decor"
+note = "frame: x = metres from the south end along edge 21"
+transform = { translate = [14.890, 0.0, 15.870], rotate_y = 80 }
+  [[element.children]]
+  type = "box"
+  min = [26.209, 5.760, 0.000]
+  max = [33.959, 18.300, 0.030]
+  material = "marble_panel"
+  [[element.children]]
+  type = "box"
+  min = [33.709, 6.060, 0.000]
+  max = [34.209, 18.400, 0.090]
+  material = "stucco_white"
+  [[element.children]]
+  type = "box"
+  min = [33.859, 6.710, 0.000]
+  max = [34.059, 17.500, 0.110]
+  material = "pilaster_red"
+  [[element.children]]
+  type = "box"
+  min = [25.959, 6.060, 0.000]
+  max = [26.459, 18.400, 0.090]
+  material = "stucco_white"
+  [[element.children]]
+  type = "box"
+  min = [26.109, 6.710, 0.000]
+  max = [26.309, 17.500, 0.110]
+  material = "pilaster_red"
+  [[element.children]]
+  type = "box"
+  min = [19.050, 6.060, 0.000]
+  max = [19.550, 18.400, 0.090]
+  material = "stucco_white"
+  [[element.children]]
+  type = "box"
+  min = [19.200, 6.710, 0.000]
+  max = [19.400, 17.500, 0.110]
+  material = "pilaster_red"
+  [[element.children]]
+  type = "box"
+  min = [13.550, 6.060, 0.000]
+  max = [14.050, 18.400, 0.090]
+  material = "stucco_white"
+  [[element.children]]
+  type = "box"
+  min = [13.700, 6.710, 0.000]
+  max = [13.900, 17.500, 0.110]
+  material = "pilaster_red"
+  [[element.children]]
+  type = "box"
+  min = [7.350, 6.060, 0.000]
+  max = [7.850, 18.400, 0.090]
+  material = "stucco_white"
+  [[element.children]]
+  type = "box"
+  min = [7.500, 6.710, 0.000]
+  max = [7.700, 17.500, 0.110]
+  material = "pilaster_red"
+  [[element.children]]
+  type = "box"
+  min = [2.840, 6.210, -0.140]
+  max = [4.560, 10.110, -0.100]
+  material = "shutters"
+  [[element.children]]
+  type = "box"
+  min = [2.940, 13.095, -0.140]
+  max = [4.460, 16.395, -0.100]
+  material = "shutters"
+  [[element.children]]
+  type = "instance"
+  component = "crest_w1"
+  at = [3.700, 10.410, 0.100]
+  facing = "s"
+  [[element.children]]
+  type = "instance"
+  component = "crest_w2"
+  at = [3.700, 16.635, 0.090]
+  facing = "s"
+  [[element.children]]
+  type = "instance"
+  component = "crest_g"
+  at = [3.700, 5.320, 0.070]
+  facing = "s"
+  [[element.children]]
+  type = "box"
+  min = [10.140, 6.210, -0.140]
+  max = [11.860, 10.110, -0.100]
+  material = "shutters"
+  [[element.children]]
+  type = "box"
+  min = [10.240, 13.095, -0.140]
+  max = [11.760, 16.395, -0.100]
+  material = "shutters"
+  [[element.children]]
+  type = "instance"
+  component = "crest_w1"
+  at = [11.000, 10.410, 0.100]
+  facing = "s"
+  [[element.children]]
+  type = "instance"
+  component = "crest_w2"
+  at = [11.000, 16.635, 0.090]
+  facing = "s"
+  [[element.children]]
+  type = "instance"
+  component = "crest_g"
+  at = [11.000, 5.320, 0.070]
+  facing = "s"
+  [[element.children]]
+  type = "box"
+  min = [15.640, 6.210, -0.140]
+  max = [17.360, 10.110, -0.100]
+  material = "shutters"
+  [[element.children]]
+  type = "box"
+  min = [15.740, 13.095, -0.140]
+  max = [17.260, 16.395, -0.100]
+  material = "shutters"
+  [[element.children]]
+  type = "instance"
+  component = "crest_w1"
+  at = [16.500, 10.410, 0.100]
+  facing = "s"
+  [[element.children]]
+  type = "instance"
+  component = "crest_w2"
+  at = [16.500, 16.635, 0.090]
+  facing = "s"
+  [[element.children]]
+  type = "box"
+  min = [21.240, 6.210, -0.140]
+  max = [22.960, 10.110, -0.100]
+  material = "shutters"
+  [[element.children]]
+  type = "box"
+  min = [21.340, 13.095, -0.140]
+  max = [22.860, 16.395, -0.100]
+  material = "shutters"
+  [[element.children]]
+  type = "instance"
+  component = "crest_w1"
+  at = [22.100, 10.410, 0.100]
+  facing = "s"
+  [[element.children]]
+  type = "instance"
+  component = "crest_w2"
+  at = [22.100, 16.635, 0.090]
+  facing = "s"
+  [[element.children]]
+  type = "instance"
+  component = "crest_g"
+  at = [22.100, 5.320, 0.070]
+  facing = "s"
+  [[element.children]]
+  type = "box"
+  min = [29.540, 6.210, -0.140]
+  max = [31.260, 10.110, -0.100]
+  material = "shutters"
+  [[element.children]]
+  type = "box"
+  min = [29.640, 13.095, -0.140]
+  max = [31.160, 16.395, -0.100]
+  material = "shutters"
+  [[element.children]]
+  type = "instance"
+  component = "crest_w1"
+  at = [30.400, 10.410, 0.100]
+  facing = "s"
+  [[element.children]]
+  type = "instance"
+  component = "crest_w2"
+  at = [30.400, 16.635, 0.090]
+  facing = "s"
+  [[element.children]]
+  type = "instance"
+  component = "crest_g"
+  at = [30.400, 5.320, 0.070]
+  facing = "s"
+  [[element.children]]
+  type = "box"
+  min = [15.100, 0.000, 0.000]
+  max = [15.500, 3.960, 0.150]
+  material = "stucco_white"
+  [[element.children]]
+  type = "box"
+  min = [17.500, 0.000, 0.000]
+  max = [17.900, 3.960, 0.150]
+  material = "stucco_white"
+  [[element.children]]
+  type = "box"
+  min = [15.000, 3.600, 0.000]
+  max = [18.000, 4.140, 0.200]
+  material = "stucco_white"
+  [[element.children]]
+  type = "box"
+  min = [0.100, 16.715, 0.000]
+  max = [26.209, 17.855, 0.015]
+  material = "frieze"
+  [[element.children]]
+  type = "box"
+  min = [0.150, 1.683, 0.000]
+  max = [2.650, 1.733, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [0.150, 2.061, 0.000]
+  max = [2.650, 2.111, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [0.150, 2.439, 0.000]
+  max = [2.650, 2.489, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [0.150, 2.817, 0.000]
+  max = [2.650, 2.867, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [0.150, 3.195, 0.000]
+  max = [2.650, 3.245, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [0.150, 3.573, 0.000]
+  max = [2.650, 3.623, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [0.150, 3.951, 0.000]
+  max = [2.650, 4.001, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [0.150, 4.329, 0.000]
+  max = [2.650, 4.379, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [0.150, 4.707, 0.000]
+  max = [2.650, 4.757, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [0.150, 5.085, 0.000]
+  max = [2.650, 5.135, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [4.750, 1.683, 0.000]
+  max = [9.950, 1.733, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [4.750, 2.061, 0.000]
+  max = [9.950, 2.111, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [4.750, 2.439, 0.000]
+  max = [9.950, 2.489, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [4.750, 2.817, 0.000]
+  max = [9.950, 2.867, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [4.750, 3.195, 0.000]
+  max = [9.950, 3.245, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [4.750, 3.573, 0.000]
+  max = [9.950, 3.623, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [4.750, 3.951, 0.000]
+  max = [9.950, 4.001, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [4.750, 4.329, 0.000]
+  max = [9.950, 4.379, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [4.750, 4.707, 0.000]
+  max = [9.950, 4.757, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [4.750, 5.085, 0.000]
+  max = [9.950, 5.135, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [12.050, 1.683, 0.000]
+  max = [15.000, 1.733, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [12.050, 2.061, 0.000]
+  max = [15.000, 2.111, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [12.050, 2.439, 0.000]
+  max = [15.000, 2.489, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [12.050, 2.817, 0.000]
+  max = [15.000, 2.867, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [12.050, 3.195, 0.000]
+  max = [15.000, 3.245, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [12.050, 3.573, 0.000]
+  max = [15.000, 3.623, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [12.050, 3.951, 0.000]
+  max = [15.000, 4.001, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [12.050, 4.329, 0.000]
+  max = [15.000, 4.379, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [12.050, 4.707, 0.000]
+  max = [15.000, 4.757, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [12.050, 5.085, 0.000]
+  max = [15.000, 5.135, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [18.000, 1.683, 0.000]
+  max = [21.050, 1.733, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [18.000, 2.061, 0.000]
+  max = [21.050, 2.111, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [18.000, 2.439, 0.000]
+  max = [21.050, 2.489, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [18.000, 2.817, 0.000]
+  max = [21.050, 2.867, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [18.000, 3.195, 0.000]
+  max = [21.050, 3.245, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [18.000, 3.573, 0.000]
+  max = [21.050, 3.623, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [18.000, 3.951, 0.000]
+  max = [21.050, 4.001, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [18.000, 4.329, 0.000]
+  max = [21.050, 4.379, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [18.000, 4.707, 0.000]
+  max = [21.050, 4.757, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [18.000, 5.085, 0.000]
+  max = [21.050, 5.135, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [23.150, 1.683, 0.000]
+  max = [29.350, 1.733, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [23.150, 2.061, 0.000]
+  max = [29.350, 2.111, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [23.150, 2.439, 0.000]
+  max = [29.350, 2.489, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [23.150, 2.817, 0.000]
+  max = [29.350, 2.867, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [23.150, 3.195, 0.000]
+  max = [29.350, 3.245, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [23.150, 3.573, 0.000]
+  max = [29.350, 3.623, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [23.150, 3.951, 0.000]
+  max = [29.350, 4.001, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [23.150, 4.329, 0.000]
+  max = [29.350, 4.379, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [23.150, 4.707, 0.000]
+  max = [29.350, 4.757, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [23.150, 5.085, 0.000]
+  max = [29.350, 5.135, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [31.450, 1.683, 0.000]
+  max = [34.059, 1.733, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [31.450, 2.061, 0.000]
+  max = [34.059, 2.111, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [31.450, 2.439, 0.000]
+  max = [34.059, 2.489, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [31.450, 2.817, 0.000]
+  max = [34.059, 2.867, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [31.450, 3.195, 0.000]
+  max = [34.059, 3.245, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [31.450, 3.573, 0.000]
+  max = [34.059, 3.623, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [31.450, 3.951, 0.000]
+  max = [34.059, 4.001, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [31.450, 4.329, 0.000]
+  max = [34.059, 4.379, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [31.450, 4.707, 0.000]
+  max = [34.059, 4.757, 0.025]
+  material = "band_line"
+  [[element.children]]
+  type = "box"
+  min = [31.450, 5.085, 0.000]
+  max = [34.059, 5.135, 0.025]
+  material = "band_line"
+
+# ================================================================ THE PORTAL
+# Alabaster portal (Rovira / Vergara, 1740-44), photo 21 (frontal) for the shapes,
+# photos 02/06/23 for size: door 3.0 x 4.9 m, base 8.0 m wide, top of the angel 13.4 m.
+# Frame: x from the portal axis (13.2 m from the NE corner), y up, z out of the wall.
+[[element]]
+type = "group"
+name = "portal"
+note = "Alabaster portal by Ignacio Vergara after Hipolito Rovira, 1740-44"
+transform = { translate = [9.127, 0.0, -24.170], rotate_y = 151 }
+  [[element.children]]
+  type = "extrude"
+  plane = "xy"
+  origin = [0.000, 0.000, 0.000]
+  length = 0.280
+  profile = [[-1.500, 0.000], [-1.500, 4.410], [1.500, 4.410], [1.500, 0.000], [4.000, 0.000], [4.000, 0.900], [3.750, 2.160], [3.450, 3.870], [3.200, 5.040], [2.950, 6.210], [2.800, 7.560], [2.600, 8.820], [2.300, 9.900], [1.800, 10.890], [1.200, 11.610], [0.500, 11.970], [0.000, 12.060], [-0.500, 11.970], [-1.200, 11.610], [-1.800, 10.890], [-2.300, 9.900], [-2.600, 8.820], [-2.800, 7.560], [-2.950, 6.210], [-3.200, 5.040], [-3.450, 3.870], [-3.750, 2.160], [-4.000, 0.900], [-4.000, 0.000]]
+  material = "alabaster"
+  [[element.children]]
+  type = "box"
+  min = [-4.050, 0.000, 0.000]
+  max = [-1.550, 0.855, 0.950]
+  material = "alabaster"
+  [[element.children]]
+  type = "box"
+  min = [-4.150, 0.855, 0.000]
+  max = [-1.500, 1.008, 1.050]
+  material = "alabaster"
+  [[element.children]]
+  type = "box"
+  min = [-1.900, 0.000, 0.000]
+  max = [-1.500, 4.500, 0.550]
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [-2.750, 1.395, 0.750]
+  radii = [0.950, 0.495, 0.550]
+  segments = 12
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [-2.500, 2.205, 0.950]
+  radii = [0.550, 0.216, 0.280]
+  segments = 12
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -15.000], pivot = [-2.500, 2.205, 0.950] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.100, 1.800, 1.000]
+  radii = [0.180, 0.432, 0.200]
+  segments = 12
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 10.000], pivot = [-2.100, 1.800, 1.000] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.050, 1.395, 1.050]
+  radii = [0.240, 0.090, 0.160]
+  segments = 12
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 0.000], pivot = [-2.050, 1.395, 1.050] }
+  [[element.children]]
+  type = "statue"
+  at = [-2.650, 1.260, 0.800]
+  facing = "s"
+  height = 3.240
+  style = "figure"
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -14.000], pivot = [-2.650, 1.260, 0.8] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.950, 2.970, 0.450]
+  radii = [0.600, 0.990, 0.220]
+  segments = 12
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -10.000], pivot = [-2.950, 2.970, 0.450] }
+  [[element.children]]
+  type = "lathe"
+  at = [-3.100, 1.980, 1.150]
+  segments = 14
+  material = "alabaster"
+  profile = [[0.000, 0.000], [0.160, 0.000], [0.300, 0.140], [0.350, 0.320], [0.290, 0.500], [0.150, 0.600], [0.200, 0.680], [0.000, 0.680]]
+  transform = { rotate = [0.0, 0.0, 105.000], pivot = [-3.100, 1.980, 1.05] }
+  [[element.children]]
+  type = "sweep"
+  profile = { shape = "ellipse", size = [0.42, 0.1] }
+  material = "alabaster_water"
+  path = { curve = [[-3.700, 1.935, 1.200], [-3.850, 1.620, 1.220], [-3.950, 1.260, 1.150], [-4.000, 1.008, 1.080]] }
+  [[element.children]]
+  type = "torus"
+  center = [-3.550, 1.575, 0.600]
+  radius = 0.480
+  tube = 0.200
+  axis = [0, 0, 1]
+  segments = 18
+  material = "alabaster"
+  [[element.children]]
+  type = "torus"
+  center = [-3.550, 1.575, 0.700]
+  radius = 0.220
+  tube = 0.120
+  axis = [0, 0, 1]
+  segments = 14
+  material = "alabaster"
+  [[element.children]]
+  type = "torus"
+  center = [-3.050, 4.815, 0.450]
+  radius = 0.360
+  tube = 0.130
+  axis = [0, 0, 1]
+  segments = 16
+  material = "alabaster"
+  [[element.children]]
+  type = "cylinder"
+  from = [-2.750, 3.960, 0.550]
+  to = [-2.600, 5.670, 0.550]
+  radius = 0.100
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [-3.076, 5.845, 0.600]
+  radii = [0.450, 0.120, 0.120]
+  segments = 8
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 150.000], pivot = [-3.076, 5.845, 0.6] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.832, 5.987, 0.600]
+  radii = [0.450, 0.120, 0.120]
+  segments = 8
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 115.000], pivot = [-2.832, 5.987, 0.6] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.504, 6.015, 0.600]
+  radii = [0.450, 0.120, 0.120]
+  segments = 8
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 80.000], pivot = [-2.504, 6.015, 0.6] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.211, 5.917, 0.600]
+  radii = [0.450, 0.120, 0.120]
+  segments = 8
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 45.000], pivot = [-2.211, 5.917, 0.6] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.058, 5.731, 0.600]
+  radii = [0.450, 0.120, 0.120]
+  segments = 8
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 10.000], pivot = [-2.058, 5.731, 0.6] }
+  [[element.children]]
+  type = "box"
+  min = [1.550, 0.000, 0.000]
+  max = [4.050, 0.855, 0.950]
+  material = "alabaster"
+  [[element.children]]
+  type = "box"
+  min = [1.500, 0.855, 0.000]
+  max = [4.150, 1.008, 1.050]
+  material = "alabaster"
+  [[element.children]]
+  type = "box"
+  min = [1.500, 0.000, 0.000]
+  max = [1.900, 4.500, 0.550]
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [2.750, 1.395, 0.750]
+  radii = [0.950, 0.495, 0.550]
+  segments = 12
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [2.500, 2.205, 0.950]
+  radii = [0.550, 0.216, 0.280]
+  segments = 12
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 15.000], pivot = [2.500, 2.205, 0.950] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.100, 1.800, 1.000]
+  radii = [0.180, 0.432, 0.200]
+  segments = 12
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -10.000], pivot = [2.100, 1.800, 1.000] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.050, 1.395, 1.050]
+  radii = [0.240, 0.090, 0.160]
+  segments = 12
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 0.000], pivot = [2.050, 1.395, 1.050] }
+  [[element.children]]
+  type = "statue"
+  at = [2.650, 1.260, 0.800]
+  facing = "s"
+  height = 3.240
+  style = "figure"
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 14.000], pivot = [2.650, 1.260, 0.8] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.950, 2.970, 0.450]
+  radii = [0.600, 0.990, 0.220]
+  segments = 12
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 10.000], pivot = [2.950, 2.970, 0.450] }
+  [[element.children]]
+  type = "lathe"
+  at = [3.100, 1.980, 1.150]
+  segments = 14
+  material = "alabaster"
+  profile = [[0.000, 0.000], [0.160, 0.000], [0.300, 0.140], [0.350, 0.320], [0.290, 0.500], [0.150, 0.600], [0.200, 0.680], [0.000, 0.680]]
+  transform = { rotate = [0.0, 0.0, -105.000], pivot = [3.100, 1.980, 1.05] }
+  [[element.children]]
+  type = "sweep"
+  profile = { shape = "ellipse", size = [0.42, 0.1] }
+  material = "alabaster_water"
+  path = { curve = [[3.700, 1.935, 1.200], [3.850, 1.620, 1.220], [3.950, 1.260, 1.150], [4.000, 1.008, 1.080]] }
+  [[element.children]]
+  type = "torus"
+  center = [3.550, 1.575, 0.600]
+  radius = 0.480
+  tube = 0.200
+  axis = [0, 0, 1]
+  segments = 18
+  material = "alabaster"
+  [[element.children]]
+  type = "torus"
+  center = [3.550, 1.575, 0.700]
+  radius = 0.220
+  tube = 0.120
+  axis = [0, 0, 1]
+  segments = 14
+  material = "alabaster"
+  [[element.children]]
+  type = "torus"
+  center = [3.050, 4.815, 0.450]
+  radius = 0.360
+  tube = 0.130
+  axis = [0, 0, 1]
+  segments = 16
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [2.600, 5.490, 0.600]
+  radius = 0.220
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [2.850, 5.175, 0.600]
+  radius = 0.220
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [2.450, 5.040, 0.600]
+  radius = 0.220
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [2.750, 4.815, 0.600]
+  radius = 0.220
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [2.950, 5.670, 0.600]
+  radius = 0.220
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [2.400, 5.760, 0.600]
+  radius = 0.220
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "box"
+  min = [-1.950, 4.410, 0.000]
+  max = [1.950, 4.725, 0.600]
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [0.000, 4.860, 0.550]
+  radii = [0.750, 0.405, 0.320]
+  segments = 14
+  material = "alabaster"
+  [[element.children]]
+  type = "statue"
+  at = [-1.150, 4.500, 0.550]
+  facing = "s"
+  height = 0.855
+  style = "angel"
+  material = "alabaster"
+  [[element.children]]
+  type = "statue"
+  at = [1.150, 4.500, 0.550]
+  facing = "s"
+  height = 0.855
+  style = "angel"
+  material = "alabaster"
+  [[element.children]]
+  type = "extrude"
+  plane = "xz"
+  origin = [0.000, 5.265, 0.000]
+  length = 0.380
+  profile = [[-3.300, 0.000], [3.300, 0.000], [3.100, 0.550], [1.800, 0.950], [0.000, 1.100], [-1.800, 0.950], [-3.100, 0.550]]
+  material = "alabaster"
+  [[element.children]]
+  type = "extrude"
+  plane = "xz"
+  origin = [0.000, 5.040, 0.000]
+  length = 0.250
+  profile = [[-2.970, 0.000], [2.970, 0.000], [2.790, 0.468], [1.620, 0.807], [0.000, 0.935], [-1.620, 0.807], [-2.790, 0.468]]
+  material = "alabaster"
+  [[element.children]]
+  type = "statue"
+  at = [-1.450, 5.625, 0.600]
+  facing = "s"
+  height = 1.350
+  style = "seated"
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -10.000], pivot = [-1.450, 5.625, 0.6] }
+  [[element.children]]
+  type = "statue"
+  at = [1.450, 5.625, 0.600]
+  facing = "s"
+  height = 1.350
+  style = "seated"
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 10.000], pivot = [1.450, 5.625, 0.6] }
+  [[element.children]]
+  type = "extrude"
+  plane = "xy"
+  origin = [0.000, 0.000, 0.250]
+  length = 0.350
+  profile = { points = [[-1.050, 6.975], [1.050, 6.975], [1.050, 10.005], [0.999, 10.265], [0.849, 10.499], [0.617, 10.685], [0.324, 10.804], [0.000, 10.845], [-0.324, 10.804], [-0.617, 10.685], [-0.849, 10.499], [-0.999, 10.265], [-1.050, 10.005]], holes = [[[-0.640, 7.470], [0.640, 7.470], [0.640, 9.838], [0.609, 9.996], [0.518, 10.139], [0.376, 10.252], [0.198, 10.325], [0.000, 10.350], [-0.198, 10.325], [-0.376, 10.252], [-0.518, 10.139], [-0.609, 9.996], [-0.640, 9.838]]] }
+  material = "alabaster"
+  [[element.children]]
+  type = "box"
+  min = [-0.660, 7.452, 0.270]
+  max = [0.660, 10.350, 0.300]
+  material = "niche_back"
+  [[element.children]]
+  type = "box"
+  min = [-0.620, 7.452, 0.270]
+  max = [0.620, 7.578, 0.620]
+  material = "alabaster"
+  [[element.children]]
+  type = "statue"
+  at = [0.000, 7.578, 0.420]
+  facing = "s"
+  height = 1.575
+  style = "figure"
+  material = "alabaster"
+  [[element.children]]
+  type = "statue"
+  at = [-0.400, 7.605, 0.500]
+  facing = "s"
+  height = 0.495
+  style = "angel"
+  material = "alabaster"
+  [[element.children]]
+  type = "statue"
+  at = [0.400, 7.605, 0.500]
+  facing = "s"
+  height = 0.495
+  style = "angel"
+  material = "alabaster"
+  [[element.children]]
+  type = "extrude"
+  plane = "xz"
+  origin = [0.000, 6.570, 0.000]
+  length = 0.400
+  profile = [[-1.200, 0.000], [1.200, 0.000], [1.000, 0.650], [0.000, 0.850], [-1.000, 0.650]]
+  material = "alabaster"
+  [[element.children]]
+  type = "extrude"
+  plane = "xz"
+  origin = [0.000, 10.800, 0.000]
+  length = 0.220
+  profile = [[-1.250, 0.000], [1.250, 0.000], [1.050, 0.700], [0.000, 0.950], [-1.050, 0.700]]
+  material = "alabaster"
+  [[element.children]]
+  type = "box"
+  min = [-2.180, 8.816, 0.280]
+  max = [-0.580, 8.916, 0.360]
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -39.000], pivot = [-1.380, 8.866, 0.3] }
+  [[element.children]]
+  type = "box"
+  min = [-2.436, 8.977, 0.280]
+  max = [-0.836, 9.077, 0.360]
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -27.000], pivot = [-1.636, 9.027, 0.3] }
+  [[element.children]]
+  type = "box"
+  min = [-2.616, 9.208, 0.280]
+  max = [-1.016, 9.308, 0.360]
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -15.000], pivot = [-1.816, 9.258, 0.3] }
+  [[element.children]]
+  type = "box"
+  min = [-2.697, 9.479, 0.280]
+  max = [-1.097, 9.579, 0.360]
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -3.000], pivot = [-1.897, 9.529, 0.3] }
+  [[element.children]]
+  type = "box"
+  min = [0.580, 8.816, 0.280]
+  max = [2.180, 8.916, 0.360]
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 39.000], pivot = [1.380, 8.866, 0.3] }
+  [[element.children]]
+  type = "box"
+  min = [0.836, 8.977, 0.280]
+  max = [2.436, 9.077, 0.360]
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 27.000], pivot = [1.636, 9.027, 0.3] }
+  [[element.children]]
+  type = "box"
+  min = [1.016, 9.208, 0.280]
+  max = [2.616, 9.308, 0.360]
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 15.000], pivot = [1.816, 9.258, 0.3] }
+  [[element.children]]
+  type = "box"
+  min = [1.097, 9.479, 0.280]
+  max = [2.697, 9.579, 0.360]
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 3.000], pivot = [1.897, 9.529, 0.3] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.392, 6.480, 0.400]
+  radii = [0.270, 0.198, 0.160]
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [-2.140, 7.110, 0.400]
+  radii = [0.270, 0.198, 0.160]
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [-1.888, 7.740, 0.400]
+  radii = [0.270, 0.198, 0.160]
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [-1.636, 8.370, 0.400]
+  radii = [0.270, 0.198, 0.160]
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [-1.384, 9.000, 0.400]
+  radii = [0.270, 0.198, 0.160]
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [-1.132, 9.630, 0.400]
+  radii = [0.270, 0.198, 0.160]
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [-0.880, 10.260, 0.400]
+  radii = [0.270, 0.198, 0.160]
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [-0.664, 10.800, 0.400]
+  radii = [0.270, 0.198, 0.160]
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [-0.448, 11.340, 0.400]
+  radii = [0.270, 0.198, 0.160]
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [2.392, 6.480, 0.400]
+  radii = [0.270, 0.198, 0.160]
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [2.140, 7.110, 0.400]
+  radii = [0.270, 0.198, 0.160]
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [1.888, 7.740, 0.400]
+  radii = [0.270, 0.198, 0.160]
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [1.636, 8.370, 0.400]
+  radii = [0.270, 0.198, 0.160]
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [1.384, 9.000, 0.400]
+  radii = [0.270, 0.198, 0.160]
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [1.132, 9.630, 0.400]
+  radii = [0.270, 0.198, 0.160]
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [0.880, 10.260, 0.400]
+  radii = [0.270, 0.198, 0.160]
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [0.664, 10.800, 0.400]
+  radii = [0.270, 0.198, 0.160]
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [0.448, 11.340, 0.400]
+  radii = [0.270, 0.198, 0.160]
+  segments = 8
+  material = "alabaster"
+  [[element.children]]
+  type = "sweep"
+  profile = { shape = "ellipse", size = [0.3, 0.14] }
+  material = "alabaster"
+  path = { curve = [[-2.550, 6.300, 0.320], [-2.800, 7.080, 0.420], [-1.900, 7.860, 0.400], [-1.600, 8.640, 0.330]] }
+  [[element.children]]
+  type = "sweep"
+  profile = { shape = "ellipse", size = [0.3, 0.14] }
+  material = "alabaster"
+  path = { curve = [[-2.200, 6.840, 0.320], [-2.450, 7.920, 0.420], [-1.550, 9.000, 0.400], [-1.250, 10.080, 0.330]] }
+  [[element.children]]
+  type = "sweep"
+  profile = { shape = "ellipse", size = [0.3, 0.14] }
+  material = "alabaster"
+  path = { curve = [[-1.900, 7.920, 0.320], [-2.150, 9.000, 0.420], [-1.250, 10.080, 0.400], [-0.950, 11.160, 0.330]] }
+  [[element.children]]
+  type = "sweep"
+  profile = { shape = "ellipse", size = [0.3, 0.14] }
+  material = "alabaster"
+  path = { curve = [[-2.850, 6.210, 0.320], [-3.100, 6.720, 0.420], [-2.650, 7.230, 0.400], [-2.350, 7.740, 0.330]] }
+  [[element.children]]
+  type = "statue"
+  at = [-1.900, 6.660, 0.420]
+  facing = "s"
+  height = 0.540
+  style = "angel"
+  material = "alabaster"
+  [[element.children]]
+  type = "statue"
+  at = [-1.250, 8.460, 0.420]
+  facing = "s"
+  height = 0.540
+  style = "angel"
+  material = "alabaster"
+  [[element.children]]
+  type = "statue"
+  at = [-1.600, 9.630, 0.420]
+  facing = "s"
+  height = 0.540
+  style = "angel"
+  material = "alabaster"
+  [[element.children]]
+  type = "sweep"
+  profile = { shape = "ellipse", size = [0.3, 0.14] }
+  material = "alabaster"
+  path = { curve = [[2.550, 6.300, 0.320], [2.800, 7.080, 0.420], [1.900, 7.860, 0.400], [1.600, 8.640, 0.330]] }
+  [[element.children]]
+  type = "sweep"
+  profile = { shape = "ellipse", size = [0.3, 0.14] }
+  material = "alabaster"
+  path = { curve = [[2.200, 6.840, 0.320], [2.450, 7.920, 0.420], [1.550, 9.000, 0.400], [1.250, 10.080, 0.330]] }
+  [[element.children]]
+  type = "sweep"
+  profile = { shape = "ellipse", size = [0.3, 0.14] }
+  material = "alabaster"
+  path = { curve = [[1.900, 7.920, 0.320], [2.150, 9.000, 0.420], [1.250, 10.080, 0.400], [0.950, 11.160, 0.330]] }
+  [[element.children]]
+  type = "sweep"
+  profile = { shape = "ellipse", size = [0.3, 0.14] }
+  material = "alabaster"
+  path = { curve = [[2.850, 6.210, 0.320], [3.100, 6.720, 0.420], [2.650, 7.230, 0.400], [2.350, 7.740, 0.330]] }
+  [[element.children]]
+  type = "statue"
+  at = [1.900, 6.660, 0.420]
+  facing = "s"
+  height = 0.540
+  style = "angel"
+  material = "alabaster"
+  [[element.children]]
+  type = "statue"
+  at = [1.250, 8.460, 0.420]
+  facing = "s"
+  height = 0.540
+  style = "angel"
+  material = "alabaster"
+  [[element.children]]
+  type = "statue"
+  at = [1.600, 9.630, 0.420]
+  facing = "s"
+  height = 0.540
+  style = "angel"
+  material = "alabaster"
+  [[element.children]]
+  type = "sphere"
+  center = [-1.200, 9.084, 0.368]
+  radii = [0.150, 0.129, 0.065]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 17.300], pivot = [-1.200, 9.084, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.168, 11.566, 0.310]
+  radii = [0.201, 0.165, 0.082]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -24.500], pivot = [0.168, 11.566, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.106, 9.660, 0.302]
+  radii = [0.151, 0.153, 0.076]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -7.100], pivot = [-2.106, 9.660, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.449, 6.622, 0.368]
+  radii = [0.152, 0.110, 0.055]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 17.500], pivot = [-1.449, 6.622, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.087, 5.233, 0.418]
+  radii = [0.123, 0.083, 0.042]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -55.400], pivot = [2.087, 5.233, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.601, 10.341, 0.315]
+  radii = [0.235, 0.137, 0.069]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 15.400], pivot = [-1.601, 10.341, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.607, 11.123, 0.302]
+  radii = [0.088, 0.075, 0.037]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 36.700], pivot = [-0.607, 11.123, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.267, 5.126, 0.343]
+  radii = [0.146, 0.142, 0.071]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -18.800], pivot = [-2.267, 5.126, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.383, 5.319, 0.315]
+  radii = [0.219, 0.144, 0.072]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -5.900], pivot = [0.383, 5.319, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.037, 9.950, 0.390]
+  radii = [0.226, 0.172, 0.086]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -47.600], pivot = [2.037, 9.950, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.768, 4.929, 0.366]
+  radii = [0.125, 0.120, 0.060]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -49.600], pivot = [1.768, 4.929, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.487, 6.063, 0.334]
+  radii = [0.251, 0.157, 0.079]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 2.700], pivot = [-2.487, 6.063, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.130, 11.053, 0.371]
+  radii = [0.221, 0.128, 0.064]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -39.200], pivot = [1.130, 11.053, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.297, 6.640, 0.405]
+  radii = [0.142, 0.155, 0.077]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -30.500], pivot = [2.297, 6.640, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.380, 8.237, 0.378]
+  radii = [0.191, 0.114, 0.057]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -15.300], pivot = [-2.380, 8.237, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.456, 9.313, 0.343]
+  radii = [0.232, 0.149, 0.075]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 43.400], pivot = [-1.456, 9.313, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.557, 5.495, 0.366]
+  radii = [0.132, 0.107, 0.054]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 17.500], pivot = [1.557, 5.495, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.112, 5.728, 0.411]
+  radii = [0.137, 0.124, 0.062]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -55.900], pivot = [-0.112, 5.728, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.077, 6.128, 0.410]
+  radii = [0.136, 0.091, 0.045]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 53.100], pivot = [1.077, 6.128, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.582, 7.936, 0.371]
+  radii = [0.149, 0.158, 0.079]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 36.500], pivot = [1.582, 7.936, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.829, 7.426, 0.370]
+  radii = [0.153, 0.144, 0.072]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 20.300], pivot = [1.829, 7.426, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.790, 6.795, 0.337]
+  radii = [0.184, 0.174, 0.087]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 17.800], pivot = [-0.790, 6.795, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.315, 5.668, 0.310]
+  radii = [0.091, 0.094, 0.047]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -4.300], pivot = [-2.315, 5.668, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.255, 9.285, 0.312]
+  radii = [0.115, 0.100, 0.050]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 38.200], pivot = [-1.255, 9.285, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.717, 8.658, 0.371]
+  radii = [0.164, 0.157, 0.078]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -57.000], pivot = [1.717, 8.658, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.225, 5.379, 0.331]
+  radii = [0.128, 0.107, 0.053]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 41.400], pivot = [-0.225, 5.379, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.575, 7.368, 0.381]
+  radii = [0.273, 0.169, 0.085]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 14.400], pivot = [-2.575, 7.368, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.456, 8.171, 0.418]
+  radii = [0.169, 0.097, 0.048]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 38.500], pivot = [1.456, 8.171, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.445, 9.152, 0.395]
+  radii = [0.157, 0.092, 0.046]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -30.700], pivot = [1.445, 9.152, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.505, 7.770, 0.372]
+  radii = [0.102, 0.077, 0.039]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 14.800], pivot = [-1.505, 7.770, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.239, 11.199, 0.375]
+  radii = [0.215, 0.139, 0.070]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 19.100], pivot = [-0.239, 11.199, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.200, 9.191, 0.362]
+  radii = [0.147, 0.143, 0.071]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 14.400], pivot = [-2.200, 9.191, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.376, 7.547, 0.337]
+  radii = [0.176, 0.104, 0.052]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -25.900], pivot = [-2.376, 7.547, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.449, 6.245, 0.329]
+  radii = [0.108, 0.079, 0.040]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -35.000], pivot = [-1.449, 6.245, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.265, 4.846, 0.376]
+  radii = [0.271, 0.168, 0.084]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 20.100], pivot = [0.265, 4.846, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.804, 10.166, 0.351]
+  radii = [0.152, 0.110, 0.055]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -10.000], pivot = [-1.804, 10.166, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.081, 8.889, 0.322]
+  radii = [0.176, 0.124, 0.062]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 53.100], pivot = [2.081, 8.889, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.478, 5.016, 0.375]
+  radii = [0.231, 0.161, 0.080]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 38.900], pivot = [0.478, 5.016, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.041, 7.807, 0.341]
+  radii = [0.171, 0.105, 0.052]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -22.800], pivot = [2.041, 7.807, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.080, 11.368, 0.325]
+  radii = [0.184, 0.165, 0.083]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -21.400], pivot = [1.080, 11.368, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.077, 5.492, 0.346]
+  radii = [0.120, 0.097, 0.048]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 0.100], pivot = [-1.077, 5.492, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.997, 11.568, 0.362]
+  radii = [0.192, 0.130, 0.065]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -46.100], pivot = [0.997, 11.568, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.527, 6.515, 0.311]
+  radii = [0.174, 0.103, 0.051]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -24.400], pivot = [0.527, 6.515, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.938, 8.383, 0.401]
+  radii = [0.201, 0.117, 0.058]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 24.800], pivot = [1.938, 8.383, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.249, 9.149, 0.398]
+  radii = [0.103, 0.087, 0.043]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 23.300], pivot = [2.249, 9.149, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.384, 6.144, 0.357]
+  radii = [0.105, 0.085, 0.042]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -44.500], pivot = [-0.384, 6.144, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.046, 5.036, 0.324]
+  radii = [0.180, 0.135, 0.067]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -44.200], pivot = [2.046, 5.036, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.724, 5.441, 0.400]
+  radii = [0.178, 0.166, 0.083]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 41.100], pivot = [0.724, 5.441, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.046, 7.558, 0.380]
+  radii = [0.136, 0.143, 0.071]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -40.100], pivot = [-2.046, 7.558, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.798, 6.139, 0.385]
+  radii = [0.119, 0.075, 0.037]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 28.300], pivot = [-0.798, 6.139, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.334, 11.770, 0.333]
+  radii = [0.266, 0.150, 0.075]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -0.600], pivot = [-0.334, 11.770, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.052, 11.690, 0.316]
+  radii = [0.233, 0.179, 0.089]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -2.900], pivot = [0.052, 11.690, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.213, 8.354, 0.361]
+  radii = [0.218, 0.160, 0.080]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 27.400], pivot = [-2.213, 8.354, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.874, 9.816, 0.323]
+  radii = [0.191, 0.132, 0.066]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 31.900], pivot = [1.874, 9.816, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.515, 7.307, 0.366]
+  radii = [0.140, 0.139, 0.069]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -26.300], pivot = [1.515, 7.307, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.017, 5.605, 0.323]
+  radii = [0.140, 0.106, 0.053]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -42.500], pivot = [-0.017, 5.605, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.931, 6.372, 0.376]
+  radii = [0.237, 0.170, 0.085]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -5.000], pivot = [-0.931, 6.372, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.665, 6.516, 0.391]
+  radii = [0.266, 0.153, 0.076]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 55.900], pivot = [-2.665, 6.516, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.382, 7.135, 0.339]
+  radii = [0.097, 0.073, 0.037]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -56.500], pivot = [-1.382, 7.135, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.385, 7.093, 0.385]
+  radii = [0.233, 0.159, 0.080]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 45.800], pivot = [-2.385, 7.093, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.714, 7.469, 0.411]
+  radii = [0.100, 0.098, 0.049]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -10.000], pivot = [1.714, 7.469, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.679, 5.017, 0.375]
+  radii = [0.190, 0.162, 0.081]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -28.500], pivot = [-0.679, 5.017, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.537, 11.699, 0.311]
+  radii = [0.165, 0.101, 0.050]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 49.100], pivot = [-0.537, 11.699, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.323, 5.100, 0.319]
+  radii = [0.159, 0.140, 0.070]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 59.900], pivot = [1.323, 5.100, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.015, 5.689, 0.379]
+  radii = [0.156, 0.139, 0.069]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 47.300], pivot = [-1.015, 5.689, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.968, 9.252, 0.396]
+  radii = [0.238, 0.152, 0.076]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -11.100], pivot = [-1.968, 9.252, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.434, 9.970, 0.328]
+  radii = [0.283, 0.160, 0.080]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 4.900], pivot = [-1.434, 9.970, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.430, 8.048, 0.333]
+  radii = [0.123, 0.101, 0.050]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 34.200], pivot = [-1.430, 8.048, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.039, 7.782, 0.324]
+  radii = [0.092, 0.076, 0.038]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 59.600], pivot = [2.039, 7.782, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.762, 6.427, 0.412]
+  radii = [0.091, 0.095, 0.047]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 24.700], pivot = [0.762, 6.427, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.488, 7.447, 0.393]
+  radii = [0.186, 0.178, 0.089]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 5.900], pivot = [2.488, 7.447, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.378, 5.836, 0.354]
+  radii = [0.168, 0.136, 0.068]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 11.700], pivot = [0.378, 5.836, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.322, 5.910, 0.325]
+  radii = [0.129, 0.081, 0.041]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 27.600], pivot = [-2.322, 5.910, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.816, 5.905, 0.369]
+  radii = [0.174, 0.117, 0.058]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 9.200], pivot = [1.816, 5.905, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.428, 8.307, 0.385]
+  radii = [0.195, 0.156, 0.078]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 36.400], pivot = [2.428, 8.307, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.753, 5.421, 0.317]
+  radii = [0.204, 0.147, 0.074]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -25.700], pivot = [-1.753, 5.421, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.398, 6.159, 0.320]
+  radii = [0.190, 0.141, 0.071]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 30.100], pivot = [0.398, 6.159, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.040, 5.879, 0.334]
+  radii = [0.236, 0.158, 0.079]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 39.400], pivot = [2.040, 5.879, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.945, 5.903, 0.380]
+  radii = [0.156, 0.095, 0.048]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 37.700], pivot = [-0.945, 5.903, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.653, 7.979, 0.358]
+  radii = [0.090, 0.073, 0.036]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 7.200], pivot = [-1.653, 7.979, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.150, 10.988, 0.301]
+  radii = [0.097, 0.085, 0.042]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -47.300], pivot = [1.150, 10.988, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.703, 5.549, 0.311]
+  radii = [0.068, 0.077, 0.038]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 13.200], pivot = [0.703, 5.549, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.177, 11.081, 0.395]
+  radii = [0.098, 0.110, 0.055]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -10.800], pivot = [-0.177, 11.081, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.446, 5.965, 0.394]
+  radii = [0.109, 0.105, 0.053]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 14.500], pivot = [0.446, 5.965, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.657, 9.540, 0.387]
+  radii = [0.274, 0.176, 0.088]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -55.800], pivot = [-1.657, 9.540, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.923, 5.330, 0.365]
+  radii = [0.225, 0.177, 0.089]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -28.400], pivot = [-1.923, 5.330, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.147, 4.959, 0.325]
+  radii = [0.118, 0.077, 0.039]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 48.400], pivot = [1.147, 4.959, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.910, 5.234, 0.308]
+  radii = [0.129, 0.128, 0.064]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -48.600], pivot = [0.910, 5.234, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.063, 4.783, 0.404]
+  radii = [0.198, 0.115, 0.058]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 27.200], pivot = [-2.063, 4.783, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.318, 4.848, 0.337]
+  radii = [0.132, 0.126, 0.063]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 9.700], pivot = [-2.318, 4.848, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.236, 7.685, 0.327]
+  radii = [0.150, 0.102, 0.051]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -38.300], pivot = [-2.236, 7.685, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.773, 11.076, 0.302]
+  radii = [0.314, 0.177, 0.089]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 56.000], pivot = [-0.773, 11.076, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.294, 5.176, 0.374]
+  radii = [0.187, 0.166, 0.083]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -38.700], pivot = [-2.294, 5.176, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.584, 7.780, 0.371]
+  radii = [0.189, 0.161, 0.080]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -49.400], pivot = [-1.584, 7.780, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.604, 6.427, 0.406]
+  radii = [0.104, 0.101, 0.050]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -55.000], pivot = [2.604, 6.427, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.353, 7.596, 0.401]
+  radii = [0.095, 0.103, 0.052]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -15.400], pivot = [1.353, 7.596, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.422, 7.914, 0.371]
+  radii = [0.146, 0.097, 0.048]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 40.700], pivot = [1.422, 7.914, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.477, 6.986, 0.379]
+  radii = [0.237, 0.145, 0.073]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -26.500], pivot = [-2.477, 6.986, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.214, 10.019, 0.404]
+  radii = [0.074, 0.078, 0.039]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 44.200], pivot = [1.214, 10.019, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.438, 5.431, 0.357]
+  radii = [0.067, 0.073, 0.036]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -47.900], pivot = [2.438, 5.431, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.946, 8.161, 0.385]
+  radii = [0.151, 0.129, 0.064]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 3.100], pivot = [-1.946, 8.161, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.969, 8.442, 0.316]
+  radii = [0.114, 0.077, 0.038]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -7.800], pivot = [1.969, 8.442, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.380, 11.357, 0.415]
+  radii = [0.115, 0.098, 0.049]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -55.600], pivot = [-0.380, 11.357, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.492, 11.054, 0.416]
+  radii = [0.189, 0.141, 0.071]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -30.900], pivot = [-0.492, 11.054, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.216, 4.964, 0.325]
+  radii = [0.085, 0.088, 0.044]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -6.800], pivot = [0.216, 4.964, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.058, 9.405, 0.408]
+  radii = [0.209, 0.151, 0.075]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -34.600], pivot = [2.058, 9.405, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.332, 7.610, 0.327]
+  radii = [0.171, 0.101, 0.050]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 19.400], pivot = [-2.332, 7.610, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.225, 9.172, 0.417]
+  radii = [0.256, 0.148, 0.074]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -52.100], pivot = [-1.225, 9.172, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.178, 8.560, 0.380]
+  radii = [0.158, 0.140, 0.070]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 25.400], pivot = [1.178, 8.560, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.192, 9.566, 0.418]
+  radii = [0.198, 0.120, 0.060]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -22.500], pivot = [2.192, 9.566, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.508, 7.068, 0.327]
+  radii = [0.175, 0.162, 0.081]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 14.200], pivot = [-1.508, 7.068, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.638, 5.204, 0.328]
+  radii = [0.189, 0.112, 0.056]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -13.900], pivot = [2.638, 5.204, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.464, 7.008, 0.347]
+  radii = [0.100, 0.096, 0.048]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 48.700], pivot = [1.464, 7.008, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.004, 5.448, 0.397]
+  radii = [0.164, 0.157, 0.078]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -19.800], pivot = [-0.004, 5.448, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.107, 6.238, 0.358]
+  radii = [0.116, 0.101, 0.051]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -53.400], pivot = [1.107, 6.238, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.155, 5.593, 0.306]
+  radii = [0.252, 0.163, 0.081]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 22.100], pivot = [-2.155, 5.593, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.520, 9.644, 0.338]
+  radii = [0.168, 0.134, 0.067]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -4.800], pivot = [-1.520, 9.644, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.192, 9.615, 0.403]
+  radii = [0.103, 0.079, 0.040]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 44.800], pivot = [1.192, 9.615, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.578, 11.005, 0.356]
+  radii = [0.147, 0.098, 0.049]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -2.500], pivot = [0.578, 11.005, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.581, 6.213, 0.403]
+  radii = [0.109, 0.114, 0.057]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -44.400], pivot = [1.581, 6.213, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.576, 9.632, 0.312]
+  radii = [0.136, 0.149, 0.074]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -17.600], pivot = [-1.576, 9.632, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.480, 7.886, 0.305]
+  radii = [0.276, 0.164, 0.082]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 7.000], pivot = [-2.480, 7.886, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.001, 9.780, 0.317]
+  radii = [0.171, 0.163, 0.082]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 40.700], pivot = [2.001, 9.780, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.516, 11.777, 0.333]
+  radii = [0.120, 0.072, 0.036]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 23.800], pivot = [-0.516, 11.777, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.674, 11.062, 0.328]
+  radii = [0.162, 0.148, 0.074]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 2.100], pivot = [0.674, 11.062, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.455, 7.820, 0.415]
+  radii = [0.118, 0.085, 0.042]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -35.000], pivot = [-1.455, 7.820, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.829, 8.650, 0.363]
+  radii = [0.136, 0.105, 0.052]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -56.200], pivot = [1.829, 8.650, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.043, 5.742, 0.365]
+  radii = [0.111, 0.093, 0.046]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 37.400], pivot = [2.043, 5.742, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.731, 9.087, 0.346]
+  radii = [0.178, 0.128, 0.064]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 54.000], pivot = [1.731, 9.087, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.167, 9.112, 0.334]
+  radii = [0.103, 0.075, 0.038]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -21.200], pivot = [1.167, 9.112, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.164, 5.688, 0.420]
+  radii = [0.203, 0.140, 0.070]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -14.000], pivot = [0.164, 5.688, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.074, 5.600, 0.349]
+  radii = [0.067, 0.073, 0.036]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 13.600], pivot = [-0.074, 5.600, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.745, 5.471, 0.396]
+  radii = [0.240, 0.163, 0.082]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 54.600], pivot = [2.745, 5.471, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.885, 9.161, 0.415]
+  radii = [0.255, 0.160, 0.080]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 28.500], pivot = [1.885, 9.161, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.299, 5.890, 0.385]
+  radii = [0.212, 0.162, 0.081]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -43.600], pivot = [1.299, 5.890, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.627, 9.814, 0.393]
+  radii = [0.085, 0.091, 0.046]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -49.800], pivot = [1.627, 9.814, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.031, 4.803, 0.414]
+  radii = [0.128, 0.094, 0.047]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 9.900], pivot = [-1.031, 4.803, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.341, 5.119, 0.382]
+  radii = [0.242, 0.149, 0.075]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -15.600], pivot = [1.341, 5.119, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.357, 10.081, 0.316]
+  radii = [0.196, 0.162, 0.081]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -29.200], pivot = [1.357, 10.081, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.366, 11.165, 0.322]
+  radii = [0.141, 0.091, 0.045]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -18.000], pivot = [-0.366, 11.165, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.633, 7.182, 0.391]
+  radii = [0.266, 0.178, 0.089]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 34.100], pivot = [2.633, 7.182, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.399, 7.588, 0.401]
+  radii = [0.206, 0.154, 0.077]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 20.400], pivot = [2.399, 7.588, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.723, 5.767, 0.395]
+  radii = [0.124, 0.106, 0.053]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 34.800], pivot = [-0.723, 5.767, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.814, 5.950, 0.328]
+  radii = [0.213, 0.144, 0.072]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 21.700], pivot = [0.814, 5.950, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.591, 9.256, 0.349]
+  radii = [0.144, 0.114, 0.057]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -3.200], pivot = [1.591, 9.256, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.386, 9.417, 0.302]
+  radii = [0.183, 0.172, 0.086]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -26.400], pivot = [-1.386, 9.417, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.232, 5.408, 0.398]
+  radii = [0.162, 0.137, 0.068]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -6.500], pivot = [0.232, 5.408, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.526, 8.076, 0.348]
+  radii = [0.100, 0.076, 0.038]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 7.000], pivot = [1.526, 8.076, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.687, 6.206, 0.385]
+  radii = [0.209, 0.118, 0.059]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -51.900], pivot = [1.687, 6.206, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.374, 8.152, 0.346]
+  radii = [0.096, 0.108, 0.054]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -23.300], pivot = [1.374, 8.152, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.139, 6.299, 0.373]
+  radii = [0.191, 0.159, 0.079]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -49.700], pivot = [-1.139, 6.299, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.646, 5.427, 0.331]
+  radii = [0.134, 0.106, 0.053]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 24.700], pivot = [-2.646, 5.427, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.927, 5.367, 0.360]
+  radii = [0.182, 0.135, 0.067]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 57.800], pivot = [-2.927, 5.367, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.384, 6.487, 0.418]
+  radii = [0.143, 0.119, 0.060]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -26.400], pivot = [-2.384, 6.487, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.461, 6.692, 0.349]
+  radii = [0.141, 0.098, 0.049]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 13.800], pivot = [-1.461, 6.692, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.030, 6.173, 0.381]
+  radii = [0.090, 0.091, 0.046]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 44.200], pivot = [-0.030, 6.173, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.008, 5.338, 0.328]
+  radii = [0.130, 0.102, 0.051]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -14.300], pivot = [-2.008, 5.338, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.910, 9.130, 0.347]
+  radii = [0.174, 0.129, 0.065]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 54.400], pivot = [1.910, 9.130, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.634, 4.830, 0.386]
+  radii = [0.106, 0.077, 0.039]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 20.700], pivot = [2.634, 4.830, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.073, 5.819, 0.352]
+  radii = [0.226, 0.150, 0.075]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -27.400], pivot = [-1.073, 5.819, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.884, 5.058, 0.406]
+  radii = [0.084, 0.082, 0.041]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -37.300], pivot = [2.884, 5.058, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.203, 7.342, 0.386]
+  radii = [0.102, 0.114, 0.057]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 57.000], pivot = [-1.203, 7.342, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.569, 6.134, 0.377]
+  radii = [0.185, 0.138, 0.069]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 35.700], pivot = [2.569, 6.134, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.042, 5.307, 0.332]
+  radii = [0.219, 0.139, 0.069]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 9.500], pivot = [-1.042, 5.307, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.440, 6.165, 0.363]
+  radii = [0.084, 0.075, 0.037]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -12.500], pivot = [2.440, 6.165, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.410, 6.357, 0.307]
+  radii = [0.107, 0.099, 0.050]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 5.000], pivot = [1.410, 6.357, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.819, 11.220, 0.321]
+  radii = [0.239, 0.147, 0.074]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 48.200], pivot = [0.819, 11.220, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.880, 5.567, 0.392]
+  radii = [0.186, 0.168, 0.084]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 10.700], pivot = [-1.880, 5.567, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.037, 6.532, 0.359]
+  radii = [0.199, 0.114, 0.057]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 52.000], pivot = [-2.037, 6.532, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.904, 11.452, 0.339]
+  radii = [0.136, 0.097, 0.049]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -27.600], pivot = [0.904, 11.452, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.791, 5.140, 0.337]
+  radii = [0.166, 0.093, 0.047]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -11.500], pivot = [1.791, 5.140, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.130, 6.604, 0.392]
+  radii = [0.205, 0.121, 0.060]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 58.900], pivot = [-2.130, 6.604, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.218, 11.145, 0.340]
+  radii = [0.227, 0.130, 0.065]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 47.600], pivot = [1.218, 11.145, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.643, 5.426, 0.415]
+  radii = [0.187, 0.130, 0.065]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 49.800], pivot = [-1.643, 5.426, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.599, 6.462, 0.382]
+  radii = [0.231, 0.142, 0.071]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 59.800], pivot = [-1.599, 6.462, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.218, 10.293, 0.342]
+  radii = [0.245, 0.169, 0.084]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -29.200], pivot = [1.218, 10.293, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.884, 7.311, 0.322]
+  radii = [0.187, 0.131, 0.066]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -48.000], pivot = [1.884, 7.311, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.927, 11.460, 0.383]
+  radii = [0.122, 0.102, 0.051]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 7.100], pivot = [0.927, 11.460, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.308, 5.757, 0.349]
+  radii = [0.234, 0.174, 0.087]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 5.600], pivot = [1.308, 5.757, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.916, 11.188, 0.389]
+  radii = [0.141, 0.144, 0.072]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 58.400], pivot = [-0.916, 11.188, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.839, 6.697, 0.322]
+  radii = [0.123, 0.101, 0.051]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -10.600], pivot = [0.839, 6.697, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.417, 7.967, 0.408]
+  radii = [0.175, 0.128, 0.064]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -46.100], pivot = [-2.417, 7.967, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.289, 8.443, 0.320]
+  radii = [0.123, 0.106, 0.053]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 24.400], pivot = [-1.289, 8.443, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.150, 7.781, 0.408]
+  radii = [0.155, 0.098, 0.049]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 36.400], pivot = [-2.150, 7.781, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.430, 10.291, 0.398]
+  radii = [0.181, 0.103, 0.051]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 25.800], pivot = [-1.430, 10.291, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.519, 10.337, 0.341]
+  radii = [0.189, 0.143, 0.071]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 16.700], pivot = [1.519, 10.337, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.265, 7.683, 0.406]
+  radii = [0.137, 0.126, 0.063]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 15.300], pivot = [-1.265, 7.683, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.209, 5.615, 0.404]
+  radii = [0.225, 0.142, 0.071]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 18.000], pivot = [2.209, 5.615, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.642, 7.211, 0.347]
+  radii = [0.203, 0.124, 0.062]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -53.000], pivot = [-1.642, 7.211, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.730, 5.501, 0.367]
+  radii = [0.177, 0.145, 0.073]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -33.100], pivot = [-0.730, 5.501, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.937, 8.064, 0.328]
+  radii = [0.168, 0.106, 0.053]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -7.800], pivot = [1.937, 8.064, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.039, 5.119, 0.364]
+  radii = [0.238, 0.145, 0.073]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -56.500], pivot = [1.039, 5.119, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.607, 5.570, 0.385]
+  radii = [0.183, 0.110, 0.055]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -1.100], pivot = [-0.607, 5.570, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.039, 6.118, 0.418]
+  radii = [0.169, 0.111, 0.056]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -53.400], pivot = [-1.039, 6.118, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.702, 6.471, 0.324]
+  radii = [0.142, 0.147, 0.074]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 19.900], pivot = [2.702, 6.471, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.822, 7.687, 0.413]
+  radii = [0.135, 0.149, 0.074]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -26.700], pivot = [-1.822, 7.687, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.841, 7.922, 0.323]
+  radii = [0.164, 0.128, 0.064]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -12.100], pivot = [1.841, 7.922, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.250, 5.620, 0.357]
+  radii = [0.139, 0.112, 0.056]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 5.700], pivot = [-2.250, 5.620, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.964, 6.265, 0.336]
+  radii = [0.192, 0.152, 0.076]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -24.800], pivot = [1.964, 6.265, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.472, 7.762, 0.307]
+  radii = [0.124, 0.074, 0.037]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 36.900], pivot = [1.472, 7.762, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.186, 4.904, 0.392]
+  radii = [0.154, 0.140, 0.070]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 28.300], pivot = [-2.186, 4.904, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.710, 8.978, 0.308]
+  radii = [0.098, 0.096, 0.048]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -27.000], pivot = [-1.710, 8.978, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.209, 9.082, 0.308]
+  radii = [0.106, 0.104, 0.052]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 31.400], pivot = [-2.209, 9.082, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.019, 6.800, 0.357]
+  radii = [0.095, 0.092, 0.046]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -13.900], pivot = [0.019, 6.800, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.371, 5.747, 0.302]
+  radii = [0.113, 0.103, 0.052]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -6.500], pivot = [0.371, 5.747, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.714, 11.389, 0.312]
+  radii = [0.079, 0.080, 0.040]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 32.500], pivot = [0.714, 11.389, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.637, 5.153, 0.367]
+  radii = [0.145, 0.090, 0.045]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -5.100], pivot = [-1.637, 5.153, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.469, 8.858, 0.303]
+  radii = [0.154, 0.130, 0.065]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 33.800], pivot = [1.469, 8.858, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.804, 8.261, 0.367]
+  radii = [0.263, 0.176, 0.088]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 22.200], pivot = [1.804, 8.261, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.275, 5.140, 0.410]
+  radii = [0.141, 0.104, 0.052]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -24.000], pivot = [0.275, 5.140, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.931, 8.851, 0.382]
+  radii = [0.194, 0.159, 0.079]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 55.300], pivot = [1.931, 8.851, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.602, 6.497, 0.390]
+  radii = [0.288, 0.173, 0.086]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -20.100], pivot = [0.602, 6.497, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.141, 6.317, 0.314]
+  radii = [0.134, 0.086, 0.043]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -6.200], pivot = [1.141, 6.317, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.505, 10.304, 0.302]
+  radii = [0.092, 0.075, 0.037]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 42.800], pivot = [-1.505, 10.304, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.736, 9.834, 0.405]
+  radii = [0.129, 0.096, 0.048]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -23.200], pivot = [1.736, 9.834, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.428, 8.483, 0.337]
+  radii = [0.109, 0.098, 0.049]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -32.100], pivot = [-2.428, 8.483, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.625, 11.267, 0.378]
+  radii = [0.133, 0.132, 0.066]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -20.400], pivot = [-0.625, 11.267, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.699, 11.709, 0.393]
+  radii = [0.182, 0.131, 0.065]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -30.800], pivot = [-0.699, 11.709, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.429, 10.403, 0.309]
+  radii = [0.146, 0.112, 0.056]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -56.300], pivot = [1.429, 10.403, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [2.744, 5.033, 0.405]
+  radii = [0.145, 0.096, 0.048]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -18.000], pivot = [2.744, 5.033, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.393, 6.870, 0.328]
+  radii = [0.260, 0.168, 0.084]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 20.900], pivot = [1.393, 6.870, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.305, 5.109, 0.385]
+  radii = [0.157, 0.140, 0.070]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -38.100], pivot = [-1.305, 5.109, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-0.927, 5.572, 0.322]
+  radii = [0.189, 0.158, 0.079]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, -20.700], pivot = [-0.927, 5.572, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.694, 5.884, 0.312]
+  radii = [0.229, 0.157, 0.078]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 5.200], pivot = [-1.694, 5.884, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-2.189, 7.752, 0.420]
+  radii = [0.098, 0.073, 0.037]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 29.000], pivot = [-2.189, 7.752, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.114, 5.066, 0.337]
+  radii = [0.162, 0.106, 0.053]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 57.000], pivot = [-1.114, 5.066, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.614, 10.586, 0.375]
+  radii = [0.146, 0.135, 0.068]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 46.500], pivot = [-1.614, 10.586, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.843, 5.804, 0.407]
+  radii = [0.195, 0.110, 0.055]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 17.300], pivot = [1.843, 5.804, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [1.997, 5.754, 0.317]
+  radii = [0.133, 0.087, 0.043]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 0.800], pivot = [1.997, 5.754, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [-1.509, 8.241, 0.312]
+  radii = [0.132, 0.119, 0.060]
+  segments = 6
+  material = "alabaster"
+  transform = { rotate = [0.0, 0.0, 57.500], pivot = [-1.509, 8.241, 0.35] }
+  [[element.children]]
+  type = "sphere"
+  center = [0.350, 11.475, 0.450]
+  radius = 0.330
+  segments = 12
+  material = "alabaster"
+  [[element.children]]
+  type = "statue"
+  at = [-0.250, 11.205, 0.450]
+  facing = "s"
+  height = 0.900
+  style = "angel"
+  material = "alabaster"
+  [[element.children]]
+  type = "torus"
+  center = [-0.850, 11.115, 0.350]
+  radius = 0.300
+  tube = 0.100
+  axis = [0, 0, 1]
+  segments = 14
+  material = "alabaster"
+  [[element.children]]
+  type = "torus"
+  center = [0.850, 11.115, 0.350]
+  radius = 0.300
+  tube = 0.100
+  axis = [0, 0, 1]
+  segments = 14
+  material = "alabaster"
+  [[element.children]]
+  type = "box"
+  min = [-1.500, 0.000, -0.450]
+  max = [1.500, 4.410, -0.400]
+  material = "door"
+  [[element.children]]
+  type = "box"
+  min = [-1.375, 0.000, -0.380]
+  max = [-1.325, 4.365, -0.330]
+  material = "iron"
+  [[element.children]]
+  type = "box"
+  min = [-1.105, 0.000, -0.380]
+  max = [-1.055, 4.365, -0.330]
+  material = "iron"
+  [[element.children]]
+  type = "box"
+  min = [-0.835, 0.000, -0.380]
+  max = [-0.785, 4.365, -0.330]
+  material = "iron"
+  [[element.children]]
+  type = "box"
+  min = [-0.565, 0.000, -0.380]
+  max = [-0.515, 4.365, -0.330]
+  material = "iron"
+  [[element.children]]
+  type = "box"
+  min = [-0.295, 0.000, -0.380]
+  max = [-0.245, 4.365, -0.330]
+  material = "iron"
+  [[element.children]]
+  type = "box"
+  min = [-0.025, 0.000, -0.380]
+  max = [0.025, 4.365, -0.330]
+  material = "iron"
+  [[element.children]]
+  type = "box"
+  min = [0.245, 0.000, -0.380]
+  max = [0.295, 4.365, -0.330]
+  material = "iron"
+  [[element.children]]
+  type = "box"
+  min = [0.515, 0.000, -0.380]
+  max = [0.565, 4.365, -0.330]
+  material = "iron"
+  [[element.children]]
+  type = "box"
+  min = [0.785, 0.000, -0.380]
+  max = [0.835, 4.365, -0.330]
+  material = "iron"
+  [[element.children]]
+  type = "box"
+  min = [1.055, 0.000, -0.380]
+  max = [1.105, 4.365, -0.330]
+  material = "iron"
+  [[element.children]]
+  type = "box"
+  min = [1.325, 0.000, -0.380]
+  max = [1.375, 4.365, -0.330]
+  material = "iron"
+  [[element.children]]
+  type = "box"
+  min = [-1.500, 0.540, -0.390]
+  max = [1.500, 0.620, -0.320]
+  material = "iron"
+  [[element.children]]
+  type = "box"
+  min = [-1.500, 1.800, -0.390]
+  max = [1.500, 1.880, -0.320]
+  material = "iron"
+  [[element.children]]
+  type = "box"
+  min = [-1.500, 3.060, -0.390]
+  max = [1.500, 3.140, -0.320]
+  material = "iron"
+  [[element.children]]
+  type = "box"
+  min = [-1.500, 4.140, -0.390]
+  max = [1.500, 4.220, -0.320]
+  material = "iron"
+  [[element.children]]
+  type = "torus"
+  center = [0.000, 3.690, -0.350]
+  radius = 0.550
+  tube = 0.030
+  axis = [0, 0, 1]
+  segments = 20
+  material = "iron"
+
+# ================================================================ towers
+# Catastro 5-floor parts; body from the roof to the tower cornice (26.6 m on photo 02),
+# a tall arched window with a white stucco frame on each face, white corner pilasters,
+# balustraded crown with sculpture groups to 29.5 m.
+[[element]]
+type = "tower"
+name = "tower_ne"
+polygon = { points = [[18.600, -9.800], [12.000, -13.400], [15.300, -19.500], [19.800, -17.000]] }
+y = 18.750
+  [[element.stages]]
+  name = "tower_ne_body"
+  height = 5.370
+  material = "stucco"
+  plinth = { profile = "plinth", size = 0.6 }
+    [[element.stages.openings]]
+    kind = "window"
+    arch = "round"
+    width = 1.25
+    height = 2.790
+    levels = [19.800]
+    bays = 1
+    infill = "glass"
+    surround = { width = 0.45, projection = 0.14, ears = true, pediment = "broken_segmental", material = "stucco_white" }
+  [[element.stages]]
+  name = "tower_ne_cornice"
+  height = 0.720
+  inset = -0.25
+  material = "stucco_white"
+  cornice = { profile = "classical", size = 0.540 }
+  balustrade = { height = 0.990, finials = "urn" }
+  [[element.top]]
+  type = "roof"
+  shape = "pyramid"
+  pitch = 18
+  polygon = { ref = "parent", inset = 0.5 }
+  material = "roof"
+
+[[element]]
+type = "pilaster"
+at = [18.337, 18.750, -9.944]
+facing = 208.600
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "pilaster"
+at = [12.263, 18.750, -13.256]
+facing = 208.600
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "pilaster"
+at = [12.143, 18.750, -13.664]
+facing = 298.400
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "pilaster"
+at = [15.157, 18.750, -19.236]
+facing = 298.400
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "pilaster"
+at = [15.562, 18.750, -19.354]
+facing = 29.100
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "pilaster"
+at = [19.538, 18.750, -17.146]
+facing = 29.100
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "pilaster"
+at = [19.751, 18.750, -16.704]
+facing = 99.500
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "pilaster"
+at = [18.649, 18.750, -10.096]
+facing = 99.500
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "instance"
+component = "tower_group"
+at = [18.639, 24.790, -9.708]
+facing = 157.000
+
+[[element]]
+type = "instance"
+component = "tower_group"
+at = [11.905, 24.790, -13.367]
+facing = 251.000
+
+[[element]]
+type = "instance"
+component = "tower_group"
+at = [15.276, 24.790, -19.597]
+facing = 346.200
+
+[[element]]
+type = "instance"
+component = "tower_group"
+at = [19.885, 24.790, -17.052]
+facing = 58.400
+
+[[element]]
+type = "statue"
+at = [15.204, 24.790, -11.424]
+facing = 208.600
+height = 1.890
+style = "group"
+material = "terracotta"
+
+[[element]]
+type = "statue"
+at = [13.474, 24.790, -16.545]
+facing = 298.400
+height = 1.890
+style = "group"
+material = "terracotta"
+
+[[element]]
+type = "statue"
+at = [17.647, 24.790, -18.425]
+facing = 29.100
+height = 1.890
+style = "group"
+material = "terracotta"
+
+[[element]]
+type = "statue"
+at = [19.397, 24.790, -13.367]
+facing = 99.500
+height = 1.890
+style = "group"
+material = "terracotta"
+
+[[element]]
+type = "tower"
+name = "tower_nw"
+polygon = { points = [[2.200, -26.600], [0.000, -22.600], [-3.800, -24.600], [-2.100, -29.000]] }
+y = 18.750
+  [[element.stages]]
+  name = "tower_nw_body"
+  height = 5.370
+  material = "stucco"
+  plinth = { profile = "plinth", size = 0.6 }
+    [[element.stages.openings]]
+    kind = "window"
+    arch = "round"
+    width = 1.25
+    height = 2.790
+    levels = [19.800]
+    bays = 1
+    infill = "glass"
+    surround = { width = 0.45, projection = 0.14, ears = true, pediment = "broken_segmental", material = "stucco_white" }
+  [[element.stages]]
+  name = "tower_nw_cornice"
+  height = 0.720
+  inset = -0.25
+  material = "stucco_white"
+  cornice = { profile = "classical", size = 0.540 }
+  balustrade = { height = 0.990, finials = "urn" }
+  [[element.top]]
+  type = "roof"
+  shape = "pyramid"
+  pitch = 18
+  polygon = { ref = "parent", inset = 0.5 }
+  material = "roof"
+
+[[element]]
+type = "pilaster"
+at = [2.055, 18.750, -26.337]
+facing = 118.800
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "pilaster"
+at = [0.145, 18.750, -22.863]
+facing = 118.800
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "pilaster"
+at = [-0.265, 18.750, -22.740]
+facing = 207.800
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "pilaster"
+at = [-3.535, 18.750, -24.460]
+facing = 207.800
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "pilaster"
+at = [-3.692, 18.750, -24.880]
+facing = 291.100
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "pilaster"
+at = [-2.208, 18.750, -28.720]
+facing = 291.100
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "pilaster"
+at = [-1.838, 18.750, -28.854]
+facing = 29.200
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "pilaster"
+at = [1.938, 18.750, -26.746]
+facing = 29.200
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "instance"
+component = "tower_group"
+at = [2.296, 24.790, -26.628]
+facing = 73.900
+
+[[element]]
+type = "instance"
+component = "tower_group"
+at = [0.029, 24.790, -22.504]
+facing = 163.400
+
+[[element]]
+type = "instance"
+component = "tower_group"
+at = [-3.893, 24.790, -24.564]
+facing = 249.100
+
+[[element]]
+type = "instance"
+component = "tower_group"
+at = [-2.134, 24.790, -29.094]
+facing = 340.400
+
+[[element]]
+type = "statue"
+at = [1.275, 24.790, -24.504]
+facing = 118.800
+height = 1.890
+style = "group"
+material = "terracotta"
+
+[[element]]
+type = "statue"
+at = [-1.993, 24.790, -23.423]
+facing = 207.800
+height = 1.890
+style = "group"
+material = "terracotta"
+
+[[element]]
+type = "statue"
+at = [-3.137, 24.790, -26.872]
+facing = 291.100
+height = 1.890
+style = "group"
+material = "terracotta"
+
+[[element]]
+type = "statue"
+at = [0.147, 24.790, -27.975]
+facing = 29.200
+height = 1.890
+style = "group"
+material = "terracotta"
+
+[[element]]
+type = "tower"
+name = "tower_se"
+polygon = { points = [[6.900, 11.000], [15.300, 9.100], [14.100, 16.700], [8.500, 18.100]] }
+y = 18.750
+  [[element.stages]]
+  name = "tower_se_body"
+  height = 5.370
+  material = "stucco"
+  plinth = { profile = "plinth", size = 0.6 }
+    [[element.stages.openings]]
+    kind = "window"
+    arch = "round"
+    width = 1.25
+    height = 2.790
+    levels = [19.800]
+    bays = 1
+    infill = "glass"
+    surround = { width = 0.45, projection = 0.14, ears = true, pediment = "broken_segmental", material = "stucco_white" }
+  [[element.stages]]
+  name = "tower_se_cornice"
+  height = 0.720
+  inset = -0.25
+  material = "stucco_white"
+  cornice = { profile = "classical", size = 0.540 }
+  balustrade = { height = 0.990, finials = "urn" }
+  [[element.top]]
+  type = "roof"
+  shape = "pyramid"
+  pitch = 18
+  polygon = { ref = "parent", inset = 0.5 }
+  material = "roof"
+
+[[element]]
+type = "pilaster"
+at = [7.193, 18.750, 10.934]
+facing = 347.300
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "pilaster"
+at = [15.007, 18.750, 9.166]
+facing = 347.300
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "pilaster"
+at = [15.253, 18.750, 9.396]
+facing = 99.000
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "pilaster"
+at = [14.147, 18.750, 16.404]
+facing = 99.000
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "pilaster"
+at = [13.809, 18.750, 16.773]
+facing = 166.000
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "pilaster"
+at = [8.791, 18.750, 18.027]
+facing = 166.000
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "pilaster"
+at = [8.434, 18.750, 17.807]
+facing = 257.300
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "pilaster"
+at = [6.966, 18.750, 11.293]
+facing = 257.300
+height = 5.370
+width = 0.45
+depth = 0.14
+material = "stucco_white"
+
+[[element]]
+type = "instance"
+component = "tower_group"
+at = [6.816, 24.790, 10.946]
+facing = 302.400
+
+[[element]]
+type = "instance"
+component = "tower_group"
+at = [15.366, 24.790, 9.025]
+facing = 41.600
+
+[[element]]
+type = "instance"
+component = "tower_group"
+at = [14.170, 24.790, 16.772]
+facing = 135.700
+
+[[element]]
+type = "instance"
+component = "tower_group"
+at = [8.447, 24.790, 18.185]
+facing = 211.700
+
+[[element]]
+type = "statue"
+at = [11.056, 24.790, 9.855]
+facing = 347.300
+height = 1.890
+style = "group"
+material = "terracotta"
+
+[[element]]
+type = "statue"
+at = [14.898, 24.790, 12.931]
+facing = 99.000
+height = 1.890
+style = "group"
+material = "terracotta"
+
+[[element]]
+type = "statue"
+at = [11.349, 24.790, 17.594]
+facing = 166.000
+height = 1.890
+style = "group"
+material = "terracotta"
+
+[[element]]
+type = "statue"
+at = [7.505, 24.790, 14.594]
+facing = 257.300
+height = 1.890
+style = "group"
+material = "terracotta"
+
+
+# ================================================================ photo views
+# Cameras solved by the tool from point matches (pixel <-> landmark-local point):
+# footprint corners at y = 0 and measured heights. Photos: sources.toml.
+
+[[view]]
+name = "p14_corner_lek"
+photo = "photos/14_Palau_del_Marques_de_Dos_Aigues_2019_1.jpg"
+note = "Nikon D7000, EXIF 18 mm (27 mm-eq), Carrer dels Llibrers corner."
+match = [
+  { px = [777, 788], world = [20.71, 0.0, -17.84] },
+  { px = [777, 618], world = [20.71, 5.760, -17.84] },
+  { px = [1168, 776], world = [-1.25, 0.0, -29.84] },
+  { px = [1150, 345], world = [-1.25, 18.900, -29.84] },
+  { px = [1022, 662], world = [9.13, 4.410, -24.17] },
+  { px = [1016, 494], world = [9.40, 10.350, -24.70] },
+  { px = [771, 68], world = [19.8, 24.840, -17.0] },
+]
+
+[[view]]
+name = "p07_poeta_querol_ximonic"
+photo = "photos/07_Palace_of_the_Marquis_of_Dos_Aguas_in_Ciutat_Vella_Valencia_.jpg"
+note = "Canon 5D IV, EXIF 16 mm, from the Llibrers / Marques de Dosaigues corner."
+match = [
+  { px = [668, 638], world = [20.71, 0.0, -17.84] },
+  { px = [668, 246], world = [20.71, 18.900, -17.84] },
+  { px = [946, 635], world = [-1.25, 0.0, -29.84] },
+  { px = [946, 354], world = [-1.25, 18.900, -29.84] },
+  { px = [668, 148], world = [19.8, 24.840, -17.0] },
+  { px = [308, 281], world = [14.1, 24.840, 16.7] },
+  { px = [946, 258], world = [-2.1, 24.840, -29.0] },
+  { px = [835, 573], world = [9.13, 4.410, -24.17] },
+]
+
+[[view]]
+name = "p02_corner_bini"
+context = false   # the camera stands under the cafe awnings; the context block in front hides the facade
+photo = "photos/02_Valencia_palazzo_de_marchese_di_Dos_Aigues_esterno_01.jpg"
+note = "Canon 6D, EXIF 24 mm, perspective-corrected: the measuring photo for all heights (see header)."
+match = [
+  { px = [785, 1002], world = [20.71, 0.0, -17.84] },
+  { px = [1172, 985], world = [-1.25, 0.0, -29.84] },
+  { px = [1172, 530], world = [-1.25, 19.305, -29.84] },
+  { px = [785, 200], world = [19.8, 24.840, -17.0] },
+  { px = [1024, 872], world = [9.13, 4.410, -24.17] },
+  { px = [842, 800], world = [18.34, 6.210, -19.13] },
+  { px = [688, 805], world = [20.06, 6.210, -14.10] },
+]
+
+[[view]]
+name = "p23_corner_2008"
+photo = "extra/23_Dosaigues_vista.jpg"
+note = "Canon PowerShot S70, EXIF 7.3 mm (35 mm-eq), 2008, people at the portal give the scale."
+match = [
+  { px = [748, 935], world = [20.71, 0.0, -17.84] },
+  { px = [748, 303], world = [20.71, 18.900, -17.84] },
+  { px = [750, 140], world = [19.8, 24.840, -17.0] },
+  { px = [1045, 795], world = [9.13, 4.410, -24.17] },
+  { px = [290, 795], world = [17.70, 3.600, -0.39] },
+  { px = [60, 312], world = [14.1, 24.840, 16.7] },
+]
+
+[[view]]
+name = "p08_rinconada_filpo"
+photo = "photos/08_Palacio_del_Marques_de_Dos_Aguas_Valencia_Fachada.jpg"
+note = "From the Rinconada de Garcia Sanchiz (NW), looking along the main facade."
+eye = [-9.5, 1.6, -45.0]
+target = [3.2, 7.200, -27.4]
+fov_y = 62.0
+# point picks (kept for reference; the tool solve was poor with these, camera set by hand):
+# match = [
+#   { px = [750, 1233], world = [-1.25, 0.0, -29.84] },
+#   { px = [750, 858], world = [-1.25, 5.760, -29.84] },
+#   { px = [203, 1192], world = [20.71, 0.0, -17.84] },
+#   { px = [208, 375], world = [20.71, 18.900, -17.84] },
+#   { px = [842, 1237], world = [-2.73, 0.0, -26.12] },
+# ]
+
+
+[[view]]
+name = "p06_portal_oblique"
+photo = "photos/06_Maison_del_marques_de_dos_aigues_panoramio.jpg"
+note = "Panasonic TZ25, EXIF 4.3 mm (24 mm-eq), close to the NE corner."
+eye = [27.77, 1.6, -29.58]
+target = [4.17, 12.25, -14.40]
+fov_y = 56.9
+# point picks (tool solve poor, camera set by hand from the Commons position and these):
+# match = [
+#   { px = [205, 940], world = [20.71, 0.0, -17.84] },
+#   { px = [205, 542], world = [20.71, 5.760, -17.84] },
+#   { px = [903, 870], world = [9.13, 0.0, -24.17] },
+#   { px = [903, 650], world = [9.13, 4.410, -24.17] },
+#   { px = [680, 568], world = [13.78, 6.210, -21.63] },
+#   { px = [390, 525], world = [18.34, 6.210, -19.13] },
+# ]
+
+
+[[view]]
+name = "p21_portal_frontal"
+photo = "extra/21_portal_Bini_01.jpg"
+note = "Canon 6D 24 mm, frontal, perspective-corrected: the shapes of the portal."
+match = [
+  { px = [435, 1700], world = [10.44, 0.0, -23.45] },
+  { px = [850, 1700], world = [7.81, 0.0, -24.89] },
+  { px = [435, 1095], world = [10.44, 4.410, -23.45] },
+  { px = [850, 1095], world = [7.81, 4.410, -24.89] },
+  { px = [638, 790], world = [9.28, 7.470, -24.43] },
+  { px = [95, 840], world = [13.78, 6.210, -21.63] },
+  { px = [1170, 840], world = [4.65, 6.210, -26.61] },
+]
+
+[[view]]
+name = "p40_pnoa_aerial"
+photo = "extra/40_PNOA_2024_orthophoto.jpg"
+note = "IGN PNOA 2024-05 orthophoto (0.1 m/px resample, bbox x -40..45, z -45..45), north up: near-vertical camera 800 m up. Not a true orthophoto: the towers lean outwards."
+eye = [2.5, 800.0, 0.5]
+target = [2.5, 0.0, 0.0]
+fov_y = 6.44
+
+[[view]]
+name = "p03_poeta_querol_fountain"
+photo = "photos/03_Museo_Nacional_de_Ceramica_Valencia_Espana_2014_06_30_DD_140.jpg"
+note = "Canon 5D II, EXIF 17 mm, from the fountain at the south end of the Poeta Querol front, looking north."
+eye = [16.5, 1.6, 21.0]
+target = [16.0, 1.350, -10.0]
+fov_y = 79.4
+# point picks (kept for reference; the tool solve was poor with these, camera set by hand):
+# match = [
+#   { px = [100, 1955], world = [14.89, 0.0, 15.87] },
+#   { px = [100, 1511], world = [14.89, 5.760, 15.87] },
+#   { px = [1100, 1878], world = [20.71, 0.0, -17.84] },
+#   { px = [1100, 1211], world = [20.71, 18.900, -17.84] },
+#   { px = [878, 1711], world = [17.70, 3.600, -0.39] },
+# ]
+
+
+[[view]]
+name = "p11_corner_from_below"
+photo = "photos/11_Palau_del_Marques_de_Dosaigues_Valencia_1.jpg"
+note = "Ricoh R8, EXIF 5 mm (28 mm-eq), looking up at the NE corner tower."
+eye = [31.0, 1.6, -25.0]
+target = [20.7, 12.600, -17.8]
+fov_y = 49.8
+# point picks (kept for reference; the tool solve was poor with these, camera set by hand):
+# match = [
+#   { px = [660, 935], world = [20.71, 5.940, -17.84] },
+#   { px = [660, 300], world = [20.71, 18.900, -17.84] },
+#   { px = [664, 171], world = [19.8, 24.840, -17.0] },
+#   { px = [1143, 771], world = [9.28, 9.000, -24.43] },
+#   { px = [71, 429], world = [14.1, 24.840, 16.7] },
+#   { px = [1271, 343], world = [-2.1, 24.840, -29.0] },
+# ]
+
+
+[[view]]
+name = "p34_portal_people"
+photo = "extra/34_Palau_del_Marqu_s_de_Dos_Aig_es_2019_2.jpg"
+note = "Nikon D7000, EXIF 18 mm (27 mm-eq); two visitors at the door give the door height (about 4.3 m)."
+eye = [16.57, 1.6, -30.37]
+target = [9.3, 5.850, -24.2]
+fov_y = 67.4
+# point picks (kept for reference; the tool solve was poor with these, camera set by hand):
+# match = [
+#   { px = [543, 1743], world = [10.44, 0.0, -23.45] },
+#   { px = [800, 1743], world = [7.81, 0.0, -24.89] },
+#   { px = [543, 1000], world = [10.44, 4.410, -23.45] },
+#   { px = [800, 1000], world = [7.81, 4.410, -24.89] },
+#   { px = [1086, 1057], world = [4.65, 5.220, -26.61] },
+#   { px = [1086, 1443], world = [4.65, 1.980, -26.61] },
+# ]
+
+
