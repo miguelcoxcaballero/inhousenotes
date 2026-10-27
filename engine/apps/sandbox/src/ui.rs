@@ -18,6 +18,30 @@ pub struct UiState {
     pub adapter: String,
 }
 
+/// Loading screen: title, stage, progress bar and elapsed time.
+pub fn draw_loading(ctx: &egui::Context, title: &str, stage: &str, fraction: f32, elapsed: Option<f32>) {
+    let screen = ctx.content_rect();
+    let p = ctx.layer_painter(egui::LayerId::background());
+    let c = screen.center();
+    let w = (screen.width() * 0.5).clamp(240.0, 720.0);
+    p.text(egui::pos2(c.x, c.y - 70.0), egui::Align2::CENTER_BOTTOM, "FORJA", egui::FontId::proportional(42.0), egui::Color32::from_rgb(235, 200, 140));
+    p.text(egui::pos2(c.x, c.y - 30.0), egui::Align2::CENTER_BOTTOM, title, egui::FontId::proportional(20.0), egui::Color32::WHITE);
+    let bar = egui::Rect::from_center_size(egui::pos2(c.x, c.y), egui::vec2(w, 10.0));
+    p.rect_filled(bar, 5.0, egui::Color32::from_gray(45));
+    let f = fraction.clamp(0.0, 1.0);
+    if f > 0.0 {
+        let fill = egui::Rect::from_min_size(bar.min, egui::vec2((w * f).max(10.0), bar.height()));
+        p.rect_filled(fill, 5.0, egui::Color32::from_rgb(222, 150, 60));
+    }
+    let detail = match elapsed {
+        Some(t) => format!("{stage}  ·  {:.0} %  ·  {t:.0} s", f * 100.0),
+        None => format!("{stage}  ·  {:.0} %", f * 100.0),
+    };
+    p.text(egui::pos2(c.x, c.y + 22.0), egui::Align2::CENTER_TOP, detail, egui::FontId::proportional(15.0), egui::Color32::from_gray(190));
+    // Keep animating while the worker runs.
+    ctx.request_repaint();
+}
+
 pub fn draw(ctx: &egui::Context, world: &mut World, ui: &mut UiState) {
     let hud = world.res::<Hud>().clone();
     let screen = ctx.content_rect();

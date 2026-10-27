@@ -41,6 +41,15 @@ struct Args {
     preset: Option<forja_render::Preset>,
     bench: usize,
     csv: Option<PathBuf>,
+    /// Headless: after the screenshot, cross dusk (or dawn) as the game
+    /// does, building the other city in the background while frames keep
+    /// rendering, and save `<screenshot>_switched.png`.
+    night_switch: bool,
+    /// Headless shadow stability test (`--stability N`): N frames with the
+    /// sun creeping (0.03° per frame, fixed camera), then the camera
+    /// walking 3 m away and back in N frames each; prints frame-to-frame
+    /// and return-to-pose differences (see `docs/performance.md`).
+    stability: usize,
 }
 
 fn parse_vec3(s: &str) -> Option<Vec3> {
@@ -49,7 +58,7 @@ fn parse_vec3(s: &str) -> Option<Vec3> {
 }
 
 fn parse_args() -> Args {
-    let mut a = Args { map: MapKind::Spain, screenshot: None, script: "idle".into(), frames: 90, width: 1600, height: 900, hours: None, camera: None, preset: None, bench: 0, csv: None };
+    let mut a = Args { map: MapKind::Spain, screenshot: None, script: "idle".into(), frames: 90, width: 1600, height: 900, hours: None, camera: None, preset: None, bench: 0, csv: None, night_switch: false, stability: 0 };
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
     let mut eye = None;
@@ -72,6 +81,12 @@ fn parse_args() -> Args {
             "--preset" => a.preset = Some(perf::parse_preset(&v).unwrap_or_else(|| panic!("unknown preset {v}"))),
             "--bench" => a.bench = v.parse().expect("bench frames"),
             "--csv" => a.csv = Some(v.into()),
+            "--stability" => a.stability = v.parse().expect("stability frames"),
+            "--night-switch" => {
+                a.night_switch = true;
+                i += 1;
+                continue;
+            }
             _ => {
                 eprintln!("unknown argument {}", args[i]);
                 std::process::exit(2);
@@ -124,11 +139,14 @@ struct Extract {
     /// `FORJA_LEGACY_STATICS=1`: resubmit the whole world every frame as
     /// before the static grid (for before/after measurements).
     legacy: bool,
+    /// Upload time spent in earlier slices of [`Extract::upload_for`].
+    upload_ms: f64,
+    freed: usize,
 }
 
 impl Extract {
     fn new() -> Self {
-        Self { handles: Vec::new(), env_loaded: false, statics_uploaded: None, legacy: std::env::var_os("FORJA_LEGACY_STATICS").is_some() }
+        Self { handles: Vec::new(), env_loaded: false, statics_uploaded: None, legacy: std::env::var_os("FORJA_LEGACY_STATICS").is_some(), upload_ms: 0.0, freed: 0 }
     }
 
     /// Uploads the models added since the last frame. The world's scenes
@@ -136,15 +154,25 @@ impl Extract {
     /// are on the GPU, so the load never holds both (see
     /// [`game::world::strip`]); flushes keep the staging memory bounded.
     fn upload(&mut self, renderer: &mut Renderer, app: &mut App) {
+        self.upload_for(renderer, app, None);
+    }
+
+    /// [`Self::upload`] for at most `budget` (the loading screen keeps
+    /// drawing between slices); `true` once everything is on the GPU.
+    fn upload_for(&mut self, renderer: &mut Renderer, app: &mut App, budget: Option<std::time::Duration>) -> bool {
         let n = app.world.res::<RenderScene>().models.len();
         if self.handles.len() >= n {
-            return;
+            return true;
         }
         let (t, first) = (Instant::now(), self.handles.len());
+        let deadline = budget.map(|b| t + b);
         let mut freed = 0usize;
         let handles = &mut self.handles;
         let mut upload = |rs: &mut RenderScene, mut world: Option<(&mut game::world::GameWorld, usize)>| {
             while handles.len() < n {
+                if deadline.is_some_and(|d| Instant::now() >= d) {
+                    break;
+                }
                 let i = handles.len();
                 handles.push(renderer.upload_scene(&rs.models[i]));
                 if let Some((gw, base)) = world.as_mut()
@@ -166,24 +194,36 @@ impl Extract {
             app.world.scope::<game::world::GameWorld, _>(|world, gw| {
                 let base = gw.scene_base;
                 upload(world.res_mut::<RenderScene>(), Some((&mut *gw, base)));
-                gw.released = true;
             });
         } else {
             upload(app.world.res_mut::<RenderScene>(), None);
         }
         renderer.flush_uploads();
+        forja_assets::progress::advance(0.85 + 0.15 * self.handles.len() as f32 / n.max(1) as f32);
+        self.freed += freed;
+        if self.handles.len() < n {
+            self.upload_ms += t.elapsed().as_secs_f64() * 1000.0;
+            return false;
+        }
+        let freed = std::mem::take(&mut self.freed);
+        if let Some(gw) = app.world.resources.get_mut::<game::world::GameWorld>() {
+            gw.released = true;
+        }
+        let total_ms = std::mem::take(&mut self.upload_ms) + t.elapsed().as_secs_f64() * 1000.0;
         renderer.prune_texture_cache();
         perf::trim_heap();
         let (mesh, tex) = renderer.uploaded_bytes();
+        let _ = first;
         log::info!(
-            "uploaded {} models in {:.2?}: meshes {:.0} MB, textures {:.0} MB (total); dropped {:.0} MB of CPU mesh copies, resident {:.0} MB",
-            n - first,
-            t.elapsed(),
+            "uploaded {} models in {:.2}s: meshes {:.0} MB, textures {:.0} MB (total); dropped {:.0} MB of CPU mesh copies, resident {:.0} MB",
+            n,
+            total_ms / 1000.0,
             mesh as f64 / 1048576.0,
             tex as f64 / 1048576.0,
             freed as f64 / 1048576.0,
             perf::resident_mb()
         );
+        true
     }
 
     fn frame(&mut self, renderer: &mut Renderer, app: &mut App) -> FrameDesc {
@@ -419,6 +459,10 @@ fn run_headless(args: &Args) {
     if args.bench > 0 {
         bench(args, &mut app, &mut renderer, &mut extract, &mut perf_state);
     }
+    if args.stability > 0 {
+        stability(args, &mut app, &mut renderer, &mut extract);
+        return;
+    }
     let t_up = Instant::now();
     let frame = extract.frame(&mut renderer, &mut app);
     log::info!("GPU upload in {:.2?}", t_up.elapsed());
@@ -466,6 +510,10 @@ fn run_headless(args: &Args) {
         let _ = std::fs::create_dir_all(dir);
     }
     img.save(&out_path).expect("save screenshot");
+    if args.night_switch {
+        night_switch(args, app, renderer, extract, &out_path);
+        return;
+    }
     println!(
         "{}: {} | sim {:.2} ms/frame | render {:.0} ms | {:?}",
         out_path.display(),
@@ -473,6 +521,132 @@ fn run_headless(args: &Args) {
         sim_ms,
         render_ms,
         renderer.stats
+    );
+}
+
+/// Shadow stability: how much the image changes between frames when only
+/// the sun creeps, and how far a frame differs from the first after the
+/// camera walks away and comes back to the same pose. Static geometry
+/// casts the same shadow for the same camera and sun, so whatever changes
+/// is flicker (caster LOD following the camera, re-fitted cascades, thin
+/// casters aliasing).
+fn stability(args: &Args, app: &mut App, renderer: &mut Renderer, extract: &mut Extract) {
+    let (eye, look) = args.camera.unwrap_or_else(|| {
+        let c = app.world.res::<RenderScene>().camera;
+        (c.position, c.position + c.rotation * Vec3::NEG_Z * 10.0)
+    });
+    let (w, h) = (args.width, args.height);
+    let n = args.stability;
+    let shot = |app: &mut App, renderer: &mut Renderer, extract: &mut Extract, eye: Vec3, look: Vec3| -> Vec<f32> {
+        app.world.res_mut::<game::camera::CameraRig>().fixed = Some((eye, look));
+        app.update_with_dt(0.0);
+        let frame = extract.frame(renderer, app);
+        let tex = renderer.render_offscreen(&frame, w, h);
+        renderer.read_image(&tex).pixels().map(|p| (p[0] as f32 + p[1] as f32 + p[2] as f32) / 3.0).collect()
+    };
+    let diff = |a: &[f32], b: &[f32]| {
+        let mut d: Vec<f32> = a.iter().zip(b).map(|(x, y)| (x - y).abs()).collect();
+        let mean = d.iter().sum::<f32>() / d.len().max(1) as f32;
+        let changed = d.iter().filter(|v| **v > 8.0).count() as f32 / d.len().max(1) as f32;
+        d.sort_by(f32::total_cmp);
+        (mean, d[(d.len() as f32 * 0.999) as usize % d.len().max(1)], changed)
+    };
+    {
+        let t = app.world.res_mut::<game::env::TimeOfDay>();
+        t.photo_sky = false;
+        t.speed = 0.0;
+    }
+    // Settle (TAA history, cached cascades).
+    for _ in 0..4 {
+        shot(app, renderer, extract, eye, look);
+    }
+    let mut prev = shot(app, renderer, extract, eye, look);
+    let (mut sm, mut sp, mut sc) = (0.0, 0.0f32, 0.0);
+    for _ in 0..n {
+        app.world.res_mut::<game::env::TimeOfDay>().hours += 0.002;
+        let img = shot(app, renderer, extract, eye, look);
+        let (m, p, c) = diff(&img, &prev);
+        sm += m / n as f32;
+        sp = sp.max(p);
+        sc += c / n as f32;
+        prev = img;
+    }
+    let first = prev.clone();
+    let dir = (look - eye).normalize_or_zero().cross(Vec3::Y).normalize_or_zero() * 3.0;
+    for i in 1..=n {
+        let t = i as f32 / n as f32;
+        shot(app, renderer, extract, eye + dir * t, look + dir * t);
+    }
+    for i in (0..n).rev() {
+        let t = i as f32 / n as f32;
+        shot(app, renderer, extract, eye + dir * t, look + dir * t);
+    }
+    // A few frames at the pose so TAA converges as it had before.
+    let mut back = Vec::new();
+    for _ in 0..4 {
+        back = shot(app, renderer, extract, eye, look);
+    }
+    let (rm, rp, rc) = diff(&back, &first);
+    println!(
+        "stability ({n} frames): sun creep mean {sm:.3} p99.9 {sp:.0} changed {:.3}% | walk away and back: mean {rm:.3} p99.9 {rp:.0} changed {:.3}%",
+        sc * 100.0,
+        rc * 100.0
+    );
+}
+
+/// Headless dusk/dawn switch as in the game: the other city is built on a
+/// worker thread while the current one keeps rendering; then the swap
+/// (fresh GPU resources and the upload) is the only main-thread stall.
+fn night_switch(args: &Args, mut app: App, mut renderer: Renderer, mut extract: Extract, out: &std::path::Path) {
+    let night = !app.world.res::<game::world::GameWorld>().night_content;
+    let hours = if night { 21.5 } else { 11.0 };
+    let map = args.map;
+    let t0 = Instant::now();
+    let pending = spawn_build(map, Some(hours), true);
+    let (w, h) = (args.width.min(480), args.height.min(270));
+    let mut frames: Vec<f32> = Vec::new();
+    while !pending.handle.is_finished() {
+        let t = Instant::now();
+        app.update_with_dt(1.0 / 60.0);
+        let frame = extract.frame(&mut renderer, &mut app);
+        let _ = renderer.render_offscreen(&frame, w, h);
+        let _ = renderer.device.poll(forja_render::wgpu::PollType::wait_indefinitely());
+        frames.push(t.elapsed().as_secs_f32() * 1000.0);
+    }
+    let built = t0.elapsed().as_secs_f32();
+    let new_app = pending.handle.join().expect("world build");
+    let ts = Instant::now();
+    drop(app);
+    let renderer2 = Renderer::with_device(renderer.device.clone(), renderer.queue.clone(), renderer.adapter_info.clone(), renderer.output_format);
+    let settings = renderer.settings.clone();
+    drop(renderer);
+    perf::trim_heap();
+    let mut renderer = renderer2;
+    renderer.settings = settings;
+    let mut app = new_app;
+    app.world.res_mut::<game::env::TimeOfDay>().photo_sky = false;
+    let mut extract = Extract::new();
+    extract.upload(&mut renderer, &mut app);
+    let upload = ts.elapsed().as_secs_f32();
+    app.update_with_dt(1.0 / 60.0);
+    if let Some(cam) = args.camera {
+        app.world.res_mut::<game::camera::CameraRig>().fixed = Some(cam);
+        app.update_with_dt(1.0 / 60.0);
+    }
+    let frame = extract.frame(&mut renderer, &mut app);
+    let tex = renderer.render_offscreen(&frame, args.width, args.height);
+    let swap = ts.elapsed().as_secs_f32();
+    let path = out.with_file_name(format!("{}_switched.png", out.file_stem().and_then(|s| s.to_str()).unwrap_or("shot")));
+    renderer.read_image(&tex).save(&path).expect("save screenshot");
+    frames.sort_by(f32::total_cmp);
+    let max = frames.last().copied().unwrap_or(0.0);
+    let mean = frames.iter().sum::<f32>() / frames.len().max(1) as f32;
+    println!(
+        "night switch ({}): built in the background in {built:.1}s while {} frames rendered (mean {mean:.0} ms, max {max:.0} ms); main-thread stall: upload {upload:.2}s, swap + first frame {swap:.2}s; resident {:.0} MB -> {}",
+        if night { "dusk" } else { "dawn" },
+        frames.len(),
+        perf::resident_mb(),
+        path.display()
     );
 }
 
@@ -499,6 +673,45 @@ struct Sandbox {
     fps_acc: (f32, u32),
     want_screenshot: bool,
     perf: Option<PerfState>,
+    /// A world being built on a worker thread.
+    pending: Option<Pending>,
+    /// The loading screen is up (building in the foreground, or uploading
+    /// a new world to the GPU): its title.
+    loading: Option<String>,
+    /// Clock and player carried into a world rebuilt at dusk or dawn.
+    carry: Option<Carry>,
+}
+
+/// A world built on a worker thread ([`App`] is `Send`).
+struct Pending {
+    handle: std::thread::JoinHandle<App>,
+    /// Built while the current world keeps running (dusk and dawn); the
+    /// swap only costs the GPU upload.
+    background: bool,
+    started: Instant,
+}
+
+struct Carry {
+    hours: f32,
+    photo_sky: bool,
+    speed: f32,
+    player: Option<(Vec3, f32)>,
+    message: &'static str,
+}
+
+/// Starts building `map` at `hour` on a worker thread.
+fn spawn_build(map: MapKind, hour: Option<f32>, background: bool) -> Pending {
+    let handle = std::thread::Builder::new()
+        .name("world build".into())
+        .spawn(move || {
+            let mut app = game::build_at(map, paths(), hour);
+            if let Some(h) = hour {
+                app.world.res_mut::<game::env::TimeOfDay>().hours = h;
+            }
+            app
+        })
+        .expect("world build thread");
+    Pending { handle, background, started: Instant::now() }
 }
 
 impl Sandbox {
@@ -507,11 +720,117 @@ impl Sandbox {
         let map_text = std::fs::read_to_string(paths.data.join("input.toml")).unwrap_or_default();
         let input = Input::new(ActionMap::from_toml(&map_text).unwrap_or_default());
         let map = args.map;
-        let mut app = game::build_at(map, paths, args.hours);
-        if let Some(h) = args.hours {
-            app.world.res_mut::<game::env::TimeOfDay>().hours = h;
+        // The window opens at once with a loading screen while the world
+        // is built on a worker thread.
+        forja_assets::progress::reset("Preparando el mapa");
+        let pending = Some(spawn_build(map, args.hours, false));
+        Self {
+            args,
+            gpu: None,
+            app: App::new(),
+            map,
+            input,
+            extract: Extract::new(),
+            ui: ui::UiState::default(),
+            captured: false,
+            last: Instant::now(),
+            fps_acc: (0.0, 0),
+            want_screenshot: false,
+            perf: None,
+            pending,
+            loading: Some(format!("Cargando {}", map.label())),
+            carry: None,
         }
-        Self { args, gpu: None, app, map, input, extract: Extract::new(), ui: ui::UiState::default(), captured: false, last: Instant::now(), fps_acc: (0.0, 0), want_screenshot: false, perf: None }
+    }
+
+    /// A finished build replaces the running world: fresh GPU resources,
+    /// then the upload runs under the loading screen.
+    fn install(&mut self, mut app: App) {
+        if let Some(c) = self.carry.take() {
+            {
+                let t = app.world.res_mut::<game::env::TimeOfDay>();
+                t.hours = c.hours;
+                t.photo_sky = c.photo_sky;
+                t.speed = c.speed;
+            }
+            if let Some((pos, facing)) = c.player {
+                app.world.scope::<game::player::Player, _>(|w, p| {
+                    p.controller.teleport(w.res_mut::<forja_physics::PhysicsWorld>(), pos);
+                    p.facing = facing;
+                });
+            }
+            app.world.res_mut::<game::Hud>().message(c.message);
+        }
+        // Free the old world (CPU and GPU) before uploading the new one.
+        self.app = App::new();
+        self.extract = Extract::new();
+        if let Some(gpu) = &mut self.gpu {
+            let renderer = Renderer::with_device(gpu.renderer.device.clone(), gpu.renderer.queue.clone(), gpu.renderer.adapter_info.clone(), gpu.renderer.output_format);
+            gpu.renderer = renderer;
+            gpu.renderer.resize(gpu.config.width, gpu.config.height);
+            if let Some(p) = &mut self.perf {
+                // New renderer: apply the graphics options (texture cap too).
+                p.dirty = true;
+            }
+        }
+        perf::trim_heap();
+        self.app = app;
+        forja_assets::progress::stage("Subiendo la ciudad a la tarjeta gráfica", 0.85);
+        if self.loading.is_none() {
+            self.loading = Some("Preparando la ciudad".into());
+        }
+    }
+
+    /// Loading screen: the title, the current stage and a progress bar.
+    fn draw_loading(&mut self) {
+        let Some(gpu) = &mut self.gpu else { return };
+        let surface_tex = match gpu.surface.get_current_texture() {
+            forja_render::wgpu::CurrentSurfaceTexture::Success(t) | forja_render::wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
+            forja_render::wgpu::CurrentSurfaceTexture::Outdated | forja_render::wgpu::CurrentSurfaceTexture::Lost => {
+                gpu.surface.configure(&gpu.renderer.device, &gpu.config);
+                return;
+            }
+            _ => return,
+        };
+        let view = surface_tex.texture.create_view(&Default::default());
+        let (stage, fraction) = forja_assets::progress::get();
+        let title = self.loading.clone().unwrap_or_default();
+        let elapsed = self.pending.as_ref().map(|p| p.started.elapsed().as_secs_f32());
+        let raw = gpu.egui_state.take_egui_input(&gpu.window);
+        let ctx = gpu.egui_state.egui_ctx().clone();
+        let out = ctx.run_ui(raw, |ui| ui::draw_loading(ui.ctx(), &title, &stage, fraction, elapsed));
+        gpu.egui_state.handle_platform_output(&gpu.window, out.platform_output);
+        let jobs = ctx.tessellate(out.shapes, out.pixels_per_point);
+        let screen = egui_wgpu::ScreenDescriptor { size_in_pixels: [gpu.config.width, gpu.config.height], pixels_per_point: out.pixels_per_point };
+        for (id, deltas) in &out.textures_delta.set {
+            for delta in deltas {
+                gpu.egui_renderer.update_texture(&gpu.renderer.device, &gpu.renderer.queue, *id, delta);
+            }
+        }
+        let mut enc = gpu.renderer.device.create_command_encoder(&Default::default());
+        let extra = gpu.egui_renderer.update_buffers(&gpu.renderer.device, &gpu.renderer.queue, &mut enc, &jobs, &screen);
+        {
+            let pass = enc.begin_render_pass(&forja_render::wgpu::RenderPassDescriptor {
+                label: Some("loading"),
+                color_attachments: &[Some(forja_render::wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: forja_render::wgpu::Operations { load: forja_render::wgpu::LoadOp::Clear(forja_render::wgpu::Color { r: 0.012, g: 0.011, b: 0.01, a: 1.0 }), store: forja_render::wgpu::StoreOp::Store },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            gpu.egui_renderer.render(&mut pass.forget_lifetime(), &jobs, &screen);
+        }
+        gpu.renderer.queue.submit(extra.into_iter().chain([enc.finish()]));
+        for id in &out.textures_delta.free {
+            gpu.egui_renderer.free_texture(id);
+        }
+        gpu.window.pre_present_notify();
+        gpu.renderer.queue.present(surface_tex);
     }
 
     fn capture(&mut self, on: bool) {
@@ -525,30 +844,105 @@ impl Sandbox {
         gpu.window.set_cursor_visible(!on);
     }
 
+    /// Another map (F2): the old one is freed first and the new one is
+    /// built behind the loading screen.
     fn switch_map(&mut self, map: MapKind) {
+        if self.pending.is_some() {
+            return;
+        }
         self.map = map;
         // Keep the clock (and build the city's night content for it).
         let (hours, photo, speed) = {
             let t = self.app.world.res::<game::env::TimeOfDay>();
             (t.hours, t.photo_sky, t.speed)
         };
-        // Free the old map (CPU and GPU) before building the new one, so a
-        // rebuild at dusk never holds two cities.
         self.app = App::new();
         self.extract = Extract::new();
         if let Some(gpu) = &mut self.gpu {
-            // Fresh GPU resources for the new map.
-            let renderer = Renderer::with_device(gpu.renderer.device.clone(), gpu.renderer.queue.clone(), gpu.renderer.adapter_info.clone(), gpu.renderer.output_format);
-            gpu.renderer = renderer;
+            gpu.renderer = Renderer::with_device(gpu.renderer.device.clone(), gpu.renderer.queue.clone(), gpu.renderer.adapter_info.clone(), gpu.renderer.output_format);
             gpu.renderer.resize(gpu.config.width, gpu.config.height);
-            if let Some(p) = &mut self.perf {
-                // New renderer: apply the graphics options (texture cap too).
-                p.dirty = true;
-            }
         }
         perf::trim_heap();
-        self.app = game::build_at(map, paths(), (!photo).then_some(hours));
-        self.app.world.res_mut::<game::env::TimeOfDay>().speed = speed;
+        forja_assets::progress::reset("Preparando el mapa");
+        self.carry = Some(Carry { hours, photo_sky: photo, speed, player: None, message: map.label() });
+        self.pending = Some(spawn_build(map, (!photo).then_some(hours), false));
+        self.loading = Some(format!("Cargando {}", map.label()));
+    }
+
+    /// Dusk or dawn: the city with the other content is built on a worker
+    /// thread while this one keeps running; the player, the clock and the
+    /// camera carry over when it is swapped in.
+    fn rebuild_for_time(&mut self, night: bool) {
+        if self.pending.is_some() {
+            return;
+        }
+        let (hours, photo, speed) = {
+            let t = self.app.world.res::<game::env::TimeOfDay>();
+            (t.hours, t.photo_sky, t.speed)
+        };
+        log::info!("time of day crossed {}: building the city in the background", if night { "dusk" } else { "dawn" });
+        forja_assets::progress::reset(if night { "Anochece" } else { "Amanece" });
+        let driving = self.app.world.res::<game::vehicles::Driving>().0.is_some();
+        let player = (!driving).then(|| {
+            let p = self.app.world.res::<game::player::Player>();
+            (p.position(), p.facing)
+        });
+        self.carry = Some(Carry { hours, photo_sky: photo, speed, player, message: if night { "Anochece en la ciudad" } else { "Amanece en la ciudad" } });
+        self.pending = Some(spawn_build(self.map, Some(hours), true));
+    }
+
+    /// Polls the worker; `true` while the loading screen owns the frame.
+    fn update_loading(&mut self) -> bool {
+        if self.pending.as_ref().is_some_and(|p| p.handle.is_finished()) {
+            let p = self.pending.take().expect("checked");
+            match p.handle.join() {
+                Ok(app) => {
+                    log::info!("world ready after {:.1}s{}", p.started.elapsed().as_secs_f32(), if p.background { " (built in the background)" } else { "" });
+                    // A dusk build that dawn overtook (or the reverse) is dropped.
+                    let stale = p.background && self.map == MapKind::Spain && {
+                        let want = self.app.world.res::<game::env::TimeOfDay>().night_content();
+                        app.world.res::<game::world::GameWorld>().night_content != want
+                    };
+                    if stale {
+                        self.carry = None;
+                    } else {
+                        if p.background {
+                            // Keep the clock as it is now (time ran on).
+                            let t = self.app.world.res::<game::env::TimeOfDay>();
+                            if let Some(c) = &mut self.carry {
+                                c.hours = t.hours;
+                            }
+                        }
+                        self.install(app);
+                    }
+                }
+                Err(_) => {
+                    log::error!("the world build panicked");
+                    std::process::exit(1);
+                }
+            }
+        }
+        if self.pending.as_ref().is_some_and(|p| !p.background) {
+            self.draw_loading();
+            return true;
+        }
+        if self.loading.is_some() {
+            let Some(gpu) = &mut self.gpu else { return true };
+            if let Some(p) = &mut self.perf
+                && std::mem::take(&mut p.dirty)
+            {
+                gpu.renderer.apply_graphics(&p.cfg);
+            }
+            let done = self.extract.upload_for(&mut gpu.renderer, &mut self.app, Some(std::time::Duration::from_millis(40)));
+            if done {
+                self.loading = None;
+                self.last = Instant::now();
+                return false;
+            }
+            self.draw_loading();
+            return true;
+        }
+        false
     }
 
     fn sample_input(&mut self) {
@@ -576,6 +970,16 @@ impl Sandbox {
     }
 
     fn redraw(&mut self, event_loop: &ActiveEventLoop) {
+        if self.update_loading() {
+            if self.input.pressed("quit") {
+                event_loop.exit();
+            }
+            self.input.end_frame();
+            if let Some(gpu) = &self.gpu {
+                gpu.window.request_redraw();
+            }
+            return;
+        }
         let now = Instant::now();
         let dt = (now - self.last).as_secs_f32();
         self.last = now;
@@ -614,14 +1018,13 @@ impl Sandbox {
             }
         }
         // The procedural city bakes lit windows and lamps for the hour it was
-        // built at: crossing dusk or dawn rebuilds it for the new time.
+        // built at: crossing dusk or dawn rebuilds it for the new time, in
+        // the background (the game keeps running until it is ready).
         if self.map == MapKind::Spain {
             let want = self.app.world.res::<game::env::TimeOfDay>().night_content();
             let built = self.app.world.res::<game::world::GameWorld>().night_content;
             if want != built {
-                log::info!("time of day crossed {}: rebuilding the city", if want { "dusk" } else { "dawn" });
-                self.switch_map(self.map);
-                self.app.world.res_mut::<game::Hud>().message(if want { "Anochece en la ciudad" } else { "Amanece en la ciudad" });
+                self.rebuild_for_time(want);
             }
         }
         if self.input.pressed("screenshot") {

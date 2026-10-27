@@ -17,6 +17,8 @@
 
 use std::collections::BTreeMap;
 
+use rayon::prelude::*;
+
 use forja_math::{Vec2, Vec3};
 
 use crate::geom::Parts;
@@ -105,16 +107,17 @@ impl Ground {
         let carriage0 = g.corridor(|s, _| if prof(s).vehicles { s.carriageway } else { 0.0 });
         // Kerb fillets: each junction disc only sees the roadway tiles under it.
         let tiled = carriage0.tiles(TILE);
-        let mut fillets = Vec::new();
-        for j in &junctions {
-            if j.kerb_radius <= 0.0 {
-                continue;
-            }
-            let d = Region::ring(&disc(j.c, j.r, 32));
-            let (k0, k1) = (tiled.key(j.c - Vec2::splat(j.r)), tiled.key(j.c + Vec2::splat(j.r)));
-            let near: Vec<&Region> = (k0.0..=k1.0).flat_map(|x| (k0.1..=k1.1).map(move |z| (x, z))).filter_map(|k| tiled.get(k)).collect();
-            fillets.push(Region::union_all(near).and(&d).closing(j.kerb_radius).and(&d));
-        }
+        // Independent per junction: in parallel, in junction order.
+        let fillets: Vec<Region> = junctions
+            .par_iter()
+            .filter(|j| j.kerb_radius > 0.0)
+            .map(|j| {
+                let d = Region::ring(&disc(j.c, j.r, 32));
+                let (k0, k1) = (tiled.key(j.c - Vec2::splat(j.r)), tiled.key(j.c + Vec2::splat(j.r)));
+                let near: Vec<&Region> = (k0.0..=k1.0).flat_map(|x| (k0.1..=k1.1).map(move |z| (x, z))).filter_map(|k| tiled.get(k)).collect();
+                Region::union_all(near).and(&d).closing(j.kerb_radius).and(&d)
+            })
+            .collect();
         laps.lap("ground: fillets");
         let carriage_all = carriage0.union(&Region::union_all(fillets.iter())).and(public);
         let jdiscs = Region::rings(junctions.iter().map(|j| disc(j.c, j.r, 32)).collect::<Vec<_>>().iter().map(|r| r.as_slice()));
@@ -126,9 +129,12 @@ impl Ground {
         // to squares: an alley opens onto a plaza's paving, it does not cross it.
         let shared = g.corridor(|s, i| if s.carriageway <= 0.0 && prof(s).class != Class::Limit { s.width[i] } else { 0.0 }).and(public).minus(&carroads).minus(&carriage).minus(plazas);
         laps.lap("ground: shared");
-        let open = public.minus(&carriage).minus(&median).minus(&shared).opening(8.0);
+        // `public - carriage - median - shared`, computed once (the same
+        // operations in the same order as before).
+        let rest = public.minus(&carriage).minus(&median).minus(&shared);
+        let open = rest.opening(8.0);
         let plaza = plazas.union(&open).and(public).minus(&carriage).minus(&median).minus(&shared);
-        let walk = public.minus(&carriage).minus(&median).minus(&shared).minus(&plaza);
+        let walk = rest.minus(&plaza);
         laps.lap("ground: plaza and walk");
         let plaza_poles = plaza.components().into_iter().map(|c| {
             let r = c.pole().map(|p| p.1).unwrap_or(0.0);
@@ -202,7 +208,6 @@ fn surfaces(gr: &Ground, g: &StreetGraph, lib: &ProfileLibrary) -> Vec<Surface> 
         let sig = Sig { rank: std::cmp::Reverse(p.rank), carriage: p.surface.carriage.clone(), walk: p.surface.walk.clone(), shared: p.surface.shared.clone(), kerb: (p.kerb * 1000.0) as i32, shared_h: (shared_h * 1000.0) as i32 };
         groups.entry(sig).or_default().push(i as StreetId);
     }
-    let mut out = Vec::new();
     let classes = [(&gr.carriage, 0usize), (&gr.walk, 1), (&gr.shared, 2)];
     // A class is owned only by streets that have it: an alley's shared
     // paving that reaches into a car street's corridor keeps the alley's
@@ -212,17 +217,27 @@ fn surfaces(gr: &Ground, g: &StreetGraph, lib: &ProfileLibrary) -> Vec<Surface> 
         2 => s.carriageway <= 0.0,
         _ => true,
     };
-    for (class, k) in classes {
+    // The classes are independent, and so is each group's corridor within
+    // a class; only the `taken` chain is sequential.
+    let groups: Vec<(&Sig, &Vec<StreetId>)> = groups.iter().collect();
+    let per_class: Vec<Vec<Surface>> = classes.par_iter().map(|&(class, k)| {
+        let mut out = Vec::new();
+        let corridors: Vec<Option<(Sig, Region)>> = groups
+            .par_iter()
+            .map(|(sig, list)| {
+                let set: std::collections::BTreeSet<u64> = list.iter().filter(|&&i| has(k, g.street(i))).map(|&i| g.street(i).key).collect();
+                if set.is_empty() {
+                    return None;
+                }
+                Some(((*sig).clone(), g.corridor(|s, i| if set.contains(&s.key) { s.width[i] + 0.5 } else { 0.0 }).and(class)))
+            })
+            .collect();
         let mut taken = Region::empty();
         let mut cells = Vec::new();
-        for (sig, list) in &groups {
-            let set: std::collections::BTreeSet<u64> = list.iter().filter(|&&i| has(k, g.street(i))).map(|&i| g.street(i).key).collect();
-            if set.is_empty() {
-                continue;
-            }
-            let own = g.corridor(|s, i| if set.contains(&s.key) { s.width[i] + 0.5 } else { 0.0 }).and(class).minus(&taken);
+        for (sig, c) in corridors.into_iter().flatten() {
+            let own = c.minus(&taken);
             taken = taken.union(&own);
-            cells.push((sig.clone(), own));
+            cells.push((sig, own));
         }
         let mut rest = class.clone();
         for (sig, own) in &cells {
@@ -246,7 +261,9 @@ fn surfaces(gr: &Ground, g: &StreetGraph, lib: &ProfileLibrary) -> Vec<Surface> 
             };
             out.push(Surface { region: rest, h, mat: m });
         }
-    }
+        out
+    }).collect();
+    let mut out: Vec<Surface> = per_class.into_iter().flatten().collect();
     if !gr.plaza.is_empty() {
         out.push(Surface { region: gr.plaza.clone(), h: 0.15, mat: Mat::Cobble });
     }

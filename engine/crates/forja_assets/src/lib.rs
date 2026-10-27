@@ -6,6 +6,7 @@
 //! testable and can run on background threads for streaming.
 
 pub mod bvh;
+pub mod cache;
 pub mod character;
 pub mod fbx;
 pub mod lod;
@@ -13,6 +14,7 @@ pub mod makehuman;
 pub mod manifest;
 mod obj;
 pub mod pbr;
+pub mod progress;
 
 use std::path::Path;
 
@@ -60,6 +62,33 @@ pub struct MeshData {
     /// of them from their summed triangle counts and joint bounds, so a
     /// mid-detail trunk never stands under a billboard crown.
     pub lod_sync: bool,
+    /// Which shadow cascades this primitive casts into (see [`ShadowRole`]).
+    pub shadow: ShadowRole,
+}
+
+/// How a primitive takes part in the sun's shadow cascades.
+///
+/// Facades are assembled from thousands of small modules (windows,
+/// shutters, balconies) over walls with real openings; far away they cast
+/// the same shadow as a closed box. A city can mark that detail
+/// [`ShadowRole::Near`] and add a [`ShadowRole::Proxy`] stand-in (the
+/// building's mass): the renderer draws the detail in the camera and the
+/// near cascades, and the proxy only in the far cascades.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum ShadowRole {
+    /// Camera and every shadow view (the default).
+    #[default]
+    All,
+    /// Camera, near cascades and spot shadows; replaced by a proxy in the
+    /// far cascades.
+    Near,
+    /// Far cascades only: never drawn in the camera.
+    Proxy,
+    /// Thin detail (iron grilles, railings): camera, the first cascade and
+    /// spot shadows only. Bars a few centimetres wide are thinner than a
+    /// texel of the other cascades, where they only alias (flicker) as
+    /// the camera moves.
+    Fine,
 }
 
 impl MeshData {
@@ -469,6 +498,7 @@ pub fn load_gltf(path: &Path) -> Result<SceneData, AssetError> {
                 aabb: Aabb::EMPTY,
                 lods: Vec::new(),
                 lod_sync: false,
+                shadow: ShadowRole::All,
             };
             md.finalize();
             prims.push(md);

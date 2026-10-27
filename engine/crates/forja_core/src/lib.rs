@@ -16,11 +16,11 @@ pub use hecs;
 /// Typed singleton storage.
 #[derive(Default)]
 pub struct Resources {
-    map: HashMap<TypeId, Box<dyn Any>>,
+    map: HashMap<TypeId, Box<dyn Any + Send>>,
 }
 
 impl Resources {
-    pub fn insert<T: 'static>(&mut self, value: T) -> Option<T> {
+    pub fn insert<T: Send + 'static>(&mut self, value: T) -> Option<T> {
         self.map.insert(TypeId::of::<T>(), Box::new(value)).map(|old| *old.downcast::<T>().expect("type id matches"))
     }
 
@@ -40,7 +40,7 @@ impl Resources {
         self.map.get_mut(&TypeId::of::<T>()).and_then(|b| b.downcast_mut())
     }
 
-    pub fn get_or_insert_with<T: 'static>(&mut self, f: impl FnOnce() -> T) -> &mut T {
+    pub fn get_or_insert_with<T: Send + 'static>(&mut self, f: impl FnOnce() -> T) -> &mut T {
         self.map.entry(TypeId::of::<T>()).or_insert_with(|| Box::new(f())).downcast_mut().expect("type id matches")
     }
 }
@@ -62,7 +62,7 @@ impl World {
     }
 
     /// Temporarily removes a resource so it can be used alongside `&mut World`.
-    pub fn scope<T: 'static, R>(&mut self, f: impl FnOnce(&mut World, &mut T) -> R) -> R {
+    pub fn scope<T: Send + 'static, R>(&mut self, f: impl FnOnce(&mut World, &mut T) -> R) -> R {
         let mut value =
             self.resources.remove::<T>().unwrap_or_else(|| panic!("missing resource {}", type_name::<T>()));
         let out = f(self, &mut value);
@@ -70,7 +70,7 @@ impl World {
         out
     }
 
-    pub fn send<E: 'static>(&mut self, event: E) {
+    pub fn send<E: Send + 'static>(&mut self, event: E) {
         self.resources.get_or_insert_with(Events::<E>::default).send(event);
     }
 }
@@ -126,7 +126,7 @@ pub enum Stage {
 
 const FRAME_STAGES: [Stage; 4] = [Stage::PreUpdate, Stage::Update, Stage::PostUpdate, Stage::Render];
 
-pub type System = Box<dyn FnMut(&mut World)>;
+pub type System = Box<dyn FnMut(&mut World) + Send>;
 
 struct NamedSystem {
     name: &'static str,
@@ -258,19 +258,19 @@ impl App {
         &self.plugins
     }
 
-    pub fn insert_resource<T: 'static>(&mut self, value: T) -> &mut Self {
+    pub fn insert_resource<T: Send + 'static>(&mut self, value: T) -> &mut Self {
         self.world.resources.insert(value);
         self
     }
 
-    pub fn add_system(&mut self, stage: Stage, name: &'static str, f: impl FnMut(&mut World) + 'static) -> &mut Self {
+    pub fn add_system(&mut self, stage: Stage, name: &'static str, f: impl FnMut(&mut World) + Send + 'static) -> &mut Self {
         self.add_system_at(stage, name, 0, f)
     }
 
     /// Adds a system with an explicit order inside its stage (lower runs
     /// first; equal orders keep registration order). Engine conventions:
     /// gameplay 0, `physics_step` 100, sync after physics 200.
-    pub fn add_system_at(&mut self, stage: Stage, name: &'static str, order: i32, f: impl FnMut(&mut World) + 'static) -> &mut Self {
+    pub fn add_system_at(&mut self, stage: Stage, name: &'static str, order: i32, f: impl FnMut(&mut World) + Send + 'static) -> &mut Self {
         let list = self.systems.entry(stage).or_default();
         list.push(NamedSystem { name, order, run: Box::new(f) });
         list.sort_by_key(|s| s.order);
@@ -278,7 +278,7 @@ impl App {
     }
 
     /// Registers `Events<E>` so it is rotated once per frame.
-    pub fn add_event<E: 'static>(&mut self) -> &mut Self {
+    pub fn add_event<E: Send + 'static>(&mut self) -> &mut Self {
         self.world.resources.get_or_insert_with(Events::<E>::default);
         self.frame_event_updaters.push(|w| {
             if let Some(ev) = w.resources.get_mut::<Events<E>>() {

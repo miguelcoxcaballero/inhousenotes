@@ -108,6 +108,7 @@ impl SpanishCity {
             &self.config,
         );
         log::info!("city: kit and city in {:.1}s", t0.elapsed().as_secs_f32());
+        forja_assets::progress::stage("Plantando los árboles", 0.56);
         let mut world = WorldDescription::new("Ciudad española");
         let out = city.out;
         for s in out.scenes {
