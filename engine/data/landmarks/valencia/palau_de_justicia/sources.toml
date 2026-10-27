@@ -34,80 +34,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Palau_de_Justicia_de_Valencia_facana.jpg"
-title = "File:Palau de Justícia de València, façana.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Palau_de_Just%C3%ADcia_de_Val%C3%A8ncia%2C_fa%C3%A7ana.JPG"
-author = "Joanbanjo"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1906
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/03_Palacio_de_Justicia_de_Valencia_1_png.jpg"
-title = "File:Palacio de Justicia de Valencia (1).png"
-url = "https://commons.wikimedia.org/wiki/File:Palacio_de_Justicia_de_Valencia_%281%29.png"
-author = "Sea Olive"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/04_Duana1.jpg"
-title = "File:Duana1.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Duana1.jpg"
-author = "Joanbanjo"
-license = "Public domain"
-width = 1280
-height = 960
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/05_At_Valencia_2025_016.jpg"
-title = "File:At Valencia 2025 016.jpg"
-url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_016.jpg"
-author = "Photograph by Mike Peel ( www.mikepeel.net )."
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-camera = [-75.61, 40.38]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/06_Palacio_de_Justicia_de_Valencia_2_png.jpg"
-title = "File:Palacio de Justicia de Valencia (2).png"
-url = "https://commons.wikimedia.org/wiki/File:Palacio_de_Justicia_de_Valencia_%282%29.png"
-author = "Sea Olive"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 853
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/07_PLAZA_DEL_PARTERRE.jpg"
-title = "File:PLAZA DEL PARTERRE.jpg"
-url = "https://commons.wikimedia.org/wiki/File:PLAZA_DEL_PARTERRE.jpg"
-author = "GUILLERMO PENADES JUAN"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 960
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/08_Escut_a_la_facana_de_l_antiga_Duana_Valencia.jpg"
+file = "photos/02_Escut_a_la_facana_de_l_antiga_Duana_Valencia.jpg"
 title = "File:Escut a la façana de l'antiga Duana, València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Escut_a_la_fa%C3%A7ana_de_l%27antiga_Duana%2C_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -120,7 +47,20 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_At_Valencia_2025_018.jpg"
+file = "photos/03_At_Valencia_2025_016.jpg"
+title = "File:At Valencia 2025 016.jpg"
+url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_016.jpg"
+author = "Photograph by Mike Peel ( www.mikepeel.net )."
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+camera = [-75.61, 40.38]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/04_At_Valencia_2025_018.jpg"
 title = "File:At Valencia 2025 018.jpg"
 url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_018.jpg"
 author = "Photograph by Mike Peel ( www.mikepeel.net )."
@@ -128,91 +68,139 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1920
 camera = [-70.85, 26.54]
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/10_Carlos_III_entre_dos_virtudes_1.jpg"
-title = "File:Carlos III entre dos virtudes (1).JPG"
-url = "https://commons.wikimedia.org/wiki/File:Carlos_III_entre_dos_virtudes_%281%29.JPG"
-author = "Dorieo"
-license = "CC BY-SA 3.0"
+file = "photos/05_Palau_de_Justicia_de_Valencia_facana.jpg"
+title = "File:Palau de Justícia de València, façana.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_Just%C3%ADcia_de_Val%C3%A8ncia%2C_fa%C3%A7ana.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1906
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Palacio_de_Justicia_de_Valencia_1_png.jpg"
+title = "File:Palacio de Justicia de Valencia (1).png"
+url = "https://commons.wikimedia.org/wiki/File:Palacio_de_Justicia_de_Valencia_%281%29.png"
+author = "Sea Olive"
+license = "CC BY-SA 4.0"
 width = 1280
 height = 853
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/11_Palau_de_Justicia_DSCN2909.jpg"
+file = "photos/07_Palau_de_Justicia_DSCN2909.jpg"
 title = "File:Palau de Justícia DSCN2909.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Palau_de_Just%C3%ADcia_DSCN2909.JPG"
 author = "Pere López"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_Palau_de_Justicia_P1400027.jpg"
+file = "photos/08_Palau_de_Justicia_P1400027.jpg"
 title = "File:Palau de Justícia P1400027.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Palau_de_Just%C3%ADcia_P1400027.JPG"
 author = "Pere López"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 960
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Fiscalia_valencia.jpg"
+file = "photos/09_Duana1.jpg"
+title = "File:Duana1.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Duana1.jpg"
+author = "Joanbanjo"
+license = "Public domain"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/10_Fiscalia_valencia.jpg"
 title = "File:Fiscalia valencia.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Fiscalia_valencia.jpg"
 author = "Felivet"
 license = "Public domain"
 width = 1280
 height = 706
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_Carlos_III_entre_dos_virtudes_2.jpg"
-title = "File:Carlos III entre dos virtudes (2).JPG"
-url = "https://commons.wikimedia.org/wiki/File:Carlos_III_entre_dos_virtudes_%282%29.JPG"
-author = "Dorieo"
-license = "CC BY-SA 3.0"
+file = "photos/11_Palacio_de_Justicia_de_Valencia_2_png.jpg"
+title = "File:Palacio de Justicia de Valencia (2).png"
+url = "https://commons.wikimedia.org/wiki/File:Palacio_de_Justicia_de_Valencia_%282%29.png"
+author = "Sea Olive"
+license = "CC BY-SA 4.0"
 width = 1280
 height = 853
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Valencia_Palau_de_Justicia_3.jpg"
+file = "photos/12_Valencia_Palau_de_Justicia_3.jpg"
 title = "File:Valencia - Palau de Justícia 3.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Palau_de_Just%C3%ADcia_3.jpg"
 author = "Zarateman"
 license = "CC0"
 width = 1280
 height = 1637
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_Palaciojusticia2.jpg"
+file = "photos/13_PLAZA_DEL_PARTERRE.jpg"
+title = "File:PLAZA DEL PARTERRE.jpg"
+url = "https://commons.wikimedia.org/wiki/File:PLAZA_DEL_PARTERRE.jpg"
+author = "GUILLERMO PENADES JUAN"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/14_Palaciojusticia2.jpg"
 title = "File:Palaciojusticia2.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Palaciojusticia2.JPG"
 author = "Un valencià"
 license = "Public domain"
 width = 960
 height = 1280
-exterior = "unknown"
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/15_Palau_de_Justicia_P1400034.jpg"
+title = "File:Palau de Justícia P1400034.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_Just%C3%ADcia_P1400034.JPG"
+author = "Pere López"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1707
+exterior = true
 selected = false
 side = ""
 

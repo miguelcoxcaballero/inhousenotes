@@ -59,7 +59,20 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Muvim_panoramio.jpg"
+file = "photos/04_MuVIM_MMXXVI.jpg"
+title = "File:MuVIM MMXXVI.jpg"
+url = "https://commons.wikimedia.org/wiki/File:MuVIM_MMXXVI.jpg"
+author = "Francesc Fort"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+camera = [11.16, 5.65]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/05_Muvim_panoramio.jpg"
 title = "File:Muvim. - panoramio.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Muvim._-_panoramio.jpg"
 author = "Frank Baulo"
@@ -72,7 +85,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Museu_Valencia_de_la_Il_lustracio_i_de_la_Modernitat_des_del.jpg"
+file = "photos/06_Museu_Valencia_de_la_Il_lustracio_i_de_la_Modernitat_des_del.jpg"
 title = "File:Museu Valencià de la Il·lustració i de la Modernitat des del Centre d'Artesania.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Museu_Valenci%C3%A0_de_la_Il%C2%B7lustraci%C3%B3_i_de_la_Modernitat_des_del_Centre_d%27Artesania.JPG"
 author = "Joanbanjo"
@@ -80,18 +93,6 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 854
 camera = [15.29, -4.47]
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/06_Muvim_frontal.jpg"
-title = "File:Muvim frontal.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Muvim_frontal.jpg"
-author = "Francesc Fort"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 960
 exterior = true
 selected = false
 side = ""
@@ -121,20 +122,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/09_MuVIM_Valencia_03.jpg"
-title = "File:MuVIM, Valencia 03.jpg"
-url = "https://commons.wikimedia.org/wiki/File:MuVIM%2C_Valencia_03.jpg"
-author = "Simon Burchell"
-license = "CC BY 4.0"
-width = 1280
-height = 960
-camera = [2.62, -31.54]
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/10_499_MuVIM_Museu_Valencia_de_la_Il_lustracio_i_de_la_Modernit.jpg"
+file = "photos/09_499_MuVIM_Museu_Valencia_de_la_Il_lustracio_i_de_la_Modernit.jpg"
 title = "File:499 MuVIM, Museu Valencià de la Il·lustració i de la Modernitat.jpg"
 url = "https://commons.wikimedia.org/wiki/File:499_MuVIM%2C_Museu_Valenci%C3%A0_de_la_Il%C2%B7lustraci%C3%B3_i_de_la_Modernitat.jpg"
 author = "Enric"
@@ -146,11 +134,11 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/11_169_Mural_al_MuVIM_c_Guillem_de_Castro_8_Valencia.jpg"
-title = "File:169 Mural al MuVIM, c. Guillem de Castro 8 (València).jpg"
-url = "https://commons.wikimedia.org/wiki/File:169_Mural_al_MuVIM%2C_c._Guillem_de_Castro_8_%28Val%C3%A8ncia%29.jpg"
-author = "Enric"
-license = "CC BY-SA 4.0"
+file = "photos/10_Muvim_frontal.jpg"
+title = "File:Muvim frontal.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Muvim_frontal.jpg"
+author = "Francesc Fort"
+license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
@@ -158,7 +146,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/12_Exterior_of_the_Museu_Valencia_de_la_Il_lustracio_i_de_la_Mo.jpg"
+file = "photos/11_Exterior_of_the_Museu_Valencia_de_la_Il_lustracio_i_de_la_Mo.jpg"
 title = "File:Exterior of the Museu Valencià de la Il·lustració i de la Modernitat.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Exterior_of_the_Museu_Valenci%C3%A0_de_la_Il%C2%B7lustraci%C3%B3_i_de_la_Modernitat.jpg"
 author = "Pacopac"
@@ -170,7 +158,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/13_Valencia_Museu_Valencia_de_la_Il_lustracio_i_de_la_Modernita.jpg"
+file = "photos/12_Valencia_Museu_Valencia_de_la_Il_lustracio_i_de_la_Modernita.jpg"
 title = "File:Valencia - Museu Valencià de la Il·lustració i de la Modernitat 01.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Museu_Valenci%C3%A0_de_la_Il%C2%B7lustraci%C3%B3_i_de_la_Modernitat_01.jpg"
 author = "Zarateman"
@@ -182,7 +170,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/14_Muvim5.jpg"
+file = "photos/13_Muvim5.jpg"
 title = "File:Muvim5.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Muvim5.jpg"
 author = "Felivet"
@@ -194,28 +182,26 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/15_Roman_de_la_Calle.jpg"
-title = "File:Roman de la Calle.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Roman_de_la_Calle.jpg"
-author = "Coentor"
+file = "photos/14_501_MuVIM_Museu_Valencia_de_la_Il_lustracio_i_de_la_Modernit.jpg"
+title = "File:501 MuVIM, Museu Valencià de la Il·lustració i de la Modernitat, porxo d'entrada.jpg"
+url = "https://commons.wikimedia.org/wiki/File:501_MuVIM%2C_Museu_Valenci%C3%A0_de_la_Il%C2%B7lustraci%C3%B3_i_de_la_Modernitat%2C_porxo_d%27entrada.jpg"
+author = "Enric"
 license = "CC BY-SA 4.0"
 width = 1280
-height = 1005
-camera = [15.29, -4.47]
+height = 960
 exterior = true
 selected = false
 side = ""
 
 [[photo]]
-file = "photos/16_MuVIM_MMXXVI.jpg"
-title = "File:MuVIM MMXXVI.jpg"
-url = "https://commons.wikimedia.org/wiki/File:MuVIM_MMXXVI.jpg"
-author = "Francesc Fort"
-license = "CC BY-SA 4.0"
+file = "photos/15_Valencia_Museu_Valencia_de_la_Il_lustracio_i_de_la_Modernita_2.jpg"
+title = "File:Valencia - Museu Valencià de la Il·lustració i de la Modernitat 04.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Museu_Valenci%C3%A0_de_la_Il%C2%B7lustraci%C3%B3_i_de_la_Modernitat_04.jpg"
+author = "Zarateman"
+license = "CC0"
 width = 1280
 height = 960
-camera = [11.16, 5.65]
-exterior = "unknown"
+exterior = true
 selected = false
 side = ""
 
