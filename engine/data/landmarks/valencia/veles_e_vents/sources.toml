@@ -20,6 +20,25 @@ catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatast
 catastro_floor_area = { value = 149102.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=03041K1&rc2=YJ3700G", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 5, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 2 parts" }
 
+# ---- measured model dimensions (building frame: s along the NW face from the W roof corner toward the N corner, grid azimuth ~60 deg; t toward the SE)
+height_roof_top = { value = 24.40, unit = "m", source = "bundle adjustment of photos 01, 07, 13, 06 (EXIF focal lengths, eye-height priors, plan control), rms 2.6-3.9 px", note = "+-0.3 m; published NE elevation (WikiArquitectura) gives 20.7 m from the P1 soffit to the roof top = 24.40 - 3.83 = 20.57 m" }
+height_roof_soffit = { value = 22.38, unit = "m", source = "bundle adjustment" }
+height_p3_top = { value = 18.18, unit = "m", source = "bundle adjustment", note = "third floor deck top" }
+height_p3_soffit = { value = 16.18, unit = "m", source = "bundle adjustment" }
+height_p2_top = { value = 12.18, unit = "m", source = "bundle adjustment" }
+height_p2_soffit = { value = 10.21, unit = "m", source = "bundle adjustment" }
+height_p1_top = { value = 6.15, unit = "m", source = "bundle adjustment", note = "public viewing deck" }
+height_p1_soffit = { value = 3.83, unit = "m", source = "bundle adjustment", note = "= level of the NE spectator deck (published NE elevation)" }
+floor_to_floor = { value = 6.1, unit = "m", source = "bundle adjustment; published elevation 6.2 m", note = "slab edges 2.0 m deep (P1 2.3 m)" }
+roof_plan = { value = "61.9 x 47.2 m", source = "Catastro BU part 03041K1YJ3700G_part20; IGN PNOA 2024 orthophoto (roof lean ~1.5 m corrected), PNOA 2012/2015/2021 average", note = "W corner local (-41.9, -5.1), N (12.0, -35.5), E (35.2, 5.6), S (-18.7, 36.0)" }
+deck_p3_plan = { value = "68.5 x 43.1 m, s 2.53..71.0, t 0..43.1", source = "WikiArquitectura level-3 plan with scale bar (9.89 px/m, matches Catastro roof 61.9 m); Catastro part14 strip (9.3 m beyond the roof NE edge, timber deck on PNOA)", note = "WikiArquitectura text: third floor 68 x 43 m" }
+deck_p2_plan = { value = "51.8 x 32.4 m, s 10.5..62.3, t 7.97..40.4", source = "WikiArquitectura level-2 plan registered on the vertical lift cores", note = "WikiArquitectura text: second floor 52 x 32 m; stair landing to t = 5.0 at the N corner fitted on photos 10/16" }
+deck_p1_plan = { value = "70.1 x 47.7 m, s 1.47..71.56, t 0..47.7", source = "WikiArquitectura level-1 plan registered on the lift cores; the ground-floor plan shows the same outline dotted" }
+max_cantilever = { value = 12.8, unit = "m", source = "https://es.wikiarquitectura.com/edificio/veles-e-vents/", note = "e-architect / designbuild-network: up to 15 m" }
+cores = { value = "4 concrete cores: B (lifts, s 11.7-19.8, t 23.2-35.2) and C (s 47.6-59.6, t 11.1-19.0) vertical, rising 1.8 m above the roof as plant rooms (PNOA); stair cores A and D inclined about 1.2 m per storey (registration of plans 1-3)", source = "WikiArquitectura plans + structure text (two vertical, two inclined cores)" }
+access_ramp = { value = "81 m long, due north, from the park (0 m) to the P1 deck (6.15 m), landing s 11.7-16.9", source = "PNOA 2024 + level-1 plan" }
+built_area = { value = 10000, unit = "m2", source = "https://www.e-architect.com/spain/americas-cup-building-valencia" }
+
 [[photo]]
 file = "photos/01_El_Grau_Valencia_Valencia_Spain_panoramio.jpg"
 title = "File:El Grau, València, Valencia, Spain - panoramio.jpg"
@@ -30,8 +49,9 @@ width = 1280
 height = 960
 camera = [-23.44, -101.86]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
+notes = "[[view]] eye [-12.1, 1.2, -104.3], solved (p01_north_plaza)"
 
 [[photo]]
 file = "photos/02_Edificio_en_Valencia_panoramio.jpg"
@@ -44,7 +64,8 @@ height = 960
 camera = [91.86, -18.3]
 exterior = true
 selected = false
-side = ""
+side = "ne"
+notes = "camera could not be solved consistently (phone without EXIF / crowd shot); used only qualitatively"
 
 [[photo]]
 file = "photos/03_33rd_America_s_Cup_inauguration_act_4339971114.jpg"
@@ -57,7 +78,8 @@ height = 960
 camera = [-41.4, -22.11]
 exterior = true
 selected = false
-side = ""
+side = "se"
+notes = "camera could not be solved consistently (phone without EXIF / crowd shot); used only qualitatively"
 
 [[photo]]
 file = "photos/04_Veles_e_Vents_2_5211923659.jpg"
@@ -93,8 +115,9 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
+notes = "[[view]] eye [-591, 1.5, -10.5] (p06_far_west)"
 
 [[photo]]
 file = "photos/07_Veles_e_Vents_Valencia.jpg"
@@ -105,8 +128,9 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 847
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
+notes = "[[view]] eye [-237.9, 1.5, -41.3] (p07_marina_west)"
 
 [[photo]]
 file = "photos/08_Veles_de_Vents_4340061500.jpg"
@@ -118,8 +142,9 @@ width = 1280
 height = 960
 camera = [-41.4, -22.11]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
+notes = "[[view]] (p08_harbour_telephoto)"
 
 [[photo]]
 file = "photos/09_Valencia_Street_Circuit_GT_Open.jpg"
@@ -142,8 +167,9 @@ license = "CC BY 2.0"
 width = 1280
 height = 720
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "ne"
+notes = "[[view]] (p10_ne_dusk)"
 
 [[photo]]
 file = "photos/11_Veles_e_vents_5211921753.jpg"
@@ -181,8 +207,9 @@ width = 1280
 height = 960
 camera = [-23.44, -101.86]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
+notes = "[[view]] eye [-29.1, 3.4, -81.4], on the ramp (p13_ramp)"
 
 [[photo]]
 file = "photos/14_Valencia_Street_Circuit_GT_Open2.jpg"
@@ -206,8 +233,9 @@ width = 1280
 height = 960
 camera = [-602.73, 53.42]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
+notes = "[[view]] (p15_alinghi_base)"
 
 [[photo]]
 file = "photos/16_Veles_e_Vents.jpg"
@@ -218,8 +246,9 @@ license = "CC BY-SA 3.0"
 width = 500
 height = 349
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "ne"
+notes = "[[view]] (p16_ne_deck)"
 
 [[photo]]
 file = "photos/catastro_03041K1YJ3700G.jpg"
@@ -276,3 +305,66 @@ notes = "selection method: wikidata"
 url = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=03041K1&rc2=YJ3700G"
 title = "Catastro parcel 03041K1YJ3700G"
 notes = "built=1970; use=4_3_publicServices; area=149102; area_in_outline=3150.6"
+
+[[photo]]
+file = "photos/17_El_Grau_Valencia_panoramio_2.jpg"
+title = "File:El Grau, València, Valencia, Spain - panoramio (2).jpg"
+url = "https://commons.wikimedia.org/wiki/File:El_Grau%2C_Val%C3%A8ncia%2C_Valencia%2C_Spain_-_panoramio_%282%29.jpg"
+author = "Santi Garcia"
+license = "CC BY 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "nw"
+notes = "[[view]] p17_ramp_foot (COOLPIX P90, 26 mm eq.)"
+
+[[photo]]
+file = "photos/18_La_Route_des_Princes_2013_panoramio.jpg"
+title = "File:La Route des Princes 2013 - panoramio.jpg"
+url = "https://commons.wikimedia.org/wiki/File:La_Route_des_Princes_2013_-_panoramio.jpg"
+author = "radwoc"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 851
+exterior = true
+selected = true
+side = "nw"
+notes = "[[view]] p18_north_plaza_2013 (NIKON D50, 39 mm eq.); only 6 points, roll weakly determined"
+
+[[photo]]
+file = "photos/19_Veles_e_Vents_4367924130.jpg"
+title = "File:Veles e Vents (4367924130).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Veles_e_Vents_%284367924130%29.jpg"
+author = "Yasuhiro Chatani from Tokyo, Japan"
+license = "CC BY 2.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = "se"
+notes = "SE face from the canal quay (2009); camera did not solve consistently, used qualitatively (P2-P3 stair on the SE face)"
+
+[[plan]]
+file = ""
+title = "IGN PNOA orthophotos 2024 (pnoa-ma) and 2012/2015/2021 (pnoa-historico)"
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+author = "Instituto Geografico Nacional"
+license = "CC BY 4.0"
+kind = "orthophoto"
+notes = "0.1 m/px crops resampled into the building frame; roof lean (1.4, -0.6) m corrected"
+
+[[reference]]
+url = "https://es.wikiarquitectura.com/edificio/veles-e-vents/"
+title = "WikiArquitectura: Veles e Vents (plans, elevation, structure)"
+notes = "floor plans levels 0-3 (level 3 with scale bar), NE elevation, long elevation; 52 x 32 m and 68 x 43 m floors, cantilever 12.8 m, 4 cores (2 inclined). Drawings used only for measurements."
+
+[[reference]]
+url = "https://www.e-architect.com/spain/americas-cup-building-valencia"
+title = "e-architect: America's Cup Building"
+notes = "10,000 m2, four floors, cantilevers up to 15 m, white steel edges, timber decks"
+
+[[reference]]
+url = "https://www.worldconstructionnetwork.com/projects/foredeck/"
+title = "Foredeck building (World Construction Network)"
+notes = "floor uses, structure description"
