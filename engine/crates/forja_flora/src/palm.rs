@@ -95,7 +95,7 @@ pub fn build(sp: &Species, pd: &PalmDef, g: &Growth, rng: &mut Rng) -> PalmTree 
         let base = top - top_dir * r * boot * 0.55 + h * top_r * 0.5;
         let droop = pd.droop * (0.25 + 0.95 * r) * rng.range(0.8, 1.2);
         let kind = if r > 0.55 && rng.chance(0.35) { FrondKind::Inner } else { FrondKind::Green };
-        fronds.push(Frond { base, dir: d, length: len, droop, kind, roll: rng.signed() * 0.25, variant: rng.below(2), open: rng.range(2.9, 3.6) });
+        fronds.push(Frond { base, dir: d, length: len, droop, kind, roll: rng.signed() * 0.25, variant: rng.below(2), open: rng.range(2.3, 2.9) });
     }
     let trimmed = g.pruning == Pruning::Trimmed;
     if !trimmed {
@@ -251,11 +251,13 @@ pub fn mesh_fronds(mb: &mut MeshBuilder, pd: &PalmDef, fronds: &[Frond], atlas: 
                     let pleat = if lod == 0 { ((j % 2) as f32 - 0.5) * 0.08 * radius * rho } else { 0.0 };
                     let sag = -Vec3::Y * rho * rho * radius * if dead { 0.15 } else { 0.35 };
                     // Costapalmate: the two halves fold up along the costa
-                    // (a shallow V, not a flat disc), and past the split the
-                    // free segment tips hang down.
+                    // (a shallow V, not a flat disc), and past the split
+                    // (~40 % of the radius) the free segment tips hang down,
+                    // the outer ones more than those along the costa.
                     let side_frac = (a.abs() / (open * 0.5)).min(1.0);
                     let fold = up * rho * radius * 0.28 * side_frac;
-                    let hang = -Vec3::Y * (rho - 0.5).max(0.0).powi(2) * radius * if dead { 0.4 } else { 1.5 };
+                    let free = (rho - 0.4).max(0.0) / 0.6;
+                    let hang = -Vec3::Y * free * free * radius * (0.9 + 0.6 * side_frac) * if dead { 0.3 } else { 1.0 } - dir * free * free * radius * 0.25;
                     let curl = up * rho * rho * radius * 0.06 * side_frac * side_frac;
                     let q = h + dir * rho * radius + up * pleat + sag + fold + hang + curl;
                     let n = (up * 0.45 + crown_n(q) * 0.75).normalize();
