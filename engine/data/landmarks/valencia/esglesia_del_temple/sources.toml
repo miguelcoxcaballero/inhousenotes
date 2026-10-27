@@ -20,6 +20,23 @@ catastro_refcat = { value = "6130301YJ2763A", source = "https://www1.sedecatastr
 catastro_built = { value = 1750, source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6130301&rc2=YJ2763A", note = "Catastro dateOfConstruction (often the last major works)" }
 catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6130301&rc2=YJ2763A" }
 catastro_floor_area = { value = 11353.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6130301&rc2=YJ2763A", note = "Catastro officialArea (gross floor area)" }
+plan_source = { value = "palace: OSM relation 11177870 + Catastro 6130301YJ2763A parts; church: Catastro context rings 92 (church), 93 (drum circle r 6.3, centre (3.65, -38.8)), 94/95 (tower bases)", source = "footprint.json", note = "the church (OSM way 813424045) is not in footprint.json outlines, so footprint IoU vs OSM is only 0.49 (precision 0.50, recall 0.97): the church half of the model lies outside the palace outline by design" }
+orthophoto = { value = "IGN PNOA WMS pnoa-ma, 0.1 m/px, CC BY 4.0", source = "https://www.ign.es/wms-inspire/pnoa-ma", note = "tower caps and dome lantern displaced ~(0.07, -0.09) m per m of height (lean); corrected tower centres u 4.6 / 20.7 m from the south end of the front, 5.3 m behind it; nave ridge on the axis; north transept hip; three chapel lights on the south terraces; corner block (Catastro part 10) flat white terrace" }
+front_width = { value = 25.27, unit = "m", source = "Catastro tower parcels: (36.75, -33.19) to (31.37, -57.88)", note = "front faces azimuth 77.7 deg; palace east front (45.4 m) faces 78 deg, almost flush" }
+front_bays = { value = "4 giant Ionic pilasters (u 0.52-2.5, 7.07-9.78, 15.9-18.4, 22.7-24.65 m), 3 doors 2.2 x 4.4 m (centres 4.44, 12.79, 20.9), side windows 1.46 x 2.9 m sill 6.97 with pediments to 11.34, lunette 4.58 m springing 6.91 crown 9.15, arms 2.2 x 3.3 m", source = "photo 11 (Pacopac), 0.0208 m/px on the front plane (25.27 m = 1215 px)" }
+capital_top = { value = 14.25, unit = "m", source = "photo 11 section model (14.25), bundle adjustment photos 03+11 (14.08-14.18 +- 0.16)" }
+front_cornice = { value = 17.4, unit = "m", source = "photo 11 (17.1-17.6 with roll), photo 10 (17.5)", note = "architrave 14.25-14.56, frieze cornice 15.08, attic 15.08-16.23, band 16.23-16.64, crowning cornice 16.64-17.4" }
+pediment_apex = { value = 20.0, unit = "m", source = "photo 11 section model 19.9-20.0; bundle adjustment 03+11 20.06-20.32", note = "pediment 11.7 m wide, oculus r 0.55" }
+tower_plan = { value = "6.4 m square (cornice 7.2), centres u 4.6 / 20.7 (16.1 m apart), front faces 2.1 m behind the front", source = "PNOA cap apexes 16.5 m apart (lean-corrected centre w 5.3); photo 11/03/07 tool solves (cornice widths 330/295 px)" }
+tower_cornice = { value = 25.0, unit = "m", source = "photo 11 section model (24.7-25.3), photo 10 (24.8-25.1)" }
+tower_cap = { value = 28.6, unit = "m", source = "photo 10 (cap ~3.2 m over a 1 m attic at 0.057 m/px), photo 08 (3.6 m over the cornice), photo 03 overlay", note = "bell-shaped glazed tile caps (brown/blue), ball and cross to ~30 m; +-0.6 m" }
+flank_wall_top = { value = 16.3, unit = "m", source = "photos 12, 15: 1.1 m below the front cornice return", note = "flat terraces with an iron railing; tile ledge 12.7 m; paired upper windows in pink frames at s 10.2/16.5/22.9 m from the NE corner" }
+drum = { value = "r 6.2 m, 16.3-22.8 m, 8 windows", source = "Catastro circle r 6.3; photo 15 drum 300 px vs dome 270 px", note = "drum cornice 22.8 from photo 08 ratios (dome 30 m behind the towers, distance ratio 1.14)" }
+dome = { value = "r 5.9 m, rise 5.6 m to 28.4; lantern r 1.2 x 2.5 m + cap 1.2 m (top ~32.1), cross ~33.1", source = "photo 15 (dome 130 px, lantern 70 px, cap 25 px at 0.042 m/px), photo 08", note = "uncertain +-1.5 m: the dome is hidden behind the pediment in photos 03 and 11 (supports <= ~32 m), the PNOA lean ratio suggests ~36 m" }
+palace_levels = { value = "cornice top 17.2 (entablature 15.8-17.2), 2nd floor windows 11.8-14.2, main floor 6.9-9.7 with pediments to 10.7, string course 6.5, ground windows 2.7-5.3", source = "photo 03 at the church junction, 0.0313 m/px" }
+palace_bays = { value = "east front 11 bays, door in bay 5 from the church", source = "photos 01, 13 (11 pedimented windows per floor)", note = "even spacing 4.02 m with 2.6 m margins assumed" }
+palace_heights_other = { value = "SW wing 13 m (3 floors), corner block 20 m (5 floors)", source = "Catastro floors; photo 14 (raised block with balustrade)", note = "no photos of the south and west fronts" }
+camera_method = { value = "tool match (fov free, eye-height prior 1.6) on 11 views; constrained bundle adjustment scratchpad tem/solve.py on photos 03+11", source = "Commons EXIF not available: the Commons API answered HTTP 429 for 25 min (6 attempts)", note = "view rms: front_11 11.9, front_03 9.9, oblique_01 12.6, palace_13 12.0, palms_14 37.6, corner_07 24.1, far_10 6.4, north_02 5.3, north_12 18.4, north_15 6.4, door_05 6.0 px; north_04 and catastro set by hand" }
 catastro_floors_max = { value = 5, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 8 parts" }
 
 [[photo]]
@@ -31,8 +48,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 727
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/02_Plaza_del_Poeta_Llorente_panoramio.jpg"
@@ -44,8 +61,8 @@ width = 1280
 height = 1920
 camera = [13.75, -81.56]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/03_Palacio_del_Temple_panoramio_1.jpg"
@@ -57,8 +74,8 @@ width = 1280
 height = 1056
 camera = [67.95, -47.81]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/04_Valence_panoramio_10.jpg"
@@ -70,8 +87,8 @@ width = 1280
 height = 960
 camera = [-131.56, -189.86]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/05_At_Valencia_2025_069.jpg"
@@ -83,8 +100,8 @@ width = 1280
 height = 1920
 camera = [68.84, -19.21]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/06_Delegacio_del_Govern_al_Pais_Valencia.jpg"
@@ -107,8 +124,8 @@ license = "Public domain"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/08_El_Temple_vist_des_de_l_altre_costat_del_riu_Valencia.jpg"
@@ -119,8 +136,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/09_Monestir_del_Temple_P1140174.jpg"
@@ -143,8 +160,8 @@ license = "CC BY-SA 3.0 es"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/11_Facana_del_Palau_del_Temple_de_Valencia.jpg"
@@ -155,8 +172,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1374
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/12_Iglesia_del_Temple_Valencia_01.jpg"
@@ -167,8 +184,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/13_Esglesia_i_Palau_del_Temple_facana.jpg"
@@ -179,8 +196,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 982
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/14_Templevalencia1.jpg"
@@ -191,8 +208,8 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/15_Esglesia_del_Temple_de_Valencia_vista_lateral.jpg"
@@ -203,8 +220,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 959
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/catastro_6130301YJ2763A.jpg"
@@ -215,8 +232,8 @@ license = "Catastro open data (attribution required)"
 width = 1600
 height = 1200
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[plan]]
 file = "plans/01_1_35_MONASTERIO_DEL_TEMPLE_EN_VALENCIA_firmado.jpg"
@@ -270,3 +287,8 @@ notes = "built=1750; use=4_3_publicServices; area=11353; area_in_outline=2746.3"
 url = "https://eduwp.edu.gva.es/patrimonio-cultural/ficha-inmueble.php?id=1436"
 title = "Described at"
 notes = "Wikidata P973"
+
+[[reference]]
+url = "https://www.valencia.es/es/-/infociudad-palacio-e-iglesia-del-temple"
+title = "Ajuntament de Valencia: Palacio e Iglesia del Temple"
+notes = "1761-1770, Miguel Fernandez (Sabatini school); twin towers flank the pediment; glazed tiles on towers and dome"
