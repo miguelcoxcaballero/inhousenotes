@@ -21,6 +21,22 @@ catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatast
 catastro_floor_area = { value = 5736.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5930801&rc2=YJ2753B", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 5, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 11 parts" }
 
+plan_outline = { value = "OSM relation 17642970, 2179 m2 (Catastro parcel 5930801YJ2753B, 11 BuildingParts)", source = "https://www.openstreetmap.org/relation/17642970", note = "model IoU 0.988 vs OSM, 0.997 vs Catastro" }
+north_front_length = { value = 36.7, unit = "m", source = "OSM relation 17642970 edges 9-19", note = "straight line az 11.2 from the tower NE corner (-5.11,-21.75) to the rounded NE corner (r ~5 m); 6 window axes 4.35 m apart (3 each side of the frontispiece), photos 12, 14, 15" }
+east_front_length = { value = 28.9, unit = "m", source = "OSM relation 17642970 edge 32 (az 114)", note = "no exterior photo of this side was obtainable (Commons HTTP 429); modelled with the north-front bay system, 6 bays" }
+frontispiece_width = { value = 5.25, unit = "m", source = "OSM edge 13", note = "projects 0.57 m from the front (OSM edges 12/14)" }
+tower_plan = { value = "5.95 x 8.0 m", source = "OSM edge 7 + Catastro BuildingPart 5", note = "3 arches on the N/S faces, 5 on the E/W faces of the belvedere (photos 05, 13)" }
+main_cornice_top = { value = 14.5, unit = "m", source = "PNOA-LiDAR (IGN, wms-mapa-lidar.idee.es, 2.5 m cells): interior roof cells of the north range 13.6-14.3 m; photo 13 constrained solve (tool match + own LM solve, 6 plan points at y=0, eye-height prior 1.6 m): 14.55 m", note = "balustrade on top to 15.5 m; LiDAR offset fitted on the tower edges: cells appear ~1.5 m W and ~2.5 m S of the Catastro plan" }
+facade_levels = { value = "plinth 1.5, ground windows 2.5-5.4, string 5.75, balcony line 6.5, piano nobile windows 6.7-9.7, wavy string 11.1, oculi centre 12.4, cornice 13.6-14.5", unit = "m", source = "photo 12 (level camera) ratios along the tower NW corner scaled to the 14.5 m cornice; photo 14 frontispiece" }
+tower_balustrade_top = { value = 20.6, unit = "m", source = "PNOA-LiDAR tower cells 20.5-20.9 m; photo 13 solve 19.7 m; photo 05 proportions (west face 8.0 m = 525 px) 21.0 m", note = "stone band 14.5-15.9, brick band to 16.75, loggia floor 17.0, springing 18.4, entablature 19.25, cornice 19.63, corner finials to ~22" }
+nw_loggia_balustrade_top = { value = 12.05, unit = "m", source = "photo 13 solve 12.0 m", note = "cornice top 11.1 m; LiDAR shows a small open court behind it (no-data cells)" }
+west_wing_cornice_top = { value = 12.4, unit = "m", source = "PNOA-LiDAR wing roof cells 12.5-12.7 m; photo 13 solve balustrade top 13.3 m" }
+south_range_top = { value = 14.7, unit = "m", source = "PNOA-LiDAR cells 14.6-14.8 m" }
+rear_block_top = { value = 20.5, unit = "m", source = "PNOA-LiDAR cells 19.1-21.5 m over Catastro part 2 (5 floors)" }
+chapel_dome_top = { value = 23.6, unit = "m", source = "PNOA-LiDAR cell 23.6 m over the octagon (Catastro part 8); drum cells ~20.5" }
+bridge_top = { value = 10.5, unit = "m", source = "PNOA-LiDAR cells 9.5-10.5 m" }
+inner_blocks = { value = "11-12 m", source = "PNOA-LiDAR 10.4-13.5 m over Catastro parts 1, 3, 6 (catastro 1-2 floors: tall halls, roofed)" }
+lidar_calibration = { value = "Micalet interior cells 52.0-52.3 m vs 50.85 m prism (+1.2 m); street cells return no data (no measurable bias)", source = "https://wms-mapa-lidar.idee.es/lidar GetFeatureInfo layer edificios-h30" }
 [[photo]]
 file = "photos/01_Palacio_Arzobispal_de_Valencia.jpg"
 title = "File:Palacio Arzobispal de Valencia.jpg"
@@ -30,8 +46,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 750
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "N: whole north front panorama from Plaça de l'Almoina; view p01_panorama"
 
 [[photo]]
 file = "photos/02_Plaza_de_l_Almoina_panoramio.jpg"
@@ -43,8 +59,8 @@ width = 1280
 height = 960
 camera = [-19.43, -30.24]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NW: tower, curved loggia and north front; view p02_almoina_nw"
 
 [[photo]]
 file = "photos/03_Valencia_trip54.jpg"
@@ -56,8 +72,8 @@ width = 1280
 height = 853
 camera = [-168.03, 268.39]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NNE (far): tower, loggia, west wing, dome, bridge; view p03_almoina_far"
 
 [[photo]]
 file = "photos/04_Valencia_Palau_Arquebisbal_from_Placa_de_l_Almoina.jpg"
@@ -69,8 +85,8 @@ width = 1280
 height = 1919
 camera = [-5.0, -46.32]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NW: west wing and loggia with the Micalet; view p04_wing_micalet"
 
 [[photo]]
 file = "photos/05_Palau_Arquebisbal_de_Valencia_des_de_la_catedral.jpg"
@@ -81,8 +97,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W (elevated, from the cathedral): belvedere loggia, roof terraces, ochre courtyard walls; view p05_from_cathedral"
 
 [[photo]]
 file = "photos/06_Valencia_palau_arquebisbal.jpg"
@@ -93,8 +109,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1019
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NW: tower and loggia, north front; view p06_tower_nw"
 
 [[photo]]
 file = "photos/07_Arxidiocesi_de_Valencia_52042736986.jpg"
@@ -105,8 +121,8 @@ license = "CC BY-SA 2.0"
 width = 1280
 height = 1062
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "N/E: north front looking west to the cathedral; view p07_front_to_cathedral"
 
 [[photo]]
 file = "photos/08_026_Palau_Arquebisbal_c_del_Palau_2_Valencia_des_de_la_placa.jpg"
@@ -117,8 +133,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "N: north front oblique; view p08_front_oblique"
 
 [[photo]]
 file = "photos/09_La_Seu_Valencia_Valencia_Spain_panoramio_6.jpg"
@@ -130,8 +146,8 @@ width = 1280
 height = 1707
 camera = [-16.94, -30.42]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "N: tower bay from below; view p09_tower_bay"
 
 [[photo]]
 file = "photos/10_221_Carrer_del_Palau_Valencia_amb_el_Palau_Arquebisbal_i_la_.jpg"
@@ -142,8 +158,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "E end: Carrer del Palau looking west; view p10_c_palau_west"
 
 [[photo]]
 file = "photos/11_Columna_de_la_facana_del_palau_arquebisbal_de_Valencia.jpg"
@@ -166,8 +182,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 872
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "N: whole north front from the tower end (level camera, used for facade levels); view p12_north_front (solved)"
 
 [[photo]]
 file = "photos/13_Palacio_Arzobispal_de_Valencia_junio_2022_a.jpg"
@@ -178,8 +194,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NW: tower, curved loggia, west wing (height solve); view p13_nw_loggia (solved, rms 6.7 px)"
 
 [[photo]]
 file = "photos/14_Arxidiocesi_de_Valencia_52042737726.jpg"
@@ -190,8 +206,8 @@ license = "CC BY-SA 2.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "N: frontispiece and the west half of the front; view p14_frontispiece"
 
 [[photo]]
 file = "photos/15_Valencia_Palacio_Arzobispal_2.jpg"
@@ -202,8 +218,8 @@ license = "CC0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "N: frontispiece close-up (portal, balcony, arms)"
 
 [[photo]]
 file = "photos/16_225_Palau_Arquebisbal_de_Valencia_facana_del_c_Palau.jpg"
@@ -214,8 +230,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "N: frontispiece frontal; view p16_portal"
 
 [[photo]]
 file = "photos/catastro_5930801YJ2753B.jpg"
@@ -226,8 +242,17 @@ license = "Catastro open data (attribution required)"
 width = 1600
 height = 1200
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "N: Catastro facade photo; view catastro_front"
+
+[[plan]]
+file = "lidar/pnoa_lidar_cells.json"
+title = "IGN PNOA-LiDAR building heights (edificios-h30), 230 cells of 2.5 m"
+url = "https://wms-mapa-lidar.idee.es/lidar"
+author = "Instituto Geográfico Nacional (IGN)"
+license = "CC BY 4.0"
+kind = "lidar"
+notes = "GetFeatureInfo samples over and around the palace (5 m grid inside, 2.5 m over the tower); kept in the session scratch, values summarised in [facts]"
 
 [[plan]]
 file = "plans/catastro_wms.png"
