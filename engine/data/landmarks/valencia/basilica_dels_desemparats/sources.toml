@@ -22,6 +22,30 @@ catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatast
 catastro_floor_area = { value = 1486.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5931102&rc2=YJ2753B", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 2, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 3 parts" }
 
+# ---- measured for the model (landmark.toml); local frame x east, z south, y up from the facade base
+plan_source = { value = "OSM way 135630265 + building:parts", source = "https://www.openstreetmap.org/way/135630265", note = "checked on the IGN PNOA orthophoto (WMS pnoa-ma, CC BY 4.0) at 0.1 m/px; roof lean ~0.12 m per m of height to the north; outline IoU 0.98 with OSM and 0.97 with Catastro" }
+plot_area = { value = 982.75, unit = "m2", source = "https://www.valencia.es/documents/20142/629631/1.41+REAL+BASILICA+DE+NUESTRA+SE%D1ORA+DE+LOS+DESAMPARADOS_firmado.pdf", note = "PGOU catalogue sheet 1.41: isolated block, 3 storeys" }
+west_front_length = { value = 35.65, unit = "m", source = "OSM way 135630265 (nodes -12.40,-17.86 to -13.18,17.78), PNOA" }
+east_front_length = { value = 29.43, unit = "m", source = "OSM way 135630265 edge 22, PNOA" }
+south_front_length = { value = 24.04, unit = "m", source = "OSM way 135630265 edges 23-28 (incl. the 2.4 m under the cathedral passage)" }
+north_front_length = { value = 18.98, unit = "m", source = "OSM way 135630265 edge 16" }
+socle_height = { value = 1.4, unit = "m", source = "camera solve photos 02+10 (scratchpad bas/ba.py: EXIF focal 25 mm eq., people 1.75 m, eye-height priors)", note = "1.37-1.49 over 4 solves" }
+architrave_height = { value = 11.9, unit = "m", source = "camera solve photos 02, 04, 10 (EXIF 02 Canon SX260 4.5 mm, 04 Canon A2500 5 mm)", note = "11.94-12.22 over the solves; photo 04 back-projection 11.4-11.9; giant pilasters 1.4-11.9" }
+cornice_top = { value = 13.4, unit = "m", source = "photos 02, 04 (entablature 1.5 m above the architrave)", note = "OSM height tag 13" }
+storey_band = { value = 7.5, unit = "m", source = "photos 02, 04" }
+doors_west = { value = "2.6 x 4.9 m at u 13.9 and 29.1 m from the north corner", source = "photo 02 back-projected on the facade plane; OSM portal projections z -6.94..-0.55 and 8.0..14.4" }
+pilasters_west = { value = [0.98, 8.52, 19.27, 23.37, 34.7], unit = "m from N corner", source = "photo 02 back-projection" }
+pilasters_east = { value = [1.03, 10.35, 15.62, 23.2, 28.45], unit = "m from S corner", source = "photos 04, 11, 19 back-projection" }
+door_east = { value = "2.45 x 4.3 m at u 5.86 m from the SE corner", source = "photos 04, 19 back-projection" }
+virgin_tile_panel = { value = "2.2 x 3.3 m, 3.4-6.7 m high, u 13.15 m", source = "photos 04, 05, 11, 19" }
+drum = { value = "ellipse 19.4 x 22.6 m (long axis N-S), centre (0.39, 4.66)", source = "OSM building:part 387030403, PNOA ring 18.75 x 21.75 at the top" }
+drum_cornice_top = { value = 19.9, unit = "m", source = "front-point projection of photo 05 (19.4-19.6) and 02 (20.2-20.5)", note = "OSM part 387030403 tagged 17" }
+dome = { value = "ellipsoid 14.0 x 17.2 m from 20.1 m to the apex 28.0 m", source = "OSM part 387384484 13.3 x 16.4 m, PNOA dark tile ellipse 13 x 16.3 m; BOE 1981: 18.50 m on the major axis (inside)" }
+dome_major_axis_boe = { value = 18.5, unit = "m", source = "https://boe.es/boe/dias/1981/08/10/pdfs/A18341-18342.pdf", note = "interior span quoted in the BIC declaration" }
+lantern = { value = "r 1.95 m, 8 sides, base 28.0, cornice top 34.0, cap 36.2, cross top ~38.3 m", source = "OSM part 388158790 (r ~2.0); heights from the lantern axis in photos 02, 03, 04, 05, 07, 15 (cross 37.9-38.9, base 27.9-28.3)" }
+camarin = { value = "annex 10 m with small dome r 2.75 to ~15.5 m", source = "OSM relation 17642967 (h 10) and way 1287107026 (dome); PNOA shadow", note = "not seen in any ground photo: low confidence" }
+passage = { value = "arched passage to the cathedral x -2.7..-0.1, z 18.1..24.5", source = "OSM way 1287107024 / Catastro part 3", note = "modelled in catedral_de_valencia (element pasadizo_desemparats), deliberately not duplicated here" }
+
 [[photo]]
 file = "photos/01_Cupula_azulada_de_los_Desamparados_a_la_sombra_del_cimborrio.jpg"
 title = "File:Cúpula azulada de los Desamparados, a la sombra del cimborrio de la catedral de Valencia, España, Spain.JPG"
@@ -33,8 +57,8 @@ height = 960
 camera = [-50.17, 102.4]
 heading = 45.0
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "aerial"
 
 [[photo]]
 file = "photos/02_Basilica_de_los_Desamparados_panoramio.jpg"
@@ -46,8 +70,8 @@ width = 1280
 height = 960
 camera = [-39.24, 0.52]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/03_Basilica_de_la_Mare_de_Deu_dels_Desemparats.jpg"
@@ -59,8 +83,8 @@ width = 1280
 height = 853
 camera = [-0.69, 4.11]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/04_Valencia_city_center01.jpg"
@@ -72,8 +96,8 @@ width = 1280
 height = 1707
 camera = [25.71, 22.29]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/05_Basilica_de_Nuestra_Sra_de_los_Desamparados_Reflejo_sobre_el.jpg"
@@ -85,8 +109,8 @@ width = 1280
 height = 2276
 camera = [1.03, 5.56]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/06_Plaza_de_la_Virgen_Valencia.jpg"
@@ -112,8 +136,8 @@ height = 1707
 camera = [51.43, -31.68]
 heading = 222.0
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "ne"
 
 [[photo]]
 file = "photos/08_Basilica_Desamparats_Cupula.jpg"
@@ -124,8 +148,8 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/09_Cupula_de_la_basilica_dels_Desemparats_Valencia.jpg"
@@ -148,8 +172,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/11_Reial_Basilica_de_la_Mare_de_Deu_dels_Desemparats_Valencia_1.jpg"
@@ -160,8 +184,8 @@ license = "CC BY-SA 2.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
 
 [[photo]]
 file = "photos/12_Catedral_de_Valensia.jpg"
@@ -172,8 +196,8 @@ license = "CC BY-SA 3.0 es"
 width = 1280
 height = 721
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/13_Basilica_desamparados.jpg"
@@ -208,8 +232,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/16_Exterior_Basilica_de_la_Mare_de_Deu_dels_Desamparats_Valenci.jpg"
@@ -222,6 +246,136 @@ height = 848
 exterior = true
 selected = false
 side = ""
+
+[[photo]]
+file = "photos/17_Basilica_de_la_Mare_de_Deu_dels_Desemparats_per_darrere.jpg"
+title = "File:Basílica de la Mare de Déu dels Desemparats per darrere.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3ABas%C3%ADlica_de_la_Mare_de_D%C3%A9u_dels_Desemparats_per_darrere.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 950
+exterior = true
+selected = true
+side = "se"
+note = "added by the modeller (Special:FilePath width=1280)"
+
+[[photo]]
+file = "photos/18_Valencia_Basilica_de_la_Mare_de_Deu_dels_Desamparats_from_th.jpg"
+title = "File:Valencia Basílica de la Mare de Déu dels Desamparats from the northwest.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3AValencia_Bas%C3%ADlica_de_la_Mare_de_D%C3%A9u_dels_Desamparats_from_the_northwest.jpg"
+author = "Ymblanter"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1677
+exterior = true
+selected = false
+side = "se"
+note = "added by the modeller (Special:FilePath width=1280)"
+
+[[photo]]
+file = "photos/19_305_Basilica_dels_Desemparats__Valencia___angle_sud_est.jpg"
+title = "File:305 Basílica dels Desemparats (València), angle sud-est.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3A305_Bas%C3%ADlica_dels_Desemparats_%28Val%C3%A8ncia%29%2C_angle_sud-est.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "se"
+note = "added by the modeller (Special:FilePath width=1280)"
+
+[[photo]]
+file = "photos/20_Valencia___Basilica_de_Ntra_Sra_de_los_Desamparados___Pasaje.jpg"
+title = "File:Valencia - Basílica de Ntra Sra de los Desamparados - Pasaje 001.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3AValencia_-_Bas%C3%ADlica_de_Ntra_Sra_de_los_Desamparados_-_Pasaje_001.jpg"
+author = "Américo Toledano"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 720
+exterior = true
+selected = false
+side = "s"
+note = "added by the modeller (Special:FilePath width=1280)"
+
+[[photo]]
+file = "photos/21_Basilica_de_la_Mare_de_Deu_dels_Desemparats_des_de_l_Almoina.jpg"
+title = "File:Basílica de la Mare de Déu dels Desemparats des de l'Almoina.JPG"
+url = "https://commons.wikimedia.org/wiki/File%3ABas%C3%ADlica_de_la_Mare_de_D%C3%A9u_dels_Desemparats_des_de_l%27Almoina.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 929
+exterior = true
+selected = false
+side = "e"
+note = "added by the modeller (Special:FilePath width=1280)"
+
+[[photo]]
+file = "photos/22_Basilica_dels_Desemparats_des_de_dalt.jpg"
+title = "File:Basílica dels Desemparats des de dalt.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3ABas%C3%ADlica_dels_Desemparats_des_de_dalt.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "aerial"
+note = "added by the modeller (Special:FilePath width=1280)"
+
+[[photo]]
+file = "photos/23_088_Basilica_dels_Desemparats__Valencia___pl__Almoina.jpg"
+title = "File:088 Basílica dels Desemparats (València), pl. Almoina.JPG"
+url = "https://commons.wikimedia.org/wiki/File%3A088_Bas%C3%ADlica_dels_Desemparats_%28Val%C3%A8ncia%29%2C_pl._Almoina.JPG"
+author = "Enfo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = "se"
+note = "added by the modeller (Special:FilePath width=1280)"
+
+[[photo]]
+file = "photos/24_Valencia_Basilica_de_la_Mare_de_Deu_dels_Desamparats_from_th.jpg"
+title = "File:Valencia Basílica de la Mare de Déu dels Desamparats from the west.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3AValencia_Bas%C3%ADlica_de_la_Mare_de_D%C3%A9u_dels_Desamparats_from_the_west.jpg"
+author = "Ymblanter"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 854
+exterior = true
+selected = false
+side = "w"
+note = "added by the modeller (Special:FilePath width=1280)"
+
+[[photo]]
+file = "photos/25_Valencia___Basilica_de_Ntra_Sra_de_los_Desamparados___Pasaje.jpg"
+title = "File:Valencia - Basílica de Ntra Sra de los Desamparados - Pasaje 002.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3AValencia_-_Bas%C3%ADlica_de_Ntra_Sra_de_los_Desamparados_-_Pasaje_002.jpg"
+author = "Américo Toledano"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 2276
+exterior = true
+selected = true
+side = "s"
+note = "added by the modeller (Special:FilePath width=1280)"
+
+[[photo]]
+file = "photos/26_Basilica_Desemparats_des_de_dalt.jpg"
+title = "File:Basílica Desemparats des de dalt.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3ABas%C3%ADlica_Desemparats_des_de_dalt.jpg"
+author = "Joanbanjo"
+license = "Public domain"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = "aerial"
+note = "added by the modeller (Special:FilePath width=1280)"
 
 [[plan]]
 file = "plans/01_1_41_REAL_BASILICA_DE_NUESTRA_SENORA_DE_LOS_DESAMPARADOS_fir.jpg"
