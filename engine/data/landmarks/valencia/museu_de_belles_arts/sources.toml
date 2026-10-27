@@ -23,6 +23,27 @@ catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatast
 catastro_floor_area = { value = 18356.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6234202&rc2=YJ2763E", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 5, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 21 parts" }
 
+tower_entablature_bottom = { value = 20.0, unit = "m", source = "constrained bundle adjustment (EXIF focal lengths fixed) of photos 11, 12, 14; confirmed by views 09/10/15", note = "+-0.3 m statistical; T16 19.9, T18 20.3" }
+tower_cornice_top = { value = 21.7, unit = "m", source = "bundle adjustment photos 11/12/14" }
+tower_attic_top = { value = 23.3, unit = "m", source = "bundle adjustment photos 11/12/14 (T16 23.3, T18 23.4)", note = "finials reach about 25.3 m" }
+tower16_plan = { value = "8.1 x 8.1 m", source = "OSM part 16 / Catastro part 6; N corner moved 0.6 m north (photos 02/11/14 put that edge 0.8-1 m beyond OSM)" }
+tower18_plan = { value = "7.5 x 8.15 m", source = "OSM part 18 / Catastro part 11" }
+front_length_between_towers = { value = 26.5, unit = "m", source = "OSM part 14 / Catastro part 10" }
+front_cornice_top = { value = 12.5, unit = "m", source = "bundle adjustment photos 11/12/14" }
+front_attic_top = { value = 14.3, unit = "m", source = "bundle adjustment photos 11/12/14" }
+west_wing_eave = { value = 10.4, unit = "m", source = "bundle adjustment photo 11; views 09/10/02 within 5 px" }
+chapel_octagon = { value = 27.5, unit = "m", source = "IGN PNOA orthophoto (WMS pnoa-ma, CC BY 4.0): tiled octagonal roof 28.5 x 27.3 m; SW flat = OSM portal front", note = "across the flats, flats facing 29 + k*45 deg" }
+chapel_eave = { value = 12.0, unit = "m", source = "estimate from photos 11/14 (roof just above the west-wing ridge); not solved" }
+drum_across_flats = { value = 17.2, unit = "m", source = "photo 11 (17.9 m projected at the solved camera) and PNOA" }
+drum_base = { value = 14.8, unit = "m", source = "bundle adjustment photos 11/12" }
+dome_eave = { value = 18.0, unit = "m", source = "bundle adjustment photos 11/12; eave 18.5-19 m across (photo 11 19.1 m projected, PNOA 20 m with lean)" }
+dome_crown_lantern_base = { value = 26.6, unit = "m", source = "bundle adjustment photos 11/12; views 02/03/07/08/09/10/15" }
+lantern_cap_top = { value = 32.7, unit = "m", source = "bundle adjustment photos 11/12", note = "weathervane rod above, about 34 m" }
+lantern_width = { value = 3.1, unit = "m", source = "photo 11" }
+tower_storeys = { value = "windows tops at 2.3 / 6.5 / 10.8 / 14.8 / 19.45 m", source = "photo 12 (upright) scaled between the solved tower entablature and facade cornice" }
+pnoa_orthophoto = { value = "EPSG:25830 bbox 726055.5,4373192 - 726215.5,4373352, 0.1 m/px", source = "https://www.ign.es/wms-inspire/pnoa-ma (CC BY 4.0 scne.es)" }
+extension_heights = { value = "8-9.5 m walls, 5 m glazed courts", source = "overlay on photo 11 (OSM levels 1-2 are lower than the tall gallery storeys)" }
+
 [[photo]]
 file = "photos/01_Museu_belles_arts_valencia2.jpg"
 title = "File:Museu belles arts valència2.jpg"
@@ -32,8 +53,9 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
+note = "Canon PowerShot S70 13.2 mm; river front from the south-east (riverbed)"
 
 [[photo]]
 file = "photos/02_Museo_de_Bellas_artes_San_Pio_V_panoramio.jpg"
@@ -45,8 +67,9 @@ width = 1280
 height = 1920
 camera = [-68.11, 71.24]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
+note = "Canon EOS 1000D, EXIF 40 mm (65 mm-eq); view p02_panoramio"
 
 [[photo]]
 file = "photos/03_Valence_panoramio_7.jpg"
@@ -58,8 +81,9 @@ width = 1280
 height = 960
 camera = [-21.53, 271.96]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
+note = "Panasonic DMC-TZ25, EXIF 104 mm-eq; view p03_south_garden"
 
 [[photo]]
 file = "photos/04_Part_superior_de_la_facana_del_Sant_Pius_V_Museu_de_Belles_A.jpg"
@@ -70,8 +94,9 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
+note = "BenQ DC E1020, EXIF 62 mm-eq; chapel portal crest detail"
 
 [[photo]]
 file = "photos/05_Exterior_Museu_de_Belles_Arts_de_Valencia.jpg"
@@ -82,8 +107,9 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
+note = "BenQ DC E1020, EXIF 32 mm-eq; portal and tower 16 from the street"
 
 [[photo]]
 file = "photos/06_Museu_de_Belles_Arts_P1130754.jpg"
@@ -94,8 +120,9 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
+note = "Panasonic DMC-FZ18, EXIF 29 mm-eq; plain stucco three-storey facade (gardens side)"
 
 [[photo]]
 file = "photos/07_Museu_de_Belles_Arts_de_Valencia_14.jpg"
@@ -106,8 +133,9 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
+note = "Nikon D3100, EXIF 45 mm-eq; view p07_portal_street"
 
 [[photo]]
 file = "photos/08_Valencia_Spain_26461226731.jpg"
@@ -118,8 +146,9 @@ license = "CC BY-SA 2.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
+note = "Nikon Coolpix S9900, EXIF 60 mm-eq; view p08_turia_w"
 
 [[photo]]
 file = "photos/09_Pius_V_i_Universitat_des_de_les_Torres_de_Serrans_Valencia_2.jpg"
@@ -130,8 +159,9 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
+note = "Kodak C875, EXIF 133 mm-eq, from the Torres de Serrans; view p09_serrans_2008 (camera solves onto the towers)"
 
 [[photo]]
 file = "photos/10_Jardins_du_turia.jpg"
@@ -142,8 +172,9 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 857
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
+note = "Nikon D60, EXIF 27 mm-eq; view p10_jardi_turia"
 
 [[photo]]
 file = "photos/11_Museu_pius1.jpg"
@@ -154,8 +185,9 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
+note = "Canon PowerShot S70, EXIF 20.69 mm (100 mm-eq); view p11_serrans; BA measuring photo"
 
 [[photo]]
 file = "photos/12_Valencia_la_Saidia_Museu_de_Belles_Arts_de_Valencia_IMG_2836.jpg"
@@ -167,8 +199,9 @@ width = 1280
 height = 1413
 camera = [-69.37, 83.26]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
+note = "Canon PowerShot G3 X, EXIF 11.0 mm, upright crop (44 mm-eq diag); view p12_bastion; BA measuring photo"
 
 [[photo]]
 file = "photos/13_151_Museu_de_Belles_Arts_de_Sant_Pius_V_Valencia_des_del_pon.jpg"
@@ -179,8 +212,9 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
+note = "Canon G15, EXIF 30.5 mm; dome from the Pont dels Serrans (not used as a view: the EXIF field does not fit)"
 
 [[photo]]
 file = "photos/14_162_Pont_de_la_Trinitat_Valencia_al_fons_el_Museu_de_Belles_.jpg"
@@ -191,8 +225,9 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
+note = "Canon G15, EXIF 21.0 mm (98 mm-eq); view p14_trinitat; BA measuring photo"
 
 [[photo]]
 file = "photos/15_Museo_de_Bellas_Artes_San_Pio_V_de_Valencia_2262044745.jpg"
@@ -204,8 +239,9 @@ width = 1280
 height = 960
 camera = [-19.93, -53.71]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
+note = "Olympus C-720 UZ, EXIF 37.0 mm (231 mm-eq); view p15_serrans_olympus"
 
 [[photo]]
 file = "photos/catastro_6234202YJ2763E.jpg"
