@@ -35,7 +35,20 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Edifici_Rialto_de_Valencia_facana_pantalla.jpg"
+file = "photos/02_Instituto_Valenciano_de_Cultura_Valencia.jpg"
+title = "File:Instituto Valenciano de Cultura (Valencia).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Instituto_Valenciano_de_Cultura_%28Valencia%29.jpg"
+author = "Julián Monrabal"
+license = "CC0"
+width = 1280
+height = 960
+camera = [35.66, 131.46]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/03_Edifici_Rialto_de_Valencia_facana_pantalla.jpg"
 title = "File:Edifici Rialto de València, façana pantalla.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Edifici_Rialto_de_Val%C3%A8ncia%2C_fa%C3%A7ana_pantalla.JPG"
 author = "Joanbanjo"
@@ -47,7 +60,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/03_Edifici_Rialto_placa_de_l_Ajuntament_de_Valencia.jpg"
+file = "photos/04_Edifici_Rialto_placa_de_l_Ajuntament_de_Valencia.jpg"
 title = "File:Edifici Rialto, plaça de l'Ajuntament de València.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Edifici_Rialto%2C_pla%C3%A7a_de_l%27Ajuntament_de_Val%C3%A8ncia.JPG"
 author = "Joanbanjo"
@@ -59,7 +72,19 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/04_Placa_de_l_Ajuntament_de_Valencia_6.jpg"
+file = "photos/05_Edificio_Rialto_y_Ateneo_mercantil_de_Valencia_1.jpg"
+title = "File:Edificio Rialto y Ateneo mercantil de Valencia 1.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_Rialto_y_Ateneo_mercantil_de_Valencia_1.JPG"
+author = "Dorieo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Placa_de_l_Ajuntament_de_Valencia_6.jpg"
 title = "File:Plaça de l'Ajuntament de València 6.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Pla%C3%A7a_de_l%27Ajuntament_de_Val%C3%A8ncia_6.JPG"
 author = "Dorieo"
@@ -71,7 +96,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Placa_de_l_Ajuntament_Vinatea.jpg"
+file = "photos/07_Placa_de_l_Ajuntament_Vinatea.jpg"
 title = "File:Plaça de l'Ajuntament (Vinatea).jpg"
 url = "https://commons.wikimedia.org/wiki/File:Pla%C3%A7a_de_l%27Ajuntament_%28Vinatea%29.jpg"
 author = "Coentor"
@@ -83,7 +108,43 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/06_105_Escultures_a_la_facana_del_Teatre_Rialto_pl_de_l_Ajuntam.jpg"
+file = "photos/08_Rialto_Teatre_Filmoteca_Valencia.jpg"
+title = "File:Rialto Teatre Filmoteca, Valencia.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Rialto_Teatre_Filmoteca%2C_Valencia.jpg"
+author = "Raül Utrera"
+license = "CC BY-SA 2.0"
+width = 1280
+height = 1927
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/09_Cine_Rialto_en_la_37_Mostra_de_Valencia.jpg"
+title = "File:Cine Rialto en la 37 Mostra de València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Cine_Rialto_en_la_37_Mostra_de_Val%C3%A8ncia.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/10_104_Teatre_i_Filmoteca_Rialto_pl_de_l_Ajuntament_17_Valencia.jpg"
+title = "File:104 Teatre i Filmoteca Rialto, pl. de l'Ajuntament 17 (València).jpg"
+url = "https://commons.wikimedia.org/wiki/File:104_Teatre_i_Filmoteca_Rialto%2C_pl._de_l%27Ajuntament_17_%28Val%C3%A8ncia%29.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/11_105_Escultures_a_la_facana_del_Teatre_Rialto_pl_de_l_Ajuntam.jpg"
 title = "File:105 Escultures a la façana del Teatre Rialto, pl. de l'Ajuntament 17 (València).jpg"
 url = "https://commons.wikimedia.org/wiki/File:105_Escultures_a_la_fa%C3%A7ana_del_Teatre_Rialto%2C_pl._de_l%27Ajuntament_17_%28Val%C3%A8ncia%29.jpg"
 author = "Enric"
@@ -95,7 +156,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/07_Torreta_del_Rialto_des_de_l_Ateneu_Mercantil_Valencia.jpg"
+file = "photos/12_Torreta_del_Rialto_des_de_l_Ateneu_Mercantil_Valencia.jpg"
 title = "File:Torreta del Rialto des de l'Ateneu Mercantil, València.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Torreta_del_Rialto_des_de_l%27Ateneu_Mercantil%2C_Val%C3%A8ncia.jpg"
 author = "Joanbanjo"
@@ -107,20 +168,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/08_Instituto_Valenciano_de_Cultura_Valencia.jpg"
-title = "File:Instituto Valenciano de Cultura (Valencia).jpg"
-url = "https://commons.wikimedia.org/wiki/File:Instituto_Valenciano_de_Cultura_%28Valencia%29.jpg"
-author = "Julián Monrabal"
-license = "CC0"
-width = 1280
-height = 960
-camera = [35.66, 131.46]
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/09_Edifici_Rialto_darrere_Valencia_02.jpg"
+file = "photos/13_Edifici_Rialto_darrere_Valencia_02.jpg"
 title = "File:Edifici Rialto darrere, Valéncia 02.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Edifici_Rialto_darrere%2C_Val%C3%A9ncia_02.jpg"
 author = "Valencian"
@@ -132,7 +180,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/10_Edifici_Rialto_torre_des_de_l_Ateneu_Valencia.jpg"
+file = "photos/14_Edifici_Rialto_torre_des_de_l_Ateneu_Valencia.jpg"
 title = "File:Edifici Rialto, torre des de l'Ateneu, València.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Edifici_Rialto%2C_torre_des_de_l%27Ateneu%2C_Val%C3%A8ncia.jpg"
 author = "Joanbanjo"
@@ -144,7 +192,7 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/11_Valencia_Placa_del_Ajuntament_PM_52023.jpg"
+file = "photos/15_Valencia_Placa_del_Ajuntament_PM_52023.jpg"
 title = "File:València, Plaça del Ajuntament-PM 52023.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia%2C_Pla%C3%A7a_del_Ajuntament-PM_52023.jpg"
 author = "PMRMaeyaert"
@@ -152,54 +200,6 @@ license = "CC BY-SA 3.0 es"
 width = 500
 height = 750
 exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/12_Edificio_Rialto_y_Ateneo_mercantil_de_Valencia_1.jpg"
-title = "File:Edificio Rialto y Ateneo mercantil de Valencia 1.JPG"
-url = "https://commons.wikimedia.org/wiki/File:Edificio_Rialto_y_Ateneo_mercantil_de_Valencia_1.JPG"
-author = "Dorieo"
-license = "CC BY-SA 3.0"
-width = 1280
-height = 853
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/13_Rialto_Teatre_Filmoteca_Valencia.jpg"
-title = "File:Rialto Teatre Filmoteca, Valencia.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Rialto_Teatre_Filmoteca%2C_Valencia.jpg"
-author = "Raül Utrera"
-license = "CC BY-SA 2.0"
-width = 1280
-height = 1927
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/14_Cine_Rialto_en_la_37_Mostra_de_Valencia.jpg"
-title = "File:Cine Rialto en la 37 Mostra de València.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Cine_Rialto_en_la_37_Mostra_de_Val%C3%A8ncia.jpg"
-author = "19Tarrestnom65"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = "unknown"
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/15_104_Teatre_i_Filmoteca_Rialto_pl_de_l_Ajuntament_17_Valencia.jpg"
-title = "File:104 Teatre i Filmoteca Rialto, pl. de l'Ajuntament 17 (València).jpg"
-url = "https://commons.wikimedia.org/wiki/File:104_Teatre_i_Filmoteca_Rialto%2C_pl._de_l%27Ajuntament_17_%28Val%C3%A8ncia%29.jpg"
-author = "Enric"
-license = "CC BY-SA 4.0"
-width = 1280
-height = 1707
-exterior = "unknown"
 selected = false
 side = ""
 
