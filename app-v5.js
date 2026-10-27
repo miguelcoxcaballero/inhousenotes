@@ -1431,6 +1431,9 @@
 
         const COLLAB_DOC_NAME_KEY = 'doc:exportName';
         const COLLAB_DOC_CALENDAR_KEY = 'doc:calendarPageConfig';
+        // Only the stable PDF pull can supply this capability. It never travels
+        // in a journal/P2P payload or in a serializable merge option.
+        const verifiedRemotePdfBackgroundMerges = new WeakMap();
 
         function getCollabPageFieldKey(pageId, field) {
             return `page:${String(pageId || '')}:${field}`;
@@ -28358,7 +28361,7 @@
 
                 // Apply remote changes. Only preserve/re-upload local-only content
                 // when this pull is explicitly merging pending local work.
-                const mergeResult = await applyRemotePages(remoteStrokeData, {
+                const mergeOptions = {
                     sessionToken,
                     fileId: fileIdAtStart,
                     preserveLocalUnsynced: preserveLocalAtApply,
@@ -28367,7 +28370,33 @@
                     remoteFields: remoteCollabFields,
                     ...(remoteCalendarFieldFound ? { remoteCalendarPageConfig } : {}),
                     ...(remoteExportName ? { remoteExportName } : {})
+                };
+                const pdfBackgrounds = new WeakMap();
+                for (const page of remoteStrokeData) {
+                    const record = remoteCollabFields?.fields?.[getCollabPageFieldKey(page?.pageId, 'background')];
+                    if (page?.backgroundSource !== 'custom'
+                        || (page.backgroundImage != null && page.backgroundImage !== '')
+                        || !Number.isInteger(page.pdfPageIndex) || page.pdfPageIndex < 1
+                        || page.pdfPageIndex > (remotePdfDoc?.numPages || 0)
+                        || record?.value?.backgroundSource !== 'custom') continue;
+                    // Older exports keep the original photo's semantic hash in
+                    // IH_FIELDS but its pixels in this PDF, not inline JSON.
+                    // Bind that representation to this exact parsed page and
+                    // field record, rather than trusting a payload flag.
+                    pdfBackgrounds.set(page, {
+                        pdfPageIndex: page.pdfPageIndex,
+                        record: ihnStableStringify(record)
+                    });
+                }
+                verifiedRemotePdfBackgroundMerges.set(mergeOptions, {
+                    sessionToken, fileId: fileIdAtStart, pages: pdfBackgrounds
                 });
+                let mergeResult;
+                try {
+                    mergeResult = await applyRemotePages(remoteStrokeData, mergeOptions);
+                } finally {
+                    verifiedRemotePdfBackgroundMerges.delete(mergeOptions);
+                }
                 if (!likelyRemoteContentChange && mergeResult?.changed) {
                     showStatus('Syncing...', { phase: 'syncing' });
                     if (options.visualSync && !visualSyncStarted) {
@@ -29730,9 +29759,19 @@
                     !localBackgroundMatchesRegister
                     || ihnStableStringify(mergedBackgroundRecord) !== ihnStableStringify(originalBackgroundRecord)
                 );
-                const remoteBackgroundMatchesRegister = remoteBackgroundNeedsApply
-                    && ihnStableStringify(getCollabBackgroundValue(remotePageData))
-                        === ihnStableStringify(resolvedBackgroundValue);
+                const pdfScope = verifiedRemotePdfBackgroundMerges.get(options);
+                const pdfProof = pdfScope?.pages.get(remotePageData);
+                const verifiedPdfBackground = !!pdfProof
+                    && isDocumentPersistenceContextCurrent(pdfScope)
+                    && remoteBackgroundSource === 'custom'
+                    && (remotePageData.backgroundImage == null || remotePageData.backgroundImage === '')
+                    && remotePageData.pdfPageIndex === pdfProof.pdfPageIndex
+                    && ihnStableStringify(mergedBackgroundRecord) === pdfProof.record;
+                const remoteBackgroundMatchesRegister = remoteBackgroundNeedsApply && (
+                    ihnStableStringify(getCollabBackgroundValue(remotePageData))
+                        === ihnStableStringify(resolvedBackgroundValue)
+                    || verifiedPdfBackground
+                );
                 if (remoteBackgroundNeedsApply && !localBackgroundMatchesRegister
                     && !remoteBackgroundMatchesRegister) {
                     throw new Error('Collaborative photo does not match its background register');
@@ -29756,6 +29795,13 @@
                 const backgroundChanged = nextBackgroundSource !== localBackgroundSource
                     || nextBackgroundImage !== (currentPage.backgroundImage || null)
                     || nextPdfPageIndex !== (Number.isFinite(currentPage.pdfPageIndex) ? currentPage.pdfPageIndex : null);
+                // A failed checkpoint can leave the verified PDF locator in
+                // memory before its pixels were restored. An identical replay
+                // still owes that restoration, even with no new body mutation.
+                if (verifiedPdfBackground && remoteBackgroundWins && !nextBackgroundImage
+                    && !pagesNeedingPdfBackground.includes(i)) {
+                    pagesNeedingPdfBackground.push(i);
+                }
 
                 const resolvedTemplateValue = ihnResolveFieldValue(
                     currentMergedFieldMetadata,
@@ -29811,7 +29857,8 @@
                     // If the page now needs a PDF/custom background but has no image, queue it for rendering
                     if ((nextBackgroundSource === 'custom' || nextBackgroundSource === 'pdf')
                         && Number.isFinite(currentPage.pdfPageIndex)
-                        && !currentPage.backgroundImage) {
+                        && !currentPage.backgroundImage
+                        && !pagesNeedingPdfBackground.includes(i)) {
                         pagesNeedingPdfBackground.push(i);
                     }
                     currentPage.pageWidth = nextPageWidth;
