@@ -61,10 +61,30 @@
             this.frameTimer=setTimeout(()=>{this.frameTimer=null;void this.flushFrame();},
                 Math.max(0,this.lastFrameAt+FRAME_MS-Date.now(),this.retryAt-Date.now()));
         }
+        async reservePreviewFile(){
+            if(this.fileId)return this.fileId;
+            const reserved=await(await this.request(`${API}/generateIds?count=1&space=drive&type=files`)).json();
+            if(this.stopped)throw new DOMException('Preview closed','AbortError');
+            const id=reserved.ids?.[0];
+            if(!id)throw new Error('Drive did not reserve the live preview');
+            this.fileId=id;return id;
+        }
         async flushFrame(){
             if(this.stopped||this.writing||this.sentFrame===this.frame)return;
             this.writing=true;this.lastFrameAt=Date.now();
             try{
+                // Cold folder discovery and ID reservation are independent.
+                // Keep the writing lock until BOTH settle, including failure
+                // and cancellation, so retries cannot reserve competing IDs.
+                const setup=await Promise.allSettled([
+                    this.exists?Promise.resolve(null):this.ensureFolder(),this.reservePreviewFile()
+                ]);
+                for(const result of setup)if(result.status==='rejected')throw result.reason;
+                const folder=setup[0].value,id=setup[1].value;
+                if(this.stopped)throw new DOMException('Preview closed','AbortError');
+                // Setup can span several pen frames. Freeze the latest complete
+                // paths immediately before sending, not an empty/stale warm-up
+                // snapshot. Once serialized, this in-flight frame stays fixed.
                 const frame=this.frame;
                 const packets=[...this.paths.values()].map(path=>{
                     const gap=path.points.findIndex(point=>!point);
@@ -72,16 +92,13 @@
                 });
                 const raw=JSON.stringify({v:1,docId:this.docId,actor:this.actor,frame,at:Date.now(),packets});
                 if(raw.length>MAX_BYTES)throw new Error('Live frame is too large; the complete stroke stays in the durable journal');
-                const folder=await this.ensureFolder();
-                if(!this.fileId){const reserved=await(await this.request(`${API}/generateIds?count=1&space=drive&type=files`)).json();this.fileId=reserved.ids?.[0];}
-                if(!this.fileId)throw new Error('Drive did not reserve the live preview');
-                const update=()=>this.request(`${UPLOAD}/${this.fileId}?uploadType=media&fields=id`,{
+                const update=()=>this.request(`${UPLOAD}/${id}?uploadType=media&fields=id`,{
                     method:'PATCH',headers:{'Content-Type':'application/json'},body:raw,bufferResponse:true});
                 let response;
                 if(this.exists)response=await update();
                 else{
                     const boundary=`ink_${crypto.randomUUID()}`;
-                    const meta={id:this.fileId,name:`live-${this.docId}-${this.actor}.json`,mimeType:'application/json',parents:[folder],
+                    const meta={id,name:`live-${this.docId}-${this.actor}.json`,mimeType:'application/json',parents:[folder],
                         appProperties:{ihnKind:KIND,ihnDoc:this.docId,ihnActor:this.actor}};
                     try{response=await this.request(`${UPLOAD}?uploadType=multipart&fields=id`,{method:'POST',
                         headers:{'Content-Type':`multipart/related; boundary=${boundary}`},bufferResponse:true,
@@ -89,12 +106,12 @@
                             `\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n`,raw,`\r\n--${boundary}--\r\n`])});}
                     catch(error){
                         if(error.status!==409)throw error;
-                        const meta=await(await this.request(`${API}/${this.fileId}?fields=appProperties`)).json();
+                        const meta=await(await this.request(`${API}/${id}?fields=appProperties`)).json();
                         if(meta.appProperties?.ihnActor!==this.actor||meta.appProperties?.ihnDoc!==this.docId||meta.appProperties?.ihnKind!==KIND)throw new Error('Live preview identity mismatch');
                         response=await update();
                     }
                 }
-                const receipt=await response.json();if(receipt.id!==this.fileId)throw new Error('Live preview was not confirmed');
+                const receipt=await response.json();if(receipt.id!==id)throw new Error('Live preview was not confirmed');
                 this.exists=true;this.sentFrame=frame;this.retryAt=0;
                 this.notifyPeers(this.docId,this.fileId,true);
             }catch(error){

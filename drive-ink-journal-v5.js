@@ -165,7 +165,16 @@
             if(local){local.fileId=id;local.exists=true;local.etag=receipt.etag||response.headers.get('ETag')||null;local.ack=Math.max(local.ack||0,record.rev);}
             if(local&&local!==this.current&&local.ack>=local.rev)this.records.delete(key);
             await this.patch(OUTBOX,old=>{const pending={...old.pending};if((pending[key]||0)<=record.rev)delete pending[key];return {...old,pending};});
-            this.hint(id);if(this.sources.has(id))this.sources.get(id).next=Infinity;
+            // The outbox is shared across tabs/sessions. Uploading another
+            // actor's pending record does not make its future edits local to
+            // this document replica; keep that source readable and merge it.
+            if(record.docId===this.docId){
+                this.hint(id);
+                const source=this.sources.get(id);
+                if(source&&record.actor===this.actor){
+                    source.local=true;source.rev=Math.max(source.rev||0,record.rev);this.retireSource(source);
+                }
+            }
             this.lastError='';this.host.receipt?.({...receipt,docId:record.docId,version:record.version,actor:record.actor,part:record.part,operations:record.ops.slice(record.ack||0)});
             this.notifyPeers(record.docId,id);
         }
@@ -191,6 +200,7 @@
             if(this.stopped||this.writing||Date.now()-this.lastWrite<120||Date.now()<this.nextOutboxCheck)return;
             this.writing=true;
             const wakeVersion=this.outboxWakeVersion;
+            let uploaded=false;
             try{
                 await this.persistChain;
                 await this.store.withLease(this.account,'ink-journal-write',async(assertLease)=>{
@@ -215,7 +225,7 @@
                         if(record.retryAt>Date.now()){earliestRetry=Math.min(earliestRetry,record.retryAt);continue;}
                         attempted=true;
                         await assertLease();this.lastWrite=Date.now();
-                        try{await this.upload(record,key);}
+                        try{await this.upload(record,key);uploaded=true;}
                         catch(error){
                             await this.patch(key,old=>({...old,retryAt:Date.now()+Math.min(30000,600*2**Math.min(6,old.failures||0)),failures:(old.failures||0)+1}));
                             if(error.status===412)await this.patch(key,old=>({...old,etag:null}));
@@ -232,7 +242,13 @@
                         this.nextOutboxCheck=Math.min(earliestRetry,Date.now()+2000);
                 });
             }catch(error){this.fail(error);}
-            finally{this.writing=false;this.host.changed?.();}
+            finally{
+                this.writing=false;this.host.changed?.();
+                // The lease is released. If new edits arrived during a slow
+                // upload, start their next pass now rather than waiting for
+                // the periodic poll. wake still enforces 120 ms between starts.
+                if(uploaded)this.wake();
+            }
         }
         async discover(){
             if(!this.docId||this.stopped)return;
@@ -244,19 +260,26 @@
                 token=data.nextPageToken||'';
             }while(token&&!this.stopped);
         }
+        retireSource(source){
+            source.retired=true;source.next=Infinity;
+            source.readEpoch=(source.readEpoch||0)+1;
+        }
         async readSource(id,source){
+            const epoch=source.readEpoch||0;
+            const obsolete=()=>this.stopped||source.retired||(source.readEpoch||0)!==epoch;
+            if(obsolete())return;
             try{
                 const now=Date.now();
                 source.next=now+(source.hotUntil>now?120:1800);
                 const response=await this.request(`${API}/${encodeURIComponent(id)}?alt=media`,{
                     headers:{'Cache-Control':'no-cache'},bufferResponse:true});
                 const raw=await response.text();
-                if(this.stopped)return;
+                if(obsolete())return;
                 if(raw.length>MAX_BODY)throw new Error('Ink journal is too large');
                 // Fetches are independent, but document mutation is still
                 // serialized. A pen-gated merge cannot race another merge.
                 const apply=this.applyChain.catch(()=>{}).then(async()=>{
-                    if(this.stopped)return;
+                    if(obsolete())return;
                     const receivedAt=Date.now();
                     source.retryAt=0;
                     if(raw===source.raw){
@@ -264,7 +287,7 @@
                         source.next=receivedAt+(source.hotUntil>receivedAt?120:Math.min(30000,1800*2**Math.floor(source.idleReads/3)));
                         return;
                     }
-                    await this.host.idle?.();if(this.stopped)return;
+                    await this.host.idle?.();if(obsolete())return;
                     const value=JSON.parse(raw);
                     if(value.v!==1||value.docId!==this.docId||typeof value.actor!=='string'||!Number.isSafeInteger(value.rev)
                         ||!Array.isArray(value.ops)||value.ops.length>128||value.rev!==value.ops.length)throw new Error('Invalid ink journal');
@@ -272,7 +295,13 @@
                     const predecessor=this.sources.get(value.previous);
                     if(predecessor&&Number.isSafeInteger(value.previousRev)){
                         predecessor.requiredRev=Math.max(predecessor.requiredRev||0,value.previousRev);
-                        if(predecessor.rev<predecessor.requiredRev)predecessor.next=0;
+                        if(predecessor.rev<predecessor.requiredRev&&!predecessor.local){
+                            if(predecessor.retired){
+                                predecessor.retired=false;
+                                predecessor.readEpoch=(predecessor.readEpoch||0)+1;
+                            }
+                            predecessor.next=0;
+                        }
                     }
                     const latest=Math.max(this.latestParts.get(value.actor)||0,value.part||0);
                     this.latestParts.set(value.actor,latest);
@@ -280,14 +309,20 @@
                     const seen=this.seen.get(id)||0;
                     if(value.rev<=seen)return; // An out-of-order read cannot roll back the replica.
                     if(value.actor!==this.actor)await this.host.apply(value.ops.slice(seen),{id,actor:value.actor,rev:value.rev});
-                    if(this.stopped)return;
+                    if(obsolete())return;
                     this.seen.set(id,value.rev);source.raw=raw;source.idleReads=0;source.rev=value.rev;
                     source.hotUntil=Date.now()+6000;source.next=Date.now()+120;
-                    for(const entry of this.sources.values())if(entry.actor===value.actor&&entry.part<latest&&entry.requiredRev&&entry.rev>=entry.requiredRev){entry.next=Infinity;delete entry.raw;}
+                    for(const entry of this.sources.values())if(entry.actor===value.actor&&entry.part<latest&&entry.requiredRev&&entry.rev>=entry.requiredRev){if(!entry.retired)this.retireSource(entry);delete entry.raw;}
                 });
                 this.applyChain=apply;
                 await apply;
-            }catch(error){source.retryAt=Date.now()+5000;source.next=source.retryAt;this.fail(error);}
+            }catch(error){
+                // A confirmed local write or a sealed predecessor can retire
+                // this read while its HTTP response is in flight. Neither an
+                // old response nor its error may reactivate the retired source.
+                if(obsolete())return;
+                source.retryAt=Date.now()+5000;source.next=source.retryAt;this.fail(error);
+            }
         }
         async poll(){
             if(this.stopped||!this.docId||this.reading)return;

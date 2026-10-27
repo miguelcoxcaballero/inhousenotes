@@ -37,13 +37,13 @@
       "mime": "application/javascript"
     },
     "/drive-ink-journal-v5.js": {
-      "sha256": "b55c42df7a49b8f0ac07f1860cc2386149008ead0dcb3a9b1d1add265ca15f59",
-      "size": 24212,
+      "sha256": "024b2738dd6cf2e5687961392e12511513bd6b3fd1f1531b32fc1bbd2d8f80f1",
+      "size": 25974,
       "mime": "application/javascript"
     },
     "/drive-live-preview-v5.js": {
-      "sha256": "3a72123f13b8daf279b4946ef4efb55185b91ba442185198280d971957376cdb",
-      "size": 11039,
+      "sha256": "ba6c0ece95ebc7abdde6894b33b50c98e9b3deed937abadbc10e75e9fbda6417",
+      "size": 12025,
       "mime": "application/javascript"
     },
     "/icons/welcome-pages.svg": {
