@@ -218,6 +218,7 @@ fn render_vehicles(w: &mut forja_core::World) {
     let tod = w.res::<super::env::TimeOfDay>();
     let night = if tod.photo_sky { 0.0 } else { tod.night() };
     let driving = w.res::<Driving>().0;
+    let alpha = w.res::<forja_core::Time>().alpha;
     let mut items = Vec::new();
     let mut lights = Vec::new();
     {
@@ -226,7 +227,10 @@ fn render_vehicles(w: &mut forja_core::World) {
         for (i, vis) in w.res::<VehicleVisuals>().0.iter().enumerate() {
             let Some(v) = vehicles.get(i) else { continue };
             let Some(body) = physics.body(v.body) else { continue };
-            let body_m = body.iso().to_mat4();
+            // Interpolated between the last two fixed steps (no judder at
+            // frame rates other than 60 Hz).
+            let iso = body.interpolated_iso(alpha);
+            let body_m = iso.to_mat4();
             let transform = body_m * vis.local;
             let mut item = RenderItem::new(vis.model, transform);
             item.tint = vis.tint;
@@ -238,7 +242,7 @@ fn render_vehicles(w: &mut forja_core::World) {
                 let mut nodes = (*vis.rest).clone();
                 for (wheel, (group, rest_center)) in vis.wheels.iter().enumerate() {
                     let Some(ws) = v.wheels.get(wheel) else { continue };
-                    let center = inv.transform_point3(v.wheel_iso(physics, wheel).pos);
+                    let center = inv.transform_point3(v.wheel_iso_at(iso, wheel).pos);
                     let body_rot = Quat::from_rotation_y(ws.steer_angle) * Quat::from_rotation_x(ws.spin);
                     let model_rot = orient.inverse() * body_rot * orient;
                     let m = Mat4::from_translation(center) * Mat4::from_quat(model_rot) * Mat4::from_translation(-*rest_center);
@@ -250,17 +254,17 @@ fn render_vehicles(w: &mut forja_core::World) {
             }
             items.push(item);
             // Headlights at night or when driven; brake lights when braking.
-            let fwd = body.rotation() * Vec3::Z;
-            let up = body.rotation() * Vec3::Y;
+            let fwd = iso.rot * Vec3::Z;
+            let up = iso.rot * Vec3::Y;
             let half = v.config.chassis_half;
             if night > 0.2 || driving == Some(i) && night > 0.05 {
                 for side in [-0.6f32, 0.6] {
-                    let p = body.position() + fwd * (half.z + 0.6) + up * 0.1 + body.rotation() * Vec3::X * side * half.x;
+                    let p = iso.pos + fwd * (half.z + 0.6) + up * 0.1 + iso.rot * Vec3::X * side * half.x;
                     lights.push(PointLight { position: p + fwd * 3.0, radius: 18.0, color: Vec3::new(1.0, 0.95, 0.85), intensity: 90.0 });
                 }
             }
             if v.controls.brake > 0.1 || (v.controls.throttle < -0.1 && v.speed(physics) > 1.0) {
-                let p = body.position() - fwd * (half.z + 0.3) + up * 0.15;
+                let p = iso.pos - fwd * (half.z + 0.3) + up * 0.15;
                 lights.push(PointLight { position: p, radius: 5.0, color: Vec3::new(1.0, 0.05, 0.02), intensity: 25.0 });
             }
         }

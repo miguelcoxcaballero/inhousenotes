@@ -199,7 +199,10 @@ pub(crate) fn solve(world: &mut PhysicsWorld, dt: f32) -> StepStats {
     // Constraints.
     let mut constraints: Vec<Constraint> = Vec::new();
     let mut contact_points = 0;
-    for (key, pair) in world.pairs.iter() {
+    let mut keys: Vec<(ColliderHandle, ColliderHandle)> = world.pairs.keys().copied().collect();
+    keys.sort_unstable();
+    for key in &keys {
+        let pair = &world.pairs[key];
         let (Some(ca), Some(cb)) = (world.colliders.get(key.0.0), world.colliders.get(key.1.0)) else { continue };
         let (ia, ib) = (map[ca.body.0.index as usize], map[cb.body.0.index as usize]);
         if !sbodies[ia].dynamic && !sbodies[ib].dynamic {
@@ -308,6 +311,7 @@ pub(crate) fn solve(world: &mut PhysicsWorld, dt: f32) -> StepStats {
         }
     }
     // Write back and update sleep timers.
+    let t_wb = std::time::Instant::now();
     let mut awake = 0;
     for (i, sb) in sbodies.iter().enumerate().skip(1) {
         let b = world.bodies.get_mut(handles[i].0).expect("body exists");
@@ -324,6 +328,7 @@ pub(crate) fn solve(world: &mut PhysicsWorld, dt: f32) -> StepStats {
         b.sleep_time = if b.can_sleep && still && sb.dynamic { b.sleep_time + dt } else { 0.0 };
         awake += 1;
     }
+    solve_continuous(world, &handles, &sbodies);
     // Islands: union-find over dynamic bodies linked by contacts.
     let mut parent: Vec<usize> = (0..sbodies.len()).collect();
     fn find(p: &mut [usize], mut x: usize) -> usize {
@@ -368,13 +373,14 @@ pub(crate) fn solve(world: &mut PhysicsWorld, dt: f32) -> StepStats {
             b.angvel = Vec3::ZERO;
         }
     }
-    world.body_colliders_sync_all(&to_sync);
+    world.body_colliders_sync_all(&to_sync, dt);
     StepStats {
         awake_bodies: awake,
         pairs: world.pairs.len(),
         manifolds: constraints.len(),
         contact_points,
-        step_ms: 0.0,
+        writeback_ms: t_wb.elapsed().as_secs_f32() * 1000.0,
+        ..Default::default()
     }
 }
 
@@ -432,6 +438,122 @@ fn solve_contacts(
             c.points[k].tangent_impulse = ti;
             let imp = c.tangents[0] * (ti[0] - old[0]) + c.tangents[1] * (ti[1] - old[1]);
             apply(bodies, a, b, p.ra, p.rb, imp);
+        }
+    }
+}
+
+/// Continuous collision for fast bodies against static geometry (after
+/// Box2D v3's `b2SolveContinuous`): speculative contacts stop fast linear
+/// motion, but a spinning body can sweep a corner through a thin wall within
+/// one step. Bodies that move more than half their thickness in a step are
+/// swept from their start to their end pose by conservative advancement
+/// (Mirtich 1996) and clamped to the time of impact; their velocity is kept
+/// and the next step's speculative contacts resolve it. Pairs already
+/// touching at the start pose are ignored so bodies can slide along walls.
+fn solve_continuous(world: &mut PhysicsWorld, handles: &[BodyHandle], sbodies: &[SBody]) {
+    use crate::narrowphase::collide;
+    use forja_math::Iso;
+    let mut tmp = Vec::new();
+    let mut cands: Vec<ColliderHandle> = Vec::new();
+    for i in 1..sbodies.len() {
+        let sb = &sbodies[i];
+        if !sb.dynamic {
+            continue;
+        }
+        let Some(b) = world.bodies.get(handles[i].0) else { continue };
+        let (q0, q1) = (sb.rot0, b.iso.rot);
+        let (c0, c1) = (sb.com0, sb.com0 + sb.dp);
+        let local_com = b.local_com;
+        // Bounding radius about the COM and thickness of the body.
+        let mut r_max = 0.0f32;
+        let mut thick = f32::MAX;
+        for ch in &b.colliders {
+            let Some(c) = world.colliders.get(ch.0) else { continue };
+            if c.sensor {
+                continue;
+            }
+            let la = c.shape.local_aabb();
+            let h = la.half_extents();
+            r_max = r_max.max((c.local.pos - local_com).length() + h.length());
+            thick = thick.min(h.min_element());
+        }
+        if thick == f32::MAX {
+            continue;
+        }
+        let angle = 2.0 * (q1 * q0.conjugate()).normalize().w.abs().min(1.0).acos();
+        let bound = (c1 - c0).length() + angle * r_max;
+        if bound < 0.5 * thick {
+            continue;
+        }
+        let pose = |t: f32| {
+            let rot = q0.slerp(q1, t).normalize();
+            Iso::new(c0.lerp(c1, t) - rot * local_com, rot)
+        };
+        let iso0 = pose(0.0);
+        let iso1 = b.iso;
+        // Static candidates in the swept bounds.
+        cands.clear();
+        let colliders: Vec<ColliderHandle> = b.colliders.clone();
+        let mut swept = forja_math::Aabb::EMPTY;
+        for ch in &colliders {
+            let c = world.colliders.get(ch.0).expect("collider");
+            swept = swept.union(&c.shape.aabb(&iso0.mul(&c.local))).union(&c.shape.aabb(&iso1.mul(&c.local)));
+        }
+        let swept = swept.expanded(angle * r_max * 0.5 + 0.05);
+        let groups: Vec<crate::body::CollisionGroups> = colliders.iter().filter_map(|c| world.colliders.get(c.0)).map(|c| c.groups).collect();
+        world.query_aabb(&swept, Default::default(), |ch, c| {
+            if !c.sensor && groups.iter().any(|g| g.test(&c.groups)) {
+                cands.push(ch);
+            }
+        });
+        cands.retain(|ch| world.colliders.get(ch.0).and_then(|c| world.bodies.get(c.body.0)).is_some_and(|ob| ob.body_type == BodyType::Static));
+        if cands.is_empty() {
+            continue;
+        }
+        let target = 0.01f32;
+        let mut t_hit = 1.0f32;
+        for ch in &colliders {
+            let c = world.colliders.get(ch.0).expect("collider");
+            if c.sensor {
+                continue;
+            }
+            for oh in &cands {
+                let o = world.colliders.get(oh.0).expect("candidate");
+                if !c.groups.test(&o.groups) {
+                    continue;
+                }
+                // Conservative advancement for this pair.
+                let mut t = 0.0f32;
+                let mut first = true;
+                for _ in 0..16 {
+                    let at = pose(t).mul(&c.local);
+                    tmp.clear();
+                    collide(&c.shape, &at, &o.shape, &o.world_iso, bound * (1.0 - t) + target, &mut tmp);
+                    let d = tmp.iter().map(|m| m.min_separation()).fold(f32::MAX, f32::min);
+                    if d == f32::MAX {
+                        t = 1.0;
+                        break;
+                    }
+                    if d < target {
+                        if first {
+                            t = 1.0; // touching at the start: not a tunnelling pair
+                        }
+                        break;
+                    }
+                    first = false;
+                    t += (d - 0.5 * target) / bound;
+                    if t >= t_hit {
+                        break;
+                    }
+                }
+                t_hit = t_hit.min(t);
+            }
+        }
+        if t_hit < 1.0 {
+            let iso = pose(t_hit);
+            if let Some(b) = world.bodies.get_mut(handles[i].0) {
+                b.iso = iso;
+            }
         }
     }
 }

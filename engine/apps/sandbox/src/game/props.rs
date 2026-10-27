@@ -131,12 +131,13 @@ impl Plugin for PropsPlugin {
         }
         app.insert_resource(props);
         app.add_system_at(Stage::PostUpdate, "props_render", 10, |w| {
+            let alpha = w.res::<forja_core::Time>().alpha;
             let items: Vec<RenderItem> = {
                 let physics = w.res::<PhysicsWorld>();
                 w.res::<Props>()
                     .0
                     .iter()
-                    .filter_map(|p| physics.body(p.body).map(|b| RenderItem::new(p.model, b.iso().to_mat4() * p.offset)))
+                    .filter_map(|p| physics.body(p.body).map(|b| RenderItem::new(p.model, b.interpolated_iso(alpha).to_mat4() * p.offset)))
                     .collect()
             };
             w.res_mut::<RenderScene>().dynamic.extend(items);
