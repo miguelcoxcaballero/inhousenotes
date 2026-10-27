@@ -11,6 +11,7 @@ members = [
     "crates/forja_render",
     "crates/forja_input",
     "crates/forja_gameplay",
+    "crates/forja_ai",
     "tools/forja_fetch",
     "apps/sandbox",
 ]
@@ -32,6 +33,7 @@ forja_world = { path = "crates/forja_world" }
 forja_render = { path = "crates/forja_render" }
 forja_input = { path = "crates/forja_input" }
 forja_gameplay = { path = "crates/forja_gameplay" }
+forja_ai = { path = "crates/forja_ai" }
 
 glam = { version = "0.30", features = ["bytemuck", "serde"] }
 hecs = "0.11"

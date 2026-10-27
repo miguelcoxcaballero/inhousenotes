@@ -36,6 +36,7 @@ pub mod nightlight;
 pub mod noise;
 pub mod style;
 pub mod texgen;
+pub mod traffic;
 pub mod weathering;
 
 pub use building::{CityOut, EdgeKind, Frontage, Lot, ModuleLib};
