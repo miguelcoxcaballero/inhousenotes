@@ -156,14 +156,18 @@ pub fn realize(kit: &Kit, styles: &StyleLibrary, fabric: Fabric, plan: &CityPlan
     let [lo, hi] = fabric.extent;
     let ext = Vec2::new(lo.x.abs().max(hi.x.abs()), lo.y.abs().max(hi.y.abs())) + Vec2::splat(10.0);
     lay.extent = ext;
-    // 1. Ground plane (asphalt roadway level), ground tiles, kerbs, gutters.
-    {
+    // 1. Ground: on flat ground a plane at roadway level under everything;
+    // on a slope the roadway and the land around the city are meshed on
+    // the relief. Then ground tiles, kerbs, gutters.
+    let map = [Vec2::new(-ext.x, -ext.y), Vec2::new(ext.x, -ext.y), Vec2::new(ext.x, ext.y), Vec2::new(-ext.x, ext.y)];
+    if fabric.ground.relief.is_flat() {
         let mut plane: Parts<Mat> = Parts::new();
-        plane.get(Mat::Asphalt).polygon(&[Vec2::new(-ext.x, -ext.y), Vec2::new(ext.x, -ext.y), Vec2::new(ext.x, ext.y), Vec2::new(-ext.x, ext.y)], 0.0, true, Mat::Asphalt.scale());
+        plane.get(Mat::Asphalt).polygon(&map, 0.0, true, Mat::Asphalt.scale());
         let gi = lay.out.add_scene(assemble(kit, "ground_plane", plane, None));
         lay.out.placements.push((gi, Mat4::IDENTITY));
     }
-    let (tiles, col) = ground::mesh(&fabric.ground, &fabric.graph, lib, &fabric.courts);
+    let outside = crate::plan::Region::ring(&map).minus(&fabric.domain);
+    let (tiles, col) = ground::mesh(&fabric.ground, &fabric.graph, lib, &fabric.courts, &outside);
     for (_, parts) in tiles {
         if parts.tri_count() == 0 {
             continue;

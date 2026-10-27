@@ -42,6 +42,8 @@ pub struct BlockRing {
     pub apex: Vec<Option<u16>>,
     /// Interior angle (radians) of each corner id before bevelling.
     pub theta: Vec<f32>,
+    /// Ground level at each vertex (m); empty on flat ground.
+    pub z: Vec<f32>,
 }
 
 /// The lots of one block (simple rings, CCW) and what is left as courts.
@@ -248,6 +250,30 @@ fn cut_frontage(ring: &BlockRing, rules: &LotRules, rng: &mut Rng) -> (Vec<Vec2>
     for run in &runs {
         let lens: Vec<f32> = run.iter().map(|&i| p[i].distance(p[(i + 1) % n])).collect();
         let total: f32 = lens.iter().sum();
+        // Ground level at arc length `t` along the run.
+        let z_at = |t: f32| -> f32 {
+            if ring.z.is_empty() {
+                return 0.0;
+            }
+            let mut acc = 0.0;
+            for (k, &i) in run.iter().enumerate() {
+                if t <= acc + lens[k] || k + 1 == run.len() {
+                    let f = ((t - acc) / lens[k].max(1e-4)).clamp(0.0, 1.0);
+                    return ring.z[i] + (ring.z[(i + 1) % n] - ring.z[i]) * f;
+                }
+                acc += lens[k];
+            }
+            0.0
+        };
+        // On a slope a house steps down with its street: its frontage
+        // drops at most `rules.step`, so narrower houses climb stair streets.
+        let fit = |t: f32, mut w: f32| {
+            let floor = rules.min_width.max(rules.width[0] * 0.6);
+            while w > floor && (z_at(t + w) - z_at(t)).abs() > rules.step {
+                w = (w * 0.85).max(floor);
+            }
+            w
+        };
         let (i0, i1) = (run[0], (run[run.len() - 1] + 1) % n);
         let reach = |theta: Option<f32>, rng: &mut Rng| match theta {
             Some(t) => {
@@ -274,7 +300,7 @@ fn cut_frontage(ring: &BlockRing, rules: &LotRules, rng: &mut Rng) -> (Vec<Vec2>
             let end = total - r1;
             let mut t = r0;
             while end - t > 0.5 {
-                let mut w = width(rng);
+                let mut w = fit(t, width(rng));
                 if end - (t + w) < rules.width[0] {
                     w = end - t;
                 }
@@ -587,7 +613,7 @@ mod tests {
     use super::*;
 
     fn rules() -> LotRules {
-        LotRules { width: [8.0, 14.0], depth: 13.0, min_width: 3.5, min_area: 30.0, court_min: 80.0, neck: 3.0, min_tip: 2.5, jitter: 0.0, wobble: 0.0 }
+        LotRules { width: [8.0, 14.0], depth: 13.0, min_width: 3.5, min_area: 30.0, court_min: 80.0, neck: 3.0, min_tip: 2.5, jitter: 0.0, wobble: 0.0, step: 1.5 }
     }
 
     fn rect_ring(w: f32, h: f32) -> BlockRing {
@@ -596,6 +622,7 @@ mod tests {
             tags: vec![Tag::Front; 4],
             apex: vec![Some(0), Some(1), Some(2), Some(3)],
             theta: vec![std::f32::consts::FRAC_PI_2; 4],
+            z: vec![],
         }
     }
 
@@ -624,6 +651,22 @@ mod tests {
     }
 
     #[test]
+    fn houses_step_down_a_slope() {
+        // A long block climbing 12 m along x (a 15 % street): flat, lots
+        // are 8-14 m wide; sloping, no lot's frontage drops more than
+        // `step` beyond what its narrowest allowed width implies.
+        let flat = rect_ring(100.0, 30.0);
+        let shape = Shape { outer: flat.pts.clone(), holes: vec![] };
+        let widest = |p: &Parcels| p.lots.iter().filter_map(|l| l.bbox()).filter(|[lo, hi]| lo.y < 0.1 && hi.x - lo.x < 40.0 && lo.x > 20.0 && hi.x < 80.0).map(|[lo, hi]| hi.x - lo.x).fold(0.0, f32::max);
+        let a = parcel(&shape, &flat, &rules(), 15.0, &mut Rng::new(5));
+        let slope = BlockRing { z: flat.pts.iter().map(|p| p.x * 0.15).collect(), ..flat.clone() };
+        let b = parcel(&shape, &slope, &rules(), 15.0, &mut Rng::new(5));
+        let (wa, wb) = (widest(&a), widest(&b));
+        assert!(wa >= 8.0 && wb <= 1.5 / 0.15 + 0.01, "flat {wa}, sloping {wb}");
+        assert!(b.lots.len() > a.lots.len(), "{} vs {}", b.lots.len(), a.lots.len());
+    }
+
+    #[test]
     fn curved_block_party_walls_start_at_cuts() {
         // A block between an arc of radius 40 and its chord.
         let mut pts = Vec::new();
@@ -638,7 +681,7 @@ mod tests {
             ring_pts.reverse();
         }
         let n = ring_pts.len();
-        let ring = BlockRing { pts: ring_pts.clone(), tags: vec![Tag::Front; n], apex: vec![None; n], theta: vec![] };
+        let ring = BlockRing { pts: ring_pts.clone(), tags: vec![Tag::Front; n], apex: vec![None; n], theta: vec![], z: vec![] };
         let shape = Shape { outer: ring_pts, holes: vec![] };
         let p = parcel(&shape, &ring, &LotRules { depth: 12.0, ..rules() }, 15.0, &mut Rng::new(3));
         assert!(p.lots.len() >= 8, "{}", p.lots.len());

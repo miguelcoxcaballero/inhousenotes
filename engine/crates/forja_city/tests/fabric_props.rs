@@ -54,7 +54,29 @@ fn classic_plan_builds_a_valid_fabric() {
 
 #[test]
 fn carmen_plan_builds_a_valid_fabric() {
-    preset("carmen", 400);
+    let f = preset("carmen", 400);
+    // Shared paving keeps the height of a shared street everywhere, also
+    // where it reaches into a car street's corridor at an alley's mouth (no
+    // trench of the car street's shared height between alley and sidewalk).
+    let lib = ProfileLibrary::builtin();
+    let heights: Vec<f32> = f.graph.streets.iter().filter(|s| s.carriageway <= 0.0).map(|s| lib.get(s.profile)).map(|p| if p.vehicles { 0.02 } else { p.shared_height.max(0.02) }).collect();
+    let mut bad = 0;
+    for c in f.ground.shared.components() {
+        for sh in c.shapes() {
+            for &p in &sh.outer {
+                let q = p + (c.pole().unwrap().0 - p).normalize_or_zero() * 0.05;
+                if let Some(s) = f.ground.surface_at(q).filter(|_| f.ground.shared.contains(q) && f.ground.shared.boundary_distance(q) > 0.02) {
+                    if !heights.iter().any(|h| (h - s.h).abs() < 1e-3) {
+                        if bad < 5 {
+                            println!("shared at {q} has h {} ({:?})", s.h, s.mat);
+                        }
+                        bad += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(bad, 0, "{bad} shared points at a height no shared street has");
 }
 
 #[test]
@@ -69,5 +91,26 @@ fn organic_plan_builds_a_valid_fabric() {
 
 #[test]
 fn default_plan_builds_a_valid_fabric() {
-    preset("default", 1000);
+    let f = preset("default", 1000);
+    // The playable map: old towns on sloping ground, with stair streets
+    // and ramps, crossed by large avenues that stay gentle.
+    let (lib, r, g) = (ProfileLibrary::builtin(), &f.ground.relief, &f.graph);
+    let (mut stairs, mut ramps, mut avenue_m) = (0, 0, 0.0);
+    for (i, s) in g.streets.iter().enumerate() {
+        let (p, i) = (lib.get(s.profile), i as u32);
+        let max = if r.steps(i).is_some() { forja_city::plan::STAIR_GRADE } else { p.max_grade() };
+        assert!(r.grade(i) <= max + 1e-3, "{} at {:.3} > {max}", p.id, r.grade(i));
+        stairs += (r.steps(i).is_some_and(|st| st.n >= 6)) as usize;
+        ramps += (r.steps(i).is_none() && r.grade(i) > 0.06 && s.len() > 20.0) as usize;
+        if matches!(p.id.as_str(), "bulevar" | "avenida" | "ronda" | "calle_ancha") {
+            avenue_m += s.len();
+        }
+    }
+    let z: Vec<f32> = r.nodes.clone();
+    let range = z.iter().cloned().fold(f32::MIN, f32::max) - z.iter().cloned().fold(f32::MAX, f32::min);
+    println!("default: {stairs} stair streets, {ramps} steep ramps, {avenue_m:.0} m of avenue, relief {range:.1} m");
+    assert!(stairs >= 2, "{stairs} stair streets");
+    assert!(ramps >= 10, "{ramps} sloping streets");
+    assert!(avenue_m > 1500.0, "{avenue_m} m of avenue");
+    assert!(range > 12.0, "relief of {range} m");
 }

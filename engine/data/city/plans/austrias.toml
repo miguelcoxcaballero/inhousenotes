@@ -10,6 +10,15 @@ offset = [25.0, 10.0]
 height = 22.0
 noise = 4.0
 
+# The steep flank down to the river (Cuesta de la Vega, las Vistillas):
+# alleys there are too steep to ramp and become stair streets.
+[[hill]]
+zone = "madrid_austrias"
+radius = 0.45
+offset = [-40.0, -30.0]
+height = 13.0
+noise = 2.0
+
 [[zone]]
 id = "madrid_austrias"
 city = "madrid"

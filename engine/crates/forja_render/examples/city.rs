@@ -4,7 +4,7 @@
 //! Presets: `default` (grids, boulevard and the Austrias and Carmen old
 //! towns), `classic`, `small`, `carmen`, `austrias`, `organic`,
 //! `osm:<file.json|file.osm>`. Shots are picked from the realized streets:
-//! aerial, avenue, ensanche, madrid, curved, alley (eye level 1.7 m),
+//! aerial, aerial_old, avenue, avenue_walk, ensanche, madrid, curved, alley (eye level 1.7 m),
 //! slope (a sloping 2-3.5 m alley), stairs, plaza (the main square),
 //! plazuela, acute (corner), deadend, overview.
 //!
@@ -72,6 +72,13 @@ fn main() {
     for (s, m) in &out.placements {
         frame.instances.push(DrawInstance::new(handles[*s], *m));
     }
+    // Countryside under and around the map, so aerials do not look down
+    // into the environment map.
+    let mut land: forja_city::geom::Parts<forja_city::Mat> = forja_city::geom::Parts::new();
+    let w = 4000.0;
+    land.get(forja_city::Mat::Grass).polygon(&[Vec2::new(-w, -w), Vec2::new(w, -w), Vec2::new(w, w), Vec2::new(-w, w)], -0.3, true, 80.0);
+    let land = r.upload_scene(&forja_city::kit::assemble(&kit, "countryside", land, None));
+    frame.instances.push(DrawInstance { cast_shadows: false, ..DrawInstance::new(land, Mat4::IDENTITY) });
     for (k, m) in &city.props {
         let h = match k {
             PropKind::Tree | PropKind::Palm => tree,
@@ -173,6 +180,18 @@ fn night_lights(all: &[forja_city::CityLight], eye: Vec3, fwd: Vec3) -> Vec<Poin
         .collect()
 }
 
+/// An outline that is not a (chamfered) rectangle: some corner turns by
+/// an angle a grid does not make.
+fn irregular(o: &[Vec2]) -> bool {
+    let n = o.len();
+    (0..n).any(|i| {
+        let (a, b) = ((o[i] - o[(i + n - 1) % n]).normalize_or(Vec2::X), (o[(i + 1) % n] - o[i]).normalize_or(Vec2::X));
+        let turn = a.dot(b).clamp(-1.0, 1.0).acos().to_degrees();
+        // Square, straight and chaflán (45°) turns are regular.
+        [0.0f32, 45.0, 90.0].iter().all(|r| (turn - r).abs() > 10.0)
+    })
+}
+
 fn v3(p: Vec2, y: f32) -> Vec3 {
     Vec3::new(p.x, y, p.y)
 }
@@ -185,7 +204,11 @@ fn shots(city: &forja_city::layout::CityLayout) -> Vec<(&'static str, Vec3, Vec3
     let [lo, hi] = f.extent;
     let c = (lo + hi) * 0.5;
     let size = hi - lo;
-    out.push(("aerial", v3(Vec2::new(lo.x - size.x * 0.1, hi.y + size.y * 0.25), size.max_element() * 0.45), v3(c, 0.0)));
+    // Oblique, from the middle of a long side so the city spans the frame
+    // (16:9 at 60° vertical fov is about 91° across).
+    let (long, side) = if size.x >= size.y { (size.x, Vec2::new(0.0, 1.0)) } else { (size.y, Vec2::new(1.0, 0.0)) };
+    let reach = long * 0.5 + size.min_element() * 0.35;
+    out.push(("aerial", v3(c + side * (size.min_element() * 0.5 + reach * 0.62), reach * 0.55), v3(c - side * size.min_element() * 0.08, 0.0)));
     out.push(("overview", v3(c + Vec2::new(0.0, size.y * 0.02), size.max_element() * 1.05), v3(c + Vec2::new(0.0, -size.y * 0.001), 0.0)));
     // An eye stands in open public space: 0.8 m from facades, 1.5 m from
     // any lamp, tree, sign or other item.
@@ -210,8 +233,12 @@ fn shots(city: &forja_city::layout::CityLayout) -> Vec<(&'static str, Vec3, Vec3
     let lib = forja_city::profile::ProfileLibrary::builtin();
     if let Some(s) = longest(&|s| lib.get(s.profile).class == Class::Avenue) {
         let st = &g.streets[s];
-        let (e, a) = along(s, st.len() * 0.3, st.carriageway * 0.5 + 1.2, 60.0, 1.7);
+        // From the middle of one carriageway (lanes, median, trees in
+        // view), and from its sidewalk.
+        let (e, a) = along(s, st.len() * 0.3, st.carriageway * 0.3, 80.0, 2.2);
         out.push(("avenue", e, a));
+        let (e, a) = along(s, st.len() * 0.3, st.carriageway * 0.5 + 1.2, 60.0, 1.7);
+        out.push(("avenue_walk", e, a));
     }
     if let Some(s) = longest(&|s| lib.get(s.profile).id == "ensanche") {
         let st = &g.streets[s];
@@ -224,17 +251,21 @@ fn shots(city: &forja_city::layout::CityLayout) -> Vec<(&'static str, Vec3, Vec3
         out.push(("madrid", e, a));
     }
     // The most curved street of some length.
+    // How far the street turns from its start to its end (the overall
+    // bend, not the wobble of its chords).
     let turn = |s: &forja_city::plan::Street| {
-        let p = s.line.pts();
-        p.windows(3).map(|w| (w[1] - w[0]).normalize_or(Vec2::X).angle_to((w[2] - w[1]).normalize_or(Vec2::X)).abs()).sum::<f32>()
+        let l = s.len();
+        s.line.normal(4.0).angle_to(s.line.normal(l - 4.0)).abs()
     };
     if let Some((s, _)) = g.streets.iter().enumerate().filter(|(_, s)| s.len() > 40.0 && s.carriageway > 0.0).max_by(|a, b| turn(a.1).total_cmp(&turn(b.1))) {
         let st = &g.streets[s];
         let (e, a) = along(s, 4.0, st.width_at(4.0) * 0.25, 30.0, 1.7);
         out.push(("curved", e, a));
     }
-    // A narrow alley at eye level.
-    if let Some((s, _)) = g.streets.iter().enumerate().filter(|(_, s)| lib.get(s.profile).class == Class::Alley && s.len() > 25.0).min_by(|a, b| a.1.min_width().total_cmp(&b.1.min_width()).then(b.1.len().total_cmp(&a.1.len()))) {
+    // A narrow alley at eye level, looking into the old town (not out at
+    // the edge of the map).
+    let inner = |p: Vec2| f.domain.boundary_distance(p) > 35.0;
+    if let Some((s, _)) = g.streets.iter().enumerate().filter(|(_, s)| lib.get(s.profile).class == Class::Alley && s.len() > 25.0 && inner(s.line.at((s.len() * 0.3 + 18.0).min(s.len())))).min_by(|a, b| a.1.min_width().total_cmp(&b.1.min_width()).then(b.1.len().total_cmp(&a.1.len()))) {
         let st = &g.streets[s];
         // From inside the alley, not from the square it opens onto.
         let (e, a) = along(s, st.len() * 0.3, 0.0, 18.0, 1.7);
@@ -269,17 +300,29 @@ fn shots(city: &forja_city::layout::CityLayout) -> Vec<(&'static str, Vec3, Vec3
             out.push(("stairs", v3(p, 1.7 + f.ground.height_at(p)), v3(q, 1.2 + f.ground.height_at(q))));
         }
     }
-    // The main square (the largest plaza), seen from across it.
-    let mut plazas: Vec<(Vec2, f32)> = f.ground.plaza.components().iter().filter_map(|c| c.pole()).filter(|p| p.1 > 5.0).collect();
-    plazas.sort_by(|a, b| a.1.total_cmp(&b.1));
-    if let Some(&(p, r)) = plazas.last() {
+    // The main square (the largest plaza, an irregular one if there is
+    // any), seen from across it, and the old town around it from above.
+    let comps = f.ground.plaza.components();
+    // Judged on the designed outline (the level terrace) where there is one.
+    let designed = |c: &forja_city::plan::Region| {
+        let mut t = f.ground.relief.terraces.iter().filter(|t| c.contains(t.ring.iter().copied().sum::<Vec2>() / t.ring.len() as f32)).peekable();
+        if t.peek().is_some() { t.any(|t| irregular(&t.ring)) } else { c.simplify(0.5).shapes().iter().any(|s| irregular(&s.outer)) }
+    };
+    let mut plazas: Vec<(Vec2, f32, bool)> = comps.iter().filter_map(|c| c.pole().map(|p| (p.0, p.1, designed(c)))).filter(|p| p.1 > 5.0).collect();
+    plazas.sort_by(|a, b| (a.2, a.1).partial_cmp(&(b.2, b.1)).unwrap());
+    if let Some(&(p, r, _)) = plazas.last() {
         let eye = (0..24).map(|k| p + Vec2::from_angle(2.0 + k as f32 * 0.9) * r * (0.9 - 0.02 * k as f32)).find(|q| clear(*q)).unwrap_or(p + Vec2::new(r * 0.8, r * 0.5));
         out.push(("plaza", v3(eye, 1.7 + f.ground.height_at(eye)), v3(p, 2.5 + f.ground.height_at(p))));
+        let h = f.ground.height_at(p);
+        out.push(("aerial_old", v3(p + Vec2::new(-95.0, 120.0), h + 105.0), v3(p + Vec2::new(0.0, -15.0), h)));
     }
+    plazas.sort_by(|a, b| a.1.total_cmp(&b.1));
     // A plazuela: the smallest plaza, seen from its edge.
-    if let Some(&(p, r)) = plazas.first() {
+    if let Some(&(p, r, _)) = plazas.first() {
         let eye = (0..24).map(|k| p + Vec2::from_angle(k as f32 * 0.9) * r * (0.85 - 0.02 * k as f32)).find(|q| clear(*q)).unwrap_or(p + Vec2::new(r * 0.8, r * 0.5));
-        out.push(("plazuela", v3(eye, 1.7 + f.ground.height_at(eye)), v3(p, 2.0 + f.ground.height_at(p))));
+        // Past the fountain or parterre at its pole, at the facades beyond.
+        let q = p + (p - eye).normalize_or(Vec2::X) * r;
+        out.push(("plazuela", v3(eye, 1.7 + f.ground.height_at(eye)), v3(q, 4.0 + f.ground.height_at(q))));
     }
     // The sharpest corner, from across its junction.
     let mut best: Option<(f32, Vec2, Vec2)> = None;

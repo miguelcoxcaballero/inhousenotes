@@ -40,11 +40,14 @@ pub struct LotRules {
     pub jitter: f32,
     /// Amplitude of wavy party walls (m).
     pub wobble: f32,
+    /// Largest ground drop along one lot's frontage (m): on slopes lots
+    /// narrow so houses step down with the street.
+    pub step: f32,
 }
 
 impl Default for LotRules {
     fn default() -> Self {
-        LotRules { width: [8.0, 14.0], depth: 13.0, min_width: 3.5, min_area: 30.0, court_min: 80.0, neck: 2.5, min_tip: 2.5, jitter: 0.0, wobble: 0.0 }
+        LotRules { width: [8.0, 14.0], depth: 13.0, min_width: 3.5, min_area: 30.0, court_min: 80.0, neck: 2.5, min_tip: 2.5, jitter: 0.0, wobble: 0.0, step: 1.5 }
     }
 }
 
@@ -195,7 +198,7 @@ impl CityPlan {
             id: "given".into(),
             city: city.into(),
             mask: MaskSpec::default(),
-            lots: LotRules { width: [4.5, 9.0], depth: 12.0, min_width: 3.0, min_area: 25.0, court_min: 60.0, neck: 1.6, min_tip: 2.5, jitter: 0.15, wobble: 0.3 },
+            lots: LotRules { width: [4.5, 9.0], depth: 12.0, min_width: 3.0, min_area: 25.0, court_min: 60.0, neck: 1.6, min_tip: 2.5, jitter: 0.15, wobble: 0.3, step: 1.5 },
             styles,
             plaza_kind: if city == "madrid" { PlazaKind::Parterre } else { PlazaKind::Fountain },
             ronda: None,

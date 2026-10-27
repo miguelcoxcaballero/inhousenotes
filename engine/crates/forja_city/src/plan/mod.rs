@@ -14,4 +14,4 @@ pub use index::{Located, SegIndex};
 pub use graph::{End, Node, NodeId, Street, StreetGraph, StreetId};
 pub use line::{Polyline, noise1, noise2};
 pub use region::{Join, Region, Shape, Tiled};
-pub use relief::{Hill, Relief, Steps};
+pub use relief::{Hill, Relief, STAIR_GRADE, Steps};
