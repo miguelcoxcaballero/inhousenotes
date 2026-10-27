@@ -897,7 +897,10 @@ exclude = [
 [estadi_ciutat_de_valencia]
 # bowl interiors (stands useful for roof modeling)
 max_photos = 20
+extra_files = ["File:Estadio Azul Grana.jpg", "File:Estadi Ciutat de València - Vamos a subir.jpg"]
 exterior = [
+  "File:Estadio Azul Grana.jpg",
+  "File:Estadi Ciutat de València - Vamos a subir.jpg",
   "File:Ciutat de València fuera.jpg",
   "File:Estació del Camp de Llevant.JPG",
   "File:Valencia84.jpg",
