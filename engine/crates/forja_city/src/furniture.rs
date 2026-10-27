@@ -4,7 +4,9 @@
 
 use forja_math::{Vec2, Vec3};
 
-use crate::kit::{Mat, hex};
+use crate::kit::{Mat, Rgb, hex};
+use crate::nightlight::CityLight;
+use crate::{signals, street_waste};
 use crate::modules::{self, P};
 use crate::texgen::{SignKind, SignShape};
 
@@ -19,73 +21,19 @@ pub enum Aspect {
     Green,
 }
 
-const POLE: Mat = Mat::Plastic([0x3b, 0x40, 0x42]);
-const HOUSING: Mat = Mat::Plastic([0x16, 0x17, 0x18]);
-
 /// Traffic light: vehicle head facing +Z at the top, pedestrian head
-/// facing `ped_yaw` (radians around Y), push-button box at hand height.
+/// facing `ped_yaw` (radians around Y). `arm > 0` builds the avenue bent
+/// mast reaching `arm` metres along +X with a repeater, a low repeater,
+/// countdown and push button; otherwise the grey-green corner column with
+/// an acoustic unit. See [`signals`] for every variant.
 pub fn traffic_light(state: Aspect, ped_walk: bool, ped_yaw: f32, arm: f32) -> P {
-    let mut p = P::new();
-    let h = 3.4;
-    p.get(POLE).cylinder(v(0.0, 0.0, 0.0), v(0.0, h, 0.0), 0.06, 12, true);
-    p.get(POLE).cylinder(v(0.0, 0.0, 0.0), v(0.0, 0.25, 0.0), 0.1, 12, true);
-    // Optional cantilever arm over the road (+X).
-    let head_at = if arm > 0.0 {
-        p.get(POLE).cylinder(v(0.0, h - 0.15, 0.0), v(arm, h - 0.15, 0.0), 0.05, 10, true);
-        p.get(POLE).beam(v(0.0, h - 0.9, 0.0), v(arm * 0.4, h - 0.18, 0.0), Vec3::Z, 0.04, 0.04, 1.0);
-        v(arm - 0.2, h - 0.75, 0.12)
-    } else {
-        v(0.0, h - 0.7, 0.16)
-    };
-    vehicle_head(&mut p, head_at, state);
-    if arm > 0.0 {
-        // Repeater head on the pole too.
-        vehicle_head(&mut p, v(0.0, 2.3, 0.16), state);
-    }
-    // Pedestrian head.
-    let mut ped = P::new();
-    {
-        let b = ped.get(HOUSING);
-        b.aabox(v(-0.16, 0.0, 0.0), v(0.16, 0.62, 0.2), 1.0);
-    }
-    let uv = [Vec2::new(0.0, 1.0), Vec2::new(1.0, 1.0), Vec2::new(1.0, 0.0), Vec2::ZERO];
-    for (k, walk) in [(1u8, false), (0u8, true)] {
-        let y = 0.04 + k as f32 * 0.29;
-        let lit = walk == ped_walk;
-        let m = if lit { Mat::PedLens(walk) } else { Mat::Iron };
-        ped.get(m).quad_uv([v(-0.12, y, 0.205), v(0.12, y, 0.205), v(0.12, y + 0.25, 0.205), v(-0.12, y + 0.25, 0.205)], uv);
-        ped.get(HOUSING).aabox(v(-0.14, y + 0.25, 0.2), v(0.14, y + 0.27, 0.32), 1.0);
-    }
-    let m = forja_math::Mat4::from_translation(v(0.0, 2.15, 0.0)) * forja_math::Mat4::from_rotation_y(ped_yaw) * forja_math::Mat4::from_translation(v(0.0, 0.0, 0.07));
-    p.append(&ped, &m);
-    // Push button ("PULSE"), yellow box.
-    let b = forja_math::Mat4::from_rotation_y(ped_yaw);
-    let mut btn = P::new();
-    btn.get(Mat::Plastic(hex(0xf2c200))).aabox(v(-0.07, 1.0, 0.06), v(0.07, 1.25, 0.14), 1.0);
-    btn.get(Mat::Plastic(hex(0x202020))).cylinder(v(0.0, 1.1, 0.14), v(0.0, 1.1, 0.155), 0.03, 10, true);
-    p.append(&btn, &b);
-    p
+    signals::signal_post(&signals::SignalSpec::for_arm(arm), state, ped_walk, ped_yaw)
 }
 
-fn vehicle_head(p: &mut P, at: Vec3, state: Aspect) {
-    p.get(HOUSING).aabox(at + v(-0.17, -0.5, -0.12), at + v(0.17, 0.5, 0.1), 1.0);
-    // Black backplate with a thin white border on the front only.
-    p.get(HOUSING).aabox(at + v(-0.29, -0.62, -0.135), at + v(0.29, 0.62, -0.12), 1.0);
-    let border = p.get(Mat::Paint(hex(0xeeeeee)));
-    for (x0, x1, y0, y1) in [(-0.29, 0.29, 0.585, 0.62), (-0.29, 0.29, -0.62, -0.585), (-0.29, -0.255, -0.62, 0.62), (0.255, 0.29, -0.62, 0.62)] {
-        border.aabox(at + v(x0, y0, -0.12), at + v(x1, y1, -0.116), 1.0);
-    }
-    let colors = [(Aspect::Red, hex(0xff2a10), 0.32), (Aspect::Amber, hex(0xffa000), 0.0), (Aspect::Green, hex(0x20ff70), -0.32)];
-    for (a, c, y) in colors {
-        let lens = Mat::Lens(c, a == state);
-        let ctr = at + v(0.0, y, 0.1);
-        p.get(lens).cylinder(ctr, ctr + v(0.0, 0.0, 0.012), 0.1, 16, true);
-        // Visor.
-        let vis = p.get(HOUSING);
-        vis.aabox(ctr + v(-0.12, 0.11, 0.0), ctr + v(0.12, 0.125, 0.16), 1.0);
-        vis.aabox(ctr + v(-0.125, -0.05, 0.0), ctr + v(-0.11, 0.125, 0.14), 1.0);
-        vis.aabox(ctr + v(0.11, -0.05, 0.0), ctr + v(0.125, 0.125, 0.14), 1.0);
-    }
+/// Night glow of the lit lenses of [`traffic_light`] (same arguments), in
+/// its local frame: small colored lights in front of each lit head.
+pub fn signal_lights(state: Aspect, ped_walk: bool, ped_yaw: f32, arm: f32) -> Vec<CityLight> {
+    signals::signal_post_lights(&signals::SignalSpec::for_arm(arm), state, ped_walk, ped_yaw)
 }
 
 /// Road sign on a galvanized post, plate facing +Z.
@@ -119,6 +67,16 @@ pub fn sign(kind: SignKind, height: f32) -> P {
 /// Cast-iron street lamp: Madrid "fernandina" (one lantern) or the
 /// Valencian candelabra (four lanterns on scrolled arms).
 pub fn street_lamp(candelabra: bool) -> P {
+    street_lamp_lit(candelabra, hex(0xffd9a0))
+}
+
+/// Height of the bulbs of [`street_lamp`] above its base.
+pub fn street_lamp_bulb(candelabra: bool) -> f32 {
+    if candelabra { 4.55 } else { 3.62 }
+}
+
+/// [`street_lamp`] whose lanterns glow with `glow` at night.
+pub fn street_lamp_lit(candelabra: bool, glow: Rgb) -> P {
     let mut p = P::new();
     let iron = Mat::Iron;
     let h = if candelabra { 4.2 } else { 3.3 };
@@ -131,17 +89,25 @@ pub fn street_lamp(candelabra: bool) -> P {
             let tip = d * 0.75 + v(0.0, h + 0.15, 0.0);
             p.get(iron).beam(v(0.0, h - 0.3, 0.0), tip, Vec3::Y.cross(d), 0.035, 0.035, 1.0);
             p.get(iron).beam(v(0.0, h + 0.1, 0.0), tip, Vec3::Y.cross(d), 0.025, 0.025, 1.0);
-            modules::lantern(&mut p, tip + v(0.0, 0.02, 0.0), 0.95, false);
+            modules::lantern_lit(&mut p, tip + v(0.0, 0.02, 0.0), 0.95, false, glow);
         }
         p.get(iron).lathe(v(0.0, h, 0.0), &[(0.07, 0.0), (0.05, 0.4), (0.09, 0.5), (0.0, 0.7)], 10);
     } else {
-        modules::lantern(&mut p, v(0.0, h, 0.0), 1.35, false);
+        modules::lantern_lit(&mut p, v(0.0, h, 0.0), 1.35, false, glow);
     }
     p
 }
 
 /// Tall modern road light for avenues (báculo) reaching over the road (+Z).
 pub fn road_light() -> P {
+    road_light_lit(hex(0xfff1dc))
+}
+
+/// Head of [`road_light`] relative to its base (the arm reaches +Z).
+pub const ROAD_LIGHT_HEAD: Vec3 = Vec3::new(0.0, 9.47, 1.8);
+
+/// [`road_light`] with its LED panel in `glow`.
+pub fn road_light_lit(glow: Rgb) -> P {
     let mut p = P::new();
     let g = Mat::Galvanized;
     p.get(g).cone(v(0.0, 0.0, 0.0), v(0.0, 9.0, 0.0), 0.11, 0.06, 12, true);
@@ -153,7 +119,7 @@ pub fn road_light() -> P {
         prev = q;
     }
     p.get(Mat::Plastic(hex(0x5a5e62))).aabox(prev + v(-0.18, -0.12, -0.1), prev + v(0.18, 0.02, 0.6), 1.0);
-    p.get(Mat::Lamp(hex(0xfff1dc))).aabox(prev + v(-0.14, -0.13, 0.0), prev + v(0.14, -0.12, 0.5), 1.0);
+    p.get(Mat::Lamp(glow)).aabox(prev + v(-0.14, -0.13, 0.0), prev + v(0.14, -0.12, 0.5), 1.0);
     p
 }
 
@@ -174,39 +140,17 @@ pub fn bollard(valencia: bool) -> P {
     p
 }
 
-/// Litter bin on a post.
+/// Litter bin on a post: the Valencian municipal drum (see
+/// [`street_waste::papelera`] for the other models).
 pub fn litter_bin() -> P {
-    let mut p = P::new();
-    p.get(Mat::Galvanized).cylinder(v(0.0, 0.0, -0.25), v(0.0, 1.0, -0.25), 0.03, 8, true);
-    let body = Mat::Plastic(hex(0x3d4a40));
-    p.get(body).lathe(v(0.0, 0.0, 0.0), &[(0.0, 0.35), (0.18, 0.35), (0.2, 0.95), (0.21, 0.97), (0.21, 1.0), (0.16, 1.0)], 14);
-    p.get(Mat::Iron).cylinder(v(0.0, 0.92, -0.06), v(0.0, 0.92, -0.25), 0.03, 6, false);
-    p
+    street_waste::papelera(street_waste::BinModel::PostSingle, 0)
 }
 
 /// Kerbside recycling container: 0 yellow (packaging), 1 blue (paper),
-/// 2 green igloo (glass), 3 grey (general), 4 brown (organic).
+/// 2 green igloo (glass), 3 grey (general), 4 brown (organic). See
+/// [`street_waste::container_model`] for the other models.
 pub fn container(kind: u8) -> P {
-    let mut p = P::new();
-    let colors = [hex(0xf2c200), hex(0x1565c0), hex(0x2e7d32), hex(0x5a6461), hex(0x6d4c2f)];
-    let m = Mat::Plastic(colors[kind as usize % 5]);
-    if kind % 5 == 2 {
-        let prof = [(0.0, 0.0), (0.75, 0.0), (0.78, 0.6), (0.7, 1.1), (0.5, 1.42), (0.22, 1.55), (0.0, 1.57)];
-        p.get(m).lathe(Vec3::ZERO, &prof, 16);
-        p.get(Mat::Iron).cylinder(v(0.0, 1.55, 0.0), v(0.0, 1.75, 0.0), 0.05, 8, true);
-        return p;
-    }
-    let (w, h, d) = (1.7, 1.25, 1.05);
-    p.get(m).aabox(v(-w * 0.5, 0.18, -d * 0.5), v(w * 0.5, h, d * 0.5), 1.0);
-    // Sloped lid.
-    let lid = p.get(m);
-    lid.quad(v(-w * 0.5 - 0.02, h, d * 0.5 + 0.03), v(w * 0.5 + 0.02, h, d * 0.5 + 0.03), v(w * 0.5 + 0.02, h + 0.18, -d * 0.5 - 0.02), v(-w * 0.5 - 0.02, h + 0.18, -d * 0.5 - 0.02), 1.0);
-    let dark = Mat::Plastic(hex(0x1a1a1a));
-    for (x, z) in [(-0.7, -0.4), (0.7, -0.4), (-0.7, 0.4), (0.7, 0.4)] {
-        p.get(dark).cylinder(v(x - 0.04, 0.09, z), v(x + 0.04, 0.09, z), 0.09, 10, true);
-    }
-    p.get(dark).aabox(v(-0.5, 0.8, d * 0.5), v(0.5, 0.86, d * 0.5 + 0.04), 1.0);
-    p
+    street_waste::container(kind)
 }
 
 /// Square cast-iron tree grate (alcorque) with soil.
@@ -337,6 +281,11 @@ pub fn pharmacy_cross() -> P {
 /// Projecting blade sign (banderola) carrying the centre of a shop-sign
 /// atlas row, double-sided, perpendicular to the facade.
 pub fn blade_sign(row: u8) -> P {
+    blade_sign_lit(row, false)
+}
+
+/// [`blade_sign`] with its faces lit (night).
+pub fn blade_sign_lit(row: u8, lit: bool) -> P {
     let mut p = P::new();
     let g = Mat::Iron;
     p.get(g).beam(v(0.0, 0.36, 0.0), v(0.0, 0.36, 1.05), Vec3::Y, 0.03, 0.03, 1.0);
@@ -345,7 +294,7 @@ pub fn blade_sign(row: u8) -> P {
     p.get(Mat::Plastic(hex(0x1a1a1a))).aabox(v(-0.035, y0 - 0.02, z0 - 0.02), v(0.035, y1 + 0.02, z1 + 0.02), 1.0);
     let (r0, r1) = (row as f32 / 16.0, (row as f32 + 1.0) / 16.0);
     let (ua, ub) = (0.34, 0.66);
-    let face = p.get(Mat::ShopSign);
+    let face = p.get(if lit { Mat::ShopSignLit } else { Mat::ShopSign });
     face.quad_uv([v(0.04, y0, z1), v(0.04, y0, z0), v(0.04, y1, z0), v(0.04, y1, z1)], [Vec2::new(ua, r1), Vec2::new(ub, r1), Vec2::new(ub, r0), Vec2::new(ua, r0)]);
     face.quad_uv([v(-0.04, y0, z0), v(-0.04, y0, z1), v(-0.04, y1, z1), v(-0.04, y1, z0)], [Vec2::new(ua, r1), Vec2::new(ub, r1), Vec2::new(ub, r0), Vec2::new(ua, r0)]);
     p

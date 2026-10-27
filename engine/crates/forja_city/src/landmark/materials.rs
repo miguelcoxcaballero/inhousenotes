@@ -57,6 +57,39 @@ fn fbm(u: f32, v: f32, f: i32, oct: u32, s: u32) -> f32 {
     sum / norm
 }
 
+/// Periodic value noise with separate integer periods in x and y.
+fn vnoise2(x: f32, y: f32, px: i32, py: i32, s: u32) -> f32 {
+    let (xi, yi) = (x.floor() as i32, y.floor() as i32);
+    let (fx, fy) = (x - xi as f32, y - yi as f32);
+    let wx = |v: i32| v.rem_euclid(px.max(1));
+    let wy = |v: i32| v.rem_euclid(py.max(1));
+    let (sx, sy) = (fx * fx * (3.0 - 2.0 * fx), fy * fy * (3.0 - 2.0 * fy));
+    let a = hash(wx(xi), wy(yi), s);
+    let b = hash(wx(xi + 1), wy(yi), s);
+    let c = hash(wx(xi), wy(yi + 1), s);
+    let d = hash(wx(xi + 1), wy(yi + 1), s);
+    let ab = a + (b - a) * sx;
+    let cd = c + (d - c) * sx;
+    ab + (cd - ab) * sy
+}
+
+/// Tileable fBm over [0, 1)² with stretched cells: `fx` x `fy` cells at
+/// the base octave (both integers, so the repeat stays seamless).
+fn fbm2(u: f32, v: f32, fx: i32, fy: i32, oct: u32, s: u32) -> f32 {
+    let mut sum = 0.0;
+    let mut amp = 0.5;
+    let mut norm = 0.0;
+    let (mut ax, mut ay) = (fx.max(1), fy.max(1));
+    for k in 0..oct {
+        sum += amp * vnoise2(u * ax as f32, v * ay as f32, ax, ay, s.wrapping_add(k * 7919));
+        norm += amp;
+        amp *= 0.5;
+        ax *= 2;
+        ay *= 2;
+    }
+    sum / norm
+}
+
 /// Periodic Voronoi: (distance to nearest, distance to second, cell id,
 /// offset from the nearest site in cell units).
 fn voronoi(u: f32, v: f32, n: i32, s: u32) -> (f32, f32, u32, Vec2) {
@@ -204,9 +237,20 @@ fn ashlar(grain: Option<&TextureData>, span: f32, rows: u32, cols: u32, joint: f
     });
     let jrel = (joint / span).max(0.0004);
     let n = if span > 5.0 { 2048 } else { 1024 };
+    // Course boundaries jittered (periodic), so courses differ in height.
+    let bounds: Vec<f32> = (0..=rows).map(|k| if k == 0 || k == rows { k as f32 } else { k as f32 + (hash(k as i32, 17, seed) - 0.5) * 0.36 }).collect();
     generate("ashlar", n, 1.4, move |u, v| {
-        let row = (v * rows as f32).floor() as i32;
-        let fy = v * rows as f32 - row as f32;
+        let y = v * rows as f32;
+        let mut row = (y.floor() as i32).clamp(0, rows as i32 - 1);
+        while row > 0 && y < bounds[row as usize] {
+            row -= 1;
+        }
+        while (row as u32) < rows - 1 && y >= bounds[row as usize + 1] {
+            row += 1;
+        }
+        let (r0, r1) = (bounds[row as usize], bounds[row as usize + 1]);
+        let fy = ((y - r0) / (r1 - r0).max(1e-3)).clamp(0.0, 1.0);
+        let row_h = (r1 - r0).max(0.2);
         // Per-row cut positions (blocks of varying length), staggered.
         let total: f32 = (0..cols).map(|i| 0.65 + 0.7 * hash(row, i as i32, seed ^ 0x77)).sum();
         let off = hash(row, 3, seed) * 0.6 + if row % 2 == 0 { 0.0 } else { 0.5 };
@@ -228,11 +272,13 @@ fn ashlar(grain: Option<&TextureData>, span: f32, rows: u32, cols: u32, joint: f
         let fx = (xm - start) / (end - start).max(1e-3);
         // Distances to the joints in texture units.
         let dx = fx.min(1.0 - fx) * (end - start) / cols as f32;
-        let dy = fy.min(1.0 - fy) / rows as f32;
+        let dy = fy.min(1.0 - fy) * row_h / rows as f32;
         let d = dx.min(dy);
         let id = hash(row, bi, seed);
-        let tone = 0.9 + 0.16 * id;
-        let warm = (hash(row, bi, seed ^ 0x99) - 0.5) * 0.07;
+        // Most blocks close in tone, some clearly replaced or stained.
+        let odd = hash(row, bi, seed ^ 0x4d);
+        let tone = 0.88 + 0.18 * id + if odd > 0.93 { 0.1 } else if odd < 0.06 { -0.12 } else { 0.0 };
+        let warm = (hash(row, bi, seed ^ 0x99) - 0.5) * 0.09 + if odd > 0.96 { 0.05 } else { 0.0 };
         let stone = match grain {
             Some(g) => {
                 let gu = u * span / 2.0 + id * 7.13 + row as f32 * 0.37;
@@ -312,50 +358,83 @@ fn terracotta(seed: u32) -> Set {
 }
 
 /// Valencian glazed tiles: imbricated scales, chevrons, stripes, checks or
-/// diamonds in a palette, glossy glaze over rough grout.
-fn glazed_tiles(pattern: &str, colors: &[[f32; 3]], seed: u32) -> Set {
+/// diamonds in a palette, glossy glaze over thin grout. With `weights`,
+/// tiles take colours at random in those proportions (blue domes with a
+/// sprinkle of white and gold); otherwise the pattern cycles the palette.
+fn glazed_tiles(pattern: &str, colors: &[[f32; 3]], weights: &[f32], seed: u32) -> Set {
     let pal: Vec<[f32; 3]> = if colors.is_empty() { vec![hexc(0x1d4f9a), hexc(0xf2efe6)] } else { colors.to_vec() };
+    let wsum: f32 = weights.iter().take(pal.len()).map(|w| w.max(0.0)).sum();
+    let cum: Vec<f32> = if wsum > 0.0 {
+        let mut acc = 0.0;
+        weights.iter().take(pal.len()).map(|w| {
+            acc += w.max(0.0) / wsum;
+            acc
+        }).collect()
+    } else {
+        Vec::new()
+    };
+    let npal = pal.len().max(1);
+    let pick = move |cyc: usize, col: i32, row: i32| -> usize {
+        if cum.is_empty() {
+            return cyc % npal;
+        }
+        let r = hash(col, row, seed ^ 0x6b);
+        cum.iter().position(|c| r < *c).unwrap_or(cum.len() - 1)
+    };
+    let pal2 = pal.clone();
     let pat = pattern.to_string();
     // One texture repeat = 8 x 8 tiles.
-    generate(&format!("glazed_{pat}"), 1024, 3.0, move |u, v| {
+    generate(&format!("glazed_{pat}"), 1024, 2.2, move |u, v| {
         let n = 8.0;
         let (x, y) = (u * n, v * n);
         let (row, col) = (y.floor() as i32, x.floor() as i32);
         let (fx, fy) = (x.fract(), y.fract());
+        let np = pal2.len() as i32;
         let (idx, d_edge, bulge) = match pat.as_str() {
             "scales" => {
-                // Fish scales: rows offset by half a tile, rounded bottoms (v down = towards the eave).
-                let off = if row % 2 == 0 { 0.0 } else { 0.5 };
-                let xs = x + off;
-                let c = xs.floor();
-                let fxs = xs - c;
-                let r = ((fxs - 0.5).powi(2) + (fy - 0.15).powi(2)).sqrt();
-                let inside = r < 0.62;
-                let d = if inside { (0.62 - r).min(fxs.min(1.0 - fxs) + 0.3) } else { 0.0 };
-                let k = ((c as i32 + row * 3).rem_euclid(pal.len() as i32)) as usize;
-                let k = if pal.len() == 2 { ((c as i32 + row) % 2).unsigned_abs() as usize } else { k };
-                (k, d, (r / 0.62).min(1.0))
+                // Imbricated fish scales (v down = towards the eave): each
+                // row overlaps the one below with its rounded lower edge,
+                // offset half a tile; every texel belongs to a scale.
+                let mut found = None;
+                for dr in [-1i32, 0] {
+                    let r = row + dr;
+                    let off = if r.rem_euclid(2) == 0 { 0.0 } else { 0.5 };
+                    let xs = x + off;
+                    let c = xs.floor();
+                    let lx = xs - c - 0.5;
+                    let ly = y - r as f32;
+                    // Scale r covers ly in [0, 1 + bottom(lx)] with a
+                    // round bottom of radius 0.5.
+                    let bottom = 0.5 + (0.25 - lx * lx).max(0.0).sqrt();
+                    if ly >= 0.0 && ly <= 0.5 + bottom * 0.999 {
+                        let rim = 0.5 + bottom - ly;
+                        let side = 0.5 - lx.abs();
+                        found = Some((pick(((c as i32) + r * 3).rem_euclid(np.max(1)) as usize, c as i32, r), rim.min(side + 0.2), (ly / (0.5 + bottom)).clamp(0.0, 1.0)));
+                        break;
+                    }
+                }
+                found.unwrap_or((0, 0.0, 0.0))
             }
             "chevron" | "zigzag" => {
                 let z = ((x * 0.5).fract() - 0.5).abs() * 2.0;
                 let band = ((y + z * 2.0) / 2.0).floor() as i32;
-                let k = band.rem_euclid(pal.len() as i32) as usize;
-                (k, fx.min(1.0 - fx).min(fy.min(1.0 - fy)), 0.0)
+                (pick(band.rem_euclid(np) as usize, col, band), fx.min(1.0 - fx).min(fy.min(1.0 - fy)), 0.0)
             }
-            "stripes" => ((col.rem_euclid(pal.len() as i32)) as usize, fx.min(1.0 - fx).min(fy.min(1.0 - fy)), 0.0),
-            "checker" => (((row + col).rem_euclid(pal.len() as i32)) as usize, fx.min(1.0 - fx).min(fy.min(1.0 - fy)), 0.0),
+            "stripes" => (pick(col.rem_euclid(np) as usize, col, 0), fx.min(1.0 - fx).min(fy.min(1.0 - fy)), 0.0),
+            "checker" => (pick((row + col).rem_euclid(np) as usize, col, row), fx.min(1.0 - fx).min(fy.min(1.0 - fy)), 0.0),
             "diamond" => {
                 let dd = (fx - 0.5).abs() + (fy - 0.5).abs();
-                (if dd < 0.32 { 0 } else { 1 % pal.len() }, fx.min(1.0 - fx).min(fy.min(1.0 - fy)), 0.0)
+                (if dd < 0.32 { 0 } else { 1 % pal2.len() }, fx.min(1.0 - fx).min(fy.min(1.0 - fy)), 0.0)
             }
-            _ => (0, fx.min(1.0 - fx).min(fy.min(1.0 - fy)), 0.0),
+            _ => (pick(0, col, row), fx.min(1.0 - fx).min(fy.min(1.0 - fy)), 0.0),
         };
-        let grout = d_edge < 0.035;
-        let jitter = 0.93 + 0.12 * hash(col, row, seed);
+        let grout = d_edge < 0.022;
+        let jitter = 0.94 + 0.1 * hash(col, row, seed);
         let glaze = fbm(u, v, 64, 2, seed ^ 0x31);
-        let base = mul3(pal[idx % pal.len()], jitter * (0.95 + 0.1 * glaze));
-        let c = if grout { [0.55, 0.53, 0.5] } else { base };
-        Texel { c, h: if grout { 0.0 } else { 0.55 + 0.3 * (d_edge * 3.0).min(1.0) - 0.25 * bulge }, rough: if grout { 0.85 } else { 0.1 + 0.08 * glaze }, metal: 0.0, ao: if grout { 0.7 } else { 1.0 } }
+        let base = mul3(pal2[idx % pal2.len()], jitter * (0.96 + 0.08 * glaze));
+        // Thin, dark-ish grout: it barely dilutes the colour at a distance.
+        let c = if grout { mul3(pal2[idx % pal2.len()], 0.45) } else { base };
+        Texel { c, h: if grout { 0.0 } else { 0.6 + 0.25 * (d_edge * 4.0).min(1.0) - 0.15 * bulge }, rough: if grout { 0.7 } else { 0.05 + 0.05 * glaze }, metal: 0.0, ao: if grout { 0.75 } else { 1.0 } }
     })
 }
 
@@ -489,25 +568,39 @@ fn flat_noise(c: [f32; 3], rough: f32, seed: u32) -> Set {
     })
 }
 
-/// Dirt and streaks multiplied into a color texture (vertical runs along -v).
+/// Dirt and streaks multiplied into a color texture (vertical runs along
+/// -v). Every term is periodic in both directions (stretched cells with
+/// integer periods), so the texture still tiles without seams.
 fn weathered(t: &TextureData, amount: f32, seed: u32) -> TextureData {
     let (w, h) = (t.width, t.height);
-    let mut out = Vec::with_capacity(t.rgba8.len());
-    for y in 0..h {
-        for x in 0..w {
-            let (u, v) = ((x as f32 + 0.5) / w as f32, (y as f32 + 0.5) / h as f32);
-            let streak = fbm(u * 1.0, v * 0.12, 24, 3, seed);
-            let blot = fbm(u, v, 4, 4, seed ^ 0x33);
-            let d = ((streak - 0.45).max(0.0) * 1.6 + (blot - 0.5).max(0.0) * 0.8) * amount;
-            let k = 1.0 - d.clamp(0.0, 0.6);
-            let i = ((y * w + x) * 4) as usize;
-            let warm = [k, k * 0.985, k * 0.96];
-            for c in 0..3 {
-                out.push(((t.rgba8[i + c] as f32) * warm[c]).clamp(0.0, 255.0) as u8);
-            }
-            out.push(255);
+    let mut out = vec![0u8; t.rgba8.len()];
+    let rows_per = (h as usize).div_ceil(8).max(1);
+    std::thread::scope(|sc| {
+        for (k, chunk) in out.chunks_mut(rows_per * w as usize * 4).enumerate() {
+            let src = &t.rgba8;
+            sc.spawn(move || {
+                for (i, px) in chunk.chunks_exact_mut(4).enumerate() {
+                    let idx = k * rows_per * w as usize + i;
+                    let (x, y) = (idx % w as usize, idx / w as usize);
+                    let (u, v) = ((x as f32 + 0.5) / w as f32, (y as f32 + 0.5) / h as f32);
+                    // Thin vertical runs (48 x 3 cells, 5 octaves) warped a
+                    // little so they do not follow the noise grid.
+                    let warp = fbm(u, v, 6, 2, seed ^ 0x71) - 0.5;
+                    let streak = fbm2(u + warp * 0.03, v, 48, 3, 5, seed);
+                    let blot = fbm(u, v, 4, 5, seed ^ 0x33);
+                    let grime = fbm(u, v, 32, 3, seed ^ 0x5a);
+                    let d = ((streak - 0.5).max(0.0) * 1.3 + (blot - 0.52).max(0.0) * 0.6 + (grime - 0.5) * 0.08) * amount;
+                    let kk = 1.0 - d.clamp(-0.03, 0.4);
+                    let j = idx * 4;
+                    let warm = [kk, kk * 0.985, kk * 0.96];
+                    for c in 0..3 {
+                        px[c] = ((src[j + c] as f32) * warm[c]).clamp(0.0, 255.0) as u8;
+                    }
+                    px[3] = 255;
+                }
+            });
         }
-    }
+    });
     TextureData { name: format!("{}_weathered", t.name), width: w, height: h, rgba8: Arc::from(out), srgb: true }
 }
 
@@ -659,8 +752,8 @@ impl<'k> Library<'k> {
             "terracotta" => Self::from_set(&self.set(&format!("terracotta_{seed}"), || terracotta(seed)), "terracotta"),
             "glazed_tiles" => {
                 let pat = s.pattern.clone().unwrap_or_else(|| "scales".into());
-                let key = format!("glazed_{pat}_{colors:?}_{seed}");
-                Self::from_set(&self.set(&key, || glazed_tiles(&pat, &colors, seed)), "glazed_tiles")
+                let key = format!("glazed_{pat}_{colors:?}_{:?}_{seed}", s.weights);
+                Self::from_set(&self.set(&key, || glazed_tiles(&pat, &colors, &s.weights, seed)), "glazed_tiles")
             }
             "trencadis" => Self::from_set(&self.set(&format!("trencadis_{colors:?}_{seed}"), || trencadis(&colors, seed)), "trencadis"),
             "polychrome" => Self::from_set(&self.set(&format!("poly_{colors:?}_{seed}"), || polychrome(&colors, seed)), "polychrome"),
@@ -724,6 +817,12 @@ impl<'k> Library<'k> {
         if let Some(n) = s.normal_strength {
             b.data.normal_scale = n;
         }
+        // Glazes read as wet-bright tiles: a clear coat over the colour.
+        let coat = s.clearcoat.unwrap_or(if matches!(kind, "glazed_tiles" | "trencadis" | "polychrome" | "azulejo") { 0.8 } else { 0.0 });
+        if coat > 0.0 {
+            b.data.clearcoat = coat.clamp(0.0, 1.0);
+            b.data.clearcoat_roughness = 0.06;
+        }
         if let Some(em) = s.emissive {
             b.data.emissive = Vec3::splat(em);
             if b.data.emissive_tex.is_none() {
@@ -761,7 +860,7 @@ mod tests {
 
     #[test]
     fn procedural_sets_tile_and_vary() {
-        let s = glazed_tiles("scales", &[], 1);
+        let s = glazed_tiles("scales", &[], &[], 1);
         let px = |t: &TextureData, x: u32, y: u32| {
             let i = ((y * t.width + x) * 4) as usize;
             [t.rgba8[i], t.rgba8[i + 1], t.rgba8[i + 2]]
@@ -774,13 +873,31 @@ mod tests {
         assert!(blue.count() > 100);
         // Glossy glaze and rough grout.
         let r: Vec<u8> = s.orm.rgba8.chunks_exact(4).map(|c| c[1]).collect();
-        assert!(r.iter().any(|&v| v < 50) && r.iter().any(|&v| v > 200));
+        assert!(r.iter().any(|&v| v < 50) && r.iter().any(|&v| v > 150));
         let t = trencadis(&[], 3);
         assert_eq!(t.color.width, 1024);
         let a = ashlar(None, 3.6, 8, 4, 0.02, 1, 0.8);
         // Rough mortar joints between smoother block faces.
         let joints = a.orm.rgba8.chunks_exact(4).filter(|c| c[1] > 235).count();
         assert!(joints > 1000 && joints < 1024 * 1024 / 3, "{joints}");
+    }
+
+    #[test]
+    fn weathering_tiles_without_seams() {
+        let t = flat_noise([0.8, 0.78, 0.74], 0.8, 2).color;
+        let w = weathered(&t, 1.0, 9);
+        let (wd, ht) = (w.width as usize, w.height as usize);
+        let row = |y: usize| -> Vec<f32> { (0..wd).map(|x| w.rgba8[(y * wd + x) * 4] as f32).collect() };
+        let diff = |a: &[f32], b: &[f32]| a.iter().zip(b).map(|(p, q)| (p - q).abs()).sum::<f32>() / a.len() as f32;
+        // Across the wrap (last row -> first row) no worse than inside.
+        let wrap = diff(&row(ht - 1), &row(0));
+        let inner = diff(&row(ht / 2), &row(ht / 2 + 1));
+        assert!(wrap < inner * 3.0 + 1.5, "wrap {wrap} vs inner {inner}");
+        // Scales cover every texel: little grout, saturated blue.
+        let g = glazed_tiles("scales", &[hexc(0x1d4a9a), hexc(0x2a5fb4), hexc(0xf2eee2)], &[0.45, 0.45, 0.1], 3);
+        let px = g.color.rgba8.chunks_exact(4).collect::<Vec<_>>();
+        let blue = px.iter().filter(|c| c[2] as i32 > c[0] as i32 + 50).count() as f32 / px.len() as f32;
+        assert!(blue > 0.7, "{blue}");
     }
 
     #[test]

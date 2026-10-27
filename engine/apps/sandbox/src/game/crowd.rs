@@ -7,6 +7,10 @@
 //! chat in pairs (taking turns to talk), some wait or look in a shop
 //! window, some cross the street after looking both ways. People glance
 //! at whoever passes close, the player included.
+//!
+//! On cities with traffic AI (`traffic.rs`) the people are those of the
+//! simulation instead: they cross at zebras on the walk signal and the
+//! cars give way to them; this plugin only gives them bodies.
 
 use std::sync::Arc;
 
@@ -36,9 +40,28 @@ pub struct Crowd {
     pub walk: Option<Walkable>,
     types: Vec<Arc<AvatarType>>,
     pub peds: Vec<Ped>,
+    /// Pedestrians of the traffic simulation, with their avatars.
+    ai: Vec<AiPerson>,
     rng: Rng,
     next_id: u64,
     filled: bool,
+}
+
+/// Avatar of a pedestrian simulated by `forja_ai` (the traffic plugin):
+/// the simulation decides where it walks, waits and crosses.
+struct AiPerson {
+    id: u64,
+    person: Person,
+    pos: Vec2,
+    y: f32,
+    yaw: f32,
+    clip: forja_ai::PedAnim,
+}
+
+impl AiPerson {
+    fn transform(&self) -> Mat4 {
+        Mat4::from_rotation_translation(Quat::from_rotation_y(self.yaw), Vec3::new(self.pos.x, self.y, self.pos.y))
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -101,7 +124,7 @@ impl Plugin for CrowdPlugin {
 
     fn build(&self, app: &mut App) {
         let paths = app.world.res::<Paths>().clone();
-        let mut crowd = Crowd { walk: None, types: Vec::new(), peds: Vec::new(), rng: Rng::new(0x5eed_c0de), next_id: 1, filled: false };
+        let mut crowd = Crowd { walk: None, types: Vec::new(), peds: Vec::new(), ai: Vec::new(), rng: Rng::new(0x5eed_c0de), next_id: 1, filled: false };
         if PeopleLibrary::available(&paths) {
             let t = std::time::Instant::now();
             let desc = &app.world.res::<GameWorld>().desc;
@@ -134,14 +157,43 @@ fn crowd_update(w: &mut forja_core::World) {
         (Vec2::new(feet.x, feet.z), feet + Vec3::Y * 1.62)
     };
     let cam = w.res::<RenderScene>().camera;
+    // On cities with traffic AI the simulation walks the people.
+    if let Some(ai) = w.resources.get::<super::traffic::TrafficAi>()
+        && ai.drives_peds
+    {
+        let mut near: Vec<AiPed> = ai
+            .sim
+            .peds
+            .iter()
+            .filter(|p| p.pos.distance(player_pos) < RADIUS)
+            .map(|p| AiPed { id: p.id, pos: p.pos, speed: p.vel.length(), heading: p.heading, clip: p.anim() })
+            .collect();
+        near.sort_by(|a, b| a.pos.distance(player_pos).total_cmp(&b.pos.distance(player_pos)));
+        near.truncate(MAX_PEOPLE);
+        w.scope::<Crowd, _>(|w, crowd| {
+            crowd.peds.clear();
+            crowd.sync_ai(w, &paths, &near, dt, player_pos, player_eye);
+        });
+        return;
+    }
     w.scope::<Crowd, _>(|w, crowd| {
         crowd.populate(w, &paths, player_pos, cam.position, cam.forward());
         crowd.step(w.res::<PhysicsWorld>(), dt, player_pos, player_eye);
     });
 }
 
+/// What the crowd needs of a simulated pedestrian this frame.
+struct AiPed {
+    id: u64,
+    pos: Vec2,
+    speed: f32,
+    heading: Vec2,
+    clip: forja_ai::PedAnim,
+}
+
 fn crowd_render(w: &mut forja_core::World) {
-    let items: Vec<_> = w.res::<Crowd>().peds.iter().map(|p| p.person.render_item(p.transform())).collect();
+    let crowd = w.res::<Crowd>();
+    let items: Vec<_> = crowd.peds.iter().map(|p| p.person.render_item(p.transform())).chain(crowd.ai.iter().map(|p| p.person.render_item(p.transform()))).collect();
     w.res_mut::<RenderScene>().dynamic.extend(items);
 }
 
@@ -149,14 +201,62 @@ impl Crowd {
     /// Eyes of the nearest person within `r` of `from` and in front
     /// (`fwd`), for the player to glance at.
     pub fn glance_target(&self, from: Vec2, fwd: Vec2, r: f32) -> Option<Vec3> {
-        self.peds
-            .iter()
-            .filter(|p| {
-                let rel = p.pos - from;
-                rel.length() < r && rel.normalize_or_zero().dot(fwd) > 0.2
-            })
-            .min_by(|a, b| a.pos.distance(from).total_cmp(&b.pos.distance(from)))
-            .map(|p| p.eye())
+        let eyes = self.peds.iter().map(|p| (p.pos, p.eye())).chain(self.ai.iter().map(|a| (a.pos, Vec3::new(a.pos.x, a.y, a.pos.y) + Vec3::Y * a.person.eye_height())));
+        eyes.filter(|(p, _)| {
+            let rel = *p - from;
+            rel.length() < r && rel.normalize_or_zero().dot(fwd) > 0.2
+        })
+        .min_by(|a, b| a.0.distance(from).total_cmp(&b.0.distance(from)))
+        .map(|p| p.1)
+    }
+
+    /// Gives avatars to the simulated pedestrians near the player and
+    /// poses them: position and heading from the simulation, clip from its
+    /// activity (walking speed, waiting at the kerb, talking).
+    fn sync_ai(&mut self, w: &mut forja_core::World, paths: &Paths, near: &[AiPed], dt: f32, player: Vec2, player_eye: Vec3) {
+        if self.types.is_empty() {
+            return;
+        }
+        self.ai.retain(|a| near.iter().any(|n| n.id == a.id));
+        for n in near {
+            if self.ai.iter().any(|a| a.id == n.id) {
+                continue;
+            }
+            // The avatar type least used nearby, as for the native crowd.
+            let start = self.rng.index(self.types.len());
+            let kind = (0..self.types.len())
+                .map(|k| (start + k) % self.types.len())
+                .min_by_key(|&i| self.ai.iter().filter(|a| a.person.kind.name == self.types[i].name && a.pos.distance(n.pos) < 15.0).count())
+                .map(|i| self.types[i].clone())
+                .expect("types");
+            let walk = if self.rng.chance(0.7) { WALKS[0] } else { WALKS[1] };
+            let seed = self.rng.next_u64();
+            let Some(mut person) = w.scope::<PeopleLibrary, _>(|_, lib| lib.spawn(paths, &kind, walk, seed)) else { continue };
+            person.anim.update(self.rng.range(0.0, 2.0));
+            let y = self.walk.as_ref().map_or(0.15, |wk| wk.sample(n.pos).height);
+            self.ai.push(AiPerson { id: n.id, person, pos: n.pos, y, yaw: n.heading.x.atan2(n.heading.y), clip: forja_ai::PedAnim::Idle });
+        }
+        for a in &mut self.ai {
+            let Some(n) = near.iter().find(|n| n.id == a.id) else { continue };
+            a.pos = n.pos;
+            if let Some(wk) = &self.walk {
+                a.y += (wk.sample(a.pos).height - a.y) * smoothing(20.0, dt);
+            }
+            let target = n.heading.x.atan2(n.heading.y);
+            a.yaw += wrap(target - a.yaw) * smoothing(if n.speed > 0.2 { 7.0 } else { 3.0 }, dt);
+            if n.clip != a.clip {
+                use forja_ai::PedAnim;
+                a.person.anim.set("stand", if n.clip == PedAnim::Wait { 2.0 } else { 0.0 });
+                a.person.anim.set("talk", if n.clip == PedAnim::Talk { TALK } else { 0.0 });
+                a.clip = n.clip;
+            }
+            let rel = player - a.pos;
+            let fwd = Vec2::new(a.yaw.sin(), a.yaw.cos());
+            let look = (rel.length() < 6.0 && rel.normalize_or_zero().dot(fwd) > 0.3).then_some(player_eye);
+            a.person.life.detail = if rel.length() < DETAIL_DISTANCE { 1.0 } else { 0.0 };
+            let transform = a.transform();
+            a.person.update(dt, n.speed, &transform, look);
+        }
     }
 
     /// Keeps the crowd around the player: drops people who fell far behind

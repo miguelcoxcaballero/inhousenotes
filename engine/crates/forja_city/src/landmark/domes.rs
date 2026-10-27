@@ -78,10 +78,10 @@ fn default_rise(kind: DomeProfile, r: f32) -> f32 {
 /// The dome shell (and its ribs) springing at `c`. Returns the apex height
 /// above `c` actually built (the top of an oculus rim).
 #[allow(clippy::too_many_arguments)]
-pub fn shell_geo(b: &mut Builder, mat: MatId, c: Vec3, rx: f32, rz: f32, h: f32, kind: DomeProfile, ribs: Option<&RibSpec>, gores: u32, gore_depth: f32, oculus: Option<f32>, rotation: f32, o: &mut Out) -> f32 {
+pub fn shell_geo(b: &mut Builder, mat: MatId, c: Vec3, rx: f32, rz: f32, h: f32, kind: DomeProfile, ribs: Option<&RibSpec>, gores: u32, gore_depth: f32, oculus: Option<f32>, rotation: f32, segments: Option<u32>, o: &mut Out) -> f32 {
     let r = rx.max(rz);
     let hn = h / r.max(1e-3);
-    let mut nu = b.segs(r, 32, 128);
+    let mut nu = segments.map(|s| s as usize).unwrap_or_else(|| b.segs(r, 32, 128));
     if gores > 0 {
         nu = nu.div_ceil(gores as usize * 4) * gores as usize * 4;
     }
@@ -164,6 +164,8 @@ fn ring_openings(kind: OpeningKind, arch: ArchKind, infill: Infill, w: f32, h: f
         note: None,
         on: None,
         edges: EdgeSel(edges.into_iter().map(EdgeTok::Index).collect()),
+        // One opening per drum / lantern face, even on round drums.
+        per_edge: true,
         kind,
         arch: Some(arch),
         width: w,
@@ -207,6 +209,11 @@ pub fn dome(b: &mut Builder, d: &Dome, sc: &Scope, o: &mut Out) -> Result<()> {
     let rz = d.rz.unwrap_or(r);
     if rx <= 0.0 || rz <= 0.0 {
         return Err(Error::msg("dome radius must be positive"));
+    }
+    if let Some(n) = d.segments
+        && !(8..=512).contains(&n)
+    {
+        return Err(Error::msg(format!("segments = {n} is out of range (8..=512)")));
     }
     let c2 = Vec2::new(d.center[0], d.center[1]);
     let mut y = d.y;
@@ -255,7 +262,7 @@ pub fn dome(b: &mut Builder, d: &Dome, sc: &Scope, o: &mut Out) -> Result<()> {
         let prof = super::details::profile_points(&ProfileSpec::Named("torus".into()), 0.35, Some(0.2));
         super::details::moulding_path(o, &circle, true, y - 0.1, &prof, sc.mat);
     }
-    let top = shell_geo(b, sc.mat, Vec3::new(c2.x, y, c2.y), rx, rz, h, d.profile, ribs.as_ref(), d.gores, d.gore_depth, d.oculus, d.rotation, o);
+    let top = shell_geo(b, sc.mat, Vec3::new(c2.x, y, c2.y), rx, rz, h, d.profile, ribs.as_ref(), d.gores, d.gore_depth, d.oculus, d.rotation, d.segments, o);
     o.collide_all();
     // Lantern and finial.
     let apex = Vec3::new(c2.x, y + top, c2.y);
@@ -316,10 +323,10 @@ pub fn lantern(b: &mut Builder, l: &Lantern, sc: &Scope, o: &mut Out) -> Result<
             cap_top = top + cap_h;
         }
         "onion" => {
-            cap_top = top + shell_geo(b, cap_m, Vec3::new(c.x, top, c.y), r, r, cap_h, DomeProfile::Onion, None, 0, 0.0, None, 0.0, o);
+            cap_top = top + shell_geo(b, cap_m, Vec3::new(c.x, top, c.y), r, r, cap_h, DomeProfile::Onion, None, 0, 0.0, None, 0.0, None, o);
         }
         "dome" => {
-            cap_top = top + shell_geo(b, cap_m, Vec3::new(c.x, top, c.y), r, r, cap_h, DomeProfile::Hemisphere, None, 0, 0.0, None, 0.0, o);
+            cap_top = top + shell_geo(b, cap_m, Vec3::new(c.x, top, c.y), r, r, cap_h, DomeProfile::Hemisphere, None, 0, 0.0, None, 0.0, None, o);
         }
         other => return Err(Error::msg(format!("unknown lantern cap `{other}`{}; use dome, cone, onion, spire or flat", super::parse::did_you_mean(other, &["dome", "cone", "onion", "spire", "flat"])))),
     }

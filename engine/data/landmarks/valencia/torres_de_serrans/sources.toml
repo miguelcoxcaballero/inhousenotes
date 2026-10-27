@@ -33,7 +33,7 @@ width = 1280
 height = 1003
 exterior = true
 selected = true
-side = "n (outer face, from the river side, evening light; view \"outer face evening\")"
+side = "n (outer face, uncorrected compact-camera shot from the river side, low evening sun; tower heights and widths measured here; view \"outer face evening\")"
 
 [[photo]]
 file = "photos/02_Puerta_de_los_Serranos_Valencia_Espana_2014_06_30_DD_86.jpg"
@@ -45,7 +45,7 @@ width = 1280
 height = 881
 exterior = true
 selected = true
-side = "n (outer face head-on from the Pont de Serrans approach; view \"outer face\")"
+side = "n (outer face head-on, perspective-corrected: reference for proportions only, a pinhole view cannot reproduce it)"
 
 [[photo]]
 file = "photos/03_Valencia_Torres_de_Serrans_1.jpg"
@@ -99,7 +99,7 @@ height = 1707
 camera = [-16.91, -6.84]
 exterior = true
 selected = true
-side = "e (east tower side face from Carrer del Comte de Trenor, SE; view \"east side, south\")"
+side = "e (east side of the east tower from Carrer del Comte de Trenor; view \"east side, south-east\")"
 
 [[photo]]
 file = "photos/07_Valencia_Torres_de_Serranos_02.jpg"
@@ -112,7 +112,7 @@ height = 1138
 camera = [-6.04, 53.63]
 exterior = true
 selected = true
-side = "s (inner open face from Placa dels Furs / Carrer de Serrans; view \"inner face\")"
+side = "s (inner open face from Placa dels Furs, perspective-corrected; view \"inner face\")"
 
 [[photo]]
 file = "photos/08_Puerta_de_los_Serranos_Valencia_Espana_2014_06_29_DD_30.jpg"
@@ -124,7 +124,7 @@ width = 1280
 height = 951
 exterior = true
 selected = true
-side = "s (inner face close, stair on the west; view \"inner face close\")"
+side = "s (inner face close with the west stair, perspective-corrected: reference for the stair and central body)"
 
 [[photo]]
 file = "photos/09_Fossat_de_les_torres_de_Serrans.jpg"
@@ -334,7 +334,7 @@ width = 1280
 height = 960
 exterior = true
 selected = true
-side = "w (west tower, south-west corner looking up: west face gallery and inner arches; view \"west tower, south-west corner\")"
+side = "sw (west tower, south-west corner looking up: end of the west gallery, inner arches; reference)"
 
 [[photo]]
 file = "photos/20_L04_515_Torres_de_Serranos_Wehrgang.jpg"
@@ -346,7 +346,7 @@ width = 1280
 height = 1920
 exterior = true
 selected = true
-side = "top (from the central terrace: tower upper stage set back behind the gallery parapet, moat with battered tower base; reference, no view)"
+side = "top (from the central terrace: flush upper stage behind the gallery walk, dry moat with battered tower base; reference)"
 
 [[photo]]
 file = "photos/21_Maqueta_de_les_torres_de_Serrans.jpg"
@@ -381,8 +381,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1919
 exterior = true
-selected = false
-side = "ne (outer face close: tracery band, arms, gallery)"
+selected = true
+side = "ne (outer face close: tracery band, arms, central gallery and rear wall; heights reference)"
 
 [[photo]]
 file = "photos/24_Torres_Serranos_Maqueta.jpg"
@@ -406,6 +406,164 @@ url = "https://www.openstreetmap.org/way/1287040284"
 title = "OSM building:part machicolation gallery ring (min_height 20, height 22)"
 notes = "Gallery projection about 1.3-1.4 m beyond the tower walls; gallery stops 1.3 m (W) and 2.4 m (E) short of the inner corners of the side faces."
 
+# ---- added in the second modelling pass (Special:FilePath?width=1280)
+
+[[photo]]
+file = "photos/25_Micalet_aerial.jpg"
+title = "File:Torres de Serranos, desde la torre Micalet de la catedral de Valencia.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Torres_de_Serranos,_desde_la_torre_Micalet_de_la_catedral_de_Valencia.JPG"
+author = "Carlos Teixidor Cadenas"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "s aerial (from the Micalet, telephoto: inner face, terrace, terrace stairs, stair turrets, rear wall; view \"aerial from the Micalet (south)\")"
+
+[[photo]]
+file = "photos/26_COVID19_10_northwest.jpg"
+title = "File:2020-03-Detalls i conseqüències del COVID-19 al País Valencià 10.jpg"
+url = "https://commons.wikimedia.org/wiki/File:2020-03-Detalls_i_conseq%C3%BC%C3%A8ncies_del_COVID-19_al_Pa%C3%ADs_Valenci%C3%A0_10.jpg"
+author = "Pacopac"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "w (west tower from the west along Carrer de Blanqueries; view \"west side from Carrer de Blanqueries\")"
+
+[[photo]]
+file = "photos/27_Back_view.jpg"
+title = "File:Torres de Serranos Back view.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Torres_de_Serranos_Back_view.jpg"
+author = "Abdeaitali"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = "s (inner face close, looking up)"
+
+[[photo]]
+file = "photos/28_en_Valencia_Espana.jpg"
+title = "File:Torres de Serranos en Valencia, España.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Torres_de_Serranos_en_Valencia,_Espa%C3%B1a.jpg"
+author = "Pamdelinaza"
+license = "CC0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = "sw (west tower inner face from Carrer de Serrans)"
+
+[[photo]]
+file = "photos/29_from_the_north.jpg"
+title = "File:Valencia Torres de Serrans from the north.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_Torres_de_Serrans_from_the_north.jpg"
+author = "Ymblanter"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1727
+exterior = true
+selected = false
+side = "nnw (outer face and west tower)"
+
+[[photo]]
+file = "photos/30_694_fossat_talus_llevant.jpg"
+title = "File:694 Torres dels Serrans (València), fossat i talús de la torre de llevant.jpg"
+url = "https://commons.wikimedia.org/wiki/File:694_Torres_dels_Serrans_(Val%C3%A8ncia),_fossat_i_tal%C3%BAs_de_la_torre_de_llevant.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "moat (east tower: battered talus on a gravel floor, retaining wall; reference)"
+
+[[photo]]
+file = "photos/31_354_cara_nord_ponent.jpg"
+title = "File:354 Torres dels Serrans (València), cara nord, torre de ponent.jpg"
+url = "https://commons.wikimedia.org/wiki/File:354_Torres_dels_Serrans_(Val%C3%A8ncia),_cara_nord,_torre_de_ponent.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "n (west tower, gallery and corbels close; reference)"
+
+[[photo]]
+file = "photos/32_352_traceria.jpg"
+title = "File:352 Torres dels Serrans (València), cara nord, decoració de traceria damunt el portal.jpg"
+url = "https://commons.wikimedia.org/wiki/File:352_Torres_dels_Serrans_(Val%C3%A8ncia),_cara_nord,_decoraci%C3%B3_de_traceria_damunt_el_portal.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "n detail (tracery band, central gallery with 3 arches, end corbels, arms; view \"tracery band and central gallery close-up\")"
+
+[[photo]]
+file = "photos/33_L04_267_Puente.jpg"
+title = "File:L04 267 Puente y Torres de Serranos.jpg"
+url = "https://commons.wikimedia.org/wiki/File:L04_267_Puente_y_Torres_de_Serranos.jpg"
+author = "Falk2"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = "n (from the bridge, 50 mm)"
+
+[[photo]]
+file = "photos/34_L04_268.jpg"
+title = "File:L04 268 Torres de Serranos.jpg"
+url = "https://commons.wikimedia.org/wiki/File:L04_268_Torres_de_Serranos.jpg"
+author = "Falk2"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "n (outer face from the bridge, 95 mm, almost no perspective: tower and gate widths; view \"outer face from the bridge (95 mm)\")"
+
+[[photo]]
+file = "photos/35_L04_507_northwest.jpg"
+title = "File:L04 507 Valencia, Torres de Serranos.jpg"
+url = "https://commons.wikimedia.org/wiki/File:L04_507_Valencia,_Torres_de_Serranos.jpg"
+author = "Falk2"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 899
+exterior = true
+selected = true
+side = "nw (north-west corner: west tower west and north faces, stair; view \"north-west, west tower\")"
+
+[[photo]]
+file = "photos/36_darrere.jpg"
+title = "File:Torres de Serrans, darrere.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Torres_de_Serrans,_darrere.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "s (inner face, uncorrected: arch levels, central inner block; view \"inner face from the south (darrere)\")"
+
+[[photo]]
+file = "photos/37_Vista_trasera.jpg"
+title = "File:Vista trasera Torre de Serranos.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Vista_trasera_Torre_de_Serranos.JPG"
+author = "Conde negro"
+license = "CC BY-SA 3.0 es"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "s aerial (from the cathedral: terrace stairs and rear wall door; view \"aerial from the cathedral (south, terrace stairs)\")"
+
 [facts.modelled]
-value = "Heights used: towers 33.0 m to merlon tops (OSM height), terrace 30.3 m, parapet 31.4 m; string course 10.7 m; gallery corbels 17.2-19.8 m, arcaded parapet to 23.5 m, merlons to 24.7 m; central body 20.5 m, central gallery corbels 17.4 m, parapet top 20.9 m (merlons 21.7 m), rear gallery wall 23.6 m (merlons 24.8 m); tracery band 10.0-15.4 m; inner arches: towers 11.0-19.5 m and 22.4-29.7 m, central 10.3-19.0 m."
-source = "photos 02 and 07 calibrated on the OSM height (33 m); plans/01 cross section for the open U-shaped tower halls"
+value = "Revised heights: towers to 31.2 m at the merlon tops (parapet 30.2 m, terrace 29.1 m), stair turrets to 33.8 m; tower string course 10.2 m, upper-stage string 27.2 m; gallery corbels 17.1-20.15 m, arches to about 20.8 m, parapet 21.9 m, merlons 23.0 m; central body: lower block 10.0 m (inner side 9.6 m), tracery band 10.0-16.5 m, central gallery corbels 17.1-19.9 m, parapet 21.5 m, merlons 22.5 m; rear wall 26.2 m, merlons 27.3 m; inner terrace 18.4 m; inner arches: towers 10.2-18.6 m and 20.3-27.6 m, central 9.6-16.2 m, gate inner arch 4.8 x 7.0 m. The upper stages are flush with the tower walls (photos 34, 36, 25). West tower widened 6.4 % to the Catastro width."
+source = "camera solves on photos 01, 34, 25, 36, 37 against the plan (OSM/Catastro) and the 5 x 6.5 m outer arch (Wikipedia); photo 07 and 23 ratios. The OSM height tag of 33 m is the turret tops at most; every photo gives tower height / width 0.86-0.89 of a 33 m tower."

@@ -65,7 +65,9 @@ impl WorldSource for SpanishCity {
         for s in out.scenes {
             world.register_scene(s);
         }
+        // Placements first: the traffic lights index them.
         world.placements = out.placements;
+        world.traffic = Some(city.traffic.clone());
         let groups = CollisionGroups::new(layers::WORLD, u32::MAX);
         let ext = city.extent;
         world.colliders.push((ColliderDesc::new(Shape::cuboid(Vec3::new(ext.x, 1.0, ext.y))).translation(Vec3::new(0.0, -1.0, 0.0)).friction(1.0).groups(groups), Iso::IDENTITY));

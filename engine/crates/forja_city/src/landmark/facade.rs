@@ -5,10 +5,14 @@
 //! opening's outline through recessed orders or splays to the infill
 //! plane, so arched, round and lobed openings get real depth.
 
-use forja_math::{Vec2, Vec3};
+use std::sync::Arc;
+
+use forja_math::{Mat4, Vec2, Vec3};
 
 use super::mesh::{self, Geo, MatId, Plane};
 use super::poly::{self, Shape};
+use super::resolve::EdgeRef;
+use super::runs::{self, Bend};
 
 /// A planar wall region.
 #[derive(Clone, Debug)]
@@ -24,6 +28,8 @@ pub struct Facade {
     pub mat: MatId,
     /// Non-rectangular convex outline (gables), in (u, v).
     pub outline: Option<Vec<Vec2>>,
+    /// Period of a closed run (round towers): u wraps at this length.
+    pub wrap: Option<f32>,
 }
 
 impl Facade {
@@ -208,8 +214,32 @@ pub fn wall_shape(f: &Facade, cuts: &[Vec<Vec2>]) -> (Shape, Vec<String>) {
     (Shape { outer, holes }, warnings)
 }
 
+/// Copies of cuts crossing the seam of a closed run, shifted by one
+/// period, so both ends of the developed wall get their part.
+fn wrapped(f: &Facade, cuts: &[Cut]) -> Vec<Cut> {
+    let Some(l) = f.wrap else { return cuts.to_vec() };
+    let mut out = cuts.to_vec();
+    for c in cuts {
+        let lo = c.rings.iter().flat_map(|(r, _)| r.iter().map(|p| p.x)).fold(f32::MAX, f32::min);
+        let hi = c.rings.iter().flat_map(|(r, _)| r.iter().map(|p| p.x)).fold(f32::MIN, f32::max);
+        for shift in [l, -l] {
+            if (shift > 0.0 && lo < 0.0) || (shift < 0.0 && hi > l) {
+                let mut k = c.clone();
+                for (r, _) in &mut k.rings {
+                    for p in r.iter_mut() {
+                        p.x += shift;
+                    }
+                }
+                out.push(k);
+            }
+        }
+    }
+    out
+}
+
 /// Builds the wall face, reveals and recess planes of a facade.
 pub fn build(geo: &mut Geo, f: &Facade, cuts: &[Cut]) -> Vec<String> {
+    let cuts = &wrapped(f, cuts)[..];
     let outers: Vec<Vec<Vec2>> = cuts.iter().map(|c| c.outer().to_vec()).collect();
     let (shape, warnings) = wall_shape(f, &outers);
     mesh::planar_shape(geo.get(f.mat), &shape, &f.plane, false, Vec2::new(f.uv_off, 0.0));
@@ -272,6 +302,174 @@ pub fn grow(outline: &[Vec2], center_u: f32, bottom: f32, w: f32, h: f32, dw: f3
     outline.iter().map(|p| Vec2::new(center_u + (p.x - center_u) * sx, bottom + (p.y - bottom) * sy)).collect()
 }
 
+/// A facade with its place in the plan: one straight edge (gables,
+/// arcades: `bend = None`, the facade plane is in world space) or a run of
+/// edges developed flat (`bend`, the facade plane is the canonical flat
+/// frame and geometry is bent onto the plan by [`Run::place`]).
+#[derive(Clone, Debug)]
+pub struct Run {
+    pub facade: Facade,
+    pub bend: Option<Arc<Bend>>,
+    /// Plan edges of the run with their `[u0, u1]` range on the facade.
+    pub edges: Vec<(EdgeRef, f32, f32)>,
+}
+
+impl Run {
+    /// A single facade in world space.
+    pub fn plain(facade: Facade, e: EdgeRef) -> Run {
+        let len = facade.len;
+        Run { facade, bend: None, edges: vec![(e, 0.0, len)] }
+    }
+
+    /// World point of facade coordinates `(u, v)` at `d` in front.
+    pub fn world(&self, u: f32, v: f32, d: f32) -> Vec3 {
+        match &self.bend {
+            Some(b) => {
+                let (p, n) = b.frame(u);
+                Vec3::new(p.x + n.x * d, v, p.y + n.y * d)
+            }
+            None => self.facade.plane.at_d(Vec2::new(u, v), d),
+        }
+    }
+
+    /// Outward plan normal at `u` (the facet's own, not smoothed).
+    pub fn normal(&self, u: f32) -> Vec2 {
+        match &self.bend {
+            Some(b) => b.seg_normal(u),
+            None => Vec2::new(self.facade.plane.n.x, self.facade.plane.n.z).normalize_or(Vec2::Y),
+        }
+    }
+
+    /// Smoothed outward plan normal at `u`.
+    pub fn smooth_normal(&self, u: f32) -> Vec2 {
+        match &self.bend {
+            Some(b) => b.frame(u).1,
+            None => self.normal(u),
+        }
+    }
+
+    /// Facade u of a point at parameter `t` along plan edge `e`.
+    pub fn u_of(&self, e: EdgeRef, t: f32) -> Option<f32> {
+        self.edges.iter().find(|(x, _, _)| *x == e).map(|(_, u0, u1)| u1 - (u1 - u0) * t)
+    }
+
+    /// Moves flat facade geometry into the world.
+    pub fn place(&self, flat: &Geo, dst: &mut Geo) {
+        match &self.bend {
+            Some(b) => b.warp_geo(flat, dst),
+            None => dst.append(flat, &Mat4::IDENTITY),
+        }
+    }
+
+    pub fn closed(&self) -> bool {
+        self.bend.as_ref().is_some_and(|b| b.closed)
+    }
+
+    /// Which plan edges this facade is, for messages: "edge 3",
+    /// "edges 0..10", "courtyard 1 edge 2".
+    pub fn label(&self) -> String {
+        let mut ids: Vec<usize> = self.edges.iter().map(|(e, _, _)| e.i).collect();
+        ids.sort_unstable();
+        let ring = self.edges.first().map(|(e, _, _)| e.ring).unwrap_or(0);
+        let head = if ring == 0 { String::new() } else { format!("courtyard {ring} ") };
+        match ids.as_slice() {
+            [] => format!("{head}facade"),
+            [one] => format!("{head}edge {one}"),
+            [a, .., b] if b - a + 1 == ids.len() => format!("{head}edges {a}..{b}"),
+            _ => format!("{head}edges {}", ids.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", ")),
+        }
+    }
+}
+
+/// Default turn below which consecutive plan edges form one facade run.
+pub const RUN_ANGLE: f32 = 25.0;
+
+/// Developed facades of every ring of `shape`: edges are chained into
+/// runs wherever the plan turns by less than `run_angle` degrees, and
+/// split at sharper corners and around `skip` edges (open sides).
+/// `smooth` shades every vertex of a run smoothly (otherwise only those
+/// turning less than 20 degrees).
+pub fn runs_of(shape: &Shape, y0: f32, y1: f32, mat: MatId, run_angle: f32, smooth: bool, skip: &[EdgeRef]) -> Vec<Run> {
+    let mut out = Vec::new();
+    for (r, (ring, _)) in shape.rings().enumerate() {
+        ring_runs(ring, r, true, y0, y1, mat, run_angle, smooth, skip, &mut out);
+    }
+    out
+}
+
+/// Runs along an open (or closed) polyline whose facade faces its right
+/// side (free-standing walls). Edge `i` is the segment `i -> i + 1`.
+pub fn path_runs(path: &[Vec2], closed: bool, y0: f32, y1: f32, mat: MatId, run_angle: f32, smooth: bool) -> Vec<Run> {
+    let mut out = Vec::new();
+    ring_runs(path, 0, closed, y0, y1, mat, run_angle, smooth, &[], &mut out);
+    out
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ring_runs(ring: &[Vec2], r: usize, closed_ring: bool, y0: f32, y1: f32, mat: MatId, run_angle: f32, smooth: bool, skip: &[EdgeRef], out: &mut Vec<Run>) {
+    let flat = Plane::new(Vec3::ZERO, Vec3::X, Vec3::Y);
+    let n = ring.len();
+    if n < 2 || (closed_ring && n < 3) {
+        return;
+    }
+    let edges_n = if closed_ring { n } else { n - 1 };
+    let per = poly::perimeter(ring);
+    // Ring position of each vertex (for continuous texture u).
+    let mut pos = vec![0.0f32; n + 1];
+    for i in 0..n {
+        pos[i + 1] = pos[i] + (ring[(i + 1) % n] - ring[i]).length();
+    }
+    let open: Vec<bool> = (0..n).map(|i| i >= edges_n || skip.contains(&EdgeRef { ring: r, i }) || (ring[(i + 1) % n] - ring[i]).length() < 1e-4).collect();
+    let corner = runs::corners(ring, closed_ring, run_angle);
+    // A vertex breaks a run when it is a corner or touches an open edge.
+    let breaks: Vec<bool> = (0..n).map(|i| corner[i] || open[i] || open[(i + n - 1) % n]).collect();
+    let mut chains: Vec<(usize, usize, bool)> = Vec::new();
+    if !breaks.iter().any(|b| *b) {
+        chains.push((0, n, true));
+    } else {
+        let start = (0..n).find(|&i| breaks[i]).unwrap();
+        let mut k = 0;
+        while k < n {
+            let i = (start + k) % n;
+            if open[i] {
+                k += 1;
+                continue;
+            }
+            // Chain of edges from vertex i until the next break.
+            let mut len = 1;
+            while k + len < n && !breaks[(start + k + len) % n] {
+                len += 1;
+            }
+            chains.push((i, len, false));
+            k += len;
+        }
+    }
+    for (first, count, closed) in chains {
+        // Facade order runs against the ring: from the chain's last vertex
+        // back to its first.
+        let mut pts: Vec<Vec2> = (0..=count).map(|k| ring[(first + count - k) % n]).collect();
+        if closed {
+            pts.pop();
+        }
+        let Some(bend) = Bend::new(&pts, closed, if smooth { 179.0 } else { 20.0 }) else { continue };
+        let len = bend.len();
+        let mut edges = Vec::with_capacity(count);
+        // Edge i spans u from its end vertex (smaller u) to its start.
+        let mut u = 0.0;
+        for k in 0..count {
+            let i = (first + count - 1 - k) % n;
+            let l = (ring[(i + 1) % n] - ring[i]).length();
+            edges.push((EdgeRef { ring: r, i }, u, u + l));
+            u += l;
+        }
+        let end = first + count;
+        let end_pos = if end >= n { pos[end - n] + if end - n == 0 { per } else { 0.0 } } else { pos[end] };
+        let uv_off = if closed { 0.0 } else { per - end_pos };
+        let facade = Facade { plane: flat, len, v0: y0, v1: y1, uv_off, mat, outline: None, wrap: closed.then_some(len) };
+        out.push(Run { facade, bend: Some(Arc::new(bend)), edges });
+    }
+}
+
 /// 3D point helper for details on a facade.
 pub fn pt(f: &Facade, u: f32, v: f32, out: f32) -> Vec3 {
     f.plane.at_d(Vec2::new(u, v), out)
@@ -284,7 +482,7 @@ mod tests {
     use crate::landmark::spec::ArchKind;
 
     fn facade() -> Facade {
-        Facade { plane: Plane::new(Vec3::ZERO, Vec3::X, Vec3::Y), len: 10.0, v0: 0.0, v1: 6.0, uv_off: 0.0, mat: 0, outline: None }
+        Facade { plane: Plane::new(Vec3::ZERO, Vec3::X, Vec3::Y), len: 10.0, v0: 0.0, v1: 6.0, uv_off: 0.0, mat: 0, outline: None, wrap: None }
     }
 
     #[test]

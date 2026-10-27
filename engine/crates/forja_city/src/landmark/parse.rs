@@ -152,8 +152,51 @@ fn refine(text: &str, start: usize, message: &str) -> Option<(usize, usize)> {
     None
 }
 
+/// Byte offset and text of the first `nan` / `inf` value (valid TOML, but
+/// never a meaningful dimension), skipping strings, comments and keys.
+pub fn non_finite(text: &str) -> Option<(usize, &str)> {
+    let b = text.as_bytes();
+    let mut i = 0;
+    let find = |from: usize, pat: &str| text[from..].find(pat).map(|k| from + k + pat.len()).unwrap_or(b.len());
+    while i < b.len() {
+        match b[i] {
+            b'#' => i = find(i, "\n"),
+            b'"' if text[i..].starts_with("\"\"\"") => i = find(i + 3, "\"\"\""),
+            b'\'' if text[i..].starts_with("\'\'\'") => i = find(i + 3, "\'\'\'"),
+            b'"' => {
+                i += 1;
+                while i < b.len() && b[i] != b'"' && b[i] != b'\n' {
+                    i += if b[i] == b'\\' { 2 } else { 1 };
+                }
+                i += 1;
+            }
+            b'\'' => i = find(i + 1, "\'"),
+            c if c.is_ascii_alphanumeric() || c == b'_' || c == b'+' || c == b'-' => {
+                let start = i;
+                while i < b.len() && (b[i].is_ascii_alphanumeric() || matches!(b[i], b'_' | b'+' | b'-' | b'.' | b':')) {
+                    i += 1;
+                }
+                let tok = &text[start..i];
+                let bare = tok.trim_start_matches(['+', '-']);
+                if bare == "nan" || bare == "inf" {
+                    let rest = text[i..].trim_start_matches([' ', '\t']);
+                    if !rest.starts_with('=') && !rest.starts_with('.') {
+                        return Some((start, tok));
+                    }
+                }
+            }
+            _ => i += 1,
+        }
+    }
+    None
+}
+
 /// Parses `landmark.toml` text. `origin` names the file in messages.
 pub fn parse_spec(text: &str, origin: &str) -> Result<Spec> {
+    if let Some((at, tok)) = non_finite(text) {
+        let (l, c) = line_col(text, at);
+        return Err(Error::msg(format!("`{tok}` is not a finite number; every dimension must be a real value")).at(format!("{origin}:{l}:{c}"), Some(snippet(text, at, tok.len()))));
+    }
     match toml::from_str::<Spec>(text) {
         Ok(s) => Ok(s),
         Err(e) => {
@@ -212,6 +255,16 @@ radus = 4.0
         assert!(s.contains("landmark.toml:8:1"), "{s}");
         assert!(s.contains("did you mean `radius`"), "{s}");
         assert!(s.contains("^^^^^"), "{s}");
+    }
+
+    #[test]
+    fn non_finite_numbers_are_rejected_with_position() {
+        let t = "[landmark]\nname = \"x # nan\"\n# inf here\n[[element]]\ntype = \"mass\"\npolygon = \"square:4\"\nheight = nan\n";
+        let s = parse_spec(t, "f").unwrap_err().to_string();
+        assert!(s.contains("f:7:10") && s.contains("not a finite"), "{s}");
+        let t = "[landmark]\nname = \"x\"\n[[element]]\ntype = \"box\"\nsize = [1, -inf, 2]\n";
+        assert!(parse_spec(t, "f").unwrap_err().to_string().contains("f:5:12"));
+        assert!(non_finite("a = \"nan\"\nb = 'inf'\nc = 1.5 # nan\n").is_none());
     }
 
     #[test]

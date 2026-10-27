@@ -15,6 +15,7 @@ forja_world.workspace = true
 forja_render.workspace = true
 forja_input.workspace = true
 forja_gameplay.workspace = true
+forja_ai = { workspace = true, features = ["city"] }
 winit.workspace = true
 egui.workspace = true
 egui-wgpu.workspace = true

@@ -132,6 +132,27 @@ impl Manifest {
     pub fn get(&self, id: &str) -> Option<&AssetEntry> {
         self.assets.iter().find(|a| a.id == id)
     }
+
+    /// What a player needs: every asset that downloads without an account
+    /// or a browser, keeping only [`PLAY_AVATARS`] of the Rocketbox people
+    /// (each is ~90 MB of uncompressed textures).
+    pub fn play_set(&self) -> Vec<&AssetEntry> {
+        self.assets
+            .iter()
+            .filter(|a| a.sketchfab.is_none() && a.manual.is_none())
+            .filter(|a| !a.id.starts_with("rocketbox_") || PLAY_AVATARS.contains(&a.id.as_str()))
+            .collect()
+    }
+}
+
+/// Rocketbox avatars in the player download: the player's own first choice
+/// plus a varied crowd.
+pub const PLAY_AVATARS: [&str; 4] = ["rocketbox_male_adult_08", "rocketbox_business_male_01", "rocketbox_female_adult_05", "rocketbox_business_female_01"];
+
+/// Play-set assets not yet downloaded under `root`.
+pub fn missing_play_assets(root: &Path) -> Vec<String> {
+    let Ok(m) = Manifest::load(&root.join("data/assets.toml")) else { return Vec::new() };
+    m.play_set().into_iter().filter(|a| !asset_dir(root, &a.id).exists()).map(|a| a.id.clone()).collect()
 }
 
 /// `data/assets.lock.toml`: SHA-256 of every downloaded file, keyed by
@@ -154,9 +175,17 @@ impl Lock {
 }
 
 /// Engine root: the directory holding `data/assets.toml`, searched upwards
-/// from the current directory.
+/// from the current directory, then from the executable. A release keeps
+/// `data/` next to the executable, which wins so it runs from anywhere.
 pub fn find_engine_root() -> Option<PathBuf> {
-    let mut dir = std::env::current_dir().ok()?;
+    let exe = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf));
+    if let Some(dir) = exe.as_ref().filter(|d| d.join("data/assets.toml").is_file()) {
+        return Some(dir.clone());
+    }
+    std::env::current_dir().ok().and_then(search_up).or_else(|| exe.and_then(search_up))
+}
+
+fn search_up(mut dir: PathBuf) -> Option<PathBuf> {
     loop {
         if dir.join("data/assets.toml").is_file() {
             return Some(dir);

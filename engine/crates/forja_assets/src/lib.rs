@@ -167,6 +167,10 @@ pub struct MaterialData {
     pub subsurface: f32,
     /// Leaf / frond / impostor shading (see [`FoliageShading`]).
     pub foliage: Option<FoliageShading>,
+    /// KHR_materials_specular factor: scales the Fresnel reflectance of
+    /// dielectrics (1 = F0 0.04). Porous masonry, unglazed clay and lime
+    /// render reflect less than their solid mineral (~0.65-0.8).
+    pub specular: f32,
 }
 
 /// Foliage shading for alpha-tested cards: normals are not flipped on back
@@ -209,6 +213,7 @@ impl Default for MaterialData {
             clearcoat_roughness: 0.03,
             subsurface: 0.0,
             foliage: None,
+            specular: 1.0,
         }
     }
 }
@@ -432,6 +437,7 @@ pub fn load_gltf(path: &Path) -> Result<SceneData, AssetError> {
             clearcoat_roughness: clearcoat(&doc, m.index()).1,
             subsurface: 0.0,
             foliage: None,
+            specular: m.specular().map(|s| s.specular_factor()).unwrap_or(1.0),
         });
     }
     let default_material = scene.materials.len();

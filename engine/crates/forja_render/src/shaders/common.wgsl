@@ -1,39 +1,25 @@
-const PI: f32 = 3.14159265359;
-// Shared frame data. Must match `FrameUniforms` in frame.rs.
-struct Light {
-    pos_radius: vec4<f32>,
-    color: vec4<f32>,
-};
-
-struct Frame {
-    view_proj: mat4x4<f32>,
-    view: mat4x4<f32>,
-    inv_view_proj: mat4x4<f32>,
-    camera_pos: vec4<f32>,      // w: time (s)
-    sun_dir: vec4<f32>,         // toward the sun; w: sun illuminance scale
-    sun_color: vec4<f32>,       // transmitted sun radiance; w: exposure
-    sky_zenith: vec4<f32>,      // ambient sky colors for lighting
-    sky_horizon: vec4<f32>,     // w: fog density
-    ground_color: vec4<f32>,    // w: fog height falloff
-    cascade_splits: vec4<f32>,  // view-space far distance per cascade
-    cascade_vp: array<mat4x4<f32>, 4>,
-    params: vec4<f32>,          // x: light count, y: 1 / shadow size, z: bloom strength, w: debug view
-    screen: vec4<f32>,          // xy: size, zw: 1 / size
-    sh: array<vec4<f32>, 9>,    // irradiance / pi (HDRI mode)
-    env_params: vec4<f32>,      // x: 1 = HDRI image lighting, y: max mip, z: intensity
-    prev_view_proj: mat4x4<f32>,// previous frame, unjittered (TAA / SSR reprojection)
-    proj_params: vec4<f32>,     // x: 1/P00, y: 1/P11, z: near, w: pixels per world unit at distance 1
-    jitter: vec4<f32>,          // xy: sub-pixel jitter (NDC), z: frame index, w: 1 = history valid
-    cascade_texel: vec4<f32>,   // world size of one shadow texel per cascade
-    cascade_range: vec4<f32>,   // world depth range of each cascade (light space)
-    fx: vec4<f32>,              // x: SSAO strength, y: contact shadows, z: SSR, w: sun angular diameter (rad)
-    ao_params: vec4<f32>,       // x: AO radius (m), y: specular occlusion strength, z: SSR max distance (m), w: unused
-    lights: array<Light, 64>,
-};
-
-@group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(3) var env_tex: texture_2d<f32>;
 @group(0) @binding(4) var env_samp: sampler;
+@group(0) @binding(5) var<storage, read> local_lights: array<LocalLight>;
+// Per cluster: a light count, then u16 light indices packed in pairs.
+@group(0) @binding(6) var<storage, read> clusters: array<u32>;
+
+// Eye adaptation state (exposure.wgsl). Lighting is written to the HDR
+// targets pre-multiplied by `pre` (the exposure of the previous frame,
+// Frostbite-style pre-exposure) so night scenes keep full f16 precision;
+// `pre` is 1 with manual exposure, which leaves the daytime path unchanged.
+struct ExposureState {
+    pre: f32,         // pre-exposure of this frame's HDR image
+    prev_pre: f32,    // pre-exposure of the history (last frame)
+    exposure: f32,    // display exposure (tonemap multiplies by exposure / pre)
+    avg_log: f32,     // log2 of the adapted scene luminance (units)
+};
+@group(0) @binding(7) var<storage, read> exposure_state: ExposureState;
+
+// Split-sum DFG LUT (r: A, g: B) for image-based specular (brdf.rs).
+@group(0) @binding(9) var dfg_tex: texture_2d<f32>;
+
+const CLUSTER_STRIDE: u32 = 49u;
 
 // Interleaved gradient noise (Jimenez 2014), animated per frame so TAA
 // integrates it.
@@ -168,21 +154,98 @@ fn env_brdf(f0: vec3<f32>, rough: f32, nv: f32) -> vec3<f32> {
     return f0 * ab.x + vec3<f32>(ab.y);
 }
 
+// Split-sum directional albedo (A, B) of the specular BRDF, from the
+// precomputed LUT (`brdf.rs`): E(v) = F0 * A + B.
+fn dfg_terms(rough: f32, nv: f32) -> vec2<f32> {
+    let uv = vec2<f32>(clamp(nv, 0.0, 1.0), clamp(rough, 0.0, 1.0)) * (31.0 / 32.0) + vec2<f32>(0.5 / 32.0);
+    return textureSampleLevel(dfg_tex, env_samp, uv, 0.0).rg;
+}
+
+// Image-based specular with multiple-scattering energy compensation
+// (Fdez-Aguera 2019, "A Multiple-Scattering Microfacet Model for Real-Time
+// Image-based Lighting", JCGT 8(1)). Returns the weights of the prefiltered
+// radiance (x3, single scattering with roughness-dependent Fresnel) and of
+// the cosine-weighted irradiance (multiple scattering), plus the diffuse
+// weight 1 - (FssEss + FmsEms) that keeps the sum energy conserving.
+// `k` scales the dielectric Fresnel (material specular factor).
+struct IblWeights {
+    spec: vec3<f32>,
+    multi: vec3<f32>,
+    diffuse: vec3<f32>,
+};
+
+fn legacy(bit: u32) -> bool {
+    return (u32(frame.env_params.w + 0.5) & bit) != 0u;
+}
+
+fn ibl_weights(f0: vec3<f32>, k: f32, rough: f32, nv: f32) -> IblWeights {
+    var w: IblWeights;
+    if (legacy(2u)) {
+        w.spec = env_brdf(f0, rough, nv) * k;
+        w.multi = vec3<f32>(0.0);
+        w.diffuse = vec3<f32>(1.0);
+        return w;
+    }
+    let ab = dfg_terms(rough, nv);
+    let fr = max(vec3<f32>(1.0 - rough), f0) - f0;
+    let ks = f0 + fr * pow(1.0 - nv, 5.0);
+    let fss_ess = ks * ab.x + vec3<f32>(ab.y);
+    let ess = ab.x + ab.y;
+    let ems = 1.0 - ess;
+    let f_avg = f0 + (vec3<f32>(1.0) - f0) / 21.0;
+    let fms_ems = ems * fss_ess * f_avg / (vec3<f32>(1.0) - ems * f_avg);
+    w.spec = fss_ess * k;
+    w.multi = fms_ems * k;
+    w.diffuse = max(vec3<f32>(1.0) - (fss_ess + fms_ems) * k, vec3<f32>(0.0));
+    return w;
+}
+
+// Energy lost by single-scattering GGX restored for analytic lights
+// (Kulla & Conty 2017, as approximated in Filament): 1 + F0 (1 / Ess - 1).
+fn spec_energy(f0: vec3<f32>, rough: f32, nv: f32) -> vec3<f32> {
+    if (legacy(2u)) { return vec3<f32>(1.0); }
+    let ab = dfg_terms(rough, nv);
+    return vec3<f32>(1.0) + f0 * (1.0 / max(ab.x + ab.y, 0.05) - 1.0);
+}
+
+// Geometric specular anti-aliasing (Kaplanyan et al. 2016; Tokuyoshi &
+// Kaplanyan 2019, "Improved Geometric Specular Antialiasing"): widen the
+// GGX lobe by the variance of the shading normal across the pixel
+// footprint so curved and bumpy surfaces do not alias into sparkles, plus
+// the normal-map variance left in a filtered (shortened) mip normal
+// (Toksvig 2005 / vMF fit of Han et al. 2007). Takes and returns alpha^2.
+// `n` must be computed in uniform control flow (screen derivatives).
+fn specular_aa(n: vec3<f32>, a2: f32, nm_len: f32, nm_scale: f32) -> f32 {
+    let dndu = dpdx(n);
+    let dndv = dpdy(n);
+    let variance = 0.15915494 * (dot(dndu, dndu) + dot(dndv, dndv));
+    let kernel = min(2.0 * variance, 0.18);
+    if (legacy(4u)) { return a2; }
+    // vMF: kappa = (3L - L^3) / (1 - L^2), alpha^2 ~ 2 / kappa; a small dead
+    // zone ignores 8-bit quantization of unfiltered normal maps.
+    let l = clamp(nm_len, 0.0, 1.0);
+    let toksvig = 2.0 * max(1.0 - l * l - 0.004, 0.0) / max(3.0 * l - l * l * l, 1e-3) * nm_scale * nm_scale;
+    return clamp(a2 + kernel + min(toksvig, 0.25), 0.0, 1.0);
+}
+
 fn ambient_sky(n: vec3<f32>) -> vec3<f32> {
     if (frame.env_params.x > 0.5) {
-        return sh_irradiance(n);
+        return sh_irradiance(n) + ambient_fill();
     }
     let up = n.y * 0.5 + 0.5;
     let sky = mix(frame.sky_horizon.rgb, frame.sky_zenith.rgb, clamp(n.y, 0.0, 1.0));
-    return mix(frame.ground_color.rgb, sky, smoothstep(0.0, 1.0, up));
+    return mix(frame.ground_color.rgb, sky, smoothstep(0.0, 1.0, up)) + ambient_fill();
 }
 
 // Blurry environment reflection from the analytic sky colors.
 fn env_reflection(r: vec3<f32>, rough: f32) -> vec3<f32> {
     if (frame.env_params.x > 0.5) {
-        // Mip 0 holds the sun; start reflections at mip 1 to avoid double
-        // counting the analytic sun highlight.
-        let lod = 1.0 + rough * (frame.env_params.y - 1.0);
+        // Mip 0 holds the sun; reflections start at mip 1 (the sun is the
+        // analytic highlight). Mips 1.. are GGX-prefiltered (split-sum) for
+        // roughness r = 1 - sqrt(1 - x), x = (lod - 1) / (max - 1)
+        // (`env::mip_roughness`).
+        var lod = 1.0 + rough * (2.0 - rough) * (frame.env_params.y - 1.0);
+        if (legacy(1u)) { lod = 1.0 + rough * (frame.env_params.y - 1.0); }
         return textureSampleLevel(env_tex, env_samp, equirect_uv(r), lod).rgb;
     }
     let sharp = mix(frame.sky_horizon.rgb, frame.sky_zenith.rgb, pow(clamp(r.y, 0.0, 1.0), 0.5));
@@ -192,6 +255,23 @@ fn env_reflection(r: vec3<f32>, rough: f32) -> vec3<f32> {
     return mix(env, ambient_sky(r), rough) + sun_glint;
 }
 
+
+// Mean radiance of the environment over the sphere (what an isotropic
+// scatterer sees).
+fn ambient_mean() -> vec3<f32> {
+    if (frame.env_params.x > 0.5) {
+        return frame.sh[0].rgb * 0.282095;
+    }
+    return (frame.sky_zenith.rgb + frame.sky_horizon.rgb * 2.0 + frame.ground_color.rgb) * 0.25;
+}
+
+// Aerial perspective: single scattering in an exponential aerosol layer
+// (density `sky_horizon.w` at sea level, inverse scale height
+// `ground_color.w`) plus clear-air Rayleigh. Light scattered in comes from
+// the sun through a Henyey-Greenstein lobe and from the sky's mean
+// radiance, so the haze is blue-grey away from the sun and brighter toward
+// it, and it only shows over real distances (30 km visibility: 1.3% at
+// 100 m, 5% at 400 m).
 fn height_fog(color: vec3<f32>, world_pos: vec3<f32>, view_dir: vec3<f32>) -> vec3<f32> {
     let cam = frame.camera_pos.xyz;
     let dist = length(world_pos - cam);
@@ -199,11 +279,175 @@ fn height_fog(color: vec3<f32>, world_pos: vec3<f32>, view_dir: vec3<f32>) -> ve
     let falloff = frame.ground_color.w;
     let dy = world_pos.y - cam.y;
     var integral = dist * exp(-falloff * max(cam.y, 0.0));
+    if (abs(dy * falloff) > 1e-4) {
+        integral *= (1.0 - exp(-falloff * dy)) / (falloff * dy);
+    }
+    if (frame.params.w < 0.5) {
+        // Night camera (Environment::camera = CameraModel::Night): the grey height fog
+        // the night presets were tuned with; their lamps glow in it through
+        // `local_inscatter`.
+        let fog = 1.0 - exp(-density * integral);
+        let sun_amount = pow(max(dot(view_dir, frame.sun_dir.xyz), 0.0), 8.0);
+        let fog_color = mix(frame.sky_horizon.rgb, frame.sun_color.rgb * 0.5, sun_amount * 0.5);
+        return mix(color, fog_color, clamp(fog, 0.0, 1.0));
+    }
+    // Optical depths: aerosol (grey) and Rayleigh (per channel, 1/m).
+    let tau_m = density * integral;
+    let tau_r = vec3<f32>(5.8e-6, 13.6e-6, 33.1e-6) * dist;
+    let tau = vec3<f32>(tau_m) + tau_r;
+    let trans = exp(-tau);
+    let c = dot(view_dir, frame.sun_dir.xyz);
+    let sun = frame.sun_color.rgb;
+    let amb = ambient_mean();
+    // Source functions: aerosol single-scattering albedo 0.9, g = 0.7.
+    let j_m = (sun * phase_hg(c, 0.7) + amb) * 0.9;
+    let j_r = sun * phase_rayleigh(c) + amb;
+    let inscatter = (j_m * tau_m + j_r * tau_r) / max(tau, vec3<f32>(1e-9));
+    return color * trans + inscatter * (vec3<f32>(1.0) - trans);
+}
+
+// ---- Clustered local lights -------------------------------------------------
+
+fn cluster_base(pix: vec2<f32>, slice: u32) -> u32 {
+    let tile = vec2<u32>(clamp(pix / frame.cluster.w, vec2<f32>(0.0), frame.cluster.xy - vec2<f32>(1.0)));
+    let tx = u32(frame.cluster.x);
+    let ty = u32(frame.cluster.y);
+    return ((slice * ty + tile.y) * tx + tile.x) * CLUSTER_STRIDE;
+}
+
+// Cluster of a pixel at linear view depth `z`.
+fn cluster_of(pix: vec2<f32>, z: f32) -> u32 {
+    let s = clamp(log(max(z, 1e-3) / frame.cluster_z.x) * frame.cluster_z.z, 0.0, frame.cluster.z - 1.0);
+    return cluster_base(pix, u32(s));
+}
+
+// The whole-column bucket of a pixel's tile (fog in-scattering).
+fn column_of(pix: vec2<f32>) -> u32 {
+    return cluster_base(pix, u32(frame.cluster.z));
+}
+
+fn cluster_light(base: u32, i: u32) -> u32 {
+    let w = clusters[base + 1u + (i >> 1u)];
+    return select(w & 0xffffu, w >> 16u, (i & 1u) == 1u);
+}
+
+fn spot_cone(l: LocalLight, from_light: vec3<f32>) -> f32 {
+    let c = clamp(dot(from_light, l.dir.xyz) * l.params.x + l.params.y, 0.0, 1.0);
+    return c * c;
+}
+
+// Smooth range window (Karis 2013).
+fn range_window(d2: f32, r: f32) -> f32 {
+    let x = d2 / (r * r);
+    let w = clamp(1.0 - x * x, 0.0, 1.0);
+    return w * w;
+}
+
+// Henyey-Greenstein phase function (1/sr).
+fn phase_hg(cos_t: f32, g: f32) -> f32 {
+    let g2 = g * g;
+    return (1.0 - g2) / (4.0 * PI * pow(max(1.0 + g2 - 2.0 * g * cos_t, 1e-4), 1.5));
+}
+
+// Height-fog extinction coefficient at height y (m^-1).
+fn fog_sigma(y: f32) -> f32 {
+    return frame.sky_horizon.w * exp(-frame.ground_color.w * max(y, 0.0));
+}
+
+// Light scattered toward the camera by the height fog from the local lights
+// of this pixel's tile column, between the camera and `t_max` along `dir`.
+// Each light is integrated in closed form over the angle it subtends
+// (equiangular parameterization, Kulla & Fajardo 2012: dt / d² = dθ / h),
+// so a point light needs only a few deterministic nodes for the
+// Henyey-Greenstein phase and the fog density; spot cones get more.
+// Gives lamps their halo in haze and spot beams their visible cone.
+// Cost: (3 or 6) x lights within `cluster_z.w` metres in the tile.
+fn local_inscatter(pix: vec2<f32>, dir: vec3<f32>, t_max: f32) -> vec3<f32> {
+    if (frame.lighting.x <= 0.0 || frame.lighting.z <= 0.0 || frame.sky_horizon.w <= 0.0) { return vec3<f32>(0.0); }
+    let cam = frame.camera_pos.xyz;
+    let base = column_of(pix);
+    let n = min(clusters[base], 96u);
+    let g = frame.scatter.x;
+    var acc = vec3<f32>(0.0);
+    for (var i = 0u; i < n; i++) {
+        let l = local_lights[cluster_light(base, i)];
+        let r = l.pos_range.w;
+        let to = l.pos_range.xyz - cam;
+        let tc = dot(to, dir);
+        let h2 = max(dot(to, to) - tc * tc, 0.0);
+        if (h2 >= r * r) { continue; }
+        let half_chord = sqrt(r * r - h2);
+        let ta = max(tc - half_chord, 0.0);
+        let tb = min(tc + half_chord, t_max);
+        if (tb <= ta) { continue; }
+        let h = sqrt(h2 + l.color.w * l.color.w + 1e-4);
+        let th_a = atan((ta - tc) / h);
+        let th_b = atan((tb - tc) / h);
+        let is_spot = l.dir.w > -1.5;
+        let nodes = select(3u, 6u, is_spot);
+        var s = 0.0;
+        for (var k = 0u; k < nodes; k++) {
+            let th = mix(th_a, th_b, (f32(k) + 0.5) / f32(nodes));
+            let t = tc + h * tan(th);
+            let x = cam + dir * t;
+            let lx = x - l.pos_range.xyz;
+            let d2 = dot(lx, lx);
+            let ld = lx * inverseSqrt(max(d2, 1e-8));
+            s += spot_cone(l, ld) * phase_hg(dot(ld, -dir), g) * fog_sigma(x.y) * range_window(d2, r);
+        }
+        acc += l.color.rgb * (s * (th_b - th_a) / (f32(nodes) * h) * abs(l.params.w));
+    }
+    return acc * frame.lighting.z;
+}
+
+// ---- Night sky ---------------------------------------------------------------
+
+fn hash22(p: vec2<f32>) -> vec2<f32> {
+    var q = fract(p * vec2<f32>(123.34, 456.21));
+    q += dot(q, q + 45.32);
+    return fract(vec2<f32>(q.x * q.y, q.x + q.y));
+}
+
+// Night sky radiance: a dark zenith, the orange-grey dome of city light
+// pollution toward the horizon and optional stars (one per cell of a
+// direction grid, ~1.5 px wide so TAA keeps them stable).
+fn night_sky(d: vec3<f32>) -> vec3<f32> {
+    let up = max(d.y, 0.0);
+    var c = frame.night_zenith.rgb + frame.sky_glow.rgb * exp(-up / max(frame.sky_glow.w, 0.005));
+    if (frame.fill.w > 0.0 && d.y > 0.02) {
+        let cells = 220.0;
+        let uv = vec2<f32>(atan2(d.x, d.z) / (2.0 * PI) + 0.5, asin(clamp(d.y, -1.0, 1.0)) / PI + 0.5);
+        let cell = floor(uv * vec2<f32>(cells * 2.0, cells));
+        let h = hash22(cell);
+        let h2 = hash22(cell + vec2<f32>(17.0, 3.0));
+        let center = (cell + 0.2 + 0.6 * h) / vec2<f32>(cells * 2.0, cells);
+        let phi = (center.x - 0.5) * 2.0 * PI;
+        let el = (center.y - 0.5) * PI;
+        let sd = vec3<f32>(cos(el) * sin(phi), sin(el), cos(el) * cos(phi));
+        let ang = acos(clamp(dot(sd, d), -1.0, 1.0)) * frame.proj_params.w;
+        let mag = pow(h2.x, 40.0);
+        // Stars fade into the light-pollution glow near the horizon.
+        let vis = smoothstep(0.05, 0.35, d.y);
+        c += vec3<f32>(0.9, 0.95, 1.1) * (mag * exp(-ang * ang * 1.2) * frame.fill.w * vis);
+    }
+    return c;
+}
+
+// Ambient fill: light bounced around the street by the city's own lamps
+// (no GI here), added to the sky ambient.
+fn ambient_fill() -> vec3<f32> {
+    return frame.fill.rgb;
+}
+
+// Height-fog transmittance from the camera to `p`.
+fn fog_transmittance(p: vec3<f32>) -> f32 {
+    let cam = frame.camera_pos.xyz;
+    let dist = length(p - cam);
+    let falloff = frame.ground_color.w;
+    let dy = p.y - cam.y;
+    var integral = dist * exp(-falloff * max(cam.y, 0.0));
     if (abs(dy) > 0.01) {
         integral *= (1.0 - exp(-falloff * dy)) / (falloff * dy);
     }
-    let fog = 1.0 - exp(-density * integral);
-    let sun_amount = pow(max(dot(view_dir, frame.sun_dir.xyz), 0.0), 8.0);
-    let fog_color = mix(frame.sky_horizon.rgb, frame.sun_color.rgb * 0.5, sun_amount * 0.5);
-    return mix(color, fog_color, clamp(fog, 0.0, 1.0));
+    return exp(-frame.sky_horizon.w * integral);
 }

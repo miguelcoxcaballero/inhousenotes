@@ -1,14 +1,15 @@
 //! Roofs on any plan: flat, gable, shed (planes split along the ridge,
-//! with gable walls), hip (exact straight skeleton on convex plans),
+//! with gable walls), hip (exact straight skeleton on any plan, concave
+//! blocks and courtyards included),
 //! pyramid / tent / spire / cone, mansard, barrel vault and dome. Tile UVs
 //! run along the eaves and up the slope.
 
 use forja_math::{Mat4, Vec2, Vec3};
 
 use super::build::{Builder, Out, Scope};
-use super::facade::{self, Facade};
+use super::facade::{self, Facade, Run};
 use super::mesh::{self, MatId, Plane};
-use super::openings::{self, OpCtx};
+use super::openings::{self, OpCtx, Placed, RunOut};
 use super::parse::{Error, Result};
 use super::poly::{self, Ring, Shape};
 use super::resolve::EdgeRef;
@@ -158,17 +159,22 @@ pub fn roof_shape(b: &mut Builder, p: &RoofParams, shape: &Shape, y: f32, sc: &S
     match p.shape {
         RoofShape::None => Ok(()),
         RoofShape::Flat => {
-            let ring = poly::offset(&outer, overhang).unwrap_or(outer.clone());
-            mesh::prism(o.geo.get(mat), &Shape::new(ring), y, y + thick, true, true);
+            let s = poly::grow_shape(shape, overhang);
+            mesh::prism(o.geo.get(mat), &s, y, y + thick, true, true);
             o.collide_all();
             Ok(())
         }
-        RoofShape::Gable | RoofShape::Shed => planar(b, p, &outer, y, overhang, thick, mat, wall, caps, sc, o),
+        RoofShape::Gable | RoofShape::Shed => {
+            if !shape.holes.is_empty() {
+                b.warn(sc, format!("{} roof over a plan with courtyards: the courtyards are covered; use a hip roof (follows courtyards) or a roof per wing", p.shape.name()));
+            }
+            planar(b, p, &outer, y, overhang, thick, mat, wall, caps, sc, o)
+        }
         RoofShape::Hip => {
-            if poly::is_convex(&outer) {
-                hip(b, p, &outer, y, overhang, thick, mat, caps, o)
+            if hip(b, p, shape, y, overhang, thick, mat, caps, o)? {
+                Ok(())
             } else {
-                b.warn(sc, "hip roof on a concave plan: built as a gable; compose several hip/gable roofs for crisp hips");
+                b.warn(sc, "hip roof: the straight skeleton of this plan failed (self-intersecting outline?); built as a gable");
                 planar(b, &RoofParams { shape: RoofShape::Gable, ..p.clone() }, &outer, y, overhang, thick, mat, wall, caps, sc, o)
             }
         }
@@ -182,7 +188,7 @@ pub fn roof_shape(b: &mut Builder, p: &RoofParams, shape: &Shape, y: f32, sc: &S
             let rx = ((mx.x - mn.x) * 0.5).min(r * 1.6);
             let rz = ((mx.y - mn.y) * 0.5).min(r * 1.6);
             let h = p.height.unwrap_or(rx.min(rz));
-            super::domes::shell_geo(b, mat, Vec3::new(c.x, y, c.y), rx, rz, h, DomeProfile::Hemisphere, None, 0, 0.0, None, 0.0, o);
+            super::domes::shell_geo(b, mat, Vec3::new(c.x, y, c.y), rx, rz, h, DomeProfile::Hemisphere, None, 0, 0.0, None, 0.0, None, o);
             o.collide_all();
             Ok(())
         }
@@ -300,21 +306,74 @@ fn planar(b: &mut Builder, p: &RoofParams, outer: &[Vec2], y: f32, overhang: f32
         let v1 = outline.iter().map(|q| q.y).fold(y, f32::max);
         gables.push((Facade { v1, outline: Some(outline), ..f }, e));
     }
-    let ops: Vec<&Openings> = p.gable_openings.iter().collect();
-    let cx = OpCtx { wall, trim: wall, through: None, room: 1.0 };
-    let cuts = if ops.is_empty() { vec![Vec::new(); gables.len()] } else { openings::on_facades(b, &ops, &gables, &shape, sc, &cx, &mut o.geo)? };
-    for ((f, _), c) in gables.iter().zip(cuts.iter()) {
-        for w in facade::build(&mut o.geo, f, c) {
-            b.warn(sc, w);
-        }
-    }
+    gable_walls(b, p, gables, &shape, wall, sc, o)?;
     o.collide_all();
     Ok(())
 }
 
-/// Hip roof on a convex plan: lower envelope of the eave planes.
+/// Builds gable / end walls with their openings.
+fn gable_walls(b: &mut Builder, p: &RoofParams, gables: Vec<(Facade, EdgeRef)>, shape: &Shape, wall: MatId, sc: &Scope, o: &mut Out) -> Result<()> {
+    let runs: Vec<Run> = gables.into_iter().map(|(f, e)| Run::plain(f, e)).collect();
+    let ops: Vec<&Openings> = p.gable_openings.iter().collect();
+    let cx = OpCtx { wall, trim: wall, through: None, solid: Some(shape) };
+    let placed = if ops.is_empty() { Placed { runs: vec![RunOut::default(); runs.len()], world: mesh::Geo::new(), passages: 0 } } else { openings::on_runs(b, &ops, &runs, shape, sc, &cx)? };
+    for (run, ro) in runs.iter().zip(placed.runs) {
+        let mut g = ro.geo;
+        for w in facade::build(&mut g, &run.facade, &ro.cuts) {
+            b.warn(sc, w);
+        }
+        run.place(&g, &mut o.geo);
+    }
+    o.geo.append(&placed.world, &Mat4::IDENTITY);
+    Ok(())
+}
+
+/// Hip roof on any plan: the faces of the straight skeleton of the eave
+/// ring, lifted at the pitch. `false` when the skeleton fails.
 #[allow(clippy::too_many_arguments)]
-fn hip(b: &mut Builder, p: &RoofParams, outer: &[Vec2], y: f32, overhang: f32, thick: f32, mat: MatId, caps: bool, o: &mut Out) -> Result<()> {
+fn hip(b: &mut Builder, p: &RoofParams, shape: &Shape, y: f32, overhang: f32, thick: f32, mat: MatId, caps: bool, o: &mut Out) -> Result<bool> {
+    let pitch = p.pitch.unwrap_or(30.0).clamp(1.0, 85.0);
+    let mut tanp = pitch.to_radians().tan();
+    let eave = poly::grow_shape(shape, overhang);
+    let Some(sk) = super::skeleton::skeleton(&eave) else { return Ok(false) };
+    if let Some(hh) = p.height {
+        tanp = hh / (sk.max_t - overhang).max(0.1);
+    }
+    let cos_p = 1.0 / (1.0 + tanp * tanp).sqrt();
+    let h_of = move |t: f32| y + tanp * (t - overhang);
+    let prim = o.geo.get(mat);
+    for f in &sk.faces {
+        let ring = if f.ring == 0 { &eave.outer } else { &eave.holes[f.ring - 1] };
+        let n = ring.len();
+        let (a, c) = (ring[f.edge], ring[(f.edge + 1) % n]);
+        let along = (c - a).normalize_or(Vec2::X);
+        let inward = Vec2::new(-along.y, along.x);
+        let hi = |q: Vec2| h_of((q - a).dot(inward));
+        face(prim, &f.pts, &hi, along, a, cos_p, true);
+        let hd = |q: Vec2| hi(q) - thick;
+        face(prim, &f.pts, &hd, along, a, cos_p, false);
+    }
+    if caps {
+        // Caps on ridges and hips, not on the faint creases between the
+        // faces of a curved eave (facets of a curved street front).
+        for arc in sk.arcs.iter().filter(|a| a.turn > 20.0) {
+            cap(prim, Vec3::new(arc.a.x, h_of(arc.ta) + 0.03, arc.a.y), Vec3::new(arc.b.x, h_of(arc.tb) + 0.03, arc.b.y));
+        }
+    }
+    let he = h_of(0.0);
+    let flat = |_: Vec2| he;
+    for (ring, _) in eave.rings() {
+        fascia(prim, ring, &flat, thick);
+    }
+    o.collide_all();
+    let _ = b;
+    Ok(true)
+}
+
+/// Hip roof on a convex plan: lower envelope of the eave planes (kept for
+/// reference tests; [`hip`] covers every plan).
+#[allow(clippy::too_many_arguments, dead_code)]
+fn hip_convex(b: &mut Builder, p: &RoofParams, outer: &[Vec2], y: f32, overhang: f32, thick: f32, mat: MatId, caps: bool, o: &mut Out) -> Result<()> {
     let n = outer.len();
     let pitch = p.pitch.unwrap_or(30.0).clamp(1.0, 85.0);
     let mut tanp = pitch.to_radians().tan();
@@ -459,9 +518,9 @@ fn mansard(b: &mut Builder, p: &RoofParams, outer: &[Vec2], y: f32, overhang: f3
     let up = RoofParams { shape: if m.upper == "flat" { RoofShape::Flat } else { RoofShape::Hip }, pitch: Some(m.upper_pitch), height: None, overhang: Some(0.05), ..p.clone() };
     if m.upper == "flat" {
         mesh::horizontal_shape(o.geo.get(mat), &Shape::new(hi_ring.clone()), y + m.height, true);
-    } else if poly::is_convex(&hi_ring) {
-        hip(b, &up, &hi_ring, y + m.height, 0.05, thick, mat, caps, o)?;
-    } else {
+    } else if m.upper == "pyramid" {
+        apex(b, &RoofParams { shape: RoofShape::Pyramid, ..up }, &hi_ring, y + m.height, 0.05, thick, mat, o)?;
+    } else if !hip(b, &up, &Shape::new(hi_ring.clone()), y + m.height, 0.05, thick, mat, caps, o)? {
         planar(b, &RoofParams { shape: RoofShape::Gable, ..up }, &hi_ring, y + m.height, 0.05, thick, mat, mat, caps, sc, o)?;
     }
     o.collide_all();
@@ -534,14 +593,7 @@ fn barrel(b: &mut Builder, p: &RoofParams, outer: &[Vec2], y: f32, overhang: f32
             gables.push((Facade { v1, outline: Some(outline), ..f }, e));
         }
     }
-    let ops: Vec<&Openings> = p.gable_openings.iter().collect();
-    let cx = OpCtx { wall, trim: wall, through: None, room: 1.0 };
-    let cuts = if ops.is_empty() { vec![Vec::new(); gables.len()] } else { openings::on_facades(b, &ops, &gables, &shape, sc, &cx, &mut o.geo)? };
-    for ((f, _), c) in gables.iter().zip(cuts.iter()) {
-        for w in facade::build(&mut o.geo, f, c) {
-            b.warn(sc, w);
-        }
-    }
+    gable_walls(b, p, gables, &shape, wall, sc, o)?;
     let _ = Plane::horizontal(0.0);
     o.collide_all();
     Ok(())
