@@ -20,7 +20,20 @@ catastro_floor_area = { value = 31198.0, unit = "m2", source = "https://www1.sed
 catastro_floors_max = { value = 2, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 9 parts" }
 
 [[photo]]
-file = "photos/01_Estacio_del_Camp_de_Llevant.jpg"
+file = "photos/01_Estadi_Ciutat_de_Valencia_Vamos_a_subir.jpg"
+title = "File:Estadi Ciutat de València - Vamos a subir.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Estadi_Ciutat_de_Val%C3%A8ncia_-_Vamos_a_subir.jpg"
+author = "Francesc Fort"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 961
+camera = [-69.86, -2.7]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/02_Estacio_del_Camp_de_Llevant.jpg"
 title = "File:Estació del Camp de Llevant.JPG"
 url = "https://commons.wikimedia.org/wiki/File:Estaci%C3%B3_del_Camp_de_Llevant.JPG"
 author = "Coentor"
@@ -32,26 +45,13 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/02_Ciutat_de_Valencia_fuera.jpg"
+file = "photos/03_Ciutat_de_Valencia_fuera.jpg"
 title = "File:Ciutat de València fuera.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Ciutat_de_Val%C3%A8ncia_fuera.jpg"
 author = "https://www.flickr.com/photos/funky1opti/with/4375009283/"
 license = "CC BY 2.0"
 width = 960
 height = 720
-exterior = true
-selected = false
-side = ""
-
-[[photo]]
-file = "photos/03_Bus_Alcorcon_al_Ciutat.jpg"
-title = "File:Bus Alcorcón al Ciutat.jpg"
-url = "https://commons.wikimedia.org/wiki/File:Bus_Alcorc%C3%B3n_al_Ciutat.jpg"
-author = "Francesc Fort"
-license = "CC BY-SA 4.0"
-width = 500
-height = 375
-camera = [-51.51, 0.65]
 exterior = true
 selected = false
 side = ""
@@ -69,7 +69,33 @@ selected = false
 side = ""
 
 [[photo]]
-file = "photos/05_Bus_AD_Alcorcon.jpg"
+file = "photos/05_Estadio_Azul_Grana.jpg"
+title = "File:Estadio Azul Grana.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Estadio_Azul_Grana.jpg"
+author = "Wotancito"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+camera = [-11141391.38, -7478968.38]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/06_Bus_Alcorcon_al_Ciutat.jpg"
+title = "File:Bus Alcorcón al Ciutat.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Bus_Alcorc%C3%B3n_al_Ciutat.jpg"
+author = "Francesc Fort"
+license = "CC BY-SA 4.0"
+width = 500
+height = 375
+camera = [-51.51, 0.65]
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/07_Bus_AD_Alcorcon.jpg"
 title = "File:Bus AD Alcorcón.jpg"
 url = "https://commons.wikimedia.org/wiki/File:Bus_AD_Alcorc%C3%B3n.jpg"
 author = "Francesc Fort"
