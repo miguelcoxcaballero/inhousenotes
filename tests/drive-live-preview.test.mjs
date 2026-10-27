@@ -253,3 +253,118 @@ test('latest-frame serialization retains the byte bound and can recover with the
   assert.equal(api.calls.filter(c=>c.url.includes('/generateIds?')).length,1);
  }finally{gate.release();await sending;a.live.stop();}
 });
+
+test('identical large live frames decode once across fifty reads without changing the path',async()=>{
+ const api=fakeInkDrive(),reader=replica(api,'reader');reader.live.nextList=Infinity;
+ const points=Array.from({length:6000},(_,i)=>({x:i*.25,y:i*.5,p:.75}));
+ const raw=JSON.stringify({v:1,docId:'doc',actor:'writer',frame:1,at:Date.now(),packets:[{...packet(1,0,[]),points}]});
+ api.files.set('cached',{id:'cached',raw});reader.live.hint('cached');
+ const source=reader.live.previewSources.get('cached'),parse=JSON.parse;let parses=0;
+ JSON.parse=(value,...args)=>{if(value===raw)parses++;return parse(value,...args);};
+ try{
+  for(let i=0;i<50;i++)await reader.live.readPreview('cached',source);
+  assert.equal(parses,1);assert.equal(reader.frames.length,1);assert.deepEqual(reader.frames[0].points,points);
+  assert.equal(reader.receipts.length,0);assert.equal(source.frame,1);
+  console.log('DRIVE_PREVIEW_REPEATED_PARSES',JSON.stringify({reads:50,parses,points:points.length,chars:raw.length}));
+ }finally{JSON.parse=parse;reader.live.stop();}
+});
+
+test('cached frames retain the original activity and freshness deadlines',async t=>{
+ t.mock.timers.enable({apis:['Date'],now:100000});
+ const api=fakeInkDrive(),reader=replica(api,'reader');
+ const raw=JSON.stringify({v:1,docId:'doc',actor:'writer',frame:1,at:Date.now(),packets:[packet(1,0,[1,2])]});
+ api.files.set('cached',{id:'cached',raw});reader.live.hint('cached');
+ const source=reader.live.previewSources.get('cached');
+ try{
+  await reader.live.readPreview('cached',source);const activeUntil=source.activeUntil;
+  t.mock.timers.setTime(104999);await reader.live.readPreview('cached',source);
+  assert.equal(source.activeUntil,activeUntil);assert.equal(source.next,105099);
+  t.mock.timers.setTime(105001);await reader.live.readPreview('cached',source);
+  assert.equal(source.activeUntil,activeUntil);assert.equal(source.next,107001);
+  t.mock.timers.setTime(120001);await reader.live.readPreview('cached',source);
+  assert.equal(source.activeUntil,0);assert.equal(source.next,135001);assert.equal(reader.live.readCache.size,0);
+  assert.equal(reader.frames.length,1);
+ }finally{reader.live.stop();t.mock.timers.reset();}
+});
+
+test('changed bytes at the same frame number still validate before final and cancelled paths arrive',async()=>{
+ const api=fakeInkDrive(),reader=replica(api,'reader');
+ const initial={v:1,docId:'doc',actor:'writer',frame:1,at:Date.now(),packets:[packet(1,0,[1,2])]};
+ const file={id:'cached',raw:JSON.stringify(initial)};api.files.set(file.id,file);reader.live.hint(file.id);
+ const source=reader.live.previewSources.get(file.id),parse=JSON.parse;let parses=0;
+ JSON.parse=(value,...args)=>{if(value===file.raw)parses++;return parse(value,...args);};
+ try{
+  await reader.live.readPreview(file.id,source);
+  file.raw=JSON.stringify({...initial,packets:[packet(2,0,[9,10])]});await reader.live.readPreview(file.id,source);
+  assert.equal(parses,2);assert.equal(reader.frames.length,1);
+  file.raw=JSON.stringify({...initial,docId:'other'});await reader.live.readPreview(file.id,source);
+  assert.equal(parses,3);assert.equal(reader.frames.length,1);assert.equal(source.frame,1);
+  file.raw=JSON.stringify({...initial,at:Date.now()-60000});await reader.live.readPreview(file.id,source);
+  assert.equal(parses,4);assert.equal(source.activeUntil,0);assert.ok(source.next>Date.now()+14000);
+  file.raw=JSON.stringify({...initial,frame:2,packets:[packet(3,0,[4,5],{final:true,finalBatch:true,totalPoints:2})]});
+  await reader.live.readPreview(file.id,source);assert.deepEqual(reader.frames.at(-1).points.map(point=>point.x),[4,5]);
+  assert.equal(reader.frames.at(-1).final,true);
+  file.raw=JSON.stringify({...initial,frame:3,packets:[packet(4,0,[],{cancel:true})]});
+  await reader.live.readPreview(file.id,source);assert.equal(reader.frames.at(-1).cancel,true);assert.equal(source.frame,3);
+  assert.equal(reader.receipts.length,0);
+ }finally{JSON.parse=parse;reader.live.stop();}
+});
+
+test('preview decode cache is bounded, evicts least-recently-read frames and cannot cross source identities',async()=>{
+ const api=fakeInkDrive(),reader=replica(api,'reader');reader.live.nextList=Infinity;
+ const rawById=new Map(),parses=new Map();
+ for(let i=0;i<3;i++){
+  const id='cached-'+i,raw=JSON.stringify({v:1,docId:'doc',actor:'writer-'+i,frame:1,at:Date.now(),padding:'x'.repeat(1536*1024),packets:[packet(1,0,[i])]});
+  rawById.set(id,raw);api.files.set(id,{id,raw});reader.live.hint(id);
+ }
+ const parse=JSON.parse;JSON.parse=(value,...args)=>{
+  for(const [id,raw]of rawById)if(value===raw)parses.set(id,(parses.get(id)||0)+1);
+  return parse(value,...args);
+ };
+ const read=id=>reader.live.readPreview(id,reader.live.previewSources.get(id));
+ try{
+  await read('cached-0');await read('cached-1');await read('cached-0');await read('cached-2');
+  assert.ok(reader.live.readCacheChars<=4*1024*1024);assert.equal(reader.live.readCache.size,2);
+  assert.equal(parses.get('cached-0'),1);await read('cached-1');assert.equal(parses.get('cached-1'),2);
+  const emitted=reader.frames.length;reader.live.previewSources.delete('cached-1');reader.live.hint('cached-1');
+  await read('cached-1');assert.equal(parses.get('cached-1'),3);assert.equal(reader.frames.length,emitted+1);
+  reader.live.previewSources.delete('cached-1');
+  for(const source of reader.live.previewSources.values())source.next=Infinity;
+  await reader.live.pollFrames();assert.equal(reader.live.readCache.has('cached-1'),false);
+  reader.live.stop();assert.equal(reader.live.readCache.size,0);assert.equal(reader.live.readCacheChars,0);
+ }finally{JSON.parse=parse;reader.live.stop();}
+});
+
+test('failed preview callbacks and failed HTTP reads never become successful cache proofs',async t=>{
+ t.mock.timers.enable({apis:['Date'],now:100000});
+ const api=fakeInkDrive(),reader=replica(api,'reader');
+ const raw=JSON.stringify({v:1,docId:'doc',actor:'writer',frame:1,at:Date.now(),packets:[packet(1,0,[1,2])]});
+ api.files.set('cached',{id:'cached',raw});reader.live.hint('cached');
+ const source=reader.live.previewSources.get('cached'),preview=reader.live.host.preview,fetch=reader.live.host.fetch,parse=JSON.parse;let parses=0;
+ JSON.parse=(value,...args)=>{if(value===raw)parses++;return parse(value,...args);};
+ try{
+  reader.live.host.preview=()=>{throw Error('Preview draw failed');};await reader.live.readPreview('cached',source);
+  assert.equal(source.frame,0);assert.equal(source.next,103000);assert.equal(reader.live.readCache.size,0);
+  reader.live.host.preview=preview;await reader.live.readPreview('cached',source);
+  assert.equal(parses,2);assert.equal(reader.frames.length,1);assert.equal(source.frame,1);
+  reader.live.host.fetch=async()=>new Response('{}',{status:503});await reader.live.readPreview('cached',source);
+  assert.equal(source.next,103000);assert.equal(reader.frames.length,1);
+  reader.live.host.fetch=fetch;await reader.live.readPreview('cached',source);
+  assert.equal(parses,2);assert.equal(reader.frames.length,1);
+ }finally{JSON.parse=parse;reader.live.stop();t.mock.timers.reset();}
+});
+
+test('stopping during a cached-source read releases memory and ignores its late response',async()=>{
+ const api=fakeInkDrive(),reader=replica(api,'reader'),gate=previewGate();
+ const frame={v:1,docId:'doc',actor:'writer',frame:1,at:Date.now(),packets:[packet(1,0,[1,2])]};
+ api.files.set('cached',{id:'cached',raw:JSON.stringify(frame)});reader.live.hint('cached');
+ const source=reader.live.previewSources.get('cached');await reader.live.readPreview('cached',source);
+ assert.ok(reader.live.readCacheChars>0);
+ reader.live.host.fetch=async()=>{await gate.promise;return new Response(JSON.stringify({...frame,frame:2,packets:[packet(2,0,[3,4])]}));};
+ const reading=reader.live.readPreview('cached',source);
+ try{
+  await nextPreviewTurn();reader.live.stop();assert.equal(reader.live.readCacheChars,0);
+  gate.release();await reading;
+  assert.equal(reader.frames.length,1);assert.equal(reader.live.readCache.size,0);assert.equal(reader.live.readCacheChars,0);
+ }finally{gate.release();await reading;reader.live.stop();}
+});

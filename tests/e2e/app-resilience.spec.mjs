@@ -157,11 +157,13 @@ test('pen-down paints its first point without rebuilding a stale page canvas', a
   });
   const firstFrame = await page.evaluate(({ x, y }) => {
     const sheet = document.querySelector('.page-wrapper[data-page="0"] canvas.page-canvas');
-    const overlay = document.querySelector('.page-wrapper[data-page="0"] canvas.cursor-overlay');
-    const rect = overlay.getBoundingClientRect();
-    const px = Math.round((x - rect.left) * overlay.width / rect.width);
-    const py = Math.round((y - rect.top) * overlay.height / rect.height);
-    const data = overlay.getContext('2d').getImageData(px - 6, py - 6, 13, 13).data;
+    // Definitive pen ink is painted on the page bitmap during contact.
+    // Resetting sheet.width above cleared that bitmap, so existing template
+    // pixels cannot satisfy this first-contact assertion.
+    const rect = sheet.getBoundingClientRect();
+    const px = Math.round((x - rect.left) * sheet.width / rect.width);
+    const py = Math.round((y - rect.top) * sheet.height / rect.height);
+    const data = sheet.getContext('2d').getImageData(px - 6, py - 6, 13, 13).data;
     return { width: sheet.width, painted: data.some((value, index) => index % 4 === 3 && value > 0) };
   }, target);
   expect(firstFrame.width).toBe(target.staleWidth);

@@ -7,13 +7,14 @@
         ||(typeof require==='function'?require('./drive-ink-journal-v5.js').Journal:null);
     const API='https://www.googleapis.com/drive/v3/files';
     const UPLOAD='https://www.googleapis.com/upload/drive/v3/files';
-    const KIND='ink-preview-v1',FRAME_MS=100,MAX_BYTES=2*1024*1024;
+    const KIND='ink-preview-v1',FRAME_MS=100,MAX_BYTES=2*1024*1024,READ_CACHE_CHARS=4*1024*1024;
     const escape=value=>String(value).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     class LivePreview extends Base {
         constructor(host){
             super(host);this.paths=new Map();this.frame=0;this.sentFrame=0;
             this.fileId='';this.exists=false;this.frameTimer=null;this.lastFrameAt=0;
             this.pollTimer=null;this.previewSources=new Map();this.nextList=0;this.retryAt=0;
+            this.readCache=new Map();this.readCacheChars=0;
         }
         push(packet){
             if(this.stopped||!this.docId||packet?.fileId!==this.docId||packet.type!=='live-stroke'
@@ -139,15 +140,46 @@
             if(this.stopped||!this.docId||this.pollTimer)return;
             this.pollTimer=setTimeout(()=>{this.pollTimer=null;void this.pollFrames();},delay);
         }
+        forgetReadFrame(id){
+            const cached=this.readCache.get(id);if(!cached)return;
+            this.readCacheChars-=cached.raw.length;this.readCache.delete(id);
+        }
+        rememberReadFrame(id,source,raw,value){
+            if(this.stopped||this.previewSources.get(id)!==source)return;
+            this.forgetReadFrame(id);
+            while(this.readCache.size&&this.readCacheChars+raw.length>READ_CACHE_CHARS)
+                this.forgetReadFrame(this.readCache.keys().next().value);
+            if(raw.length>READ_CACHE_CHARS)return;
+            this.readCache.set(id,{source,raw,at:value.at,frame:value.frame,docId:this.docId});
+            this.readCacheChars+=raw.length;
+        }
+        pruneReadFrames(now){
+            for(const [id,cached]of this.readCache)
+                if(this.previewSources.get(id)!==cached.source||cached.docId!==this.docId
+                    ||now-cached.at>20000||cached.at>now+30000)this.forgetReadFrame(id);
+        }
         async readPreview(id,source){
             const now=Date.now();source.inFlight=true;source.next=now+2000;
             try{
                 const response=await this.request(`${API}/${id}?alt=media`,{headers:{'Cache-Control':'no-cache'},bufferResponse:true});
                 const raw=await response.text();if(this.stopped||raw.length>MAX_BYTES)return;
-                const value=JSON.parse(raw),receivedAt=Date.now();
+                const receivedAt=Date.now(),cached=this.readCache.get(id);
+                // Only identical, already validated bytes can skip decoding.
+                // Keep timestamps live: repeated polls never refresh an old
+                // frame's age or extend its source's activity window.
+                if(cached?.source===source&&cached.docId===this.docId
+                    &&cached.frame<=source.frame&&cached.raw===raw){
+                    if(receivedAt-cached.at>20000||cached.at>receivedAt+30000){
+                        source.activeUntil=0;source.next=receivedAt+15000;this.forgetReadFrame(id);return;
+                    }
+                    this.readCache.delete(id);this.readCache.set(id,cached);
+                    source.next=receivedAt+(source.activeUntil>receivedAt?FRAME_MS:2000);
+                    return;
+                }
+                const value=JSON.parse(raw);
                 if(value.v!==1||value.docId!==this.docId||value.actor===this.actor||!Number.isSafeInteger(value.frame)
                     ||!Array.isArray(value.packets)||value.packets.length>24||!Number.isFinite(value.at))return;
-                if(receivedAt-value.at>20000||value.at>receivedAt+30000){source.activeUntil=0;source.next=receivedAt+15000;return;}
+                if(receivedAt-value.at>20000||value.at>receivedAt+30000){source.activeUntil=0;source.next=receivedAt+15000;this.forgetReadFrame(id);return;}
                 if(value.frame>source.frame){
                     for(const packet of value.packets){
                         if(packet?.fileId!==this.docId||packet.type!=='live-stroke'||!Array.isArray(packet.points)||packet.points.length>24000)continue;
@@ -156,12 +188,16 @@
                     source.frame=value.frame;source.activeUntil=receivedAt+5000;
                 }
                 source.next=receivedAt+(source.activeUntil>receivedAt?FRAME_MS:2000);
+                // Install proof only after every preview callback succeeds.
+                // Bound retained strings across all sources, not just per file.
+                this.rememberReadFrame(id,source,raw,value);
             }catch(_){source.next=Date.now()+3000;}
             finally{source.inFlight=false;}
         }
         async pollFrames(){
             if(this.stopped)return;
             const now=Date.now();
+            this.pruneReadFrames(now);
             if(now>=this.nextList&&!this.discovery){
                 this.nextList=now+5000;
                 this.discovery=this.discoverPreviews().catch(()=>{}).finally(()=>{this.discovery=null;});
@@ -177,7 +213,7 @@
             await Promise.allSettled(reads);
         }
         start(){if(this.host.canPublish!==false){this.frame++;this.scheduleFrame();}this.schedulePoll(0);return this;}
-        stop(){super.stop();clearTimeout(this.frameTimer);clearTimeout(this.pollTimer);this.paths.clear();this.previewSources.clear();}
+        stop(){super.stop();clearTimeout(this.frameTimer);clearTimeout(this.pollTimer);this.paths.clear();this.previewSources.clear();this.readCache.clear();this.readCacheChars=0;}
     }
     root.InhouseDriveLivePreview=LivePreview;
     if(typeof module==='object'&&module.exports)module.exports={LivePreview};
