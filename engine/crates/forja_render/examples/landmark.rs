@@ -376,7 +376,7 @@ fn render_shot(st: &mut Studio, handles: &[(ModelHandle, Mat4)], s: &Shot) -> (R
         if s.sun.1.is_some() && s.light == Light::Atmosphere {
             frame.env.set_linear_exposure(e);
         } else {
-            frame.env.exposure_compensation = (e.max(1e-3) / 0.55).log2();
+            frame.env.exposure_compensation += (e.max(1e-3) / 0.55).log2();
         }
     }
     for l in &st.lights {

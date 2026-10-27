@@ -48,18 +48,33 @@ fn f16(v: f32) -> u16 {
 /// (the street in the photo reflects only ~6%).
 pub const GROUND_ALBEDO: Vec3 = Vec3::new(0.17, 0.15, 0.125);
 
+/// Effective albedo of the street walls around the viewer for the diffuse
+/// light: the low band of the photo's sky (up to ~25 degrees, fading out by
+/// ~35) is replaced by facades lit by the photo's sun and sky, so surfaces
+/// turned away from the sun get the warm bounce of the sunlit facades
+/// across the street. Cream and ochre plaster is ~0.5, about half of it in
+/// sun, and walls fill only part of the band (gaps, cross streets, dark
+/// windows): ~0.15 effective.
+pub const WALL_ALBEDO: Vec3 = Vec3::new(0.16, 0.145, 0.12);
+
 impl EnvMap {
     /// Environment from an HDR photo whose sun is normalised to `target_sun`
     /// renderer units of illuminance at normal incidence (14 ~ 105 klx, see
     /// [`crate::exposure`]). Diffuse light from below the horizon comes from
     /// a ground of [`GROUND_ALBEDO`].
     pub fn from_hdr(img: &HdrImage, target_sun: f32) -> Self {
-        Self::from_hdr_with_ground(img, target_sun, Some(GROUND_ALBEDO))
+        Self::from_hdr_with(img, target_sun, Some(GROUND_ALBEDO), Some(WALL_ALBEDO))
+    }
+
+    /// Like [`EnvMap::from_hdr`] without the street walls.
+    pub fn from_hdr_with_ground(img: &HdrImage, target_sun: f32, ground_albedo: Option<Vec3>) -> Self {
+        Self::from_hdr_with(img, target_sun, ground_albedo, None)
     }
 
     /// Like [`EnvMap::from_hdr`]; `ground_albedo: None` keeps the photo's
-    /// own lower hemisphere for the diffuse light.
-    pub fn from_hdr_with_ground(img: &HdrImage, target_sun: f32, ground_albedo: Option<Vec3>) -> Self {
+    /// own lower hemisphere and `wall_albedo: None` its horizon band for the
+    /// diffuse light (reflections and the visible sky always keep the photo).
+    pub fn from_hdr_with(img: &HdrImage, target_sun: f32, ground_albedo: Option<Vec3>, wall_albedo: Option<Vec3>) -> Self {
         let (w, h) = (img.width as usize, img.height as usize);
         let px = |x: usize, y: usize| Vec3::from(img.rgb[y * w + x]);
         // Sun: brightest texel of a 4x downsample (robust to single hot pixels).
@@ -127,6 +142,24 @@ impl EnvMap {
         let norm = 4.0 * std::f32::consts::PI / wsum;
         // Horizontal illuminance of sun plus sky lights the synthetic ground.
         let ground = ground_albedo.map(|a| (sun_e * scale * sun_dir.y.max(0.0) + sky_h * norm) * a / std::f32::consts::PI);
+        // Facade seen in direction `d` (horizon band): it faces back toward
+        // the viewer and is lit by the sun when it faces it, by half the sky
+        // and by the ground.
+        let sun_scaled = sun_e * scale;
+        let sky_side = sky_h * norm * 0.5;
+        let ground_e = ground.unwrap_or(Vec3::ZERO) * (std::f32::consts::PI * 0.5);
+        let wall = |d: Vec3, albedo: Vec3| -> Vec3 {
+            let n = -vec3(d.x, 0.0, d.z).normalize_or_zero();
+            albedo * (sun_scaled * n.dot(sun_dir).max(0.0) + sky_side + ground_e) / std::f32::consts::PI
+        };
+        // Street width ~ building height: walls up to ~25 degrees, gone by ~35.
+        let wall_weight = |dy: f32| -> f32 {
+            if dy < 0.0 {
+                return 0.0;
+            }
+            let t = ((dy - 0.42) / (0.57 - 0.42)).clamp(0.0, 1.0);
+            1.0 - t * t * (3.0 - 2.0 * t)
+        };
         let mut sh = [Vec3::ZERO; 9];
         for y in 0..shh {
             let v = (y as f32 + 0.5) / shh as f32;
@@ -137,6 +170,9 @@ impl EnvMap {
                 let mut c = sample(u, v);
                 if let Some(g) = ground {
                     c = c.lerp(g, (-d.y / 0.08).clamp(0.0, 1.0));
+                }
+                if let Some(a) = wall_albedo {
+                    c = c.lerp(wall(d, a), wall_weight(d.y));
                 }
                 let basis = sh_basis(d);
                 for k in 0..9 {
@@ -239,7 +275,7 @@ mod tests {
                 }
             }
         }
-        let env = EnvMap::from_hdr(&HdrImage { width: w, height: h, rgb }, 14.0);
+        let env = EnvMap::from_hdr_with(&HdrImage { width: w, height: h, rgb }, 14.0, Some(GROUND_ALBEDO), None);
         // Irradiance of the disc above the sky level: L * solid angle.
         let e_true = (disc - sky) * std::f32::consts::TAU * (1.0 - cos_disc);
         let scale_true = 14.0 / e_true;
@@ -253,6 +289,36 @@ mod tests {
         let down = env.irradiance(-Vec3::Y).x;
         let want = GROUND_ALBEDO.x * e_h / std::f32::consts::PI;
         assert!((down - want).abs() / want < 0.12, "{down} vs {want}");
+    }
+
+    /// The street walls of the horizon band bounce sunlight onto surfaces
+    /// turned away from the sun, and barely change the light from above.
+    #[test]
+    fn street_walls_light_the_shaded_side() {
+        let (w, h) = (512u32, 256u32);
+        let sun = vec3(0.3, 0.8, -0.5).normalize();
+        // Blue sky over a dark band of trees and parked cars (like the
+        // street photo), a small bright sun.
+        let mut rgb = vec![[0.3f32, 0.4, 0.6]; (w * h) as usize];
+        for y in 0..h {
+            for x in 0..w {
+                let d = dir_from_uv((x as f32 + 0.5) / w as f32, (y as f32 + 0.5) / h as f32);
+                if d.dot(sun) > 0.999 {
+                    rgb[(y * w + x) as usize] = [3000.0; 3];
+                } else if d.y < 0.35 {
+                    rgb[(y * w + x) as usize] = [0.08; 3];
+                }
+            }
+        }
+        let img = HdrImage { width: w, height: h, rgb };
+        let (walls, open) = (EnvMap::from_hdr(&img, 14.0), EnvMap::from_hdr_with(&img, 14.0, Some(GROUND_ALBEDO), None));
+        let away = -vec3(sun.x, 0.0, sun.z).normalize();
+        let (wa, oa) = (walls.irradiance(away), open.irradiance(away));
+        assert!(wa.x > oa.x * 1.2, "{wa} vs {oa}");
+        // The bounce of sunlit plaster is warm.
+        assert!(wa.x / wa.z > oa.x / oa.z, "{wa} vs {oa}");
+        let (a, b) = (walls.irradiance(Vec3::Y).x, open.irradiance(Vec3::Y).x);
+        assert!((a - b).abs() / b < 0.15, "{a} vs {b}");
     }
 
     #[test]

@@ -36,10 +36,13 @@ fn fs_main(in: SkyOut) -> @location(0) vec4<f32> {
             // fields) reflects ~10%, darker than the 17% paving of the
             // diffuse ground.
             let ground = height_fog(frame.ground_color.rgb * 0.6, frame.camera_pos.xyz + d * dist, d);
-            a = mix(a, ground, smoothstep(0.0, 0.03, -d.y));
+            // Distant land melts into the bright horizon haze over the
+            // last few degrees instead of meeting the sky at a hard line.
+            a = mix(a, ground, smoothstep(0.0, 0.1, -d.y));
             c = mix(c, a, w);
         }
-        return vec4<f32>(c, 1.0);
+        c += local_inscatter(in.clip.xy, d, 1e9);
+        return vec4<f32>(min(c * exposure_state.pre, vec3<f32>(60000.0)), 1.0);
     }
     let l = frame.sun_dir.xyz;
     let alt = frame.camera_pos.y * 0.001;
@@ -51,9 +54,13 @@ fn fs_main(in: SkyOut) -> @location(0) vec4<f32> {
         let ts = sun_transmittance(vec3<f32>(0.0, EARTH_R + max(alt, 0.001), 0.0), l);
         c += ts * frame.sun_dir.w * 40.0 * disc;
     }
+    // Night: dark zenith, light-pollution dome, stars (zero by day).
+    c += night_sky(d);
     // Below the horizon: darkened ground bounce so the bottom never goes black.
     if (d.y < 0.0) {
         c = mix(c, frame.ground_color.rgb * 0.5, clamp(-d.y * 4.0, 0.0, 1.0));
     }
-    return vec4<f32>(c, 1.0);
+    // Glow of the lamps in the haze in front of the sky.
+    c += local_inscatter(in.clip.xy, d, 1e9);
+    return vec4<f32>(min(c * exposure_state.pre, vec3<f32>(60000.0)), 1.0);
 }

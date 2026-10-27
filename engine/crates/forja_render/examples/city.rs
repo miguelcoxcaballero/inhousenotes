@@ -4,9 +4,12 @@
 //! also saves `<shot>_motion.png`, the last of 30 real-time 60 fps frames
 //! walking into the shot, to judge TAA and the screen-space effects in
 //! motion). `NIGHT=1` renders the city at 22:30 (`HOUR=<0..24>` picks the
-//! time) with lamps, lit windows, shops, neon and floodlights; until the
-//! renderer has clustered lighting the shots get the 64 most important
-//! lights ([`forja_city::nightlight::select`]) plus far glow points.
+//! time) with lamps, lit windows, shops, neon and floodlights, every one of
+//! them a clustered point or spot light, under [`Environment::night`];
+//! `DUSK=1` (19:36), `RAIN=1` and `WET=1` select the other presets and
+//! `LEGACY=1` the previous path (64 selected point lights, far glow
+//! geometry, fixed exposure) for comparisons. Night files get a `_night`,
+//! `_dusk`, `_rain`, `_night_wet` or `_before` suffix.
 
 use std::path::PathBuf;
 
@@ -16,6 +19,9 @@ use forja_city::style::StyleLibrary;
 use forja_math::{Mat4, Vec3};
 use forja_render::*;
 
+#[path = "common/night.rs"]
+mod night;
+
 fn main() {
     let prefix = std::env::args().nth(1).unwrap_or_else(|| "city".into());
     let small = std::env::args().nth(2).is_some_and(|a| a == "small");
@@ -23,7 +29,9 @@ fn main() {
     let dl = root.join("assets/downloaded");
     let t0 = std::time::Instant::now();
     let mut kit = Kit::load(Some(&dl));
-    let hour = night_hour();
+    let mode = night::environment();
+    let hour = night_hour().or(mode.as_ref().map(|(n, _)| if n.starts_with("dusk") { 19.6 } else { 22.5 }));
+    let legacy = mode.as_ref().is_none_or(|(n, _)| *n == "before");
     if let Some(h) = hour {
         kit.set_hour(h);
     }
@@ -64,9 +72,20 @@ fn main() {
     frame.env.shadow_distance = 120.0;
     let night = hour.is_some_and(|_| kit.night.is_night());
     if night {
-        night_env(&mut frame.env, kit.night.dark);
+        match &mode {
+            Some((_, env)) if !legacy => {
+                frame.env = env.clone();
+                frame.local_lights = out.city_lights.iter().map(night::from_city).collect();
+            }
+            _ => night_env(&mut frame.env, kit.night.dark),
+        }
         println!("night at {:.1} h: {} city lights", kit.night.hour, out.city_lights.len());
     }
+    let suffix = match &mode {
+        Some((n, _)) => format!("_{n}"),
+        None if night => "_night_old".to_string(),
+        None => String::new(),
+    };
     let base_instances = frame.instances.clone();
     let e = city.extent;
     // Eye-level shots along real streets of each district.
@@ -101,6 +120,7 @@ fn main() {
         ("plaza_madrid", pm_eye, pm_at),
         ("plaza_valencia", pv_eye, pv_at),
         ("aerial", Vec3::new(-e.x * 0.8, 120.0, -e.y * 1.1), Vec3::new(0.0, 0.0, 0.0)),
+        ("aerial_far", Vec3::new(-e.x * 1.6, 260.0, -e.y * 2.2), Vec3::new(0.0, 0.0, 0.0)),
     ];
     let only = std::env::var("CITY_SHOTS").ok();
     for (name, eye, at) in shots {
@@ -109,7 +129,7 @@ fn main() {
         }
         frame.camera = Camera::look_at(eye, at);
         frame.camera.fov_y = 60f32.to_radians();
-        if night {
+        if night && legacy {
             frame.instances = base_instances.clone();
             frame.lights = night_lights(&out.city_lights, eye, at - eye);
             let glow = forja_city::nightlight::glow_parts(&out.city_lights, eye, 45.0, 2.0 * (frame.camera.fov_y * 0.5).tan() / 720.0, 1.6);
@@ -117,7 +137,7 @@ fn main() {
             frame.instances.push(DrawInstance { cast_shadows: false, ..DrawInstance::new(h, Mat4::IDENTITY) });
         }
         let img = r.render_to_image(&frame, 1280, 720);
-        let path = format!("{prefix}_{name}.png");
+        let path = format!("{prefix}_{name}{suffix}.png");
         img.save(&path).unwrap();
         println!("{path}: {:?}", r.stats);
         if let Some(n) = std::env::var("CITY_MOTION").ok().and_then(|v| v.parse::<u32>().ok()) {
@@ -136,7 +156,7 @@ fn main() {
             }
             frame.time = 0.0;
             if let Some(img) = img {
-                let path = format!("{prefix}_{name}_motion.png");
+                let path = format!("{prefix}_{name}{suffix}_motion.png");
                 img.save(&path).unwrap();
                 println!("{path}");
             }
@@ -156,6 +176,7 @@ fn night_hour() -> Option<f32> {
 /// analytic sky, exposure for streets lit at ~15 lux.
 fn night_env(env: &mut Environment, dark: f32) {
     env.use_ibl = false;
+    env.look = Look::Night;
     env.sun_dir = Vec3::new(-0.35, 0.72, -0.55).normalize();
     env.sun_illuminance = 0.025 + 14.0 * (1.0 - dark).powi(3);
     env.set_linear_exposure(0.55 + 3.0 * dark);
@@ -164,7 +185,7 @@ fn night_env(env: &mut Environment, dark: f32) {
 
 /// The 64 lights the current renderer can take, chosen by importance.
 fn night_lights(all: &[forja_city::CityLight], eye: Vec3, fwd: Vec3) -> Vec<PointLight> {
-    forja_city::nightlight::select(all, eye, fwd, MAX_LIGHTS)
+    forja_city::nightlight::select(all, eye, fwd, 64)
         .into_iter()
         .map(|i| {
             let (position, color, intensity, radius) = all[i].as_point();
