@@ -365,7 +365,12 @@ impl TrafficSim {
         for (i, d) in decisions.into_iter().enumerate() {
             self.apply(i, d, dt);
         }
+        let before = self.vehicles.len();
         self.vehicles.retain(|v| v.lane != u32::MAX);
+        if self.vehicles.len() != before {
+            // The pedestrians query the vehicle grid: keep it in step.
+            self.rebuild_indices();
+        }
         let tp = Instant::now();
         self.stats.vehicles_us += (tp - tv).as_secs_f64() * 1e6;
         self.step_peds(dt);
@@ -1010,6 +1015,17 @@ impl TrafficSim {
                 d.why = Why::ExitFull;
                 return false;
             }
+            // A short link to the next junction whose light is not green:
+            // waiting there would leave us in this box.
+            let el = &self.net.lanes[exit as usize];
+            if let Some(a) = el.approach
+                && el.stop_s < v.len + 3.0
+                && self.net.approaches[a as usize].control == Control::Signal
+                && self.net.approach_aspect(a, self.t).0 != Aspect::Green
+            {
+                d.why = Why::ExitFull;
+                return false;
+            }
             // Pedestrians on the crosswalk just past the box.
             for &(cw, s0, s1) in &self.net.lanes[exit as usize].crosswalks {
                 if s0 < 8.0 && self.crosswalk_busy(cw, exit, (s0 + s1) * 0.5, v.wait_t > 6.0) {
@@ -1072,6 +1088,31 @@ impl TrafficSim {
                 if a < acc {
                     acc = a;
                     blocked_by = None;
+                }
+            }
+        }
+        // The next stop line beyond this lane (short links between close
+        // junctions): a light that is not green there is obeyed already.
+        if let Some(&(l, start)) = path.iter().skip(1).find(|(l, _)| self.net.lanes[*l as usize].approach.is_some()) {
+            let nl = &self.net.lanes[l as usize];
+            let dist = start + nl.stop_s;
+            if let Some(a) = nl.approach
+                && dist > 0.0
+                && dist < look + 5.0
+                && self.net.approaches[a as usize].control == Control::Signal
+            {
+                let (aspect, left) = self.net.approach_aspect(a, self.t);
+                let stop = match aspect {
+                    Aspect::Green => false,
+                    Aspect::Amber => driver::amber_decision(dist, v.v, left, &v.params) == AmberChoice::Stop,
+                    Aspect::Red => v.v * v.v / (2.0 * dist) <= v.params.b_max,
+                };
+                if stop {
+                    let a = driver::stop_at(v.v, v0, dist, &v.params);
+                    if a < acc {
+                        acc = a;
+                        blocked_by = None;
+                    }
                 }
             }
         }

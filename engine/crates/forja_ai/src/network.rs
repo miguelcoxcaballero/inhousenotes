@@ -631,8 +631,14 @@ impl RoadNetwork {
             }
             around.sort_by(|a, b| a.0.total_cmp(&b.0));
             for i in 0..around.len() {
-                let (_, si, ei, _) = around[i];
-                let (_, sj, ej, _) = around[(i + 1) % around.len()];
+                let (ai, si, ei, _) = around[i];
+                let (aj, sj, ej, _) = around[(i + 1) % around.len()];
+                // No corner around a reflex gap (the outside of an L or a
+                // bend): it would cut across the roadway of the box.
+                let gap = if aj > ai { aj - ai } else { aj - ai + std::f32::consts::TAU };
+                if gap > 3.5 {
+                    continue;
+                }
                 // Left of the outward direction is side 0 (`left(d)`) at end
                 // 0 and side 1 at end 1, and vice versa for the right.
                 let ki = if ei == 0 { 0 } else { 1 };
@@ -825,7 +831,9 @@ impl RoadNetwork {
             }
             // A lane change keeps the position along the street: it costs
             // a penalty, not the length of the parallel lane.
-            if !lane.is_connector() {
+            // Only where there is room to make it (see the simulation's
+            // lane change window: 6 m in, 8 m before the stop line).
+            if !lane.is_connector() && lane.stop_s.min(lane.len()) >= 14.0 {
                 for nb in lane.left.iter().chain(lane.right.iter()) {
                     relax(*nb, 6.0, &mut open);
                 }
