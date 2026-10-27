@@ -879,11 +879,21 @@ fn spawn_build(map: MapKind, hour: Option<f32>, background: bool) -> Pending {
     let handle = std::thread::Builder::new()
         .name("world build".into())
         .spawn(move || {
-            let mut app = game::build_at(map, paths(), hour);
-            if let Some(h) = hour {
-                app.world.res_mut::<game::env::TimeOfDay>().hours = h;
+            let build = move || {
+                let mut app = game::build_at(map, paths(), hour);
+                if let Some(h) = hour {
+                    app.world.res_mut::<game::env::TimeOfDay>().hours = h;
+                }
+                app
+            };
+            // A dusk/dawn build leaves cores to the running game (its
+            // parallel stages use this pool; at the first load the
+            // whole machine is the loader's).
+            let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
+            match background.then(|| rayon::ThreadPoolBuilder::new().num_threads(cores.saturating_sub(2).max(1)).build().ok()).flatten() {
+                Some(pool) => pool.install(build),
+                None => build(),
             }
-            app
         })
         .expect("world build thread");
     Pending { handle, background, started: Instant::now() }
