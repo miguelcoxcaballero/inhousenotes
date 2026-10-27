@@ -10,6 +10,12 @@
 //!
 //! `NIGHT=1` (or `HOUR=<h>`) renders any of them at night, lit by their own
 //! lanterns, windows and shops.
+//!
+//! Night presets: `DUSK=1`, `RAIN=1`, `WET=1` pick the other environments,
+//! `LEGACY=1` the previous 64-light path. At night the default street also
+//! gets kerbside candelabras, two small neon signs, shop light spilling onto
+//! the pavement and a low `along` shot down the road. `STREET_SHOTS=wide,along`
+//! renders only those shots.
 
 use std::path::PathBuf;
 
@@ -43,6 +49,8 @@ struct Scene {
     lots: Vec<(Lot, &'static str)>,
     ground: Parts<Mat>,
     shots: Vec<(String, Vec3, Vec3)>,
+    /// The x range of the default review street (night dressing goes along it).
+    road: Option<(f32, f32)>,
 }
 
 /// Two rows of old-town houses across a 3.2 m alley along x, on a shared
@@ -77,7 +85,7 @@ fn alley() -> Scene {
         ("up".into(), Vec3::new(-2.0, 1.6, 2.2), Vec3::new(4.0, 9.0, 0.6)),
         ("back".into(), Vec3::new(19.0, 1.7, 2.1), Vec3::new(-10.0, 4.0, 1.2)),
     ];
-    Scene { lots, ground, shots }
+    Scene { lots, ground, shots, road: None }
 }
 
 /// A lane 7 m wide curving at R = 30 m (centreline), houses on the convex
@@ -136,7 +144,7 @@ fn curve() -> Scene {
         ("concave".into(), eye(-0.2, rc - 2.0, 1.7), eye(0.1, rc + half, 6.0)),
         ("convex".into(), eye(0.15, rc + 2.0, 1.7), eye(-0.15, rc - half, 6.0)),
     ];
-    Scene { lots, ground, shots }
+    Scene { lots, ground, shots, road: None }
 }
 
 /// A rounded Ensanche chaflán (r = 9, six chords) and, further along, a
@@ -193,7 +201,7 @@ fn corner() -> Scene {
         ("acute".into(), Vec3::new(55.0, 1.7, -9.0), Vec3::new(64.0, 7.0, 5.0)),
         ("acute_tip".into(), Vec3::new(57.5, 1.7, -2.5), Vec3::new(61.5, 6.0, 1.8)),
     ];
-    Scene { lots, ground, shots }
+    Scene { lots, ground, shots, road: None }
 }
 
 /// The original review street: two houses per style along a 4.5 m sidewalk.
@@ -230,8 +238,11 @@ fn street(styles: &StyleLibrary, only: Option<&str>) -> Scene {
         p.get(Mat::Paint([235, 235, 230])).aabox(Vec3::new(k, 0.0, 9.9), Vec3::new(k + 3.5, 0.006, 10.05), 1.0);
         k += 9.0;
     }
-    Scene { lots, ground: p, shots }
+    Scene { lots, ground: p, shots, road: Some((x0, x1)) }
 }
+
+#[path = "common/night.rs"]
+mod night;
 
 fn main() {
     let prefix = std::env::args().nth(1).unwrap_or_else(|| "street".into());
@@ -240,7 +251,13 @@ fn main() {
     let dl = root.join("assets/downloaded");
     let t0 = std::time::Instant::now();
     let mut kit = Kit::load(Some(&dl));
-    let hour = std::env::var("HOUR").ok().and_then(|v| v.parse::<f32>().ok()).or_else(|| std::env::var("NIGHT").ok().filter(|v| v != "0").map(|_| 22.5));
+    let mode = night::environment();
+    let hour = std::env::var("HOUR")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+        .or_else(|| std::env::var("NIGHT").ok().filter(|v| v != "0").map(|_| 22.5))
+        .or(mode.as_ref().map(|(n, _)| if n.starts_with("dusk") { 19.6 } else { 22.5 }));
+    let legacy = mode.as_ref().is_none_or(|(n, _)| *n == "before");
     if let Some(h) = hour {
         kit.set_hour(h);
     }
@@ -259,6 +276,42 @@ fn main() {
     for (i, (l, id)) in scene.lots.iter().enumerate() {
         let style = styles.get(id).unwrap_or_else(|| panic!("no style {id}"));
         building::build_into(&mut lib, &mut out, &mut parts, l, style, i as u64 * 31 + 5);
+    }
+    let mut extra: Vec<Light> = Vec::new();
+    if let (true, Some((x0, x1))) = (night, scene.road) {
+        // Valencian candelabras along the kerb, every 18 m.
+        let mut x = x0 + 20.0;
+        while x < x1 - 20.0 {
+            let base = Vec3::new(x, 0.15, 3.9);
+            let bulb = base + Vec3::Y * forja_city::furniture::street_lamp_bulb(true);
+            let (color, _) = forja_city::nightlight::street_lamp_color(bulb, false);
+            let g = forja_city::nightlight::to_rgb(color);
+            let m = lib.named(&mut out, &format!("lamp_{g:?}"), || forja_city::furniture::street_lamp_lit(true, g));
+            out.placements.push((m, Mat4::from_translation(base)));
+            out.city_lights.push(forja_city::nightlight::street_lamp(bulb, color, true));
+            x += 18.0;
+        }
+        // Two small neon shop signs (`Mat::Lamp` is emissive) with the
+        // light they cast.
+        let mut neon: Parts<Mat> = Parts::new();
+        for (j, (col, light)) in [([40u8, 255u8, 90u8], Vec3::new(0.1, 1.3, 0.25)), ([60, 230, 255], Vec3::new(0.12, 1.0, 1.6))].iter().enumerate() {
+            let sx = x0 + 30.0 + j as f32 * 95.0;
+            neon.get(Mat::Lamp(*col)).aabox(Vec3::new(sx, 3.1, 0.15), Vec3::new(sx + 2.4, 3.16, 0.22), 1.0);
+            neon.get(Mat::Lamp(*col)).aabox(Vec3::new(sx, 3.7, 0.15), Vec3::new(sx + 2.4, 3.76, 0.22), 1.0);
+            extra.push(Light::point(Vec3::new(sx + 1.2, 3.4, 0.8), *light, 1200.0).with_range(7.0).with_source_radius(1.0));
+        }
+        // Lit shop windows spill light onto the pavement.
+        let mut k = x0 + 6.0;
+        let mut i = 0;
+        while k < x1 {
+            if i % 3 != 2 {
+                extra.push(night::shop_spill(Vec3::new(k, 2.6, -0.4), Vec3::Z, 5000.0));
+            }
+            k += 9.0;
+            i += 1;
+        }
+        let neon = out.add_scene(assemble(&kit, "neon", neon, None));
+        out.placements.push((neon, Mat4::IDENTITY));
     }
     building::medianeras(&mut lib, &mut out, &mut parts, 0);
     let block = out.add_scene(assemble(&kit, "block", parts, None));
@@ -281,7 +334,11 @@ fn main() {
         frame.instances.push(DrawInstance::new(handles[*s], flip * *m));
     }
     frame.env.shadow_distance = 80.0;
-    if night {
+    if night && !legacy {
+        frame.env = mode.as_ref().map(|(_, e)| e.clone()).unwrap_or_else(Environment::night);
+        frame.local_lights = out.city_lights.iter().map(night::from_city).chain(if legacy { Vec::new() } else { extra.clone() }).map(|l| night::transformed(&l, &flip)).collect();
+        println!("night at {:.1} h: {} lights", kit.night.hour, frame.local_lights.len());
+    } else if night {
         frame.env.use_ibl = false;
         frame.env.sun_dir = Vec3::new(-0.35, 0.72, -0.55).normalize();
         frame.env.sun_illuminance = 0.025;
@@ -289,11 +346,25 @@ fn main() {
         frame.env.bloom = 0.08;
         println!("night at {:.1} h: {} city lights", kit.night.hour, out.city_lights.len());
     }
-    for (name, eye, at) in scene.shots {
+    let mut shots = scene.shots;
+    if let (true, Some((x0, _))) = (night, scene.road) {
+        // Low along the road, like a photo of a wet street at night.
+        shots.push(("along".into(), Vec3::new(x0 + 45.0, 1.4, 8.5), Vec3::new(x0 + 130.0, 3.0, 4.0)));
+    }
+    let suffix = match &mode {
+        Some((n, _)) => format!("_{n}"),
+        None if night => "_night_old".to_string(),
+        None => String::new(),
+    };
+    let only = std::env::var("STREET_SHOTS").ok();
+    for (name, eye, at) in shots {
+        if only.as_deref().is_some_and(|o| !o.split(',').any(|n| n.trim() == name)) {
+            continue;
+        }
         frame.camera = Camera::look_at(flip.transform_point3(eye), flip.transform_point3(at));
         frame.camera.fov_y = 62f32.to_radians();
-        if night {
-            frame.lights = forja_city::nightlight::select(&out.city_lights, eye, at - eye, MAX_LIGHTS)
+        if night && legacy {
+            frame.lights = forja_city::nightlight::select(&out.city_lights, eye, at - eye, 64)
                 .into_iter()
                 .map(|i| {
                     let (position, color, intensity, radius) = out.city_lights[i].as_point();
@@ -302,7 +373,7 @@ fn main() {
                 .collect();
         }
         let img = r.render_to_image(&frame, 1280, 720);
-        let path = format!("{prefix}_{name}.png");
+        let path = format!("{prefix}_{name}{suffix}.png");
         img.save(&path).unwrap();
         println!("{path}: {:?}", r.stats);
     }

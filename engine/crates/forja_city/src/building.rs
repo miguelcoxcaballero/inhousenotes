@@ -1125,7 +1125,7 @@ fn lanterns(lib: &mut ModuleLib, out: &mut CityOut, lot: &Lot, run: &RunPlan, st
         };
         out.placements.push((m, facade_frame(p, t, n)));
         out.lights.push((p + n * (arm - 0.02) + Vec3::Y * -0.5, Vec3::new(1.0, 0.78, 0.5)));
-        out.city_lights.push(nightlight::wall_lantern(bulb, color));
+        out.city_lights.push(nightlight::wall_lantern(bulb, color, n));
     };
     let lit: Vec<usize> = run.edges.iter().copied().filter(|&i| lot.front(i).lamps.is_some()).collect();
     if lit.is_empty() {
@@ -1244,9 +1244,11 @@ fn night_shop(n: &NightState, mut key: ShopKey, at: Vec3, kind: Premises) -> (Sh
     if open {
         let neon = hash01(at, 35);
         let color = 1 + (hash01(at, 36) * modules::NEON.len() as f32) as u8 % modules::NEON.len() as u8;
+        // Neon stays a small sign on a few bars and fewer shops (no tube
+        // outlines around whole shopfronts: they are rare in Spain).
         key.neon = match kind {
-            Premises::Bar if neon < 0.6 => color + if neon < 0.3 { modules::NEON_FRAME } else { 0 },
-            Premises::Shop if neon < 0.15 => color,
+            Premises::Bar if neon < 0.25 => color,
+            Premises::Shop if neon < 0.05 => color,
             _ => 0,
         };
     }

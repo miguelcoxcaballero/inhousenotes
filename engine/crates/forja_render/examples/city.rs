@@ -15,6 +15,11 @@
 //! `CITY_MOTION=30` also saves `<shot>_motion.png`, the last of 30
 //! real-time 60 fps frames walking into the shot (TAA and screen-space
 //! effects in motion).
+//! `DUSK=1` (19:36), `RAIN=1` and `WET=1` select the other night presets
+//! (clustered point and spot lights under [`Environment::night`]) and
+//! `LEGACY=1` the previous path; night files get a `_night`, `_dusk`,
+//! `_rain`, `_night_wet` or `_before` suffix. `CITY_SHOTS=a,b` also picks
+//! shots.
 
 use std::path::PathBuf;
 
@@ -26,6 +31,9 @@ use forja_city::style::StyleLibrary;
 use forja_math::{Mat4, Vec2, Vec3};
 use forja_render::*;
 
+#[path = "common/night.rs"]
+mod night;
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let prefix = args.get(1).cloned().unwrap_or_else(|| "city".into());
@@ -35,7 +43,9 @@ fn main() {
     let dl = root.join("assets/downloaded");
     let t0 = std::time::Instant::now();
     let mut kit = Kit::load(Some(&dl));
-    let hour = night_hour();
+    let mode = night::environment();
+    let hour = night_hour().or(mode.as_ref().map(|(n, _)| if n.starts_with("dusk") { 19.6 } else { 22.5 }));
+    let legacy = mode.as_ref().is_none_or(|(n, _)| *n == "before");
     if let Some(h) = hour {
         kit.set_hour(h);
     }
@@ -75,11 +85,23 @@ fn main() {
     frame.env.shadow_distance = 120.0;
     let night = hour.is_some_and(|_| kit.night.is_night());
     if night {
-        night_env(&mut frame.env, kit.night.dark);
+        match &mode {
+            Some((_, env)) if !legacy => {
+                frame.env = env.clone();
+                frame.local_lights = out.city_lights.iter().map(night::from_city).collect();
+            }
+            _ => night_env(&mut frame.env, kit.night.dark),
+        }
         println!("night at {:.1} h: {} city lights", kit.night.hour, out.city_lights.len());
     }
+    let suffix = match &mode {
+        Some((n, _)) => format!("_{n}"),
+        None if night => "_night_old".to_string(),
+        None => String::new(),
+    };
     let base_instances = frame.instances.clone();
     let shots = shots(&city);
+    let only = only.or_else(|| std::env::var("CITY_SHOTS").ok().map(|s| s.split(',').map(|x| x.trim().to_string()).collect()));
     for (name, eye, at) in shots {
         if only.as_ref().is_some_and(|o| !o.iter().any(|x| x == name)) {
             continue;
@@ -87,7 +109,7 @@ fn main() {
         frame.camera = Camera::look_at(eye, at);
         frame.camera.fov_y = if matches!(name, "alley" | "deadend" | "slope" | "stairs") { 70f32.to_radians() } else { 60f32.to_radians() };
         let fov = frame.camera.fov_y;
-        if night {
+        if night && legacy {
             frame.instances = base_instances.clone();
             frame.lights = night_lights(&out.city_lights, eye, at - eye);
             let glow = forja_city::nightlight::glow_parts(&out.city_lights, eye, 45.0, 2.0 * (fov * 0.5).tan() / 720.0, 1.6);
@@ -95,7 +117,7 @@ fn main() {
             frame.instances.push(DrawInstance { cast_shadows: false, ..DrawInstance::new(h, Mat4::IDENTITY) });
         }
         let img = r.render_to_image(&frame, 1280, 720);
-        let path = format!("{prefix}_{name}.png");
+        let path = format!("{prefix}_{name}{suffix}.png");
         img.save(&path).unwrap();
         println!("{path}: eye {eye} at {at} {:?}", r.stats);
         if let Some(n) = std::env::var("CITY_MOTION").ok().and_then(|v| v.parse::<u32>().ok()) {
@@ -114,7 +136,7 @@ fn main() {
             }
             frame.time = 0.0;
             if let Some(img) = img {
-                let path = format!("{prefix}_{name}_motion.png");
+                let path = format!("{prefix}_{name}{suffix}_motion.png");
                 img.save(&path).unwrap();
                 println!("{path}");
             }
@@ -142,7 +164,7 @@ fn night_env(env: &mut Environment, dark: f32) {
 
 /// The lights the current renderer can take, chosen by importance.
 fn night_lights(all: &[forja_city::CityLight], eye: Vec3, fwd: Vec3) -> Vec<PointLight> {
-    forja_city::nightlight::select(all, eye, fwd, MAX_LIGHTS)
+    forja_city::nightlight::select(all, eye, fwd, 64)
         .into_iter()
         .map(|i| {
             let (position, color, intensity, radius) = all[i].as_point();

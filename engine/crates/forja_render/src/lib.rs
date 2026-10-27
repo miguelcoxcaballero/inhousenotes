@@ -13,13 +13,24 @@
 //!    (GGX, height-correlated Smith, Schlick) with normal/metal-rough/
 //!    occlusion/emissive maps, PCSS sun shadows with screen-space contact
 //!    shadows, HDRI or analytic sky ambient with GTAO multi-bounce and
-//!    specular occlusion, point lights, aerial perspective. Static,
+//!    specular occlusion, clustered point and spot lights, wet surfaces,
+//!    aerial perspective and the fog glow of local lights. Static,
 //!    double-sided, GPU-skinned and blended variants.
-//! 5. **Sky**: HDRI or per-pixel Rayleigh + Mie single scattering.
+//! 5. **Sky**: HDRI or per-pixel Rayleigh + Mie single scattering, plus the
+//!    night sky (light-pollution dome, stars); then the **light sprites**
+//!    that keep distant lamps visible as points.
 //! 6. **TAA**: Halton-jittered frames resolved with reprojected, variance
 //!    clipped history; still cameras converge to a supersampled image.
-//! 7. **Post**: bloom chain, AgX tonemapping, vignette, CAS sharpening (FXAA
-//!    when TAA is off).
+//! 7. **Eye adaptation** (optional): GPU luminance histogram and
+//!    night-aware exposure; lighting is pre-exposed so night scenes keep f16
+//!    precision.
+//! 8. **Post**: bloom chain, AgX tonemapping (with a scotopic shift at
+//!    night), vignette, CAS sharpening (FXAA when TAA is off).
+//!
+//! Between the prepass and the main pass a compute pass bins the frame's
+//! lights into a froxel grid ([`lights`]). See [`Environment::night`],
+//! [`Environment::dusk`] and [`Environment::rainy_night`] for the night
+//! presets and [`night`] for their units.
 //!
 //! The renderer knows nothing about worlds or gameplay: callers upload
 //! [`SceneData`] once ([`Renderer::upload_scene`]) and submit a [`FrameDesc`]
@@ -28,6 +39,8 @@
 pub mod atmosphere;
 pub mod camera;
 pub mod env;
+pub mod lights;
+pub mod night;
 
 use std::sync::Arc;
 
@@ -37,6 +50,8 @@ use forja_math::{Aabb, Frustum, Mat4, Vec3, Vec4};
 use wgpu::util::DeviceExt;
 
 pub use camera::Camera;
+pub use lights::{Light, LightColor, Spot, candela, kelvin};
+pub use night::{EyeAdaptation, NightSky};
 pub use wgpu;
 
 const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -45,16 +60,20 @@ const SHADOW_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const NORMAL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const AO_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
 const BLOOM_MIPS: usize = 6;
-pub const MAX_LIGHTS: usize = 64;
+/// Most lights per frame (clustered; each cluster keeps its closest
+/// [`lights::CLUSTER_CAP`]).
+pub const MAX_LIGHTS: usize = lights::MAX_LOCAL_LIGHTS;
+const SPOT_SHADOW_SIZE: u32 = 1024;
+/// Eye adaptation histogram: log2 luminance (units) from 2^-26 (~1.5e-4
+/// cd/m²) over 34 stops.
+const EXPOSURE_LOG_MIN: f32 = -26.0;
+const EXPOSURE_LOG_RANGE: f32 = 34.0;
+/// Scales the Krawczyk key so a sunlit street (~5000 cd/m²) gets the
+/// daytime manual exposure (0.55).
+const EXPOSURE_KEY_SCALE: f32 = 0.4;
 
+const FRAME: &str = include_str!("shaders/frame.wgsl");
 const COMMON: &str = include_str!("shaders/common.wgsl");
-
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct GpuLight {
-    pos_radius: [f32; 4],
-    color: [f32; 4],
-}
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -81,7 +100,24 @@ struct FrameUniforms {
     cascade_range: [f32; 4],
     fx: [f32; 4],
     ao_params: [f32; 4],
-    lights: [GpuLight; MAX_LIGHTS],
+    lighting: [f32; 4],
+    cluster: [f32; 4],
+    cluster_z: [f32; 4],
+    wet: [f32; 4],
+    fill: [f32; 4],
+    night_zenith: [f32; 4],
+    sky_glow: [f32; 4],
+    scatter: [f32; 4],
+    spot_vp: [[[f32; 4]; 4]; lights::MAX_SPOT_SHADOWS],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct ExposureUniforms {
+    a: [f32; 4],
+    b: [f32; 4],
+    c: [f32; 4],
+    d: [f32; 4],
 }
 
 #[repr(C)]
@@ -135,6 +171,9 @@ pub struct LineVertex {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ModelHandle(pub u32);
 
+/// Legacy point light (arbitrary intensity, `1 / (d² + 1)` falloff). New
+/// code should use [`Light`] in [`FrameDesc::local_lights`]; both go
+/// through the same clustered path.
 #[derive(Clone, Copy, Debug)]
 pub struct PointLight {
     pub position: Vec3,
@@ -189,6 +228,45 @@ pub struct Environment {
     /// Angular diameter of the sun (radians): sets the shadow penumbra
     /// (0.0093 is the real sun; a little more mimics forward-scattering haze).
     pub sun_angular_diameter: f32,
+    /// Eye adaptation; `None` uses the fixed `exposure` (the daytime path).
+    pub auto_exposure: Option<night::EyeAdaptation>,
+    /// Night sky added to the analytic atmosphere (zero by day).
+    pub night_sky: night::NightSky,
+    /// Ambient radiance added everywhere (light bounced around the street by
+    /// the city's lamps), occluded by AO.
+    pub ambient_fill: Vec3,
+    /// Rain wetness 0..1 (darker porous materials, glossier everything).
+    pub wetness: f32,
+    /// Puddle coverage of flat ground 0..1 (needs `wetness`).
+    pub puddles: f32,
+    /// Size of the puddle noise (m).
+    pub puddle_size: f32,
+    /// Multiplier of every material's emission.
+    pub emissive_scale: f32,
+    /// Glow of local lights in the height fog (0 = off, 1 = physical).
+    pub light_scatter: f32,
+    /// Henyey-Greenstein anisotropy of that glow (haze scatters forward).
+    pub scatter_anisotropy: f32,
+    /// Lights farther than this (m) do not glow in the fog (their sprite
+    /// and bloom remain).
+    pub scatter_distance: f32,
+    /// Distant light sprites (0 = off, 1 = physical intensity).
+    pub light_sprites: f32,
+    /// Sprites fade in from this distance (m) to twice it.
+    pub sprite_fade_distance: f32,
+    /// Smallest sprite (pixels).
+    pub sprite_min_pixels: f32,
+    /// Weight of each wider bloom mip (1 = the daytime chain; lower keeps
+    /// halos tight around lamps instead of a veil).
+    pub bloom_radius: f32,
+    /// Largest luminance one pixel feeds the bloom (exposed units).
+    pub bloom_limit: f32,
+    /// Night-vision shift of dim areas toward desaturated blue, 0..1.
+    pub scotopic: f32,
+    /// Cinematic night grade after the tonemapper, 0..1: filmic toe with
+    /// true blacks, S-curve contrast, teal shadows and warm highlights
+    /// (0 = the daytime look, unchanged).
+    pub night_grade: f32,
 }
 
 impl Default for Environment {
@@ -207,6 +285,23 @@ impl Default for Environment {
             ao_strength: 2.0,
             specular_occlusion: 1.0,
             sun_angular_diameter: 0.012,
+            auto_exposure: None,
+            night_sky: night::NightSky::default(),
+            ambient_fill: Vec3::ZERO,
+            wetness: 0.0,
+            puddles: 0.0,
+            puddle_size: 3.0,
+            emissive_scale: 1.0,
+            light_scatter: 0.0,
+            scatter_anisotropy: 0.6,
+            scatter_distance: 150.0,
+            light_sprites: 0.0,
+            sprite_fade_distance: 50.0,
+            sprite_min_pixels: 1.5,
+            bloom_radius: 1.0,
+            bloom_limit: 4.0,
+            scotopic: 0.0,
+            night_grade: 0.0,
         }
     }
 }
@@ -290,7 +385,10 @@ pub struct FrameDesc {
     pub camera: Camera,
     pub env: Environment,
     pub instances: Vec<DrawInstance>,
+    /// Legacy point lights (see [`PointLight`]).
     pub lights: Vec<PointLight>,
+    /// Point and spot lights, thousands per frame (clustered).
+    pub local_lights: Vec<Light>,
     pub lines: Vec<LineVertex>,
     pub time: f32,
 }
@@ -302,6 +400,9 @@ pub struct RenderStats {
     pub instances_culled: u32,
     pub triangles: u64,
     pub shadow_draws: u32,
+    /// Local lights after frustum culling (uploaded to the clusters).
+    pub lights: u32,
+    pub spot_shadows: u32,
     pub cpu_ms: f32,
 }
 
@@ -365,6 +466,8 @@ struct Targets {
     blur_bind: wgpu::BindGroup,
     taa_bind: wgpu::BindGroup,
     screen_bind: wgpu::BindGroup,
+    /// Eye adaptation compute inputs (reads `resolved`).
+    exposure_bind: wgpu::BindGroup,
 }
 
 struct PostBinds {
@@ -396,6 +499,11 @@ struct Pipelines {
     up: wgpu::RenderPipeline,
     tonemap: wgpu::RenderPipeline,
     fxaa: wgpu::RenderPipeline,
+    sprites: wgpu::RenderPipeline,
+    cluster: wgpu::ComputePipeline,
+    exposure_begin: wgpu::ComputePipeline,
+    exposure_hist: wgpu::ComputePipeline,
+    exposure_adapt: wgpu::ComputePipeline,
 }
 
 struct EnvInfo {
@@ -421,6 +529,8 @@ pub struct Renderer {
     screen_bgl: wgpu::BindGroupLayout,
     gtao_bgl: wgpu::BindGroupLayout,
     taa_bgl: wgpu::BindGroupLayout,
+    cluster_bgl: wgpu::BindGroupLayout,
+    exposure_bgl: wgpu::BindGroupLayout,
     taa_buf: wgpu::Buffer,
     frame_buf: wgpu::Buffer,
     frame_bind: wgpu::BindGroup,
@@ -446,6 +556,23 @@ pub struct Renderer {
     joint_bind: wgpu::BindGroup,
     line_buf: wgpu::Buffer,
     line_cap: u64,
+    /// Local lights of the frame (`GpuLight`), grown on demand.
+    lights_buf: wgpu::Buffer,
+    lights_cap: u64,
+    /// Light lists of the froxel grid (sized at resize).
+    cluster_buf: wgpu::Buffer,
+    cluster_grid: (u32, u32),
+    cluster_bind: wgpu::BindGroup,
+    /// `ExposureState` (pre-exposure, exposure), its histogram and params.
+    exposure_state: wgpu::Buffer,
+    exposure_hist: wgpu::Buffer,
+    exposure_uniform: wgpu::Buffer,
+    spot_shadow_view: wgpu::TextureView,
+    spot_shadow_layers: Vec<wgpu::TextureView>,
+    /// Adapt instantly (still captures, first frame of auto exposure).
+    exposure_instant: bool,
+    auto_exposure_prev: bool,
+    prev_time: f32,
     targets: Option<Targets>,
     pub stats: RenderStats,
     pub settings: RenderSettings,
@@ -508,8 +635,20 @@ pub fn create_instance() -> wgpu::Instance {
     wgpu::Instance::new(desc.with_env())
 }
 
+/// WGSL source of `shaders/<name>.wgsl`: the embedded copy, or the file in
+/// `FORJA_SHADER_DIR` when that is set (shader iteration without a rebuild).
+fn wgsl(name: &str, embedded: &str) -> String {
+    if let Ok(dir) = std::env::var("FORJA_SHADER_DIR")
+        && let Ok(s) = std::fs::read_to_string(std::path::Path::new(&dir).join(format!("{name}.wgsl")))
+    {
+        return s;
+    }
+    embedded.to_string()
+}
+
 fn shader(device: &wgpu::Device, label: &str, src: &str, with_common: bool) -> wgpu::ShaderModule {
-    let code = if with_common { format!("{COMMON}\n{src}") } else { src.to_string() };
+    let src = wgsl(label, src);
+    let code = if with_common { format!("{}\n{}\n{src}", wgsl("frame", FRAME), wgsl("common", COMMON)) } else { src };
     device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some(label), source: wgpu::ShaderSource::Wgsl(code.into()) })
 }
 
@@ -534,6 +673,17 @@ fn texture_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
         ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false },
         count: None,
     }
+}
+
+fn storage_entry(binding: u32, visibility: wgpu::ShaderStages, read_only: bool) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry { binding, visibility, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only }, has_dynamic_offset: false, min_binding_size: None }, count: None }
+}
+
+/// Light lists of the froxel grid for a viewport.
+fn cluster_buffer(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Buffer {
+    let (tx, ty) = lights::cluster_grid(width, height);
+    let words = tx * ty * (lights::CLUSTER_SLICES + 1) * lights::CLUSTER_STRIDE;
+    device.create_buffer(&wgpu::BufferDescriptor { label: Some("clusters"), size: words as u64 * 4, usage: wgpu::BufferUsages::STORAGE, mapped_at_creation: false })
 }
 
 fn uniform_entry(binding: u32, visibility: wgpu::ShaderStages) -> wgpu::BindGroupLayoutEntry {
@@ -589,6 +739,15 @@ impl Renderer {
                 wgpu::BindGroupLayoutEntry { binding: 2, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison), count: None },
                 texture_entry(3),
                 sampler_entry(4),
+                storage_entry(5, wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT, true),
+                storage_entry(6, wgpu::ShaderStages::FRAGMENT, true),
+                storage_entry(7, wgpu::ShaderStages::FRAGMENT, true),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 8,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Depth, view_dimension: wgpu::TextureViewDimension::D2Array, multisampled: false },
+                    count: None,
+                },
             ],
         });
         let material_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -607,7 +766,25 @@ impl Renderer {
         let cascade_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("cascade"), entries: &[uniform_entry(0, wgpu::ShaderStages::VERTEX)] });
         let post_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("post"),
-            entries: &[texture_entry(0), sampler_entry(1), uniform_entry(2, wgpu::ShaderStages::FRAGMENT), texture_entry(3)],
+            entries: &[texture_entry(0), sampler_entry(1), uniform_entry(2, wgpu::ShaderStages::FRAGMENT), texture_entry(3), storage_entry(4, wgpu::ShaderStages::FRAGMENT, true)],
+        });
+        let cluster_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("cluster"),
+            entries: &[uniform_entry(0, wgpu::ShaderStages::COMPUTE), storage_entry(1, wgpu::ShaderStages::COMPUTE, true), storage_entry(2, wgpu::ShaderStages::COMPUTE, false)],
+        });
+        let exposure_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("exposure"),
+            entries: &[
+                uniform_entry(0, wgpu::ShaderStages::COMPUTE),
+                storage_entry(1, wgpu::ShaderStages::COMPUTE, false),
+                storage_entry(2, wgpu::ShaderStages::COMPUTE, false),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: false }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false },
+                    count: None,
+                },
+            ],
         });
         let depth_entry = |binding: u32| wgpu::BindGroupLayoutEntry {
             binding,
@@ -632,6 +809,12 @@ impl Renderer {
         let post = shader(&device, "post", include_str!("shaders/post.wgsl"), false);
         let gtao = shader(&device, "gtao", include_str!("shaders/gtao.wgsl"), true);
         let taa = shader(&device, "taa", include_str!("shaders/taa.wgsl"), true);
+        let sprites = shader(&device, "sprites", include_str!("shaders/sprites.wgsl"), true);
+        let cluster = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("cluster"),
+            source: wgpu::ShaderSource::Wgsl(format!("{}\n{}", wgsl("frame", FRAME), wgsl("cluster", include_str!("shaders/cluster.wgsl"))).into()),
+        });
+        let exposure = shader(&device, "exposure", include_str!("shaders/exposure.wgsl"), false);
 
         let layout = |bgls: &[&wgpu::BindGroupLayout]| {
             let v: Vec<Option<&wgpu::BindGroupLayout>> = bgls.iter().map(|b| Some(*b)).collect();
@@ -645,6 +828,11 @@ impl Renderer {
         let post_layout = layout(&[&post_bgl]);
         let gtao_layout = layout(&[&frame_bgl, &gtao_bgl]);
         let taa_layout = layout(&[&frame_bgl, &taa_bgl]);
+        let cluster_layout = layout(&[&cluster_bgl]);
+        let exposure_layout = layout(&[&exposure_bgl]);
+        let compute = |module: &wgpu::ShaderModule, layout: &wgpu::PipelineLayout, entry: &str| {
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some(entry), layout: Some(layout), module, entry_point: Some(entry), compilation_options: Default::default(), cache: None })
+        };
 
         let depth_state = |write: bool| wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
@@ -797,6 +985,30 @@ impl Renderer {
             multiview_mask: None,
             cache: None,
         });
+        // Light sprites: additive, depth tested against the prepass.
+        let sprites_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("sprites"),
+            layout: Some(&frame_layout),
+            vertex: wgpu::VertexState { module: &sprites, entry_point: Some("vs_sprite"), compilation_options: Default::default(), buffers: &[] },
+            primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleStrip, ..Default::default() },
+            depth_stencil: Some(depth_state(false)),
+            multisample: Default::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &sprites,
+                entry_point: Some("fs_sprite"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: HDR_FORMAT,
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add },
+                        alpha: wgpu::BlendComponent::OVER,
+                    }),
+                    write_mask: wgpu::ColorWrites::COLOR,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
         let post_pipeline = |entry: &str, format: wgpu::TextureFormat, additive: bool| {
             let blend = additive.then_some(wgpu::BlendState {
                 color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add },
@@ -839,6 +1051,11 @@ impl Renderer {
             up: post_pipeline("fs_upsample", HDR_FORMAT, true),
             tonemap: post_pipeline("fs_tonemap", wgpu::TextureFormat::Rgba8UnormSrgb, false),
             fxaa: post_pipeline("fs_fxaa", output_format, false),
+            sprites: sprites_pipeline,
+            cluster: compute(&cluster, &cluster_layout, "cs_cluster"),
+            exposure_begin: compute(&exposure, &exposure_layout, "cs_begin"),
+            exposure_hist: compute(&exposure, &exposure_layout, "cs_histogram"),
+            exposure_adapt: compute(&exposure, &exposure_layout, "cs_adapt"),
         };
 
         let shadow_size = 2048;
@@ -904,8 +1121,35 @@ impl Renderer {
                 view_formats: &[],
             })
             .create_view(&Default::default());
-        let frame_bind = make_frame_bind(&device, &frame_bgl, &frame_buf, &shadow_view, &shadow_sampler, &env_view, &linear_sampler);
-        let cascade_bufs: Vec<wgpu::Buffer> = (0..4)
+        // Shadow maps of up to four spot lights.
+        let spot_tex = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("spot-shadow"),
+            size: wgpu::Extent3d { width: SPOT_SHADOW_SIZE, height: SPOT_SHADOW_SIZE, depth_or_array_layers: lights::MAX_SPOT_SHADOWS as u32 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: SHADOW_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let spot_shadow_view = spot_tex.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2Array), ..Default::default() });
+        let spot_shadow_layers = (0..lights::MAX_SPOT_SHADOWS as u32)
+            .map(|i| spot_tex.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2), base_array_layer: i, array_layer_count: Some(1), ..Default::default() }))
+            .collect();
+        let lights_cap = 1024 * std::mem::size_of::<lights::GpuLight>() as u64;
+        let lights_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("lights"), size: lights_cap, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let cluster_buf = cluster_buffer(&device, 1280, 720);
+        // Pre-exposure 1 and the default manual exposure until the first frame.
+        let exposure_state = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("exposure-state"),
+            contents: bytemuck::cast_slice(&[1.0f32, 1.0, 0.55, 0.0]),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        });
+        let exposure_hist = device.create_buffer(&wgpu::BufferDescriptor { label: Some("exposure-hist"), size: 256, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let exposure_uniform = device.create_buffer(&wgpu::BufferDescriptor { label: Some("exposure"), size: std::mem::size_of::<ExposureUniforms>() as u64, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let frame_bind = make_frame_bind(&device, &frame_bgl, &frame_buf, &shadow_view, &shadow_sampler, &env_view, &linear_sampler, &lights_buf, &cluster_buf, &exposure_state, &spot_shadow_view);
+        let cluster_bind = make_cluster_bind(&device, &cluster_bgl, &frame_buf, &lights_buf, &cluster_buf);
+        let cascade_bufs: Vec<wgpu::Buffer> = (0..4 + lights::MAX_SPOT_SHADOWS)
             .map(|_| device.create_buffer(&wgpu::BufferDescriptor { label: Some("cascade"), size: 64, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false }))
             .collect();
         let cascade_binds = cascade_bufs
@@ -933,6 +1177,8 @@ impl Renderer {
             screen_bgl,
             gtao_bgl,
             taa_bgl,
+            cluster_bgl,
+            exposure_bgl,
             taa_buf,
             frame_buf,
             frame_bind,
@@ -958,6 +1204,19 @@ impl Renderer {
             joint_bind,
             line_buf,
             line_cap,
+            lights_buf,
+            lights_cap,
+            cluster_buf,
+            cluster_grid: lights::cluster_grid(1280, 720),
+            cluster_bind,
+            exposure_state,
+            exposure_hist,
+            exposure_uniform,
+            spot_shadow_view,
+            spot_shadow_layers,
+            exposure_instant: false,
+            auto_exposure_prev: false,
+            prev_time: 0.0,
             targets: None,
             stats: RenderStats::default(),
             settings: RenderSettings::from_env(),
@@ -1046,7 +1305,7 @@ impl Renderer {
             );
         }
         self.env_view = tex.create_view(&Default::default());
-        self.frame_bind = make_frame_bind(&self.device, &self.frame_bgl, &self.frame_buf, &self.shadow_view, &self.shadow_sampler, &self.env_view, &self.linear_sampler);
+        self.rebuild_frame_bind();
         let horizon = (0..8).map(|i| {
             let a = i as f32 / 8.0 * std::f32::consts::TAU;
             e.irradiance(Vec3::new(a.cos(), 0.0, a.sin()))
@@ -1142,6 +1401,7 @@ impl Renderer {
                     wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.clamp_sampler) },
                     wgpu::BindGroupEntry { binding: 2, resource: u.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(extra) },
+                    wgpu::BindGroupEntry { binding: 4, resource: self.exposure_state.as_entire_binding() },
                 ],
             })
         };
@@ -1170,6 +1430,16 @@ impl Renderer {
         let fu = mk_uniform([1.0 / width as f32, 1.0 / height as f32], [1.0, 0.0, 0.0, 0.0]);
         let fxaa = bind(&ldr, &fu, &dummy);
         uniforms.push(fu);
+        let exposure_bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("exposure"),
+            layout: &self.exposure_bgl,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: self.exposure_uniform.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: self.exposure_state.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 2, resource: self.exposure_hist.as_entire_binding() },
+                entry(3, &resolved),
+            ],
+        });
         self.targets = Some(Targets {
             width,
             height,
@@ -1188,7 +1458,33 @@ impl Renderer {
             blur_bind,
             taa_bind,
             screen_bind,
+            exposure_bind,
         });
+        let grid = lights::cluster_grid(width, height);
+        if grid != self.cluster_grid {
+            self.cluster_grid = grid;
+            self.cluster_buf = cluster_buffer(&self.device, width, height);
+            self.rebuild_frame_bind();
+        }
+    }
+
+    /// Recreates the bind groups that reference the frame's buffers (after
+    /// a new environment map, cluster grid or a larger light buffer).
+    fn rebuild_frame_bind(&mut self) {
+        self.frame_bind = make_frame_bind(
+            &self.device,
+            &self.frame_bgl,
+            &self.frame_buf,
+            &self.shadow_view,
+            &self.shadow_sampler,
+            &self.env_view,
+            &self.linear_sampler,
+            &self.lights_buf,
+            &self.cluster_buf,
+            &self.exposure_state,
+            &self.spot_shadow_view,
+        );
+        self.cluster_bind = make_cluster_bind(&self.device, &self.cluster_bgl, &self.frame_buf, &self.lights_buf, &self.cluster_buf);
     }
 
     // ---------------------------------------------------------------- upload
@@ -1351,14 +1647,73 @@ impl Renderer {
         let cam = Camera { aspect: width as f32 / height as f32, ..frame.camera };
         let tf = self.temporal_frame(&cam, frame.time, width, height);
         let env = &frame.env;
+        // Local lights: frustum culled, closest first; the first few
+        // shadowed spots get a shadow map.
+        let light_frustum = Frustum::from_view_proj(&cam.view_proj());
+        let visible = lights::visible_lights(frame.lights.iter().map(|p| Light::from(*p)).chain(frame.local_lights.iter().copied()), &light_frustum, cam.position);
+        let mut spot_vp = [Mat4::IDENTITY; lights::MAX_SPOT_SHADOWS];
+        let mut n_spot = 0usize;
+        let gpu_lights: Vec<lights::GpuLight> = visible
+            .iter()
+            .map(|l| {
+                let mut layer = -1;
+                if l.cast_shadows && n_spot < lights::MAX_SPOT_SHADOWS && let Some(m) = lights::spot_view_proj(l) {
+                    spot_vp[n_spot] = m;
+                    layer = n_spot as i32;
+                    n_spot += 1;
+                }
+                lights::GpuLight::pack(l, layer)
+            })
+            .collect();
+        let light_bytes = std::mem::size_of_val(gpu_lights.as_slice()) as u64;
+        if light_bytes > self.lights_cap {
+            self.lights_cap = light_bytes.next_power_of_two();
+            self.lights_buf = self.device.create_buffer(&wgpu::BufferDescriptor { label: Some("lights"), size: self.lights_cap, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+            self.rebuild_frame_bind();
+        }
+        if !gpu_lights.is_empty() {
+            self.queue.write_buffer(&self.lights_buf, 0, bytemuck::cast_slice(&gpu_lights));
+        }
+        let n_lights = gpu_lights.len() as u32;
+        // Eye adaptation state: manual exposure keeps pre-exposure 1 (the
+        // daytime path is unchanged); auto exposure starts from `exposure`.
+        let auto = env.auto_exposure;
+        if let Some(a) = auto {
+            let dt = frame.time - self.prev_time;
+            let dt = if dt > 0.0 && dt < 0.5 { dt } else { 1.0 / 60.0 };
+            let instant = self.exposure_instant || !self.auto_exposure_prev;
+            let u = ExposureUniforms {
+                a: [dt, a.brighten_rate, a.darken_rate, instant as u32 as f32],
+                b: [a.min_exposure, a.max_exposure, a.compensation_ev.exp2(), a.low_percentile],
+                c: [a.high_percentile, EXPOSURE_LOG_MIN, EXPOSURE_LOG_RANGE, EXPOSURE_KEY_SCALE],
+                d: [lights::NITS_PER_UNIT, 0.0, 0.0, 0.0],
+            };
+            self.queue.write_buffer(&self.exposure_uniform, 0, bytemuck::bytes_of(&u));
+            if !self.auto_exposure_prev {
+                self.queue.write_buffer(&self.exposure_state, 0, bytemuck::cast_slice(&[1.0f32, 1.0, env.exposure, 0.0]));
+            }
+        } else {
+            self.queue.write_buffer(&self.exposure_state, 0, bytemuck::cast_slice(&[1.0f32, 1.0, env.exposure, 0.0]));
+        }
+        self.auto_exposure_prev = auto.is_some();
+        self.prev_time = frame.time;
         let ibl = self.env.as_ref().filter(|_| env.use_ibl);
-        let (sun, sky) = match ibl {
+        let (sun, mut sky) = match ibl {
             Some(e) => (e.sun_dir, atmosphere::SkyLighting { sun_color: e.sun_color, zenith: e.zenith, horizon: e.horizon, ground: e.ground }),
             None => {
                 let sun = env.sun_dir.normalize();
                 (sun, atmosphere::sky_lighting(sun, env.sun_illuminance, Vec3::new(0.25, 0.24, 0.22)))
             }
         };
+        // The night sky lights the scene too (analytic sky only).
+        let night_sky = if ibl.is_none() { env.night_sky } else { night::NightSky { zenith: Vec3::ZERO, glow: Vec3::ZERO, stars: 0.0, ..env.night_sky } };
+        {
+            let ns = &night_sky;
+            let g = |s: f32| ns.glow * (-s / ns.glow_height.max(0.005)).exp();
+            sky.zenith += ns.zenith + g(0.94);
+            sky.horizon += ns.zenith + g(0.08);
+            sky.ground += (ns.zenith + g(0.3)) * 0.12;
+        }
         let mut sh = [[0.0f32; 4]; 9];
         if let Some(e) = ibl {
             for k in 0..9 {
@@ -1378,7 +1733,9 @@ impl Renderer {
         // something is near the camera, as it always is at street level.
         let near = cam.near.max(0.1);
         let mut nearest = f32::INFINITY;
-        for inst in &frame.instances {
+        // `shadow_distance <= 0` turns the sun (or moon) shadows off.
+        let sun_shadows = env.shadow_distance > 0.0;
+        for inst in frame.instances.iter().filter(|_| sun_shadows) {
             let Some(model) = self.models.get(inst.model.0 as usize) else { continue };
             if model.bounds.is_empty() {
                 continue;
@@ -1401,8 +1758,8 @@ impl Renderer {
                 }
             }
         }
-        let (shadow_near, shadow_far) = camera::fitted_shadow_range(near, nearest, cam.fov_y, cam.aspect, env.shadow_distance);
-        let splits = camera::cascade_splits(shadow_near, shadow_far, 0.8);
+        let (shadow_near, shadow_far) = if sun_shadows { camera::fitted_shadow_range(near, nearest, cam.fov_y, cam.aspect, env.shadow_distance) } else { (near, near * 2.0) };
+        let splits = if sun_shadows { camera::cascade_splits(shadow_near, shadow_far, 0.8) } else { [0.0; 4] };
         let mut cascade_vp = [Mat4::IDENTITY; 4];
         let mut cascade_texel = [0.0f32; 4];
         let mut cascade_range = [0.0f32; 4];
@@ -1418,12 +1775,9 @@ impl Renderer {
         let proj = cam.proj();
         let fx_on = |b: bool| b as u32 as f32;
         let s = &self.settings;
-        let mut lights = [GpuLight::zeroed(); MAX_LIGHTS];
-        let mut sorted: Vec<&PointLight> = frame.lights.iter().collect();
-        sorted.sort_by(|a, b| (a.position - cam.position).length_squared().total_cmp(&(b.position - cam.position).length_squared()));
-        for (i, l) in sorted.iter().take(MAX_LIGHTS).enumerate() {
-            lights[i] = GpuLight { pos_radius: [l.position.x, l.position.y, l.position.z, l.radius], color: [l.color.x, l.color.y, l.color.z, l.intensity] };
-        }
+        let (tiles_x, tiles_y) = self.cluster_grid;
+        let slice_k = lights::CLUSTER_SLICES as f32 / (lights::CLUSTER_FAR / lights::CLUSTER_NEAR).ln();
+        let ns = &night_sky;
         let uniforms = FrameUniforms {
             view_proj: view_proj.to_cols_array_2d(),
             view: view.to_cols_array_2d(),
@@ -1436,7 +1790,7 @@ impl Renderer {
             ground_color: sky.ground.extend(env.fog_falloff).to_array(),
             cascade_splits: splits,
             cascade_vp: cascade_vp.map(|m| m.to_cols_array_2d()),
-            params: [sorted.len().min(MAX_LIGHTS) as f32, 1.0 / self.shadow_size as f32, env.bloom, 0.0],
+            params: [0.0, 1.0 / self.shadow_size as f32, env.bloom, 0.0],
             screen: [width as f32, height as f32, 1.0 / width as f32, 1.0 / height as f32],
             sh,
             env_params: [ibl.is_some() as u32 as f32, ibl.map_or(0.0, |e| e.max_mip), 1.0, 0.0],
@@ -1445,23 +1799,34 @@ impl Renderer {
             jitter: [tf.jitter.x, tf.jitter.y, tf.frame_index as f32, fx_on(tf.history_valid)],
             cascade_texel,
             cascade_range,
-            fx: [if s.ssao { env.ao_strength } else { 0.0 }, fx_on(s.contact_shadows), fx_on(s.ssr && tf.history_valid), env.sun_angular_diameter],
+            fx: [if s.ssao { env.ao_strength } else { 0.0 }, fx_on(s.contact_shadows && sun_shadows), fx_on(s.ssr && tf.history_valid), env.sun_angular_diameter],
             ao_params: [env.ao_radius, env.specular_occlusion, 60.0, s.debug_view as f32],
-            lights,
+            lighting: [n_lights as f32, fx_on(auto.is_some()), env.light_scatter, env.sprite_fade_distance],
+            cluster: [tiles_x as f32, tiles_y as f32, lights::CLUSTER_SLICES as f32, lights::CLUSTER_TILE as f32],
+            cluster_z: [lights::CLUSTER_NEAR, lights::CLUSTER_FAR, slice_k, env.scatter_distance],
+            wet: [env.wetness, env.puddles, 1.0 / env.puddle_size.max(0.1), env.emissive_scale],
+            fill: env.ambient_fill.extend(ns.stars).to_array(),
+            night_zenith: ns.zenith.extend(env.sprite_min_pixels).to_array(),
+            sky_glow: ns.glow.extend(ns.glow_height.max(0.005)).to_array(),
+            scatter: [env.scatter_anisotropy.clamp(-0.95, 0.95), env.light_sprites, n_spot as f32, fx_on(env.wetness > 0.0)],
+            spot_vp: spot_vp.map(|m| m.to_cols_array_2d()),
         };
         self.queue.write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&uniforms));
         self.queue.write_buffer(&self.taa_buf, 0, bytemuck::bytes_of(&tf.taa_params));
-        for (i, m) in cascade_vp.iter().enumerate() {
+        for (i, m) in cascade_vp.iter().chain(&spot_vp[..n_spot]).enumerate() {
             self.queue.write_buffer(&self.cascade_bufs[i], 0, bytemuck::bytes_of(&m.to_cols_array_2d()));
         }
 
         // Build instance batches: main view + one list per cascade.
         let tan_half_fov = (cam.fov_y * 0.5).tan();
-        let cascade_planes: Vec<[Vec4; 6]> = cascade_vp.iter().map(camera::frustum_planes_standard).collect();
+        // Shadow casters: the four sun cascades, then the shadowed spots
+        // (with the smallest caster radius each accepts).
+        let mut cascade_planes: Vec<([Vec4; 6], f32)> = cascade_vp.iter().zip(cascade_texel).map(|(m, t)| (camera::frustum_planes_standard(m), if sun_shadows { 2.5 * t } else { f32::INFINITY })).collect();
+        cascade_planes.extend(spot_vp[..n_spot].iter().map(|m| (camera::frustum_planes_standard(m), 0.05)));
         let mut joints: Vec<[[f32; 4]; 4]> = Vec::new();
         // (mesh, skinned, joint offset, instance raw)
         let mut main: Vec<(u32, InstanceRaw)> = Vec::new();
-        let mut shadow: [Vec<(u32, InstanceRaw)>; 4] = Default::default();
+        let mut shadow: [Vec<(u32, InstanceRaw)>; 4 + lights::MAX_SPOT_SHADOWS] = Default::default();
         let mut culled = 0u32;
         for inst in &frame.instances {
             let Some(model) = self.models.get(inst.model.0 as usize) else { continue };
@@ -1480,8 +1845,8 @@ impl Renderer {
             // that still matter far away and from the air.
             let mut cmask = 0u8;
             if inst.cast_shadows {
-                for (c, planes) in cascade_planes.iter().enumerate() {
-                    if radius >= 2.5 * cascade_texel[c] && aabb_in_planes(&wbi, planes) {
+                for (c, (planes, min_r)) in cascade_planes.iter().enumerate() {
+                    if radius >= *min_r && aabb_in_planes(&wbi, planes) {
                         cmask |= 1 << c;
                     }
                 }
@@ -1529,7 +1894,7 @@ impl Renderer {
                 if cmask != 0 && !self.materials[mesh.material as usize].blend {
                     let mut sraw = raw;
                     sraw.extra[2] = (lod + 1).min(mesh.lods.len() as u32);
-                    for (c, planes) in cascade_planes.iter().enumerate() {
+                    for (c, (planes, _)) in cascade_planes.iter().enumerate() {
                         if cmask & (1 << c) != 0 && wb.as_ref().is_none_or(|wb| aabb_in_planes(wb, planes)) {
                             shadow[c].push((part.mesh, sraw));
                         }
@@ -1557,7 +1922,7 @@ impl Renderer {
         }
         let mut all: Vec<InstanceRaw> = Vec::with_capacity(main.len() + shadow.iter().map(Vec::len).sum::<usize>());
         all.extend(main.iter().map(|(_, r)| *r));
-        let mut shadow_ranges = [0u32; 4];
+        let mut shadow_ranges = [0u32; 4 + lights::MAX_SPOT_SHADOWS];
         for (c, s) in shadow.iter().enumerate() {
             shadow_ranges[c] = all.len() as u32;
             all.extend(s.iter().map(|(_, r)| *r));
@@ -1594,8 +1959,19 @@ impl Renderer {
         self.queue.write_buffer(
             tonemap_u,
             0,
-            bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0], params: [env.exposure, env.bloom, env.vignette, 0.0] }),
+            bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, env.scotopic, env.night_grade], params: [env.exposure, env.bloom, env.vignette, fx_on(auto.is_some())] }),
         );
+        // Bloom: first-mip compression (1 / limit) and the weight of the
+        // wider mips (1 / 4 and 1 by day, as before).
+        self.queue.write_buffer(
+            &pu[0],
+            0,
+            bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, 1.0 / env.bloom_limit.max(0.01), 0.0], params: [0.0, 0.0, 0.0, 1.0] }),
+        );
+        for (k, i) in (1..BLOOM_MIPS).rev().enumerate() {
+            let (_, bw, bh) = t.bloom[i];
+            self.queue.write_buffer(&pu[BLOOM_MIPS + k], 0, bytemuck::bytes_of(&PostUniforms { texel: [1.0 / bw as f32, 1.0 / bh as f32, 0.0, 0.0], params: [env.bloom_radius.max(1e-3), 0.0, 0.0, 0.0] }));
+        }
         // Final pass: FXAA without TAA, CAS sharpening with it (stronger
         // while the camera moves, when the temporal filter is softer).
         let still = tf.taa_params[3] > 0.5;
@@ -1607,14 +1983,28 @@ impl Renderer {
         );
 
         let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("frame") });
-        let mut stats = RenderStats { instances_culled: culled, ..Default::default() };
-        // 1. Shadows (alpha-masked casters are alpha tested).
-        for c in 0..4 {
+        let mut stats = RenderStats { instances_culled: culled, lights: n_lights, spot_shadows: n_spot as u32, ..Default::default() };
+        let compute = |enc: &mut wgpu::CommandEncoder, pipe: &wgpu::ComputePipeline, bind: &wgpu::BindGroup, groups: (u32, u32)| {
+            let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("compute"), timestamp_writes: None });
+            pass.set_pipeline(pipe);
+            pass.set_bind_group(0, bind, &[]);
+            pass.dispatch_workgroups(groups.0, groups.1, 1);
+        };
+        // 0. Eye adaptation: this frame is pre-exposed by the last exposure.
+        if auto.is_some() {
+            compute(&mut enc, &self.pipelines.exposure_begin, &t.exposure_bind, (1, 1));
+        }
+        // 1. Shadows (alpha-masked casters are alpha tested): sun cascades,
+        // then the shadowed spot lights.
+        for c in 0..4 + n_spot {
+            if c < 4 && !sun_shadows {
+                continue;
+            }
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("shadow"),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.shadow_layers[c],
+                    view: if c < 4 { &self.shadow_layers[c] } else { &self.spot_shadow_layers[c - 4] },
                     depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
                     stencil_ops: None,
                 }),
@@ -1745,6 +2135,11 @@ impl Renderer {
             screen_pass(&mut enc, &t.ao_raw, &self.pipelines.gtao, &t.gtao_bind);
             screen_pass(&mut enc, &t.ao, &self.pipelines.ao_blur, &t.blur_bind);
         }
+        // 3b. Light clusters (froxel light lists).
+        if n_lights > 0 {
+            let clusters = tiles_x * tiles_y * (lights::CLUSTER_SLICES + 1);
+            compute(&mut enc, &self.pipelines.cluster, &self.cluster_bind, (clusters.div_ceil(64), 1));
+        }
         // 4. Main HDR pass + sky + lines, depth-tested against the prepass
         // (read-only, so the shaders can also sample it).
         {
@@ -1773,6 +2168,10 @@ impl Renderer {
                     pass.set_pipeline(&self.pipelines.sky);
                     pass.set_bind_group(0, &self.frame_bind, &[]);
                     pass.draw(0..3, 0..1);
+                    if env.light_sprites > 0.0 && n_lights > 0 {
+                        pass.set_pipeline(&self.pipelines.sprites);
+                        pass.draw(0..4, 0..n_lights);
+                    }
                     bound_pipe = usize::MAX;
                     sky_drawn = true;
                 }
@@ -1831,6 +2230,13 @@ impl Renderer {
             wgpu::TexelCopyTextureInfo { texture: &t.history_tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
             wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
         );
+        // 5b. Eye adaptation: histogram of the resolved frame, new exposure
+        // (read by the tonemapper below and next frame's pre-exposure).
+        if auto.is_some() {
+            enc.clear_buffer(&self.exposure_hist, 0, None);
+            compute(&mut enc, &self.pipelines.exposure_hist, &t.exposure_bind, (width.div_ceil(32), height.div_ceil(32)));
+            compute(&mut enc, &self.pipelines.exposure_adapt, &t.exposure_bind, (1, 1));
+        }
         // 6. Bloom down/up chain.
         let fullscreen = |enc: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, pipe: &wgpu::RenderPipeline, bind: &wgpu::BindGroup, load: wgpu::LoadOp<wgpu::Color>| {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1899,10 +2305,18 @@ impl Renderer {
         self.reset_history();
         let view = tex.create_view(&Default::default());
         let frames = if self.settings.taa { self.settings.capture_frames.max(1) } else { 1 };
+        // Eye adaptation converges instantly on a still image: two warm-up
+        // frames (the first may be pre-exposed for another scene), which
+        // also serve as the SSR history.
+        let auto = frame.env.auto_exposure.is_some();
+        self.exposure_instant = auto;
+        let warmup = if auto { 2 } else { self.settings.ssr as u32 };
         // Screen-space reflections read the previous frame: render one
         // warm-up frame, then accumulate from scratch with it as history.
-        if self.settings.ssr {
-            self.render(frame, &view);
+        if warmup > 0 {
+            for _ in 0..warmup {
+                self.render(frame, &view);
+            }
             self.temporal.restart = true;
         }
         let mut cpu_ms = 0.0;
@@ -1910,6 +2324,7 @@ impl Renderer {
             self.render(frame, &view);
             cpu_ms += self.stats.cpu_ms;
         }
+        self.exposure_instant = false;
         self.stats.cpu_ms = cpu_ms / frames as f32;
         tex
     }
@@ -1944,6 +2359,7 @@ impl Renderer {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn make_frame_bind(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
@@ -1952,6 +2368,10 @@ fn make_frame_bind(
     shadow_sampler: &wgpu::Sampler,
     env_view: &wgpu::TextureView,
     env_sampler: &wgpu::Sampler,
+    lights_buf: &wgpu::Buffer,
+    cluster_buf: &wgpu::Buffer,
+    exposure_state: &wgpu::Buffer,
+    spot_shadow_view: &wgpu::TextureView,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("frame"),
@@ -1962,6 +2382,22 @@ fn make_frame_bind(
             wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(shadow_sampler) },
             wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(env_view) },
             wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::Sampler(env_sampler) },
+            wgpu::BindGroupEntry { binding: 5, resource: lights_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 6, resource: cluster_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 7, resource: exposure_state.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 8, resource: wgpu::BindingResource::TextureView(spot_shadow_view) },
+        ],
+    })
+}
+
+fn make_cluster_bind(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, frame_buf: &wgpu::Buffer, lights_buf: &wgpu::Buffer, cluster_buf: &wgpu::Buffer) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("cluster"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: frame_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: lights_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: cluster_buf.as_entire_binding() },
         ],
     })
 }
@@ -2079,9 +2515,23 @@ mod tests {
 
     #[test]
     fn frame_uniforms_match_wgsl_layout() {
-        // WGSL uniform structs are 16-byte aligned; `lights` follows the
-        // vec4 fields directly.
-        assert_eq!(std::mem::size_of::<FrameUniforms>() % 16, 0);
-        assert_eq!(std::mem::offset_of!(FrameUniforms, lights) % 16, 0);
+        // Every field of `Frame` in frame.wgsl is a vec4, a mat4 or an array
+        // of them (no padding), so its size is the sum of the field sizes.
+        let src = FRAME.split("struct Frame {").nth(1).and_then(|s| s.split("};").next()).expect("struct Frame");
+        let mut size = 0usize;
+        for line in src.lines().map(|l| l.split("//").next().unwrap_or("").trim()).filter(|l| !l.is_empty()) {
+            let ty = line.split(':').nth(1).expect("field").trim().trim_end_matches(',');
+            size += match ty {
+                "vec4<f32>" => 16,
+                "mat4x4<f32>" => 64,
+                t if t.starts_with("array<mat4x4<f32>,") => 64 * t.trim_end_matches('>').rsplit(',').next().unwrap().trim().parse::<usize>().unwrap(),
+                t if t.starts_with("array<vec4<f32>,") => 16 * t.trim_end_matches('>').rsplit(',').next().unwrap().trim().parse::<usize>().unwrap(),
+                t => panic!("unexpected WGSL field type {t}"),
+            };
+        }
+        assert_eq!(std::mem::size_of::<FrameUniforms>(), size);
+        assert_eq!(std::mem::size_of::<lights::GpuLight>(), 64);
+        assert_eq!(lights::CLUSTER_STRIDE, 49, "CLUSTER_STRIDE in common.wgsl and cluster.wgsl");
+        assert!(COMMON.contains("const CLUSTER_STRIDE: u32 = 49u;"));
     }
 }
