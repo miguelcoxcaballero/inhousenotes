@@ -63,7 +63,22 @@
         try {sessionStorage.setItem('ihn-network-offline',disconnected?'1':'0');}catch(_){}
         const changed=before!==offline();
         if(changed)host?.connectionChanged?.(value);
-        if(changed&&loaded) {reload().then(()=>host.refreshed?.()).catch(()=>{});if(value){kick();catalogue().catch(()=>{});}}
+        if(changed&&loaded) {reload().then(()=>host.refreshed?.()).catch(()=>{});if(value){void kick({force:true,reason:'online'});catalogue().catch(()=>{});}}
+        if(value)stopOfflineProbes();else if(changed)scheduleOfflineProbe();
+    }
+    // While offline, Drive is probed with a growing interval (30 s up to
+    // 5 min) and only while the app is visible; 'online' and returning to
+    // the app probe at once. Nothing is probed while connected.
+    const PROBE_BASE_MS=30000, PROBE_MAX_MS=5*60000;
+    let probeTimer=null, probeDelay=PROBE_BASE_MS;
+    function stopOfflineProbes() {clearTimeout(probeTimer);probeTimer=null;probeDelay=PROBE_BASE_MS;}
+    function scheduleOfflineProbe() {
+        clearTimeout(probeTimer);probeTimer=null;
+        if(isWorker||!initialized||!offline()||document.hidden)return;
+        probeTimer=setTimeout(()=>{
+            probeTimer=null;probeDelay=Math.min(PROBE_MAX_MS,probeDelay*2);
+            void probeConnection();
+        },probeDelay);
     }
     let probing=false;
     async function probeConnection() {
@@ -78,13 +93,15 @@
                 cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(5000)});
             if(epoch!==networkEpoch)return;
             connectivity(response.status>0);
-            if(!offline())void kick();
-        }catch(_){if(epoch===networkEpoch)connectivity(false);}finally{probing=false;}
+            if(!offline())void kick({reason:'probe'});
+        }catch(_){if(epoch===networkEpoch)connectivity(false);}finally{probing=false;if(offline()&&!probeTimer)scheduleOfflineProbe();}
     }
     function networkAvailable() {
         // A real authenticated response outranks an older failed probe and the
         // occasionally stale navigator.onLine flag in an Android WebView.
         networkEpoch++;connectivity(true);
+        // An authenticated response also proves that sign-in works again.
+        if(waitingForAuth&&(!host?.canSync||host.canSync()))void kick({reason:'signed-in'});
     }
     function knownAccount() {
         try {return (localStorage.getItem('drive-hint-email')||'').trim().toLowerCase();} catch(_){return '';}
@@ -96,7 +113,7 @@
         if(account!==requestedAccount)return;
         const aliases=new Map(items.filter(e=>e.remoteId && e.remoteId!==e.id).map(e=>[e.remoteId,e.id]));
         if(driveRoot?.remoteId)aliases.set(driveRoot.remoteId,'root');
-        const byId=new Map(items.map(e=>[e.id,e]));
+        const byId=new Map(items.map(e=>[e.id,e]));storedEntries=byId;
         entries=items.filter(e=>!aliases.has(e.id)).map(e=>{
             const remote=!e.pending&&e.remoteId?byId.get(e.remoteId):null;
             const remoteIsNewer=remote&&(Date.parse(remote.modifiedTime)||0)>=(Date.parse(e.modifiedTime)||0);
@@ -200,10 +217,25 @@
         for(const entry of activeEntries)if(entry.mimeType==='application/pdf'&&(entry.pending||entry.id.startsWith('local-')))byId.set(entry.remoteId||entry.id,entry);
         return [...byId.values()].sort(compareRecents).slice(0,12);
     }
+    // Home refreshes its lists every 30 s. When Drive returns exactly what
+    // is already cached (and the same view order), there is nothing to write
+    // or to re-render.
+    let storedEntries=new Map();
+    const sameValue=(a,b)=>a===b||JSON.stringify(a)===JSON.stringify(b);
+    function alreadyObserved(items,view) {
+        if(!loaded)return false;
+        if(view&&!sameValue(savedViews[view],items.map(e=>e.id)))return false;
+        return items.every(item=>{
+            const stored=storedEntries.get(item.id);
+            return !!stored&&Object.keys(item).every(key=>sameValue(stored[key],item[key]));
+        });
+    }
     async function observed(items,parent,view) {
         if (!account) return;
         const observedAccount=account;
-        await S.cacheEntries(observedAccount,items.map(e=>({...e,...(!e.parents&&parent?{parents:[parent]}:{})})));
+        const observedItems=items.map(e=>({...e,...(!e.parents&&parent?{parents:[parent]}:{})}));
+        if(alreadyObserved(observedItems,view))return;
+        await S.cacheEntries(observedAccount,observedItems);
         if(view)await S.patch('settings',observedAccount,'home-views',old=>({...old,[view]:items.map(e=>e.id)}));
         await reload();
     }
@@ -244,7 +276,7 @@
         clearTimeout(captureTimer);
         captureTimer=setTimeout(()=>{
             if (host.busy()) {scheduleCapture();return;}
-            capture().then(()=>kick()).catch(error=>host.error(error));
+            capture().then(()=>kick({reason:'checkpoint'})).catch(error=>host.error(error));
         },180);
     }
     async function prepared(id,blob,version,session) {
@@ -284,7 +316,7 @@
     }
     async function createFolder(parent,name) {
         if (!account) throw new Error('Sign in once to choose your Drive account');
-        const entry=await S.createFolder(account,parent,name);await reload();await scheduleBackground();kick();return entry;
+        const entry=await S.createFolder(account,parent,name);await reload();await scheduleBackground();void kick({reason:'checkpoint'});return entry;
     }
     async function catalogue() {
         if (cataloguePromise || !account || offline() || isWorker) return cataloguePromise;
@@ -314,11 +346,27 @@
         })().finally(()=>{cataloguePromise=null;});
         return cataloguePromise;
     }
-    let nativePausedForEditing = false;
+    // ── Platform background work (Android WorkManager, Background Sync) ──
+    // Each starts a second, complete instance of the app. While this page is
+    // visible it processes the outbox itself, so platform work is requested
+    // only once the app is hidden with operations pending, and withdrawn
+    // while the app is visible or nothing is pending. WorkManager jobs
+    // survive restarts, so their state is unknown until first cancelled.
+    let nativePausedForEditing = false, nativeScheduled = null;
+    const appVisible = () => document.visibilityState === 'visible';
+    function cancelNative() {
+        if (isWorker || nativeScheduled === false || !root.InhouseBackground?.cancel) return;
+        try { root.InhouseBackground.cancel(); nativeScheduled = false; } catch (_) { }
+    }
     async function scheduleBackground() {
-        if (!account || (nativePausedForEditing && root.hasHotUserInteraction?.(root.getDocumentSaveIdleWindow?.() ?? 180))) return;
+        if (!account || isWorker || (nativePausedForEditing && root.hasHotUserInteraction?.(root.getDocumentSaveIdleWindow?.() ?? 180))) return;
         nativePausedForEditing = false;
-        try {root.InhouseBackground?.schedule?.();}catch(_){}
+        if (appVisible()) return;
+        const scheduledAccount = account;
+        const pending = (await S.list('outbox', scheduledAccount)).length;
+        if (account !== scheduledAccount || appVisible()) return;
+        if (!pending) { cancelNative(); return; }
+        try { if (root.InhouseBackground?.schedule) { root.InhouseBackground.schedule(); nativeScheduled = true; } } catch (_) { }
         try {const registration=await navigator.serviceWorker?.getRegistration();await registration?.sync?.register('inhouse-outbox');}catch(_){}
     }
     let nativeEditingResumeTimer = null;
@@ -327,10 +375,10 @@
         // The hidden editor must yield with its foreground owner as well.
         try { syncFrame?.contentWindow?.interruptDocumentBackgroundWork?.(); } catch (_) { }
         // Android also has an independent headless sync WebView. Stop its
-        // WorkManager job once per writing burst, then restore scheduling.
+        // WorkManager job once per writing burst.
         if (!nativePausedForEditing && root.InhouseBackground?.cancel) {
             nativePausedForEditing = true;
-            try { root.InhouseBackground.cancel(); } catch (_) { }
+            try { root.InhouseBackground.cancel(); nativeScheduled = false; } catch (_) { }
         }
     }
     function resumeAfterEditing() {
@@ -344,43 +392,159 @@
         }
         clearTimeout(nativeEditingResumeTimer); nativeEditingResumeTimer = null;
         nativePausedForEditing = false;
+        // A visible app keeps processing its own outbox; the platform job
+        // is requested again when the app is hidden (see scheduleBackground).
         void scheduleBackground();
+        if (deferredKick) void kick({reason:'again'});
     }
-    async function kick() {
-        if (isWorker || !initialized || !resumed || !account || offline() || syncFrame || kicking || host.busy()) return;
-        kicking=true;
+
+    // ── Outbox scheduling ──
+    // The outbox is processed only when that can make progress: a new
+    // checkpoint, regained connectivity, the app returning to the
+    // foreground, an explicit retry, a released sync lease or the backoff
+    // deadline of an unfinished operation (InhouseOfflineSync.retryAt).
+    // There is no fixed polling: at most one timer waits for the next
+    // deadline. One hidden document processor is reused between runs and
+    // released once idle.
+    const LAUNCH_CAPTURE_WAIT_MS = 3000, BUSY_RECHECK_MS = 3000, MIN_RUN_GAP_MS = 5000, WORKER_IDLE_MS = 90000, WORKER_RUN_TIMEOUT_MS = 8 * 60 * 1000;
+    const RUN_RETRY_BASE_MS = 15000, RUN_RETRY_MAX_MS = 15 * 60000;
+    let kickTimer = null, kickTimerAt = 0, kickAgain = false, forceAgain = false, deferredKick = false, waitingForLease = false, waitingForAuth = false;
+    let worker = null, workerRunning = false, workerIdleTimer = null, lastRunEndedAt = 0, runFailures = 0, runRetryAt = 0;
+    const diagnostics = { kicks: 0, runs: 0, frames: 0, reused: 0 };
+    const retryAt = op => root.InhouseOfflineSync?.retryAt?.(op) || 0;
+    // Kicks caused by this app's own saving never force another save of the
+    // open document (which could otherwise feed itself).
+    const OWN_WORK = new Set(['checkpoint', 'after-save', 'after-run', 'lease', 'again']);
+    function armKick(at) {
+        if (isWorker || !(at > 0)) return;
+        if (kickTimer && kickTimerAt <= at) return;
+        clearTimeout(kickTimer); kickTimerAt = at;
+        kickTimer = setTimeout(() => { kickTimer = null; kickTimerAt = 0; void kick({reason:'timer'}); }, Math.max(0, at - Date.now()));
+    }
+    function stopScheduling() {
+        if (kickTimer) clearTimeout(kickTimer);
+        kickTimer = null; kickTimerAt = 0;
+        kickAgain = forceAgain = deferredKick = waitingForLease = waitingForAuth = false;
+        runFailures = 0; runRetryAt = 0;
+    }
+    async function kick(options = {}) {
+        if (!options || typeof options !== 'object') options = {};
+        if (isWorker || !initialized || !resumed || !account || offline()) return;
+        diagnostics.kicks++;
+        if (options.force) { forceAgain = true; runRetryAt = 0; }
+        if (kicking || workerRunning) { kickAgain = true; return; }
+        if (host.busy()) { deferredKick = true; armKick(Date.now() + BUSY_RECHECK_MS); return; }
+        if (host.canSync && !host.canSync()) { waitingForAuth = true; return; } // signing in kicks again
+        waitingForAuth = false;
+        deferredKick = false; kicking = true;
+        // A forced kick (launch, reconnection, sign-in, explicit retry) stays
+        // forced while it is only deferred by a lease, a manual save or input.
+        const force = forceAgain;
+        const kickAccount = account;
+        let pending = null;
         try {
             const priority=await S.read('settings',account,'sync-priority');
-            if(priority?.documentId&&priority.expires>Date.now())return;
+            // saveNow kicks again when it releases the priority.
+            if(priority?.documentId&&priority.expires>Date.now()){armKick(priority.expires+50);return;}
             let queue=await S.list('outbox',account);
-            if(host.activeDocument?.()&&queue.some(op=>op.kind==='document'&&op.id===host.currentId())) {
+            const activeId = host.activeDocument?.() ? host.currentId() : null;
+            let now = Date.now();
+            const due = op => force || retryAt(op) <= now;
+            const active = activeId ? queue.find(op => op.kind === 'document' && op.id === activeId) : null;
+            // A backoff timer only concerns the open document when its own
+            // foreground attempt failed (InhouseOfflineApp.queueSave).
+            if (active && due(active) && !OWN_WORK.has(options.reason) && (options.reason !== 'timer' || active.attemptedAt)) {
                 // The background editor deliberately skips a live document.
-                // Its foreground owner must retry too, including after a busy lease.
+                // Its foreground owner retries it on the same events. A fresh
+                // checkpoint or a finished save needs no forced save: the
+                // editor's own autosave already follows every edit.
                 await host.syncActive?.();
-                queue=await S.list('outbox',account);
+                queue = await S.list('outbox', account); now = Date.now();
             }
-            if (!queue.some(op=>op.kind==='folder'||!host.activeDocument?.()||op.id!==host.currentId()) || syncFrame || offline() || host.busy()) return;
-            const frame=document.createElement('iframe');frame.hidden=true;frame.title='Background document sync';
-            frame.src=`/?offline-worker=1&v=${encodeURIComponent(host.version)}`;
-            syncFrame=frame;
-            setSyncProgress({phase:'checking',pending:queue.length,id:null,errors:[]});
-            const finish=result=>{
-                clearTimeout(timer);window.removeEventListener('message',listener);
-                if(syncFrame!==frame)return;
-                frame.remove();syncFrame=null;
-                void syncFinished(result).catch(()=>{});
-            };
-            const listener=event=>{
-                if(event.origin!==location.origin || event.source!==frame.contentWindow)return;
-                if(event.data?.type==='ihn-offline-progress')setSyncProgress(event.data.progress);
-                if(event.data?.type==='ihn-offline-complete')finish(event.data.result);
-            };
-            const timer=setTimeout(()=>finish({errors:[{message:'Sync timed out; retrying automatically'}]}),8*60*1000);
-            window.addEventListener('message',listener);
-            document.body.appendChild(frame);
+            if (account !== kickAccount) return;
+            const background = queue.filter(op => op.kind === 'folder' || op.id !== activeId);
+            const later = queue.map(retryAt).filter(at => at > now);
+            const nextDeadline = later.length ? Math.min(...later) : 0;
+            if (!background.some(due)) { forceAgain = false; armKick(nextDeadline); return; }
+            if (!force && runRetryAt > now) { armKick(runRetryAt); return; }
+            if (!force && lastRunEndedAt && now - lastRunEndedAt < MIN_RUN_GAP_MS) { armKick(lastRunEndedAt + MIN_RUN_GAP_MS); return; }
+            // An upload in this or another window holds the account's sync
+            // lease; starting a processor now would only find it busy.
+            const lease = S.activeLease ? await S.activeLease(account, 'sync') : await S.read('leases', account, 'sync');
+            if (lease?.expires > Date.now()) { waitingForLease = true; armKick(lease.expires + 50); return; }
+            waitingForLease = false;
+            if (offline() || host.busy() || account !== kickAccount) { deferredKick = true; armKick(Date.now() + BUSY_RECHECK_MS); return; }
+            pending = queue.length; forceAgain = false;
         } catch(error) {
             await syncFinished({errors:[{message:error.message}]}).catch(()=>{});
-        } finally {kicking=false;}
+        } finally {
+            kicking=false;
+            // Re-evaluate once for kicks that arrived meanwhile (a run does so when it ends).
+            if (pending === null && kickAgain) { kickAgain = false; void Promise.resolve().then(() => kick({reason:'again'})); }
+        }
+        if (pending !== null) runWorker(pending);
+    }
+    function leaseReleased() {
+        if (waitingForLease) { waitingForLease = false; void kick({reason:'lease'}); }
+    }
+    function retireWorker() {
+        if (workerIdleTimer) clearTimeout(workerIdleTimer);
+        workerIdleTimer = null;
+        if (!worker) return;
+        const current = worker; worker = null;
+        window.removeEventListener('message', current.listener);
+        current.run?.finish({errors:[{message:'Background sync stopped'}]}, true);
+        current.frame.remove();
+        if (syncFrame === current.frame) syncFrame = null;
+    }
+    function runWorker(pending) {
+        workerRunning = true; diagnostics.runs++;
+        clearTimeout(workerIdleTimer); workerIdleTimer = null;
+        setSyncProgress({phase:'checking',pending,id:null,errors:[]});
+        const reuse = !!worker?.reusable && !worker.run;
+        if (!reuse) retireWorker();
+        const current = worker || (worker = { frame: null, reusable: false, run: null, listener: null });
+        const run = { done: false };
+        current.run = run;
+        run.finish = (result = {}, retiring = false) => {
+            if (run.done) return; run.done = true;
+            clearTimeout(run.timer);
+            if (current.run === run) current.run = null;
+            workerRunning = false; lastRunEndedAt = Date.now();
+            // A run that could not start (authentication, a busy lease, a
+            // crashed or hung processor) backs off as a whole.
+            const failed = !!(result.busy || result.errors?.some(error => !error.id));
+            if (failed) { runFailures++; runRetryAt = Date.now() + Math.min(RUN_RETRY_MAX_MS, RUN_RETRY_BASE_MS * 2 ** Math.min(runFailures - 1, 16)); }
+            else { runFailures = 0; runRetryAt = 0; }
+            if (!retiring) {
+                // Release the processor once nothing is left; keep it for the
+                // next attempt when work remains or another upload held the lease.
+                if (result.timedOut || !current.reusable || (!result.busy && !result.pending && !result.errors?.length)) { if (worker === current) retireWorker(); }
+                else workerIdleTimer = setTimeout(() => { if (worker === current && !current.run) retireWorker(); }, WORKER_IDLE_MS);
+            }
+            void syncFinished(result).catch(() => {}).finally(() => { kickAgain = false; void kick({reason:'after-run'}); });
+        };
+        run.timer = setTimeout(() => run.finish({errors:[{message:'Sync timed out; retrying automatically'}],timedOut:true}), WORKER_RUN_TIMEOUT_MS);
+        if (reuse) {
+            diagnostics.reused++;
+            try { current.frame.contentWindow.postMessage({type:'ihn-offline-run'}, location.origin); }
+            catch (error) { run.finish({errors:[{message:error.message}]}); }
+            return;
+        }
+        diagnostics.frames++;
+        const frame=document.createElement('iframe');frame.hidden=true;frame.title='Background document sync';
+        frame.src=`/?offline-worker=1&v=${encodeURIComponent(host.version)}`;
+        current.frame = frame; syncFrame = frame;
+        current.listener = event => {
+            if (event.origin !== location.origin || event.source !== frame.contentWindow) return;
+            if (event.data?.type === 'ihn-offline-progress') setSyncProgress(event.data.progress);
+            if (event.data?.type === 'ihn-offline-complete') {
+                current.reusable = event.data.reusable === true;
+                current.run?.finish(event.data.result || {});
+            }
+        };
+        window.addEventListener('message', current.listener);
+        document.body.appendChild(frame);
     }
     async function showSettings() {
         if (!account) return;
@@ -416,9 +580,15 @@
             }
             document.querySelectorAll('[data-offline-settings]').forEach(button=>button.addEventListener('click',()=>showSettings().catch(host.error)));
             window.addEventListener('offline',()=>{networkEpoch++;connectivity(false);});
-            window.addEventListener('online',()=>probeConnection());
-            document.addEventListener('visibilitychange',()=>{if(!document.hidden)probeConnection();});
-            setInterval(()=>{if(offline())probeConnection();},30000);
+            window.addEventListener('online',()=>{stopOfflineProbes();void probeConnection();});
+            document.addEventListener('visibilitychange',()=>{
+                if(document.hidden){clearTimeout(probeTimer);probeTimer=null;return;}
+                // A visible app does its own background work (see scheduleBackground).
+                cancelNative();
+                probeDelay=PROBE_BASE_MS;
+                void probeConnection();
+            });
+            if(appVisible())cancelNative();
             void probeConnection();
             window.addEventListener('message',event=>{if(event.origin===location.origin&&event.data?.type==='ihn-offline-dirty')reload();});
         }
@@ -428,15 +598,25 @@
     async function resume() {
         if(isWorker||!initialized)return;
         resumed=true;
-        try {await capture();} finally {kick().catch(()=>{});catalogue().catch(()=>{});}
+        // A new launch retries everything left by the previous one at once,
+        // whatever backoff that session had reached. The restored editor is
+        // checkpointed first, but a slow or stuck checkpoint must not hold
+        // back documents that were left waiting before the app closed.
+        const captured=capture();
+        try {await Promise.race([captured.catch(()=>{}),new Promise(resolve=>setTimeout(resolve,LAUNCH_CAPTURE_WAIT_MS))]);}
+        finally {kick({force:true,reason:'launch'}).catch(()=>{});catalogue().catch(()=>{});}
+        await captured;
     }
     async function useAccount(email) {
         const next=String(email||'').trim().toLowerCase();
         if(!next||next===account)return;
-        account=next;loaded=false;await reload();host.refreshed?.();kick();catalogue().catch(()=>{});
+        // The hidden processor belongs to the previous account.
+        retireWorker();stopScheduling();
+        account=next;loaded=false;await reload();host.refreshed?.();void kick({force:true,reason:'account'});catalogue().catch(()=>{});
     }
-    function disable() {initialized=false;resumed=false;}
-    function logout() {setSyncProgress({phase:'idle',pending:0,id:null,errors:[]});account='';loaded=false;savedViews={};entries=[];documents.clear();indexCatalogue();if(syncFrame){syncFrame.remove();syncFrame=null;}try{root.InhouseBackground?.cancel?.();}catch(_){} }
+    function disable() {initialized=false;resumed=false;stopScheduling();stopOfflineProbes();}
+    function logout() {setSyncProgress({phase:'idle',pending:0,id:null,errors:[]});account='';loaded=false;savedViews={};entries=[];storedEntries=new Map();documents.clear();indexCatalogue();retireWorker();stopScheduling();nativeScheduled=null;cancelNative();}
     root.InhouseOfflineLibrary=Object.freeze({pauseForEditing,resumeAfterEditing,init,resume,disable,account:()=>account,offline,networkAvailable,ready:()=>initialized&&loaded&&!!account,folder,combine,home,recentItems,syncErrorText,observed,cache,capture,scheduleCapture,prepared,
-        openRecord,pin,createFolder,catalogue,kick,setSyncProgress,syncFinished,syncStatus:()=>({...syncState}),scheduleBackground,decorate,reload,useAccount,logout,settings:showSettings,record,isWorker});
+        openRecord,pin,createFolder,catalogue,kick,leaseReleased,setSyncProgress,syncFinished,syncStatus:()=>({...syncState}),scheduleBackground,decorate,reload,useAccount,logout,settings:showSettings,record,isWorker,
+        diagnostics:()=>({...diagnostics,workerAlive:!!worker,workerRunning,timerAt:kickTimerAt||null,runRetryAt:runRetryAt||null,probing:!!probeTimer,nativePaused:nativePausedForEditing})});
 })(window);

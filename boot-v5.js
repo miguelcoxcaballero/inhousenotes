@@ -131,6 +131,9 @@
         const running = readAppVersion();
         if (!running || typeof root.fetch !== 'function') return;
         if ((root.location.search || '').includes('oauth_callback')) return;
+        // A hidden document processor finishes its run with the code it
+        // loaded; the visible app owns release checks and reloads.
+        if (new URLSearchParams(root.location.search || '').has('offline-worker')) return;
         const RELOAD_KEY = 'ihn-release-reload';
         let checking = false;
         let lastCheck = 0;

@@ -183,20 +183,46 @@
             };
         });
     }
+    // A stored lease outlives a closed app until it expires. Each holder of
+    // the upload ('sync') lease also keeps a Web Lock named after it, which
+    // the browser releases the moment that page or worker dies, so a
+    // restarted app does not wait for a dead owner. Without Web Locks (or for
+    // other leases) the stored expiry alone decides, as before.
+    const LIVE_LEASES = new Set(['sync']);
+    const lockManager = name => (LIVE_LEASES.has(name) && typeof navigator !== 'undefined' && navigator.locks?.request && navigator.locks?.query) ? navigator.locks : null;
+    const lockName = (account, name, owner) => `inhouse-lease\u0000${account}\u0000${name}\u0000${owner}`;
+    async function liveness(account, name) {
+        const manager = lockManager(name), checkedAt = Date.now();
+        let held = null;
+        if (manager) { try { held = new Set(((await manager.query()).held || []).map(lock => lock.name)); } catch (_) { held = null; } }
+        // A lease acquired after this snapshot may hold a lock the snapshot missed.
+        return lease => !held || !lease?.lock || !(lease.at < checkedAt) || held.has(lockName(account, name, lease.owner));
+    }
+    async function activeLease(account, name) {
+        const alive = await liveness(account, name), lease = await read('leases', account, name);
+        return lease?.expires > Date.now() && alive(lease) ? lease : null;
+    }
     async function withLease(account, name, work) {
-        const owner=crypto.randomUUID(), ttl=45000;
-        const acquire=await patch('leases',account,name,old => old.expires>Date.now()?old:{...old,owner,expires:Date.now()+ttl});
-        if (acquire.owner!==owner) return {busy:true};
-        let lost=false;
-        const assert=async () => {
-            const lease=await read('leases',account,name);
-            if (lost || lease?.owner!==owner || lease.expires<Date.now()) throw new Error('Sync ownership changed');
-        };
-        const timer=setInterval(() => patch('leases',account,name,old => {
-            if (old.owner!==owner) {lost=true;return old;} return {...old,expires:Date.now()+ttl};
-        }).catch(()=>{lost=true;}),10000);
-        try {return await work(assert);} finally {clearInterval(timer);await patch('leases',account,name,old=>old.owner===owner?null:old);}
+        const owner=crypto.randomUUID(), ttl=45000, manager=lockManager(name);
+        let releaseLock=null;
+        if (manager) await new Promise(resolve => {
+            manager.request(lockName(account,name,owner), () => new Promise(release => { releaseLock=release; resolve(); })).catch(() => resolve());
+        });
+        try {
+            const alive=await liveness(account,name);
+            const acquire=await patch('leases',account,name,old => old.expires>Date.now()&&alive(old)?old:{...old,owner,expires:Date.now()+ttl,at:Date.now(),lock:!!releaseLock});
+            if (acquire.owner!==owner) return {busy:true};
+            let lost=false;
+            const assert=async () => {
+                const lease=await read('leases',account,name);
+                if (lost || lease?.owner!==owner || lease.expires<Date.now()) throw new Error('Sync ownership changed');
+            };
+            const timer=setInterval(() => patch('leases',account,name,old => {
+                if (old.owner!==owner) {lost=true;return old;} return {...old,expires:Date.now()+ttl};
+            }).catch(()=>{lost=true;}),10000);
+            try {return await work(assert);} finally {clearInterval(timer);await patch('leases',account,name,old=>old.owner===owner?null:old);}
+        } finally { releaseLock?.(); }
     }
     root.InhouseOfflineStore=Object.freeze({open,read,list,put,patch,patchAndQueue,settings,setRetention,checkpoint,acknowledge,
-        createFolder,cacheEntries,resolveId,finishFolder,prune,withLease});
+        createFolder,cacheEntries,resolveId,finishFolder,prune,withLease,activeLease});
 })(globalThis);
