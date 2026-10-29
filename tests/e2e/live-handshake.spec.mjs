@@ -111,6 +111,99 @@ test('a device that has been alone for a while still connects a newcomer within 
   });
 });
 
+test('a lone device whose app polls metadata only every 20 s still connects a newcomer within seconds', async ({ browser }) => {
+  await withLiveReplicas(browser, async replica => {
+    const first = await replica('first@example.com');
+    // Mimic an idle app: presence and the offer mailbox arrive only every 20 s,
+    // so the comment scan is what notices a newcomer.
+    await first.evaluate(() => {
+      window.__feedOnce = async () => {
+        const response = await driveFetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=appProperties`, { method: 'GET' });
+        const data = await response.json();
+        await ihnConsumeSignalMailboxesFromProperties(data.appProperties || {});
+      };
+      window.__feed = setInterval(() => window.__feedOnce().catch(() => {}), 20_000);
+      return window.__feedOnce();
+    });
+    await first.waitForTimeout(6000);
+    await first.evaluate(() => window.__feedOnce());
+    // Worst case: join right after the lone device's metadata poll and scan.
+    await first.evaluate(async () => {
+      const previous = ihnLiveLastSignalScanAt;
+      const deadline = Date.now() + 10_000;
+      while (ihnLiveLastSignalScanAt === previous && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+    });
+    const before = await first.evaluate(() => ({ mode: ihnLiveSignalMode(), delay: ihnNextSignalPollDelay() }));
+    expect(before).toEqual({ mode: 'solo', delay: 4000 });
+    const joinedAt = Date.now();
+    const second = await replica('second@example.com');
+    for (const page of [first, second]) {
+      await expect.poll(() => page.evaluate(() => window.__IHN_TEST_API__.liveConnectionOverviewForTest().openPeerCount), { timeout: 9000, intervals: [50] }).toBe(1);
+    }
+    console.log('Lone device with a 20 s metadata poll connected a newcomer after (ms):', Date.now() - joinedAt);
+    await first.evaluate(() => clearInterval(window.__feed));
+  });
+});
+
+test('tapping Home stops the signalling of the closed document and the other device drops back to solo', async ({ browser }) => {
+  await withLiveReplicas(browser, async replica => {
+    const first = await replica('first@example.com');
+    const second = await replica('second@example.com');
+    // The second device has its document on screen.
+    await second.evaluate(async () => {
+      await window.__IHN_TEST_API__.showEditorForTest();
+      startLiveCollaboration();
+    });
+    for (const page of [first, second]) {
+      await expect.poll(() => page.evaluate(() => window.__IHN_TEST_API__.liveConnectionOverviewForTest().openPeerCount), { timeout: 8000, intervals: [50] }).toBe(1);
+    }
+    const secondId = await second.evaluate(() => ihnGetLivePeerId());
+    // goHome: showDriveHome() hides the editor and stops collaboration; the
+    // Home rendering then calls startCollabPolling() again (updateDriveAuthUI),
+    // as do exit saves and edits.
+    await second.evaluate(() => {
+      showDriveHome();
+      setTimeout(() => { startCollabPolling(); scheduleLiveDocumentBroadcast(); }, 34);
+    });
+    await expect.poll(() => first.evaluate(id => ({
+      open: window.__IHN_TEST_API__.liveConnectionOverviewForTest().openPeerCount,
+      departed: ihnLiveDepartedPeers.has(id),
+      expected: ihnPeerIsExpected(id),
+      mode: ihnLiveSignalMode()
+    }), secondId), { timeout: 3000, intervals: [50] }).toEqual({ open: 0, departed: true, expected: false, mode: 'solo' });
+    const closedState = () => second.evaluate(() => ({
+      supervisor: !!ihnLiveSupervisorTimer,
+      scanTimer: !!ihnLiveSignalTimer,
+      leaderTimer: !!ihnLiveLeaderTimer,
+      beacon: ihnLiveRendezvousCommentId,
+      peers: ihnLivePeers.size,
+      tabChannel: !!ihnLiveBroadcastChannel
+    }));
+    const closed = { supervisor: false, scanTimer: false, leaderTimer: false, beacon: '', peers: 0, tabChannel: false };
+    await expect.poll(closedState, { timeout: 2000, intervals: [50] }).toEqual(closed);
+    // Nothing revives the closed document or keeps negotiating with it.
+    await first.waitForTimeout(3000);
+    expect(await closedState()).toEqual(closed);
+    expect(await first.evaluate(() => ({
+      connecting: window.__IHN_TEST_API__.liveConnectionOverviewForTest().connectingPeerCount,
+      supervisor: ihnLiveSupervisorPeriod
+    }))).toEqual({ connecting: 0, supervisor: 2000 });
+
+    // Reopening the document (editor shown, then collaboration started) connects again.
+    const reopenedAt = Date.now();
+    await second.evaluate(async () => {
+      await window.__IHN_TEST_API__.showEditorForTest();
+      startCollabPolling();
+    });
+    for (const page of [first, second]) {
+      await expect.poll(() => page.evaluate(() => window.__IHN_TEST_API__.liveConnectionOverviewForTest().openPeerCount), { timeout: 9000, intervals: [50] }).toBe(1);
+    }
+    console.log('Reopened document reconnected after (ms):', Date.now() - reopenedAt);
+  });
+});
+
 test('a remembered device reconnects promptly when the document is reopened', async ({ browser }) => {
   await withLiveReplicas(browser, async replica => {
     const first = await replica('first@example.com');
