@@ -12,16 +12,46 @@ const IHN_LIVE_PEER_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 const IHN_LIVE_PEER_CACHE_LIMIT = 12;
 const IHN_LIVE_BULK_HIGH_WATER = 64_000;
 const IHN_LIVE_REALTIME_CHANNEL = 'inhousenotes-interactive-v1';
-const IHN_LIVE_LEADER_TTL = 7000;
+// The leader lease is renewed every few seconds, not every second: a 1 s
+// localStorage write kept the main thread, disk and every other tab busy for
+// nothing. Records carry their heartbeat cadence (`hb`) so readers judge
+// staleness against the writer's real cadence; a closing leader releases the
+// lease on pagehide and other tabs react to the storage event immediately.
+const IHN_LIVE_LEADER_HEARTBEAT_MS = 5000;
+const IHN_LIVE_LEADER_TTL = 15_000;
 const IHN_LIVE_LEADER_STALE_MS = 2500;
 const IHN_LIVE_SUPERVISOR_MS = 250;
+// With no peer, no expected device and no handshake there is nothing to
+// supervise at 4 Hz; a slow tick keeps leases and retries honest.
+const IHN_LIVE_IDLE_SUPERVISOR_MS = 2000;
 // Directed mailboxes and exact-comment reads accelerate known negotiations.
 // Discovery uses response-paced recent-comment scans, with bounded backoff so
 // weak/rate-limited connections do not accumulate overlapping requests.
+// Scans are adaptive: fast only while a handshake or a fresh discovery is in
+// progress, moderate while another device is present, and rare when this
+// device is alone. A lone device is still found within the app's metadata
+// poll cadence because that poll already carries presence and the directed
+// offer mailbox (see ihnConsumeSignalMailboxesFromProperties).
 const IHN_LIVE_SIGNAL_POLL_MS = 2500;
 const IHN_LIVE_JOIN_POLL_MS = 300;
-const IHN_LIVE_IDLE_DISCOVERY_MS = 700;
+const IHN_LIVE_PRESENT_POLL_MS = 3000;
+const IHN_LIVE_PRESENT_FED_POLL_MS = 10_000;
+const IHN_LIVE_SOLO_POLL_MS = 30_000;
 const IHN_LIVE_JOIN_WINDOW_MS = 10_000;
+const IHN_LIVE_START_WINDOW_MS = 3000;
+// Focus/visibility events can arrive in quick succession; alone, one scan per
+// few seconds is enough to notice a device that arrived while hidden.
+const IHN_LIVE_WAKE_SCAN_MIN_MS = 5000;
+// The app's metadata poll counts as a live discovery feed while it keeps
+// handing this module fresh appProperties.
+// Generous enough to cover one slow or failed 20 s idle poll.
+const IHN_LIVE_PROPERTY_FEED_TTL = 45_000;
+const IHN_LIVE_RENDEZVOUS_SOLO_REFRESH_MS = 60_000;
+const IHN_LIVE_RENDEZVOUS_SOLO_TTL = 100_000;
+// Renew a beacon this long before it expires, whatever cadence published it.
+const IHN_LIVE_RENDEZVOUS_RENEW_MARGIN_MS = 30_000;
+const IHN_LIVE_CAPABILITY_CHECK_MS = 30_000;
+const IHN_LIVE_SOLO_CAPABILITY_CHECK_MS = 5 * 60_000;
 const IHN_LIVE_CONNECT_TIMEOUT = 18_000;
 const IHN_LIVE_FAST_CONNECT_TIMEOUT = 12_000;
 const IHN_LIVE_DISCONNECTED_GRACE = 5000;
@@ -34,6 +64,12 @@ const IHN_LIVE_RECEIPT_TIMEOUT = 4000;
 const IHN_LIVE_APPLY_ACK_TIMEOUT = 120_000;
 const IHN_LIVE_LEGACY_PROBE_TIMEOUT = 90_000;
 const IHN_LIVE_PEER_EXPIRY = 90_000;
+// A device remembered from an earlier session is only a hint: it gets one
+// warm-start attempt when the document opens. Without live evidence (Drive
+// presence, a fresh rendezvous, a signal or an open channel) it neither keeps
+// signalling in its fast mode nor collects repeated offers, each of which
+// costs a comment, a mailbox write and ~70 Drive reads while nobody answers.
+const IHN_LIVE_SPECULATIVE_PEER_MS = 20_000;
 const IHN_LIVE_HEALTHY_RESET_MS = 15_000;
 const IHN_LIVE_FAILED_SIGNAL_RETRY_MS = 5000;
 const IHN_LIVE_FAILED_SIGNAL_MAX = 256;
@@ -72,13 +108,27 @@ const IHN_LIVE_STUN = [
 let ihnLiveTabId = '';
 let ihnLiveBroadcastChannel = null;
 let ihnLiveBroadcastFileId = '';
+// Set once another tab of this document has spoken on the BroadcastChannel.
+// Until then per-frame pen packets are not cloned into an empty channel.
+let ihnLiveOtherTabSeen = false;
 let ihnLiveLeaderTimer = null;
 let ihnLiveSignalTimer = null;
 let ihnLiveCapabilityTimer = null;
 let ihnLiveSupervisorTimer = null;
 let ihnLiveSignalBusy = false;
 let ihnLiveSignalQueued = false;
-let ihnLiveDiscoveryStartedAt = 0;
+// Signalling runs fast until this timestamp (start, fresh discovery, network
+// change, offer posted); afterwards the cadence follows actual presence.
+let ihnLiveFastUntil = 0;
+let ihnLiveSignalTimerDueAt = 0;
+let ihnLiveLastSignalScanAt = 0;
+let ihnLiveSupervisorPeriod = 0;
+let ihnLivePropertyFeedAt = 0;
+let ihnLiveCapabilityCheckedAt = 0;
+let ihnLiveLeaderStorageListener = false;
+// Document whose session was explicitly stopped (Home, sign-out, switch).
+// Presence that still trickles in must not resurrect its signalling.
+let ihnLiveStoppedFileId = '';
 let ihnLiveSignalFailures = 0;
 let ihnLiveNextSignalAttemptAt = 0;
 let ihnLiveSignalRunId = 0;
@@ -124,6 +174,7 @@ let ihnLiveRendezvousCommentId = '';
 let ihnLiveRendezvousFileId = '';
 let ihnLiveRendezvousEpoch = '';
 let ihnLiveRendezvousPublishedAt = 0;
+let ihnLiveRendezvousExpiresAt = 0;
 let ihnLiveRendezvousBusy = false;
 let ihnLiveRendezvousQueued = false;
 let ihnLiveRendezvousRotate = false;
@@ -193,6 +244,28 @@ function ihnDocumentIsVisible() {
     return typeof document === 'undefined' || document.visibilityState !== 'hidden';
 }
 
+function ihnLeaderStaleAfter(record) {
+    // Older builds renew every second and omit `hb`; keep their 2.5 s rule.
+    const cadence = Math.min(IHN_LIVE_LEADER_TTL, Math.max(0, Number(record?.hb) || 0));
+    return Math.max(IHN_LIVE_LEADER_STALE_MS, cadence + IHN_LIVE_LEADER_STALE_MS);
+}
+
+function ihnReleaseLiveLeader() {
+    try {
+        const key = ihnLiveLeaderKey();
+        const leader = key ? JSON.parse(localStorage.getItem(key) || 'null') : null;
+        if (key && leader?.tabId === ihnGetLiveTabId()) localStorage.removeItem(key);
+    } catch (error) { /* another tab will recover from the bounded lease */ }
+}
+
+function ihnHandleLeaderStorageEvent(event) {
+    // Event-driven hand-over: another tab released, hid or claimed the lease.
+    // Re-evaluate at once instead of waiting for a polling heartbeat.
+    const key = ihnLiveLeaderKey();
+    if (!key || !ihnLiveSupervisorTimer || (event?.key !== key && event?.key !== null)) return;
+    ihnSuperviseConnections();
+}
+
 function ihnClaimLiveLeader() {
     const key = ihnLiveLeaderKey();
     if (!key) return false;
@@ -203,13 +276,14 @@ function ihnClaimLiveLeader() {
         const current = JSON.parse(localStorage.getItem(key) || 'null');
         const ownedByOther = current?.tabId && current.tabId !== tabId;
         const leaseIsFresh = Number(current?.expiresAt || 0) > now;
-        const heartbeatIsFresh = now - Number(current?.heartbeatAt || 0) <= IHN_LIVE_LEADER_STALE_MS;
+        const heartbeatIsFresh = now - Number(current?.heartbeatAt || 0) <= ihnLeaderStaleAfter(current);
         const visibleLeader = current?.visible !== false;
         if (ownedByOther && leaseIsFresh && heartbeatIsFresh && (!visible || visibleLeader)) return false;
         localStorage.setItem(key, JSON.stringify({
             tabId,
             expiresAt: now + IHN_LIVE_LEADER_TTL,
             heartbeatAt: now,
+            hb: IHN_LIVE_LEADER_HEARTBEAT_MS,
             visible
         }));
         return JSON.parse(localStorage.getItem(key) || 'null')?.tabId === tabId;
@@ -232,11 +306,19 @@ function ihnEnsureTabChannel() {
     if (ihnLiveBroadcastChannel && ihnLiveBroadcastFileId === state.driveFileId) return;
     try { ihnLiveBroadcastChannel?.close(); } catch (error) {}
     ihnLiveBroadcastFileId = state.driveFileId;
-    ihnLiveBroadcastChannel = new BroadcastChannel(`inhousenotes-live-v5:${simpleHash(state.driveFileId)}`);
-    ihnLiveBroadcastChannel.onmessage = event => {
+    ihnLiveOtherTabSeen = false;
+    const channel = new BroadcastChannel(`inhousenotes-live-v5:${simpleHash(state.driveFileId)}`);
+    ihnLiveBroadcastChannel = channel;
+    channel.onmessage = event => {
+        // BroadcastChannel never delivers a tab's own messages back to it.
+        ihnLiveOtherTabSeen = true;
+        if (event.data?.type === 'tab-present') return;
         if (event.data?.type === 'tab-state-request') {
             if (event.data.fileId === state.driveFileId
                 && event.data.tabId !== ihnGetLiveTabId()) {
+                // Announce this tab even when it cannot edit (and therefore
+                // sends no snapshot), so the newcomer streams pen frames to it.
+                try { channel.postMessage({ type: 'tab-present', fileId: state.driveFileId, tabId: ihnGetLiveTabId() }); } catch (error) {}
                 scheduleLiveDocumentBroadcast({ immediate: true, force: true });
             }
             return;
@@ -309,6 +391,7 @@ function ihnRestoreCachedPeers() {
             lastSeenAt: 0,
             lastPeerSeenAt: now,
             cachedAt: Number(item.at || 0),
+            speculative: true,
             record: null
         });
         ihnSchedulePeerRetry(peerId, 'cached peer', {
@@ -737,7 +820,92 @@ function ihnNewRendezvousEpoch() {
 }
 
 function ihnHasOpenLivePeer() {
-    return [...ihnLivePeers.values()].some(peer => peer?.channel?.readyState === 'open');
+    for (const peer of ihnLivePeers.values()) if (peer?.channel?.readyState === 'open') return true;
+    return false;
+}
+
+function ihnHasExpectedLivePeer(now = Date.now()) {
+    for (const known of ihnLiveKnownPeers.values()) {
+        if (!known?.speculative && ihnKnownPeerIsExpected(known, now)) return true;
+    }
+    return false;
+}
+
+// Peers other than an unanswered warm-start offer to a remembered device.
+function ihnHasLivePeerCompany() {
+    for (const [peerId, peer] of ihnLivePeers) {
+        if (peer?.channel?.readyState === 'open' || !ihnKnownPeerIsSpeculative(peerId)) return true;
+    }
+    return false;
+}
+
+function ihnLiveHandshakeInProgress() {
+    // A warm-start offer to a remembered device polls its own reply comment;
+    // it is not a reason to scan every comment at 3 Hz.
+    for (const [peerId, peer] of ihnLivePeers) {
+        if (peer?.channel?.readyState !== 'open' && !ihnKnownPeerIsSpeculative(peerId)) return true;
+    }
+    return false;
+}
+
+// 'hot': a handshake or fresh discovery is in progress; 'present': another
+// device is connected or expected; 'solo': nobody else has the document open.
+function ihnLiveSignalMode(now = Date.now()) {
+    if (now < ihnLiveFastUntil || ihnLiveHandshakeInProgress()) return 'hot';
+    if (ihnHasLivePeerCompany() || ihnHasExpectedLivePeer(now)) return 'present';
+    return 'solo';
+}
+
+// Another device is connected, negotiating or expected. Without company a
+// network event has nobody to recover a route with.
+function ihnLiveHasCompany(now = Date.now()) {
+    return ihnHasLivePeerCompany() || ihnHasExpectedLivePeer(now);
+}
+
+function ihnLivePropertyFeedIsFresh(now = Date.now()) {
+    return ihnLivePropertyFeedAt > 0 && now - ihnLivePropertyFeedAt <= IHN_LIVE_PROPERTY_FEED_TTL;
+}
+
+function ihnRendezvousRefreshInterval(now = Date.now()) {
+    if (ihnHasOpenLivePeer()) return IHN_LIVE_RENDEZVOUS_REFRESH_MS;
+    const company = ihnHasExpectedLivePeer(now) || ihnLiveHandshakeInProgress();
+    // Rapid beacon refreshes (one comment PATCH each) nudge a specific device
+    // to retry. They are only useful in the short window after a device was
+    // discovered or the route changed; a negotiation that outlives it is
+    // already driven by its own offer/answer comments.
+    if (company && now < ihnLiveFastUntil) return IHN_LIVE_RENDEZVOUS_SEARCH_MS;
+    if (company) return IHN_LIVE_RENDEZVOUS_REFRESH_MS;
+    // Alone: keep one long-lived beacon instead of rewriting it every 1.5 s.
+    return IHN_LIVE_RENDEZVOUS_SOLO_REFRESH_MS;
+}
+
+function ihnDesiredSupervisorPeriod(now = Date.now()) {
+    return ihnLiveSignalMode(now) === 'solo' ? IHN_LIVE_IDLE_SUPERVISOR_MS : IHN_LIVE_SUPERVISOR_MS;
+}
+
+function ihnSyncSupervisorCadence(now = Date.now()) {
+    if (!ihnLiveSupervisorTimer) return;
+    const period = ihnDesiredSupervisorPeriod(now);
+    if (period === ihnLiveSupervisorPeriod) return;
+    clearInterval(ihnLiveSupervisorTimer);
+    ihnLiveSupervisorPeriod = period;
+    ihnLiveSupervisorTimer = setInterval(ihnSuperviseConnections, period);
+}
+
+function ihnRescheduleSignalPoll() {
+    // Pull a far-away scheduled scan forward when the mode just became faster.
+    if (!ihnLiveSignalTimer || !ihnLiveSupervisorTimer) return;
+    const dueAt = Date.now() + ihnNextSignalPollDelay();
+    if (ihnLiveSignalTimerDueAt <= dueAt) return;
+    clearTimeout(ihnLiveSignalTimer);
+    ihnLiveSignalTimer = null;
+    ihnScheduleSignalPoll();
+}
+
+function ihnBoostLiveSignalling(windowMs = IHN_LIVE_JOIN_WINDOW_MS) {
+    ihnLiveFastUntil = Math.max(ihnLiveFastUntil, Date.now() + Math.max(0, Number(windowMs) || 0));
+    ihnSyncSupervisorCadence();
+    ihnRescheduleSignalPoll();
 }
 
 function ihnIsFastRecoveryReason(reason = '') {
@@ -876,10 +1044,19 @@ async function ihnPublishRendezvous(options = {}) {
         || document.visibilityState === 'hidden'
         || (typeof navigator !== 'undefined' && navigator.onLine === false)) return false;
     const now = Date.now();
-    const refreshAfter = ihnHasOpenLivePeer()
-        ? IHN_LIVE_RENDEZVOUS_REFRESH_MS
-        : IHN_LIVE_RENDEZVOUS_SEARCH_MS;
-    if (!force && now - Number(ihnLiveRendezvousPublishedAt || 0) < refreshAfter) return false;
+    const refreshAfter = ihnRendezvousRefreshInterval(now);
+    // A short-TTL beacon published while searching must be renewed before it
+    // expires even when the cadence has since slowed down.
+    const expiringSoon = ihnLiveRendezvousExpiresAt > 0
+        && now >= ihnLiveRendezvousExpiresAt - IHN_LIVE_RENDEZVOUS_RENEW_MARGIN_MS;
+    if (!force && !expiringSoon
+        && now - Number(ihnLiveRendezvousPublishedAt || 0) < refreshAfter) return false;
+    // A beacon refreshed only once a minute must stay valid across that gap;
+    // fast refreshes keep the short TTL. Both stay far below the 180 s window
+    // every client (including older builds) accepts.
+    const rendezvousTtl = refreshAfter > IHN_LIVE_RENDEZVOUS_REFRESH_MS
+        ? IHN_LIVE_RENDEZVOUS_SOLO_TTL
+        : IHN_LIVE_RENDEZVOUS_TTL;
 
     const fileId = state.driveFileId;
     const generation = ihnLiveGeneration;
@@ -905,7 +1082,7 @@ async function ihnPublishRendezvous(options = {}) {
             to: '*',
             epoch: ihnLiveRendezvousEpoch,
             announcedAt,
-            expiresAt: announcedAt + IHN_LIVE_RENDEZVOUS_TTL
+            expiresAt: announcedAt + rendezvousTtl
         });
         ihnAssertLiveSessionContext(fileId, generation);
         let responseData = null;
@@ -946,6 +1123,7 @@ async function ihnPublishRendezvous(options = {}) {
         ihnAssertLiveSessionContext(fileId, generation);
         ihnLiveRendezvousCommentId = publishedCommentId;
         ihnLiveRendezvousPublishedAt = announcedAt;
+        ihnLiveRendezvousExpiresAt = announcedAt + rendezvousTtl;
         if (supersededCommentId && supersededCommentId !== ihnLiveRendezvousCommentId) {
             ihnDeleteRendezvousComment(supersededCommentId, fileId);
         }
@@ -993,7 +1171,12 @@ function ihnApplyRendezvousSignal(signal) {
     const newAnnouncement = newEpoch
         || epoch !== previousEpoch
         || announcedAt > previousAnnouncement;
-    known.lastPeerSeenAt = now;
+    // A beacon proves presence when it is (re)announced. Seeing the same,
+    // unchanged comment again on a later scan only proves that a closed or
+    // crashed device left it behind; it must not keep that device expected
+    // (and keep offers flowing to it) until the beacon finally expires.
+    if (newAnnouncement || !known.lastPeerSeenAt) known.lastPeerSeenAt = now;
+    if (newAnnouncement) known.speculative = false;
     known.lastRendezvousEpoch = epoch;
     known.lastRendezvousAt = Math.max(previousAnnouncement, announcedAt);
     ihnLiveKnownPeers.set(peerId, known);
@@ -1017,6 +1200,9 @@ function ihnApplyRendezvousSignal(signal) {
         });
     }
     if (!ihnLivePeers.has(peerId) && newAnnouncement) {
+        // First sight of this device (or of its new route) is worth a short
+        // fast window; a routine refresh of a known beacon is not.
+        if (!previousEpoch || newEpoch) ihnBoostLiveSignalling();
         ihnSchedulePeerRetry(peerId, 'rendezvous peer', {
             immediate: true,
             preserveFailures: true,
@@ -1241,6 +1427,7 @@ async function ihnApplyCandidateSignal(signal) {
         || !Array.isArray(signal.candidates)) return false;
     const peer = ihnLivePeers.get(signal.from);
     if (!peer || peer.sessionId !== signal.sessionId || peer.closing) return false;
+    ihnConfirmKnownPeer(signal.from);
     if (!(peer.pendingRemoteIceCandidates instanceof Map)) peer.pendingRemoteIceCandidates = new Map();
     if (!(peer.remoteIceCandidateKeys instanceof Set)) peer.remoteIceCandidateKeys = new Set();
     for (const rawCandidate of signal.candidates) {
@@ -1274,10 +1461,29 @@ function ihnKnownPeerLastSeenAt(known) {
     );
 }
 
+function ihnKnownPeerIsExpected(known, now = Date.now()) {
+    if (!known) return false;
+    const window = known.speculative ? IHN_LIVE_SPECULATIVE_PEER_MS : IHN_LIVE_PEER_EXPIRY;
+    return now - ihnKnownPeerLastSeenAt(known) <= window;
+}
+
+function ihnKnownPeerIsSpeculative(peerId) {
+    return !!ihnLiveKnownPeers.get(peerId)?.speculative;
+}
+
+// Live evidence promotes a remembered device to a real expected peer.
+function ihnConfirmKnownPeer(peerId, at = Date.now()) {
+    const known = ihnLiveKnownPeers.get(peerId);
+    if (!known?.speculative) return;
+    known.speculative = false;
+    known.lastPeerSeenAt = Math.max(Number(known.lastPeerSeenAt || 0), Number(at) || 0);
+}
+
 function ihnTouchKnownPeerFromChannel(peerId, at = Date.now()) {
     if (!peerId) return;
     const known = ihnLiveKnownPeers.get(peerId);
     if (known) {
+        known.speculative = false;
         known.lastPeerSeenAt = Math.max(Number(known.lastPeerSeenAt || 0), Number(at) || 0);
         return;
     }
@@ -1291,8 +1497,7 @@ function ihnTouchKnownPeerFromChannel(peerId, at = Date.now()) {
 }
 
 function ihnPeerIsExpected(peerId) {
-    const known = ihnLiveKnownPeers.get(peerId);
-    return !!known && Date.now() - ihnKnownPeerLastSeenAt(known) <= IHN_LIVE_PEER_EXPIRY;
+    return ihnKnownPeerIsExpected(ihnLiveKnownPeers.get(peerId));
 }
 
 function ihnCanInitiatePeer(peerId) {
@@ -1322,6 +1527,9 @@ function ihnCanRecoverPeer(peerId) {
 function ihnSchedulePeerRetry(peerId, reason = '', options = {}) {
     const allowReverse = !!options.allowReverse;
     if (!ihnCanInitiatePeer(peerId) && !(allowReverse && ihnCanRecoverPeer(peerId))) return;
+    // A remembered device without live evidence gets its single warm-start
+    // attempt only; a failed or timed-out offer is not repeated for it.
+    if (!options.immediate && ihnKnownPeerIsSpeculative(peerId)) return;
     const retry = ihnGetRetryState(peerId);
     if (options.reset) retry.failures = 0;
     else if (!options.preserveFailures) retry.failures = Math.min(7, retry.failures + 1);
@@ -1401,12 +1609,12 @@ function ihnClosePeer(peerId, reason = '', options = {}) {
     if (typeof refreshPresenceViews === 'function') refreshPresenceViews();
 }
 
-function ihnSendControl(peer, payload) {
+function ihnSendControl(peer, payload, serialized = '') {
     if (peer?.channel?.readyState !== 'open') return false;
     try {
         const channel = peer.realtimeChannel?.readyState === 'open'
             ? peer.realtimeChannel : peer.channel;
-        channel.send(JSON.stringify(payload));
+        channel.send(serialized || JSON.stringify(payload));
         peer.lastSentAt = Date.now();
         return true;
     } catch (error) {
@@ -1489,11 +1697,16 @@ function ihnSendRealtimeStrokePacket(packet, excludePeerId = '') {
     if(!excludePeerId&&packet.type==='live-stroke')window.InhouseDriveInk?.preview(packet);
     ihnRememberRealtimePacket(packet);
     ihnEnsureTabChannel();
-    try { ihnLiveBroadcastChannel?.postMessage(packet); } catch (error) {}
+    if (ihnLiveOtherTabSeen) {
+        try { ihnLiveBroadcastChannel?.postMessage(packet); } catch (error) {}
+    }
+    // Serialise a pen frame at most once, and only when an open peer exists.
     let sent = false;
+    let serialized = '';
     ihnLivePeers.forEach((peer, peerId) => {
-        if (peerId === excludePeerId) return;
-        sent = ihnSendControl(peer, packet) || sent;
+        if (peerId === excludePeerId || peer?.channel?.readyState !== 'open') return;
+        if (!serialized) serialized = JSON.stringify(packet);
+        sent = ihnSendControl(peer, packet, serialized) || sent;
     });
     return sent;
 }
@@ -2138,7 +2351,9 @@ async function ihnCreateOffer(targetPeerId, options = {}) {
         });
         ihnScheduleDirectCommentPoll(targetPeerId, peer, { reset: true });
         ihnScheduleLocalIceFlush(targetPeerId, peer, 0);
-        ihnScheduleRapidSignalPolls('offer posted');
+        // A warm-start offer to a remembered device relies on its own reply
+        // poll; a device with live evidence also gets rapid scans.
+        if (!ihnKnownPeerIsSpeculative(targetPeerId)) ihnScheduleRapidSignalPolls('offer posted');
     } catch (error) {
         console.warn('Direct connection unavailable; Drive fallback remains active:', error);
         if (ihnLivePeers.get(targetPeerId) === peer) {
@@ -2152,6 +2367,7 @@ async function ihnAcceptOffer(comment, offer) {
     if (!offer || offer.to !== ownId || offer.from === ownId || offer.fileId !== state.driveFileId || Number(offer.expiresAt) < Date.now()) return false;
     const offerKey = `${comment.id}:${offer.sessionId}`;
     if (ihnLiveProcessedOffers.has(offerKey)) return true;
+    ihnConfirmKnownPeer(offer.from);
     if (ihnLiveOffersInFlight.has(offerKey)) return false;
     const existingPeer = ihnLivePeers.get(offer.from);
     if (existingPeer?.status === 'open' && !offer.fastRecovery) {
@@ -2239,6 +2455,7 @@ async function ihnApplyAnswer(answer) {
     if (!answer || answer.type !== 'answer' || answer.to !== ownId || answer.fileId !== state.driveFileId || Number(answer.expiresAt) < Date.now()) return;
     const peer = ihnLivePeers.get(answer.from);
     if (!peer?.initiator || peer.sessionId !== answer.sessionId || peer.pc.remoteDescription || peer.applyingRemoteAnswer) return;
+    ihnConfirmKnownPeer(answer.from);
     const operation = ihnCaptureLiveOperationContext(peer.fileId);
     // The direct-comment poll, mailbox and discovery scan can deliver the same
     // answer concurrently. Reserve synchronously before setRemoteDescription's
@@ -2301,6 +2518,9 @@ async function ihnFetchAndProcessSignalComment(fileId, commentId) {
 }
 
 async function ihnConsumeSignalMailboxesFromProperties(properties) {
+    // The app's metadata poll delivers presence and mailboxes; while it does,
+    // the comment scan can stay a slow fallback.
+    if (state?.driveFileId && properties && typeof properties === 'object') ihnLivePropertyFeedAt = Date.now();
     if (!ihnIsLiveLeader()
         || !state?.driveFileId
         || !state.driveCanEdit
@@ -2426,25 +2646,42 @@ async function ihnPollSignalMailbox() {
 }
 
 function ihnNextSignalPollDelay() {
-    if (ihnLiveSignalFailures) return Math.min(15_000, 1000 * (2 ** Math.min(4, ihnLiveSignalFailures - 1)));
-    if (!ihnDocumentIsVisible() || navigator.onLine === false) return IHN_LIVE_SIGNAL_POLL_MS;
-    if (Date.now() - ihnLiveDiscoveryStartedAt < IHN_LIVE_JOIN_WINDOW_MS
-        || [...ihnLivePeers.values()].some(peer => peer.channel?.readyState !== 'open')) return IHN_LIVE_JOIN_POLL_MS;
-    // Even an established pair must discover a third device without waiting
-    // for the old 2.5s interval. Only the elected visible tab polls.
-    return IHN_LIVE_IDLE_DISCOVERY_MS;
+    const now = Date.now();
+    let delay;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        delay = IHN_LIVE_SIGNAL_POLL_MS;
+    } else if (!ihnDocumentIsVisible()) {
+        // Hidden tabs never scan; resuming wakes signalling immediately.
+        delay = IHN_LIVE_SOLO_POLL_MS;
+    } else {
+        const mode = ihnLiveSignalMode(now);
+        const fed = ihnLivePropertyFeedIsFresh(now);
+        if (mode === 'hot') delay = IHN_LIVE_JOIN_POLL_MS;
+        // A connected or expected device: newcomers and route changes are
+        // still noticed within seconds (presence/mailbox arrive on the app's
+        // metadata poll when it is running).
+        else if (mode === 'present') delay = fed ? IHN_LIVE_PRESENT_FED_POLL_MS : IHN_LIVE_PRESENT_POLL_MS;
+        // Alone: the comment scan is only a fallback for the metadata feed.
+        else delay = fed ? IHN_LIVE_SOLO_POLL_MS : IHN_LIVE_SIGNAL_POLL_MS;
+    }
+    if (ihnLiveSignalFailures) {
+        delay = Math.max(delay, Math.min(15_000, 1000 * (2 ** Math.min(4, ihnLiveSignalFailures - 1))));
+    }
+    return delay;
 }
 
 function ihnScheduleSignalPoll() {
     if (ihnLiveSignalTimer || !ihnLiveSupervisorTimer) return;
     const generation = ihnLiveGeneration;
+    const delay = ihnNextSignalPollDelay();
+    ihnLiveSignalTimerDueAt = Date.now() + delay;
     ihnLiveSignalTimer = setTimeout(async () => {
         ihnLiveSignalTimer = null;
         try { await ihnPollSignals({ scheduled: true }); }
         finally {
             if (generation === ihnLiveGeneration && ihnLiveSupervisorTimer) ihnScheduleSignalPoll();
         }
-    }, ihnNextSignalPollDelay());
+    }, delay);
 }
 
 async function ihnPollSignals(options = {}) {
@@ -2463,6 +2700,7 @@ async function ihnPollSignals(options = {}) {
         || document.visibilityState === 'hidden'
         || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
     const runId = ++ihnLiveSignalRunId;
+    ihnLiveLastSignalScanAt = Date.now();
     ihnLiveSignalBusy = true;
     ihnLiveSignalQueued = false;
     const fileId = state.driveFileId;
@@ -2533,10 +2771,12 @@ async function ihnPollSignals(options = {}) {
 
 function liveCollabUpdatePeers(users) {
     if (!state?.driveFileId || !driveAccessToken || !state.driveCanEdit) return;
+    if (ihnLiveStoppedFileId && ihnLiveStoppedFileId === state.driveFileId) return;
     startLiveCollaboration();
     const ownId = ihnGetLivePeerId();
     const active = new Set();
     const now = Date.now();
+    let discovered = false;
     for (const user of users || []) {
         if (!user?.isOnline) continue;
         const peerId = ihnGetPresencePeerId(user);
@@ -2548,9 +2788,11 @@ function liveCollabUpdatePeers(users) {
             ...known,
             lastSeenAt: now,
             presenceExpiredAt: 0,
+            speculative: false,
             record: user
         });
         if (!wasExpected) {
+            discovered = true;
             ihnSchedulePeerRetry(peerId, 'peer online', {
                 immediate: true,
                 preserveFailures: true,
@@ -2563,10 +2805,21 @@ function liveCollabUpdatePeers(users) {
         }
     }
     ihnLiveMainPeerId = [...active, ownId].sort()[0] || ownId;
-    ihnSuperviseConnections({ immediate: true });
+    // Presence arrives on every metadata poll. Only a newly seen device is a
+    // reason for an extra comments scan; unchanged presence costs nothing.
+    if (discovered) ihnBoostLiveSignalling();
+    ihnSuperviseConnections({ immediate: discovered });
 }
 
 function ihnSuperviseConnections(options = {}) {
+    try {
+        ihnSuperviseConnectionsOnce(options);
+    } finally {
+        ihnSyncSupervisorCadence();
+    }
+}
+
+function ihnSuperviseConnectionsOnce(options = {}) {
     if (!state?.driveFileId || !driveAccessToken || !state.driveCanEdit || typeof RTCPeerConnection === 'undefined') return;
     ihnCheckNetworkRouteSignature();
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
@@ -2581,7 +2834,7 @@ function ihnSuperviseConnections(options = {}) {
     }
 
     ihnLiveKnownPeers.forEach((known, peerId) => {
-        if (now - ihnKnownPeerLastSeenAt(known) <= IHN_LIVE_PEER_EXPIRY) return;
+        if (ihnKnownPeerIsExpected(known, now)) return;
         const peer = ihnLivePeers.get(peerId);
         if (ihnPeerChannelIsHealthy(peer, now)) {
             if (!known.presenceExpiredAt) known.presenceExpiredAt = now;
@@ -2721,6 +2974,11 @@ function ihnSuperviseConnections(options = {}) {
         const reverseRecovery = !!retry.allowReverse && ihnCanRecoverPeer(peerId);
         if (!deterministicInitiator && !reverseRecovery) return;
         if (Number(retry.nextAttemptAt || 0) > now) return;
+        if (known?.speculative) {
+            // One warm-start offer per remembered device and session.
+            if (known.warmStartOffered) return;
+            known.warmStartOffered = true;
+        }
         const fastRecovery = ihnIsFastRecoveryReason(retry.lastReason);
         // Reserve a future slot immediately; the peer map itself prevents a
         // second in-flight offer once ihnCreateOffer starts.
@@ -2737,13 +2995,24 @@ function ihnSuperviseConnections(options = {}) {
 
 function ihnWakeLiveCollaboration(reason = 'network available') {
     if (!state?.driveFileId) return;
+    // Lifecycle/network listeners outlive a session: a document that was
+    // closed (Home, sign-out) must not publish a beacon or scan on resume.
+    if (!ihnLiveSupervisorTimer && !ihnLivePeers.size) return;
     const now = Date.now();
     const browserOffline = reason === 'browser offline';
-    const networkRouteChanged = /network|browser online/i.test(String(reason));
-    if (networkRouteChanged && !browserOffline) {
+    const networkEvent = /network|browser online/i.test(String(reason));
+    // Mobile browsers fire Network Information `change` events whenever their
+    // bandwidth/RTT estimate moves. Alone in the document there is no route
+    // to repair: the beacon carries no address, so it is neither rotated nor
+    // followed by bursts of comment and mailbox reads. One scan (below) still
+    // runs, so a device that came online meanwhile is found.
+    const networkRouteChanged = networkEvent && ihnLiveHasCompany(now);
+    if (networkEvent && !browserOffline) {
         ihnLiveSignalFailures = 0;
         ihnLiveNextSignalAttemptAt = 0;
-        ihnLiveDiscoveryStartedAt = now;
+    }
+    if (networkRouteChanged && !browserOffline) {
+        ihnLiveFastUntil = Math.max(ihnLiveFastUntil, now + IHN_LIVE_JOIN_WINDOW_MS);
     }
     const appResumed = /visible|resumed|focused/i.test(String(reason));
     const replaceRouteImmediately = reason === 'network transport changed'
@@ -2768,7 +3037,9 @@ function ihnWakeLiveCollaboration(reason = 'network available') {
         // event. Rotate the comment so Drive cannot serve a cached old beacon.
         ihnPublishRendezvous({ force: true, rotate: true }).catch(() => {});
     } else if (!ihnHasOpenLivePeer()) {
-        ihnPublishRendezvous({ force: true }).catch(() => {});
+        // Refresh only a beacon that is due; a focus/visibility event alone is
+        // not new information for other devices.
+        ihnPublishRendezvous().catch(() => {});
     }
     ihnLivePeers.forEach((peer, peerId) => {
         if (networkRouteChanged) {
@@ -2811,11 +3082,18 @@ function ihnWakeLiveCollaboration(reason = 'network available') {
         retry.nextAttemptAt = now;
         retry.lastReason = reason;
     });
-    ihnSuperviseConnections({ immediate: true });
+    ihnSuperviseConnections({
+        immediate: networkRouteChanged
+            || ihnLiveHasCompany(now)
+            || now - ihnLiveLastSignalScanAt >= IHN_LIVE_WAKE_SCAN_MIN_MS
+    });
+    ihnRescheduleSignalPoll();
     if (networkRouteChanged) {
         ihnScheduleRapidSignalPolls(reason);
         ihnScheduleMailboxPollBurst();
-    } else {
+    } else if (ihnLiveHasCompany()) {
+        // A second look shortly after resuming catches a peer's late answer.
+        // Alone, the immediate scan above is all a focus/visibility event needs.
         setTimeout(() => ihnSuperviseConnections({ immediate: true }), 1200);
     }
 }
@@ -2964,6 +3242,13 @@ function ihnInstallLiveLifecycleListeners() {
     window.addEventListener('online', () => ihnHandleNetworkRouteChange('browser online'));
     window.addEventListener('offline', () => ihnHandleNetworkRouteChange('browser offline'));
     window.addEventListener('pageshow', () => ihnWakeLiveCollaboration('page resumed'));
+    // A closing/bfcached leader hands over at once instead of letting other
+    // tabs wait for its lease to go stale.
+    window.addEventListener('pagehide', () => ihnReleaseLiveLeader());
+    if (!ihnLiveLeaderStorageListener) {
+        ihnLiveLeaderStorageListener = true;
+        window.addEventListener('storage', ihnHandleLeaderStorageEvent);
+    }
     window.addEventListener('focus', () => ihnWakeLiveCollaboration('window focused'));
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
@@ -3077,6 +3362,19 @@ function getLiveCollaborationOverview() {
     };
 }
 
+function ihnVerifyLiveCapabilityIfDue() {
+    // Revocation matters most while edits can flow to other devices; alone,
+    // a slower check (and the app's own failing saves) is enough.
+    const now = Date.now();
+    const interval = ihnLiveSignalMode(now) === 'solo'
+        ? IHN_LIVE_SOLO_CAPABILITY_CHECK_MS
+        : IHN_LIVE_CAPABILITY_CHECK_MS;
+    if (now - ihnLiveCapabilityCheckedAt < interval - 1000) return false;
+    ihnLiveCapabilityCheckedAt = now;
+    ihnVerifyLiveCapability();
+    return true;
+}
+
 async function ihnVerifyLiveCapability() {
     if (!state?.driveFileId || !driveAccessToken || !state.driveCanEdit) return;
     const operation = ihnCaptureLiveOperationContext();
@@ -3103,24 +3401,31 @@ async function ihnVerifyLiveCapability() {
 
 function startLiveCollaboration() {
     if (!state?.driveFileId) return;
+    ihnLiveStoppedFileId = '';
     ihnEnsureTabChannel();
     if (!driveAccessToken || !state.driveCanEdit || typeof RTCPeerConnection === 'undefined') return;
     const wasRunning = !!ihnLiveSupervisorTimer;
     ihnInstallLiveLifecycleListeners();
     if (!ihnLiveLeaderTimer) {
         ihnClaimLiveLeader();
-        ihnLiveLeaderTimer = setInterval(() => ihnClaimLiveLeader(), 1000);
+        ihnLiveLeaderTimer = setInterval(() => ihnClaimLiveLeader(), IHN_LIVE_LEADER_HEARTBEAT_MS);
     }
     ihnRestoreCachedPeers();
-    if (!ihnLiveCapabilityTimer) ihnLiveCapabilityTimer = setInterval(ihnVerifyLiveCapability, 30_000);
+    if (!ihnLiveCapabilityTimer) {
+        ihnLiveCapabilityCheckedAt = Date.now();
+        ihnLiveCapabilityTimer = setInterval(ihnVerifyLiveCapabilityIfDue, IHN_LIVE_CAPABILITY_CHECK_MS);
+    }
     if (!ihnLiveSupervisorTimer) {
+        ihnLiveSupervisorPeriod = IHN_LIVE_SUPERVISOR_MS;
         ihnLiveSupervisorTimer = setInterval(ihnSuperviseConnections, IHN_LIVE_SUPERVISOR_MS);
     }
-    if (!wasRunning) ihnLiveDiscoveryStartedAt = Date.now();
+    if (!wasRunning) ihnLiveFastUntil = Math.max(ihnLiveFastUntil, Date.now() + IHN_LIVE_START_WINDOW_MS);
     ihnScheduleSignalPoll();
     if (!wasRunning) ihnSuperviseConnections({ immediate: true });
     if (!wasRunning) ihnPublishRendezvous({ force: true }).catch(() => {});
-    if (!wasRunning) ihnScheduleMailboxPollBurst();
+    // Mailbox bursts are for a device we expect (cached or present); others
+    // are found by the scan above and by the app's metadata poll.
+    if (!wasRunning && ihnHasExpectedLivePeer()) ihnScheduleMailboxPollBurst();
 }
 
 async function flushLiveCollaborationBeforeExit(timeoutMs = 900) {
@@ -3147,13 +3452,10 @@ async function flushLiveCollaborationBeforeExit(timeoutMs = 900) {
 }
 
 function stopLiveCollaboration() {
+    ihnLiveStoppedFileId = String(state?.driveFileId || '');
     ihnLiveWarmStart = null;
     ihnDeleteRendezvousComment();
-    try {
-        const leaderKey = ihnLiveLeaderKey();
-        const leader = JSON.parse(localStorage.getItem(leaderKey) || 'null');
-        if (leaderKey && leader?.tabId === ihnGetLiveTabId()) localStorage.removeItem(leaderKey);
-    } catch (error) { /* another tab will recover from the bounded lease */ }
+    ihnReleaseLiveLeader();
     ihnLiveGeneration += 1;
     ihnLiveSignalRunId += 1;
     ihnLiveMailboxRunId += 1;
@@ -3164,7 +3466,12 @@ function stopLiveCollaboration() {
     if (ihnLiveSignalTimer) clearTimeout(ihnLiveSignalTimer);
     ihnLiveSignalFailures = 0;
     ihnLiveNextSignalAttemptAt = 0;
-    ihnLiveDiscoveryStartedAt = 0;
+    ihnLiveFastUntil = 0;
+    ihnLiveSignalTimerDueAt = 0;
+    ihnLiveLastSignalScanAt = 0;
+    ihnLiveSupervisorPeriod = 0;
+    ihnLivePropertyFeedAt = 0;
+    ihnLiveCapabilityCheckedAt = 0;
     if (ihnLiveCapabilityTimer) clearInterval(ihnLiveCapabilityTimer);
     if (ihnLiveSupervisorTimer) clearInterval(ihnLiveSupervisorTimer);
     ihnLiveLeaderTimer = ihnLiveSignalTimer = ihnLiveCapabilityTimer = ihnLiveSupervisorTimer = null;
@@ -3201,7 +3508,7 @@ function stopLiveCollaboration() {
     ihnLiveKnownPeers.clear(); ihnLiveRetryState.clear();
     ihnLiveSnapshotCache.clear();
     try { ihnLiveBroadcastChannel?.close(); } catch (error) {}
-    ihnLiveBroadcastChannel = null; ihnLiveBroadcastFileId = '';
+    ihnLiveBroadcastChannel = null; ihnLiveBroadcastFileId = ''; ihnLiveOtherTabSeen = false;
     ihnInvalidateSignalKey();
     ihnLiveCryptoKeyLoad = null; ihnLiveCryptoKeyLoadFileId = '';
     ihnLiveCryptoKeyRefresh = null; ihnLiveCryptoKeyRefreshFileId = '';
@@ -3209,7 +3516,7 @@ function stopLiveCollaboration() {
     ihnLiveMergeUploadGuard = null; ihnLiveMainPeerId = '';
     ihnLiveNetworkSignature = ''; ihnLiveNetworkWakeAt = 0;
     ihnLiveRendezvousCommentId = ''; ihnLiveRendezvousFileId = '';
-    ihnLiveRendezvousEpoch = ''; ihnLiveRendezvousPublishedAt = 0;
+    ihnLiveRendezvousEpoch = ''; ihnLiveRendezvousPublishedAt = 0; ihnLiveRendezvousExpiresAt = 0;
     ihnLiveRendezvousBusy = false; ihnLiveRendezvousQueued = false; ihnLiveRendezvousRotate = false;
     ihnLivePeerCacheFileId = '';
 }

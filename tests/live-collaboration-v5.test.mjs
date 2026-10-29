@@ -257,7 +257,16 @@ globalThis.__liveTest = {
   pollSignals: ihnPollSignals,
   nextSignalPollDelay: ihnNextSignalPollDelay,
   scheduleSignalPoll: ihnScheduleSignalPoll,
-  setDiscoveryState(startedAt, failures = 0) { ihnLiveDiscoveryStartedAt = startedAt; ihnLiveSignalFailures = failures; },
+  setDiscoveryState(startedAt, failures = 0) { ihnLiveFastUntil = startedAt ? startedAt + IHN_LIVE_JOIN_WINDOW_MS : 0; ihnLiveSignalFailures = failures; },
+  signalMode: ihnLiveSignalMode,
+  supervisorPeriod() { return ihnLiveSupervisorPeriod; },
+  signalTimerDueAt() { return ihnLiveSignalTimerDueAt; },
+  rendezvousRefreshInterval: ihnRendezvousRefreshInterval,
+  verifyCapabilityIfDue: ihnVerifyLiveCapabilityIfDue,
+  setCapabilityCheckedAt(at) { ihnLiveCapabilityCheckedAt = at; },
+  leaderStorageEvent: ihnHandleLeaderStorageEvent,
+  releaseLeader: ihnReleaseLiveLeader,
+  isLeader: ihnIsLiveLeader,
   publishRendezvous: ihnPublishRendezvous,
   applyRendezvous: ihnApplyRendezvousSignal,
   mailboxKey: ihnMailboxKeyFor,
@@ -1409,19 +1418,26 @@ test('an encrypted rendezvous discovers a peer before Drive presence arrives', a
 });
 
 test('discovery polls rapidly on join, remains attentive for a third device, and backs off on errors', () => {
+  // v5.17.22: an open pair used to rescan every 700 ms forever and a hidden
+  // tab woke every 2.5 s. Newcomers are now found through the fast window
+  // their presence/rendezvous opens, so a connected pair scans every 3 s
+  // (10 s while the app's metadata poll feeds presence and mailboxes), and a
+  // hidden tab only wakes every 30 s (resume triggers an immediate scan).
   const { api, context } = createHarness();
   api.setDiscoveryState(Date.now());
   assert.equal(api.nextSignalPollDelay(), 300);
   api.setDiscoveryState(Date.now() - 20_000);
   api.addPeer('connected-peer', { channel: createChannel() });
-  assert.equal(api.nextSignalPollDelay(), 700, 'an open pair must still discover newcomers');
+  assert.equal(api.nextSignalPollDelay(), 3000, 'an open pair must still discover newcomers');
+  api.consumeMailboxes({});
+  assert.equal(api.nextSignalPollDelay(), 10_000, 'presence and mailboxes already arrive with app metadata');
   api.setDiscoveryState(Date.now(), 1);
   assert.equal(api.nextSignalPollDelay(), 1000);
   api.setDiscoveryState(Date.now(), 8);
   assert.equal(api.nextSignalPollDelay(), 15000, 'rate limits must not cause a request storm');
   api.setDiscoveryState(Date.now());
   context.document.visibilityState = 'hidden';
-  assert.equal(api.nextSignalPollDelay(), 2500);
+  assert.equal(api.nextSignalPollDelay(), 30_000);
 });
 
 test('scheduled discovery does not queue a duplicate behind a slow poll', async () => {
@@ -3336,6 +3352,502 @@ test('full snapshots wait across short pen lifts without delaying live stroke pa
   assert.equal(harness.api.queued(),false);
 });
 
+
+// ---- Adaptive signalling (v5.17.22) -------------------------------------
+// A lone editor used to scan Drive comments ~3x/s and rewrite its rendezvous
+// beacon every 1.5 s. These fake-clock tests pin the adaptive cadence.
+
+function createClock(start = Date.now()) {
+  const clock = { t: start };
+  class FakeDate extends Date {
+    constructor(...args) { super(...(args.length ? args : [clock.t])); }
+    static now() { return clock.t; }
+  }
+  clock.Date = FakeDate;
+  clock.advance = ms => { clock.t += ms; };
+  return clock;
+}
+
+async function settle(harness) {
+  // WebCrypto completes on a worker thread, so yield real time, not just turns.
+  const tick = () => new Promise(resolve => setTimeout(resolve, 2));
+  for (let index = 0; index < 15; index += 1) await tick();
+  if (!harness) return;
+  // On a loaded machine encryption can take longer: wait (bounded, real
+  // time) until in-flight beacon writes and scans have finished.
+  const deadline = Date.now() + 3000;
+  while ((harness.api.rendezvousBusy() || harness.api.signalBusy()) && Date.now() < deadline) await tick();
+  for (let index = 0; index < 5; index += 1) await tick();
+}
+
+function createSignallingHarness(clock, extra = {}) {
+  const keyEncoded = bytesToBase64Url(new Uint8Array(32).fill(0x5a));
+  const requests = [];
+  const harness = createHarness({
+    Date: clock.Date,
+    driveFetch: async (url, options = {}) => {
+      const requestUrl = String(url);
+      const method = options.method || 'GET';
+      requests.push({ method, url: requestUrl, at: clock.t });
+      if (requestUrl.includes('fields=properties')) {
+        return { json: async () => ({ properties: { ihn_live_key_v1: keyEncoded } }) };
+      }
+      if (method === 'POST' && requestUrl.includes('/comments?')) return { json: async () => ({ id: 'beacon-1' }) };
+      if (requestUrl.includes('/comments')) return { json: async () => ({ comments: [] }) };
+      return { json: async () => ({}) };
+    },
+    ...extra
+  });
+  harness.context.ihnCreateOffer = async () => {};
+  const count = predicate => requests.filter(predicate).length;
+  return {
+    ...harness,
+    requests,
+    scans: () => count(r => r.method === 'GET' && r.url.includes('/comments?')),
+    beaconWrites: () => count(r => (r.method === 'PATCH' || r.method === 'POST') && r.url.includes('/comments')),
+    capabilityReads: () => count(r => r.url.includes('capabilities('))
+  };
+}
+
+test('a lone editor scans comments rarely and rewrites its beacon only once a minute', async () => {
+  const clock = createClock();
+  const h = createSignallingHarness(clock);
+  h.api.start();
+  await settle(h);
+  assert.equal(h.beaconWrites(), 1, 'opening publishes one rendezvous beacon');
+  assert.equal(h.api.signalMode(), 'hot', 'a short start window catches simultaneous openers');
+
+  clock.advance(7000);
+  h.api.consumeMailboxes({}); // the app's metadata poll is feeding presence/mailboxes
+  h.api.supervise();
+  assert.equal(h.api.signalMode(), 'solo');
+  assert.equal(h.api.nextSignalPollDelay(), 30_000);
+  assert.equal(h.api.supervisorPeriod(), 2000, 'nothing to supervise at 4 Hz');
+  assert.equal(h.api.rendezvousRefreshInterval(), 60_000);
+
+  const scansBefore = h.scans();
+  const writesBefore = h.beaconWrites();
+  // 50 more seconds of idle supervision, with presence arriving every 2 s.
+  for (let elapsed = 0; elapsed < 50_000; elapsed += 2000) {
+    clock.advance(2000);
+    h.api.consumeMailboxes({});
+    h.api.updatePeers([]);
+    h.api.supervise();
+    await settle(h);
+  }
+  assert.equal(h.scans(), scansBefore, 'unchanged presence never triggers a comments scan');
+  assert.equal(h.beaconWrites(), writesBefore, 'no beacon rewrite while nothing changed');
+
+  clock.advance(4000);
+  h.api.supervise();
+  await settle(h);
+  assert.equal(h.beaconWrites(), writesBefore + 1, 'one refresh a minute keeps the beacon valid');
+});
+
+test('a short-lived search beacon is renewed before it expires once the cadence slows down', async () => {
+  const clock = createClock();
+  const h = createSignallingHarness(clock);
+  h.api.start();
+  await settle(h);
+  // A known device was seen 89 s ago: it is still expected for one second.
+  h.api.addKnown('peer-briefly-present', clock.t - 89_000);
+  h.api.setDiscoveryState(clock.t);
+  assert.equal(h.api.rendezvousRefreshInterval(), 1500, 'searching for a known device');
+  assert.equal(await h.api.publishRendezvous({ force: true }), true);
+  const writes = h.beaconWrites();
+  clock.advance(14_000);
+  h.api.claimLeader(); // the 5 s heartbeat timer does not run in this harness
+  h.api.setDiscoveryState(0);
+  assert.equal(h.api.rendezvousRefreshInterval(), 60_000, 'the device is gone: solo cadence');
+  assert.equal(await h.api.publishRendezvous(), false);
+  clock.advance(1000);
+  assert.equal(await h.api.publishRendezvous(), true, 'the 45 s beacon is renewed 30 s before it lapses');
+  assert.equal(h.beaconWrites(), writes + 1);
+});
+
+test('a lone beacon stays valid across its slow refresh and inside the window every build accepts', async () => {
+  const clock = createClock();
+  let content = '';
+  const keyBytes = new Uint8Array(32).fill(0x5a);
+  const h = createSignallingHarness(clock);
+  const baseFetch = h.context.driveFetch;
+  h.context.driveFetch = async (url, options = {}) => {
+    if ((options.method === 'PATCH' || options.method === 'POST') && String(url).includes('/comments')) {
+      content = JSON.parse(options.body).content;
+    }
+    return baseFetch(url, options);
+  };
+  h.api.start();
+  await settle(h);
+  clock.advance(61_000);
+  h.api.consumeMailboxes({});
+  h.api.supervise();
+  await settle(h);
+  const beacon = await decryptTestSignal(content, keyBytes);
+  const ttl = beacon.expiresAt - beacon.announcedAt;
+  assert.ok(ttl > 60_000 + 30_000, `TTL ${ttl} covers the 60 s refresh with clock-skew margin`);
+  assert.ok(ttl <= 180_000, 'older clients reject beacons further than 180 s ahead');
+});
+
+test('a newly present device switches signalling to fast immediately and back to slow after it leaves', async () => {
+  const clock = createClock();
+  const h = createSignallingHarness(clock);
+  h.api.start();
+  await settle(h);
+  clock.advance(7000);
+  h.api.consumeMailboxes({});
+  h.api.supervise();
+  await settle(h);
+  assert.equal(h.api.signalMode(), 'solo');
+  // The start-window scan fires and the next one is scheduled at solo cadence.
+  assert.equal(await h.runTimerMatching(timer => timer.ms === 300), true);
+  await settle(h);
+  assert.equal(h.api.signalTimerDueAt() - clock.t, 30_000);
+
+  const record = { isOnline: true, a: 'remote-account', c: 'remote-client', e: 'remote@example.com' };
+  const scansBefore = h.scans();
+  h.api.updatePeers([record]);
+  await settle(h);
+  assert.equal(h.api.signalMode(), 'hot');
+  assert.equal(h.scans(), scansBefore + 1, 'the new device triggers one scan in the same turn');
+  assert.equal(h.api.nextSignalPollDelay(), 300);
+  assert.equal(h.api.supervisorPeriod(), 250);
+  assert.ok(h.api.signalTimerDueAt() - clock.t <= 300, 'a far-away scheduled scan is pulled forward');
+
+  // The device stays present: unchanged presence costs no extra scan, and the
+  // fast window ends.
+  clock.advance(11_000);
+  const steadyScans = h.scans();
+  h.api.consumeMailboxes({});
+  h.api.updatePeers([record]);
+  await settle(h);
+  assert.equal(h.scans(), steadyScans);
+  assert.equal(h.api.signalMode(), 'present');
+  assert.equal(h.api.nextSignalPollDelay(), 10_000);
+  assert.equal(h.api.rendezvousRefreshInterval(), 15_000);
+
+  // It leaves: presence expires and the editor falls back to solo cadence.
+  clock.advance(95_000);
+  h.api.consumeMailboxes({});
+  h.api.updatePeers([]);
+  h.api.supervise();
+  assert.equal(h.api.signalMode(), 'solo');
+  assert.equal(h.api.nextSignalPollDelay(), 30_000);
+  assert.equal(h.api.supervisorPeriod(), 2000);
+});
+
+test('a lone editor without a metadata feed still finds an offer within a few seconds', () => {
+  const clock = createClock();
+  const h = createSignallingHarness(clock);
+  h.api.start();
+  clock.advance(7000);
+  h.api.supervise();
+  assert.equal(h.api.signalMode(), 'solo');
+  assert.equal(h.api.nextSignalPollDelay(), 2500);
+  h.api.addPeer('handshaking', { channel: null, status: 'connecting' });
+  assert.equal(h.api.signalMode(), 'hot', 'a handshake in progress is always fast');
+  assert.equal(h.api.nextSignalPollDelay(), 300);
+});
+
+test('only a first sight or a new route of a rendezvous peer opens a fast window', () => {
+  const clock = createClock();
+  const h = createSignallingHarness(clock);
+  h.api.start();
+  clock.advance(7000);
+  h.api.supervise();
+  const signal = (epoch, at) => ({ v: 1, type: 'rendezvous', fileId: 'file-1', from: 'peer-zzz',
+    to: '*', epoch, announcedAt: at, expiresAt: at + 45_000 });
+  h.api.applyRendezvous(signal('route-a', clock.t));
+  assert.equal(h.api.signalMode(), 'hot');
+  clock.advance(11_000);
+  h.api.applyRendezvous(signal('route-a', clock.t));
+  assert.equal(h.api.signalMode(), 'present', 'a routine refresh of a known beacon is not new information');
+  h.api.applyRendezvous(signal('route-b', clock.t + 1));
+  assert.equal(h.api.signalMode(), 'hot', 'a new route epoch is');
+});
+
+test('the capability check runs every 30 s with company and every 5 min alone', async () => {
+  const clock = createClock();
+  const h = createSignallingHarness(clock);
+  h.api.start();
+  clock.advance(7000);
+  h.api.supervise();
+  await settle(h);
+  const reads = h.capabilityReads();
+  clock.advance(30_000);
+  assert.equal(h.api.verifyCapabilityIfDue(), false);
+  clock.advance(270_000);
+  assert.equal(h.api.verifyCapabilityIfDue(), true);
+  await settle(h);
+  assert.equal(h.capabilityReads(), reads + 1);
+  h.api.addKnown('peer-present', clock.t);
+  clock.advance(30_000);
+  h.api.addKnown('peer-present', clock.t);
+  assert.equal(h.api.verifyCapabilityIfDue(), true, 'edits can flow to another device: keep the 30 s check');
+});
+
+test('the leader lease renews on a slow heartbeat and hands over on events', () => {
+  const clock = createClock();
+  const h = createSignallingHarness(clock);
+  const key = 'ihn-live-leader-v1:file-1';
+  assert.equal(h.api.claimLeader(), true);
+  const own = JSON.parse(h.context.localStorage.getItem(key));
+  assert.equal(own.hb, 5000);
+  assert.ok(own.expiresAt - own.heartbeatAt > 2 * own.hb, 'the lease outlives two missed heartbeats');
+
+  // Another current tab renewed 4 s ago on the slow heartbeat: not stale.
+  h.context.localStorage.setItem(key, JSON.stringify({ tabId: 'other-tab', heartbeatAt: clock.t - 4000,
+    expiresAt: clock.t + 11_000, hb: 5000, visible: true }));
+  assert.equal(h.api.claimLeader(), false);
+  // An older build renews every second and omits hb: 3 s of silence is stale.
+  h.context.localStorage.setItem(key, JSON.stringify({ tabId: 'old-build-tab', heartbeatAt: clock.t - 3000,
+    expiresAt: clock.t + 4000, visible: true }));
+  assert.equal(h.api.claimLeader(), true);
+
+  // Releasing removes only our own lease, and a storage event re-evaluates at once.
+  h.api.releaseLeader();
+  assert.equal(h.context.localStorage.getItem(key), null);
+  h.api.start();
+  h.context.localStorage.removeItem(key);
+  h.api.leaderStorageEvent({ key, newValue: null });
+  assert.equal(h.api.isLeader(), true, 'the remaining tab claims the released lease without polling');
+});
+
+test('presence arriving after the document was closed does not restart its signalling', async () => {
+  const clock = createClock();
+  const h = createSignallingHarness(clock);
+  h.api.start();
+  await settle(h);
+  h.api.stop();
+  await settle(h);
+  const before = h.requests.length;
+  const record = { isOnline: true, a: 'remote-account', c: 'remote-client', e: 'remote@example.com' };
+  h.api.updatePeers([record]);
+  h.api.updatePeers([]);
+  await settle(h);
+  assert.equal(h.requests.length, before, 'Home screen presence polls stay signalling-free');
+  assert.equal(h.api.known(h.api.presencePeerId(record)), undefined);
+  h.api.start();
+  h.api.updatePeers([record]);
+  assert.ok(h.api.known(h.api.presencePeerId(record)), 'an explicit reopen resumes presence-driven discovery');
+});
+
+test('pen frames are not cloned into a tab channel until another tab of the document exists', async () => {
+  const harness = createHarness();
+  const stroke = { id: 'solo-stroke', tool: 'pen', color: '#111111', width: 2,
+    points: [{ x: 1, y: 1 }, { x: 2, y: 2 }] };
+  harness.api.publishStroke('p1', stroke);
+  await harness.runTimerMatching(timer => timer.ms === 18);
+  const tab = harness.api.tabChannel();
+  const strokeMessages = () => tab.messages.filter(message => message.type === 'live-stroke');
+  assert.equal(strokeMessages().length, 0, 'nobody listens: no per-frame structured clone');
+
+  // A late tab (even a read-only one) announces itself; the editor answers
+  // with its own presence and starts streaming frames to it.
+  tab.onmessage({ data: { type: 'tab-state-request', fileId: 'file-1', tabId: 'late-viewer-tab' } });
+  assert.ok(tab.messages.some(message => message.type === 'tab-present'));
+  stroke.points.push({ x: 3, y: 3 });
+  harness.api.publishStroke('p1', stroke);
+  await harness.runTimerMatching(timer => timer.ms === 18);
+  assert.equal(strokeMessages().length, 1);
+  harness.api.publishStroke('p1', stroke, { final: true });
+  assert.equal(strokeMessages().at(-1).final, true);
+});
+
+test('a newcomer tab learns of an existing tab from its presence reply', async () => {
+  const harness = createHarness();
+  harness.api.ensureTabChannel();
+  const tab = harness.api.tabChannel();
+  tab.onmessage({ data: { type: 'tab-present', fileId: 'file-1', tabId: 'existing-tab' } });
+  harness.api.publishStroke('p1', { id: 'shared-stroke', points: [{ x: 1, y: 1 }, { x: 2, y: 2 }] });
+  await harness.runTimerMatching(timer => timer.ms === 18);
+  assert.equal(tab.messages.filter(message => message.type === 'live-stroke').length, 1);
+});
+
+test('a remembered device gets one warm-start offer, without fast scans or repeated offers while it is absent', async () => {
+  const clock = createClock();
+  const h = createSignallingHarness(clock);
+  const offers = [];
+  h.context.ihnCreateOffer = async peerId => { offers.push(peerId); };
+  const remoteId = 'peer-remembered';
+  h.api.rememberCachedPeer(remoteId);
+  h.api.start();
+  await settle(h);
+  assert.deepEqual(offers, [remoteId], 'the warm start still offers immediately');
+  // The offer is outstanding (the remote device is not running).
+  h.api.addPeer(remoteId, { channel: null, status: 'connecting', createdAt: clock.t, fileId: 'file-1', generation: h.api.generation() });
+  clock.advance(4000);
+  h.api.consumeMailboxes({});
+  h.api.supervise();
+  assert.equal(h.api.signalMode(), 'solo', 'a hint is not company: no 300 ms comment scans for its handshake');
+  assert.equal(h.api.nextSignalPollDelay(), 30_000);
+
+  // The unanswered offer times out inside the warm-start window: it is not
+  // repeated, and after the window nobody is retried until there is evidence.
+  clock.advance(14_600);
+  h.api.supervise();
+  assert.equal(h.api.getPeer(remoteId), undefined, 'the unanswered offer timed out');
+  clock.advance(1000);
+  h.api.supervise();
+  assert.deepEqual(offers, [remoteId], 'a timed-out warm-start offer is not retried');
+  clock.advance(5000);
+  h.api.supervise();
+  for (let elapsed = 0; elapsed < 120_000; elapsed += 2000) {
+    clock.advance(2000);
+    h.api.supervise();
+  }
+  assert.deepEqual(offers, [remoteId], 'an absent remembered device is not offered to every 18 s');
+
+  // Real evidence (Drive presence) makes it a normal expected peer again.
+  h.api.addKnown(remoteId, clock.t);
+  h.api.supervise();
+  assert.equal(h.api.signalMode(), 'present');
+});
+
+test('evidence from a remembered device promotes it before its warm-start window closes', () => {
+  const clock = createClock();
+  const h = createSignallingHarness(clock);
+  const remoteId = 'peer-remembered-and-back';
+  h.api.rememberCachedPeer(remoteId);
+  h.api.claimLeader();
+  h.api.restoreCachedPeers();
+  assert.equal(h.api.known(remoteId).speculative, true);
+  assert.equal(h.api.signalMode(), 'solo');
+  assert.equal(h.api.applyRendezvous({ v: 1, type: 'rendezvous', fileId: 'file-1', from: remoteId,
+    to: '*', epoch: 'route-a', announcedAt: clock.t, expiresAt: clock.t + 45_000 }), true);
+  assert.equal(h.api.known(remoteId).speculative, false);
+  clock.advance(60_000);
+  assert.equal(h.api.signalMode(), 'present', 'a confirmed device stays expected for the full presence window');
+});
+
+test('an unchanged beacon left behind by a closed device does not keep it expected', () => {
+  const clock = createClock();
+  const h = createSignallingHarness(clock);
+  h.api.claimLeader();
+  const beacon = { v: 1, type: 'rendezvous', fileId: 'file-1', from: 'peer-crashed',
+    to: '*', epoch: 'route-a', announcedAt: clock.t, expiresAt: clock.t + 100_000 };
+  h.api.applyRendezvous(beacon);
+  const firstSeen = h.api.known('peer-crashed').lastPeerSeenAt;
+  // Later scans keep returning the very same comment until it expires.
+  for (let elapsed = 0; elapsed < 95_000; elapsed += 30_000) {
+    clock.advance(30_000);
+    h.api.applyRendezvous(beacon);
+  }
+  assert.equal(h.api.known('peer-crashed').lastPeerSeenAt, firstSeen);
+  assert.equal(h.api.signalMode(), 'solo', 'the device is no longer expected 90 s after its last announcement');
+  // A live device re-announces, which is fresh evidence.
+  h.api.applyRendezvous({ ...beacon, announcedAt: clock.t, expiresAt: clock.t + 100_000 });
+  assert.equal(h.api.known('peer-crashed').lastPeerSeenAt, clock.t);
+});
+
+test('a network estimate change while alone neither rotates the beacon nor bursts reads', async () => {
+  const clock = createClock();
+  const h = createSignallingHarness(clock);
+  h.context.navigator.connection = { type: 'cellular', effectiveType: '4g', saveData: false };
+  h.api.start();
+  await settle(h);
+  clock.advance(7000);
+  h.api.consumeMailboxes({});
+  h.api.supervise();
+  await settle(h);
+  assert.equal(h.api.signalMode(), 'solo');
+  const before = h.requests.length;
+  const commentId = h.api.rendezvousCommentId();
+  h.pendingTimers.clear();
+
+  h.context.navigator.connection.effectiveType = '3g';
+  assert.equal(h.api.checkNetworkRoute(), true);
+  await settle(h);
+  const issued = h.requests.slice(before);
+  assert.equal(issued.filter(r => r.method !== 'GET').length, 0, 'no beacon rotation (POST/DELETE) for nobody');
+  assert.ok(issued.length <= 1, `at most one discovery scan, got ${issued.length}`);
+  assert.equal(h.api.rendezvousCommentId(), commentId);
+  assert.equal(h.api.signalMode(), 'solo', 'no 10 s fast-scan window');
+  const burstTimers = [...h.pendingTimers.values()].filter(timer => [0, 40, 70, 120, 150].includes(timer.ms));
+  assert.equal(burstTimers.length, 0, 'no mailbox burst or rapid poll timers');
+
+  // With a connected device the same event still repairs the route.
+  const channel = createChannel();
+  h.api.addKnown('peer-company', clock.t);
+  h.api.addPeer('peer-company', peerWithChannel(channel, { protocolV2: true, generation: h.api.generation() }));
+  clock.advance(1000);
+  h.context.navigator.connection.effectiveType = '4g';
+  assert.equal(h.api.checkNetworkRoute(), true);
+  assert.ok(channel.sent.map(value => JSON.parse(value)).some(message => message.networkProbe));
+  assert.equal(h.api.signalMode(), 'hot');
+});
+
+test('focus and visibility events alone cost at most one scan every few seconds', async () => {
+  const clock = createClock();
+  const h = createSignallingHarness(clock);
+  h.api.start();
+  await settle(h);
+  clock.advance(7000);
+  h.api.consumeMailboxes({});
+  h.api.supervise();
+  await settle(h);
+  const scans = h.scans();
+  h.pendingTimers.clear();
+  h.api.wake('window focused');
+  await settle(h);
+  h.api.wake('app visible');
+  await settle(h);
+  clock.advance(1000);
+  h.api.wake('window focused');
+  await settle(h);
+  assert.equal(h.scans(), scans + 1);
+  assert.equal([...h.pendingTimers.values()].filter(timer => timer.ms === 1200).length, 0,
+    'no second delayed scan when nobody else is around');
+  clock.advance(5000);
+  h.api.wake('app visible');
+  await settle(h);
+  assert.equal(h.scans(), scans + 2);
+});
+
+test('pen frames are serialised once for all peers and not at all without an open peer', async () => {
+  const harness = createHarness();
+  let stringifyCalls = 0;
+  const contextJson = vm.runInContext('JSON', harness.context);
+  const realStringify = contextJson.stringify;
+  contextJson.stringify = (value, ...rest) => {
+    if (value?.type === 'live-stroke') stringifyCalls += 1;
+    return realStringify(value, ...rest);
+  };
+  try {
+    const stroke = { id: 'frame-stroke', tool: 'pen', points: [{ x: 1, y: 1 }, { x: 2, y: 2 }] };
+    harness.api.addPeer('peer-handshaking', { channel: null, status: 'connecting' });
+    harness.api.publishStroke('p1', stroke);
+    await harness.runTimerMatching(timer => timer.ms === 18);
+    assert.equal(stringifyCalls, 0, 'nobody can receive the frame: no serialisation');
+
+    const first = createChannel();
+    const second = createChannel();
+    harness.api.addPeer('peer-a', peerWithChannel(first));
+    harness.api.addPeer('peer-b', peerWithChannel(second));
+    stroke.points.push({ x: 3, y: 3 });
+    harness.api.publishStroke('p1', stroke);
+    await harness.runTimerMatching(timer => timer.ms === 18);
+    assert.equal(stringifyCalls, 1);
+    assert.equal(first.sent.length, 1);
+    assert.equal(second.sent[0], first.sent[0]);
+  } finally {
+    contextJson.stringify = realStringify;
+  }
+});
+
+test('the beacon is rewritten every 1.5 s only in the short window after a discovery', () => {
+  const clock = createClock();
+  const h = createSignallingHarness(clock);
+  h.api.claimLeader();
+  h.api.addKnown('peer-negotiating', clock.t);
+  h.api.addPeer('peer-negotiating', { channel: null, status: 'connecting', createdAt: clock.t });
+  h.api.setDiscoveryState(clock.t);
+  assert.equal(h.api.rendezvousRefreshInterval(), 1500);
+  clock.advance(11_000);
+  h.api.addKnown('peer-negotiating', clock.t);
+  assert.equal(h.api.signalMode(), 'hot', 'the handshake itself still scans quickly');
+  assert.equal(h.api.rendezvousRefreshInterval(), 15_000, 'but no longer rewrites the beacon every 1.5 s');
+});
 
 test('confirmed Drive writes notify peers and tabs; hints only request a throttled authoritative poll', async () => {
   let polls = 0;
