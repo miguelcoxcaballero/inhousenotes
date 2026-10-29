@@ -22,8 +22,11 @@ pub struct VehicleVisual {
     pub model: usize,
     /// Model-to-body transform (offset, orientation and scale).
     pub local: Mat4,
-    /// `(nodes, rest center)` per physics wheel.
+    /// Per physics wheel: spinning nodes, rest center (model space).
     pub wheels: Vec<(Vec<usize>, Vec3)>,
+    /// Per wheel: rotation undoing the model's posed steering, and the
+    /// parts that steer without spinning (brake pads).
+    pub wheel_rest: Vec<(Quat, Vec<usize>)>,
     pub rest: Arc<Vec<Mat4>>,
     pub tint: Vec4,
     pub bike: bool,
@@ -95,6 +98,7 @@ fn spawn_car(app: &mut App, file: &str, handling: &str, scale: f32, color: [f32;
     let (pre, scale) = if file.starts_with("sf_") { (forja_gameplay::auto_orient(&base), forja_gameplay::auto_scale(&base, 4.5)) } else { (Quat::IDENTITY, scale) };
     let bound = forja_gameplay::bind_vehicle_model_oriented(handling_cfg, &base, scale, pre);
     let wheels = bound.wheel_nodes.iter().cloned().zip(bound.wheel_centers.iter().copied()).collect();
+    let wheel_rest = bound.wheel_rest.iter().copied().zip(bound.wheel_calipers.iter().cloned()).collect();
     let seat = Vec3::new(0.35, 0.1, -0.1);
     let physics = app.world.res_mut::<PhysicsWorld>();
     let vehicle = Vehicle::spawn(physics, bound.config, iso);
@@ -104,6 +108,7 @@ fn spawn_car(app: &mut App, file: &str, handling: &str, scale: f32, color: [f32;
         model,
         local: bound.model_to_body,
         wheels,
+        wheel_rest,
         rest: Arc::new(base.world_matrices()),
         tint,
         bike: false,
@@ -148,6 +153,7 @@ fn spawn_bike(app: &mut App, iso: Iso, reg: &HandlingRegistry) {
         model,
         local,
         wheels: Vec::new(),
+        wheel_rest: Vec::new(),
         rest,
         tint: Vec4::ONE,
         bike: true,
@@ -191,6 +197,12 @@ impl Plugin for VehiclesPlugin {
         let paths = app.world.res::<Paths>().clone();
         let mut lineup: Vec<(String, &str, f32, [f32; 3])> = downloaded_cars(&paths).into_iter().map(|f| (f, "sedan", 1.0, [1.0, 1.0, 1.0])).collect();
         lineup.extend(CARS.iter().map(|(f, h, s, c)| (f.to_string(), *h, *s, *c)));
+        // `FORJA_CARS=suv` (captures): only the models whose path contains it.
+        if let Ok(only) = std::env::var("FORJA_CARS")
+            && lineup.iter().any(|l| l.0.contains(&only))
+        {
+            lineup.retain(|l| l.0.contains(&only));
+        }
         for (i, iso) in car_spawns.iter().enumerate() {
             let (file, handling, scale, color) = lineup[i % lineup.len()].clone();
             let file = file.as_str();
@@ -211,6 +223,7 @@ impl Plugin for VehiclesPlugin {
                 model,
                 local: Mat4::IDENTITY,
                 wheels: Vec::new(),
+                wheel_rest: Vec::new(),
                 rest: Arc::new(vec![Mat4::IDENTITY]),
                 tint: Vec4::ONE,
                 bike: false,
@@ -248,17 +261,27 @@ fn render_vehicles(w: &mut forja_core::World) {
             if !vis.wheels.is_empty() {
                 // Spin and steer each wheel group about its own center, in
                 // model space (the model may be flipped relative to the body).
+                // The posed steering of the model is undone first, so every
+                // wheel rolls about its axle and only the fronts steer.
                 let inv = transform.inverse();
                 let (_, orient, _) = vis.local.to_scale_rotation_translation();
                 let mut nodes = (*vis.rest).clone();
                 for (wheel, (group, rest_center)) in vis.wheels.iter().enumerate() {
                     let Some(ws) = v.wheels.get(wheel) else { continue };
+                    let (straight, calipers) = vis.wheel_rest.get(wheel).map_or((Quat::IDENTITY, &[][..]), |(q, c)| (*q, c.as_slice()));
                     let center = inv.transform_point3(v.wheel_iso_at(iso, wheel).pos);
-                    let body_rot = Quat::from_rotation_y(ws.steer_angle) * Quat::from_rotation_x(ws.spin);
-                    let model_rot = orient.inverse() * body_rot * orient;
-                    let m = Mat4::from_translation(center) * Mat4::from_quat(model_rot) * Mat4::from_translation(-*rest_center);
+                    let steer = Quat::from_rotation_y(ws.steer_angle);
+                    let pose = |body_rot: Quat| {
+                        let model_rot = orient.inverse() * body_rot * orient;
+                        Mat4::from_translation(center) * Mat4::from_quat(model_rot * straight) * Mat4::from_translation(-*rest_center)
+                    };
+                    let spun = pose(steer * Quat::from_rotation_x(ws.spin));
                     for &node in group {
-                        nodes[node] = m * vis.rest[node];
+                        nodes[node] = spun * vis.rest[node];
+                    }
+                    let fixed = pose(steer);
+                    for &node in calipers {
+                        nodes[node] = fixed * vis.rest[node];
                     }
                 }
                 item.nodes = Some(Arc::new(nodes));

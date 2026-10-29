@@ -75,7 +75,7 @@ use forja_math::{Aabb, Frustum, Mat4, Vec3, Vec4};
 use wgpu::util::DeviceExt;
 
 pub use camera::Camera;
-pub use quality::{DynamicResolution, GraphicsConfig, Preset};
+pub use quality::{DisplayMode, DynamicResolution, FrameBound, GraphicsConfig, Preset, RENDER_SCALES};
 pub use look::{DepthOfField, Grade, Look};
 pub use lights::{Light, LightColor, Spot, candela, kelvin};
 pub use night::{EyeAdaptation, NightSky};

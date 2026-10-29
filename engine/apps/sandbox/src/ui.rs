@@ -42,6 +42,40 @@ pub fn draw_loading(ctx: &egui::Context, title: &str, stage: &str, fraction: f32
     ctx.request_repaint();
 }
 
+/// The key list (F10 help and the pause menu).
+pub const CONTROLS: &[(&str, &str)] = &[
+    ("WASD / ratón", "moverse / mirar"),
+    ("Mayús", "correr"),
+    ("Espacio", "saltar · freno de mano"),
+    ("F", "subir / bajar del vehículo"),
+    ("Clic izquierdo / derecho", "disparar / apuntar"),
+    ("R", "recargar"),
+    ("1-6", "categorías de armas"),
+    ("H", "guardar el arma"),
+    ("E", "usar botiquín"),
+    ("Tab", "inventario"),
+    ("V", "cámara"),
+    ("F1", "depuración de físicas"),
+    ("F2", "siguiente mapa"),
+    ("F3", "hora +3 h (noche de 21 a 6 h)"),
+    ("F9", "opciones gráficas"),
+    ("F10", "esta ayuda"),
+    ("F11", "perfilador de rendimiento"),
+    ("F12", "captura de pantalla"),
+    ("Esc", "menú de pausa (reanudar, opciones, salir)"),
+];
+
+/// [`CONTROLS`] as a two-column grid.
+pub fn controls_grid(u: &mut egui::Ui) {
+    egui::Grid::new("help").striped(true).show(u, |g| {
+        for (k, v) in CONTROLS {
+            g.label(egui::RichText::new(*k).strong());
+            g.label(*v);
+            g.end_row();
+        }
+    });
+}
+
 pub fn draw(ctx: &egui::Context, world: &mut World, ui: &mut UiState) {
     let hud = world.res::<Hud>().clone();
     let screen = ctx.content_rect();
@@ -52,7 +86,7 @@ pub fn draw(ctx: &egui::Context, world: &mut World, ui: &mut UiState) {
     };
     // Top-left: map and hints.
     shadow(&painter, egui::pos2(18.0, 14.0), egui::Align2::LEFT_TOP, &hud.map, 18.0, egui::Color32::WHITE);
-    shadow(&painter, egui::pos2(18.0, 38.0), egui::Align2::LEFT_TOP, &format!("{:.0} fps · F10 help", ui.fps), 13.0, egui::Color32::from_gray(200));
+    shadow(&painter, egui::pos2(18.0, 38.0), egui::Align2::LEFT_TOP, &format!("{:.0} fps · F10 ayuda · Esc pausa", ui.fps), 13.0, egui::Color32::from_gray(200));
     for (i, (m, t)) in hud.messages.iter().rev().take(5).enumerate() {
         let a = (t.min(1.0) * 255.0) as u8;
         shadow(&painter, egui::pos2(18.0, 70.0 + i as f32 * 22.0), egui::Align2::LEFT_TOP, m, 15.0, egui::Color32::from_rgba_unmultiplied(255, 236, 170, a));
@@ -111,32 +145,7 @@ pub fn draw(ctx: &egui::Context, world: &mut World, ui: &mut UiState) {
         inventory_window(ctx, world);
     }
     if ui.help {
-        egui::Window::new("Controls").anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).collapsible(false).resizable(false).show(ctx, |u| {
-            egui::Grid::new("help").striped(true).show(u, |g| {
-                for (k, v) in [
-                    ("WASD / mouse", "move / look"),
-                    ("Shift", "sprint"),
-                    ("Space", "jump · handbrake"),
-                    ("F", "enter / exit vehicle"),
-                    ("Left / right mouse", "fire / aim"),
-                    ("R", "reload"),
-                    ("1-6", "weapon wheel categories"),
-                    ("H", "holster"),
-                    ("Tab", "inventory"),
-                    ("F1", "physics debug"),
-                    ("F2", "next map"),
-                    ("F3", "time of day +3 h (night at 21-6 h)"),
-                    ("F9", "graphics options (presets)"),
-                    ("F11", "frame profiler"),
-                    ("F12", "screenshot"),
-                    ("Esc", "release mouse / quit"),
-                ] {
-                    g.label(egui::RichText::new(k).strong());
-                    g.label(v);
-                    g.end_row();
-                }
-            });
-        });
+        egui::Window::new("Controles (F10)").anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).collapsible(false).resizable(false).show(ctx, controls_grid);
     }
     if ui.debug {
         let tod = world.res::<TimeOfDay>().hours;

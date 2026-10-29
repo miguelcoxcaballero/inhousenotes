@@ -3,6 +3,7 @@
 //! walkway code as the game.
 
 pub mod game;
+pub mod pause;
 pub mod perf;
 pub mod stream;
 pub mod threads;
