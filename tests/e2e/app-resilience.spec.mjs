@@ -253,6 +253,7 @@ test('Scan pages stays below Photo with a Soon badge and only shows a Soon notic
   await expect(scan).toBeVisible();
   await expect(scan).toBeEnabled();
   await expect(scan.locator('.soon-badge')).toHaveText('Soon');
+  await expect(scan).toHaveAccessibleName('Scan pages (soon)');
   expect(await page.evaluate(() => {
     const photo = document.getElementById('btn-set-cover');
     const button = document.getElementById('btn-scan-page');
