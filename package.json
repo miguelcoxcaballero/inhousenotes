@@ -3,7 +3,7 @@
   "version": "5.17.21",
   "private": true,
   "scripts": {
-    "test:unit": "node --test tests/history-memory.test.mjs tests/drive-live-preview.test.mjs tests/drive-ink-journal.test.mjs tests/document-work-rust.test.mjs tests/rust-folder.test.mjs tests/offline-library-index.test.mjs tests/document-jobs.test.mjs tests/peer-transport.test.mjs tests/native-assets.test.mjs tests/rust-core.test.mjs tests/scanner-live-detection.test.mjs tests/collaboration-core-v5.test.mjs tests/live-collaboration-v5.test.mjs tests/timeline-core-v5.test.mjs tests/runtime-core-v5.test.mjs tests/pdf-clean-original-cap.test.mjs tests/local-save-status-v5.test.mjs tests/idle-animations.test.mjs tests/collab-cadence-v5.test.mjs && node tests/release-v5-smoke.mjs",
+    "test:unit": "node --test tests/history-memory.test.mjs tests/drive-live-preview.test.mjs tests/drive-ink-journal.test.mjs tests/document-work-rust.test.mjs tests/rust-folder.test.mjs tests/offline-library-index.test.mjs tests/document-jobs.test.mjs tests/peer-transport.test.mjs tests/native-assets.test.mjs tests/rust-core.test.mjs tests/scanner-live-detection.test.mjs tests/collaboration-core-v5.test.mjs tests/live-collaboration-v5.test.mjs tests/timeline-core-v5.test.mjs tests/runtime-core-v5.test.mjs tests/pdf-clean-original-cap.test.mjs tests/local-save-status-v5.test.mjs tests/idle-animations.test.mjs tests/collab-cadence-v5.test.mjs tests/pen-writing-idle-v5.test.mjs && node tests/release-v5-smoke.mjs",
     "test:e2e": "playwright test",
     "test": "npm run test:unit && npm run test:e2e",
     "build:rust": "node scripts/build-rust-core.mjs",
