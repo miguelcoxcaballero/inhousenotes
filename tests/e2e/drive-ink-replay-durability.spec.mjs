@@ -36,7 +36,9 @@ async function setup(page,api){
    constructor(host){super({...host,actor:'replay-reader'});window.replayJournal=this;}
    start(){return this;}wake(){}
   };
-  InhouseDriveLivePreview=null;InhouseDriveInk.start();await InhouseDriveInk.capture();
+  // The ink supervisor may have restarted the stock engine during the awaited
+  // checkpoints above; replace it so the instrumented journal is the one used.
+  InhouseDriveLivePreview=null;InhouseDriveInk.stop();InhouseDriveInk.start();await InhouseDriveInk.capture();
   window.replayStroke={id:'remote-durable-ink',tool:'pen',color:'#0000ff',width:2,
    points:[{x:10,y:20,p:.5},{x:20,y:35,p:.75},{x:45,y:50,p:.25}],syncStamp:{clock:100,actor:'remote-writer'}};
  },{documentId:DOCUMENT,name:INITIAL_NAME});

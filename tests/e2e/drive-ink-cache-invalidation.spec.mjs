@@ -42,7 +42,9 @@ async function setup(page,api,{duplicate=false,agenda=false}={}){
    constructor(host){super({...host,actor:'cache-reader'});window.cacheJournal=this;}
    start(){return this;}wake(){}
   };
-  InhouseDriveLivePreview=null;InhouseDriveInk.start();await InhouseDriveInk.capture();
+  // The ink supervisor may have restarted the stock engine during the awaited
+  // checkpoints above; replace it so the instrumented journal is the one used.
+  InhouseDriveLivePreview=null;InhouseDriveInk.stop();InhouseDriveInk.start();await InhouseDriveInk.capture();
   const apply=applyRemotePages;window.cacheMergeResults=[];
   applyRemotePages=async(...args)=>{const r=await apply(...args);cacheMergeResults.push(r);return r;};
   const invalidate=invalidatePageMutationCaches;window.cacheInvalidations=[];
