@@ -25,25 +25,6 @@
         documentRef.getElementById('app-theme-color')?.setAttribute('content', color);
     }
 
-    function handleOAuthCallback() {
-        const search = root.location.search || '';
-        const hash = root.location.hash || '';
-        if (!search.includes('oauth_callback=1')) return;
-        const hasToken = hash.includes('access_token=');
-        const errorMatch = search.match(/[?&]error=([^&]*)/);
-        if (hasToken) {
-            root.location.replace(`inhousenotes://oauth2callback${hash}`);
-        } else if (errorMatch) {
-            root.location.replace(`inhousenotes://oauth2callback#error=${errorMatch[1]}`);
-        }
-        setTimeout(() => {
-            const target = new URL('/', root.location.origin);
-            target.searchParams.set('inhouse_app', '1');
-            target.hash = hash || '';
-            root.location.replace(target.toString());
-        }, 500);
-    }
-
     function selectBootDestination() {
         try {
             const raw = localStorage.getItem('drive-token-v1');
@@ -130,7 +111,6 @@
     function watchPublishedVersion() {
         const running = readAppVersion();
         if (!running || typeof root.fetch !== 'function') return;
-        if ((root.location.search || '').includes('oauth_callback')) return;
         // A hidden document processor finishes its run with the code it
         // loaded; the visible app owns release checks and reloads.
         if (new URLSearchParams(root.location.search || '').has('offline-worker')) return;
@@ -197,7 +177,6 @@
         root.InhouseBackground = Object.freeze({schedule:()=>send('schedule'),cancel:()=>send('cancel'),complete:value=>send('complete',JSON.parse(value))});
     }
     applySavedTheme();
-    handleOAuthCallback();
     selectBootDestination();
     watchPublishedVersion();
     if (documentRef.readyState === 'loading') {
