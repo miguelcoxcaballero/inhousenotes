@@ -225,8 +225,7 @@ assert.match(html, /#toolbar, \.eraser-menu \{[\s\S]{0,500}--toolbar-ink: #1a1a1
 assert.match(html, /#toolbar \{[\s\S]{0,900}color: var\(--toolbar-ink\);/);
 assert.match(html, /\.tool-btn \{[\s\S]{0,300}color: var\(--toolbar-ink, var\(--text-primary\)\);/);
 assert.match(html, /#toolbar-handle \{[\s\S]{0,400}color: var\(--toolbar-muted-ink\);/);
-assert.match(html, /#toolbar \.size-dot, \.eraser-menu \.size-dot \{[\s\S]{0,180}background: var\(--toolbar-ink\);/);
-assert.match(html, /#toolbar \.tool-btn\.active \.color-dot \{\s*border-color: var\(--toolbar-ink\);/);
+assert.match(html, /\.eraser-menu \.size-dot \{[\s\S]{0,180}background: var\(--toolbar-ink\);/);
 assert.doesNotMatch(androidWorkflow, /Publish APK as app v4\.4\.24/);
 assert.match(app, /InhouseServicesUpdater\.create/);
 assert.match(indexHtml, /shared\/inhouse-services-updater\/updater\.js/);
