@@ -31657,6 +31657,11 @@
         // showLoading / hideLoading manage the full-screen progress overlay.
         // Also contains small utilities: filename sanitation, image loading,
         // interaction-idle detection, and Canvas-to-image helpers.
+        // Features removed for now (scanner, diary, agenda) keep their button and answer with "Soon".
+        function showSoonNotice() {
+            showStatus('Soon', { preserveState: true });
+        }
+
         function showStatus(text, options = {}) {
             const indicator = document.getElementById('save-indicator');
             if (!indicator) return;
