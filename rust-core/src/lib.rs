@@ -1,9 +1,8 @@
-//! Numeric pixel kernels and folder scene planning. Rendering, cancellation and
+//! Numeric pixel kernels. Rendering, cancellation and
 //! persistence remain with the host. Buffers are supplied by the private JS adapter.
 mod surface;
 mod ink;
 mod ink_repair;
-mod folder;
 mod checkpoint;
 mod editor;
 mod document_work;
