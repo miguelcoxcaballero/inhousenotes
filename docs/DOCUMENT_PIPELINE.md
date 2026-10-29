@@ -70,6 +70,23 @@ Exit jobs recheck their document session after waiting so they cannot save the n
 document. An unchanged cached document can leave immediately; cache materialization
 and an expired Drive token alone do not indicate unsaved content.
 
+## Background outbox
+
+There is no polling. The library starts the hidden document processor (a full
+app instance in an iframe) only when an operation can make progress: a new
+checkpoint, regained connectivity, returning to the app, sign-in, an explicit
+retry, a released sync lease or the backoff deadline of an unfinished operation
+(15 s, doubling up to 15 min; a new checkpoint is due at once; a launch,
+reconnection or retry ignores the backoff). It never starts while offline,
+signed out, busy with input, while another upload holds the sync lease, or when
+the only pending document is the one open in the editor (its autosave owns it).
+One processor is reused between runs and released when the outbox is empty or
+after 90 s idle. The editor lease is written only when the open document or its
+visibility changes. Android's headless job and Background Sync are requested
+only while the app is hidden with operations pending, never while it is visible.
+A dead owner's sync lease is recognised through its Web Lock, so a restarted app
+does not wait for the lease to expire.
+
 ## Preparing a Drive save
 
 Idle warmup and foreground saving share a single PDF build. Consumers recheck the

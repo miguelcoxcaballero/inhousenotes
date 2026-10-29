@@ -94,12 +94,20 @@ test('native background sync resumes after gesture cooldown without another user
  await page.evaluate(async()=>{
   await InhouseOfflineLibrary.useAccount('gesture-native@example.test');
   await __IHN_TEST_API__.resetLocalDocument(1,'Native');await __IHN_TEST_API__.showEditorForTest();
+  await InhouseOfflineStore.checkpoint('gesture-native@example.test','queued',{blob:new Blob(['pdf']),entry:{id:'queued',name:'Queued.pdf',parents:['root']}});
   window.stops=0;window.restarts=0;window.InhouseBackground={cancel:()=>stops++,schedule:()=>restarts++};
   noteInteractionActivity();
  });
  await page.waitForTimeout(50);
  expect(await page.evaluate(()=>({stops,restarts}))).toEqual({stops:1,restarts:0});
- await page.waitForFunction(()=>restarts>0);
+ // The pause ends by itself; the headless job is requested once the app is hidden.
+ await page.waitForFunction(()=>!InhouseOfflineLibrary.diagnostics().nativePaused);
+ expect(await page.evaluate(()=>restarts)).toBe(0);
+ await page.evaluate(async()=>{
+  Object.defineProperty(document,'visibilityState',{configurable:true,get:()=>'hidden'});
+  await InhouseOfflineLibrary.scheduleBackground();
+ });
+ expect(await page.evaluate(()=>restarts)).toBe(1);
 });
 
 test('losing focus releases held viewport pointers so background work can resume',async({page})=>{

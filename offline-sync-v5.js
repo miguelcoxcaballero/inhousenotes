@@ -8,6 +8,15 @@
     const changed=(a,b)=> !a || (a.headRevisionId && b.headRevisionId ? a.headRevisionId!==b.headRevisionId
         : a.version && b.version ? String(a.version)!==String(b.version) : Date.parse(a.modifiedTime||'')!==Date.parse(b.modifiedTime||''));
     function failure(message,code) {return Object.assign(new Error(message),{code});}
+    // An operation that could not finish waits before the next automatic
+    // attempt: 15 s, 30 s, 1 min ... up to 15 min. A new checkpoint replaces
+    // the outbox record and therefore starts again without delay.
+    const RETRY_BASE_MS=15000, RETRY_MAX_MS=15*60000;
+    function retryAt(op) {
+        if(!op?.attemptedAt)return 0;
+        const attempts=Math.max(1,Number(op.attempts)||1);
+        return op.attemptedAt+Math.min(RETRY_MAX_MS,RETRY_BASE_MS*2**Math.min(attempts-1,16));
+    }
     async function run(account,adapter={}) {
         return S.withLease(account,'sync',async assertLease=>{
             const summary={saved:0,pending:0,errors:[]};
@@ -18,6 +27,20 @@
                 summary.pending=(await S.list('outbox',account)).length;
                 return true;
             };
+            // Record an unfinished attempt on the same queued revision only;
+            // a newer checkpoint is new work and stays immediately due.
+            // Yielding to the writer (an abort) is a pause, not a failure: it waits
+            // at the current backoff step without growing it or showing an error.
+            const attempted=(op,error)=>S.patch('outbox',account,op.id,old=>{
+                if(!old.kind)return null;
+                if(old.generation!==op.generation)return old;
+                const paused=error?.name==='AbortError';
+                return {...old,attemptedAt:Date.now(),attempts:paused?Math.max(1,old.attempts||0):(old.attempts||0)+1,
+                    ...(error&&!paused?{lastError:error.code||'network',lastErrorMessage:error.message,lastErrorPhase:phases.get(op.id)}:{})};
+            });
+            // A runner without a PDF processor (the service worker) cannot finish a
+            // draft; that is not a failed attempt and must not delay the editor.
+            const unable=error=>(error.code==='needs-processor'&&!adapter.build)||(error.code==='needs-merge'&&!adapter.merge);
             const phases=new Map();
             const progress=(id,phase)=>{phases.set(id,phase);try{adapter.progress?.({id,phase});}catch(_){}};
             const request=async (url,options={})=>{
@@ -117,21 +140,39 @@
                             id:remoteId,name:entry.name,mimeType:'application/vnd.google-apps.folder',parents:[parent],appProperties:{ihnOfflineId:op.id}
                         })});
                         await S.finishFolder(account,op.id,remoteId); summary.saved++;
-                    } catch(error) {summary.errors.push({id:op.id,phase:phases.get(op.id),code:error.code||'network',message:error.message});}
+                    } catch(error) {
+                        summary.errors.push({id:op.id,phase:phases.get(op.id),code:error.code||'network',message:error.message});
+                        await attempted(op,error).catch(()=>{});
+                    }
                 }
-                if (deferred.length===folders.length) {summary.pending+=deferred.length;break;} folders=deferred;
+                if (deferred.length===folders.length) {
+                    summary.pending+=deferred.length;
+                    if(adapter.background)for(const op of deferred)await attempted(op).catch(()=>{});
+                    break;
+                } folders=deferred;
             }
             for (const op of queue.filter(op=>op.kind==='document')) {
                 if(await yieldToManualSave())return summary;
                 try {
                     let doc=await S.read('documents',account,op.id);
-                    if (!doc?.dirty) continue;
-                    if (adapter.skip?.(op.id)) {summary.pending++;continue;}
+                    if (!doc?.dirty) {if(adapter.background)await attempted(op).catch(()=>{});continue;}
+                    const skipped=adapter.skip?.(op.id);
+                    if (skipped) {
+                        summary.pending++;
+                        // A live editor in another window owns it: do not wake again
+                        // for it at once. The owner page itself never queues its own
+                        // open document for background work ('owner').
+                        if(adapter.background&&skipped!=='owner')await attempted(op).catch(()=>{});
+                        continue;
+                    }
                     const generation=doc.generation;
+                    // A runner without a PDF processor (the service worker) cannot
+                    // finish an editable draft: leave it to the app, without requests.
+                    if (!adapter.build && doc.snapshot && !(doc.preparedBlob && doc.preparedGeneration===generation)) {summary.pending++;continue;}
                     progress(op.id,'checking');
                     const entry=await S.read('entries',account,op.id) || doc.entry;
                     const parent=await S.resolveId(account,entry?.parents?.[0]);
-                    if (!parent) {summary.pending++;continue;}
+                    if (!parent) {summary.pending++;if(adapter.background)await attempted(op).catch(()=>{});continue;}
                     const isNew=op.id.startsWith('local-');
                     const id=isNew?await reserve('documents',op.id,doc):(doc.remoteId||op.id);
                     let current;
@@ -211,11 +252,12 @@
                 } catch(error) {
                     summary.pending++;
                     summary.errors.push({id:op.id,phase:phases.get(op.id),code:error.code||'network',message:error.message});
-                    await S.patch('outbox',account,op.id,old=>old.kind?{...old,lastError:error.code||'network',lastErrorMessage:error.message,lastErrorPhase:phases.get(op.id),attemptedAt:Date.now()}:null);
+                    if(unable(error))await S.patch('outbox',account,op.id,old=>old.kind?{...old,lastError:error.code,lastErrorMessage:error.message,lastErrorPhase:phases.get(op.id)}:null);
+                    else await attempted(op,error);
                 }
             }
             return summary;
         });
     }
-    root.InhouseOfflineSync=Object.freeze({run,changed});
+    root.InhouseOfflineSync=Object.freeze({run,changed,retryAt});
 })(globalThis);

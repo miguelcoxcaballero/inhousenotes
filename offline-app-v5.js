@@ -177,10 +177,14 @@
     }
     async function reconcileStartup() {
         if(!L.ready()||!currentId())return;
-        const doc=await S.read('documents',L.account(),currentId());
-        const marker=readPendingExitUpload();
-        if(doc&&!doc.dirty&&doc.lastUploadedAt>(state.lastSavedAt||0)
-            &&(!marker||marker.fileId===state.driveFileId&&marker.contentVersion<=doc.contentVersion))await restore(doc,false);
+        // Startup continues (and the outbox resumes) even if this optional
+        // refresh of the restored editor fails; the editor copy stays as is.
+        try {
+            const doc=await S.read('documents',L.account(),currentId());
+            const marker=readPendingExitUpload();
+            if(doc&&!doc.dirty&&doc.lastUploadedAt>(state.lastSavedAt||0)
+                &&(!marker||marker.fileId===state.driveFileId&&marker.contentVersion<=doc.contentVersion))await restore(doc,false);
+        } catch(error) {console.warn('Offline startup reconciliation skipped:',error);}
     }
     async function refreshed() {
         const doc=L.record(currentId());
@@ -214,11 +218,34 @@
         await S.put('settings','__session__','active',{accountId:account,enabled:true});
         await S.put('settings',account,'background-auth',{token:driveAccessToken,expiry:driveTokenExpiry,
             refreshToken:useAndroidPkceFlow()?localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY):null,clientId:useAndroidPkceFlow()?ANDROID_OAUTH_CLIENT_ID:null});
+        // Signing in is what a run waiting for authentication was waiting for.
+        if(!L.isWorker)void L.kick({force:true,reason:'signed-in'});
+    }
+    // The editor lease tells a background processor in another window (or
+    // Android's headless one) which document a visible editor owns. It is
+    // written when that owner changes and renewed at half its lifetime only
+    // while an editor is visible; a hidden or closed app releases it at once.
+    const EDITOR_LEASE_MS=5*60000;
+    let editorLease={key:null,expires:0},editorLeaseTimer=null;
+    function editorActive() {return document.visibilityState==='visible'&&!!editorView&&!editorView.classList.contains('hidden');}
+    function activeId() {return editorActive()?currentId():null;}
+    function heartbeat(force=false) {
+        const account=L.account();if(!account||L.isWorker)return;
+        const active=editorActive(),documentId=currentId(),now=Date.now();
+        const key=JSON.stringify([account,documentId,active]);
+        if(!force&&key===editorLease.key&&(!active||editorLease.expires-now>EDITOR_LEASE_MS/2))return;
+        editorLease={key,expires:active?now+EDITOR_LEASE_MS:0};
+        clearTimeout(editorLeaseTimer);editorLeaseTimer=null;
+        if(active)editorLeaseTimer=setTimeout(()=>heartbeat(),EDITOR_LEASE_MS/2+1000);
+        return S.put('leases',account,'editor',{documentId,expires:editorLease.expires}).catch(()=>{editorLease.key=null;});
     }
     async function initialize() {
-        await L.init({version:APP_VERSION,currentId,quickAccess:isQuickAccessDriveFile,activeDocument:()=>document.visibilityState==='visible'&&editorView&&!editorView.classList.contains('hidden'),busy:()=>hasSmoothInteraction()||driveOpenInProgress||offlineOpenInProgress,
+        await L.init({version:APP_VERSION,currentId,quickAccess:isQuickAccessDriveFile,activeDocument:()=>{void heartbeat();return editorActive();},busy:()=>hasSmoothInteraction()||driveOpenInProgress||offlineOpenInProgress,
+            // Signed out, or a failed refresh with no usable token: nothing can
+            // upload until the user signs in again (authorizeBackground kicks).
+            canSync:()=>!driveSignedOut&&(!driveAuthNeedsReconnect||!!driveAccessToken),
             identity:()=>({id:currentId(),version:driveContentVersion,session:getOfflineDocumentSessionToken()}),
-            retrySync:()=>driveAuthNeedsReconnect||L.syncStatus().errors.some(error=>error.code===401||/sign.?in|refresh token/i.test(error.message||''))?signInDrive():void L.kick(),syncChanged:renderSyncStatus,syncActive:()=>queueDriveSave(true),
+            retrySync:()=>driveAuthNeedsReconnect||L.syncStatus().errors.some(error=>error.code===401||/sign.?in|refresh token/i.test(error.message||''))?signInDrive():void L.kick({force:true,reason:'retry'}),syncChanged:renderSyncStatus,syncActive:()=>queueDriveSave(true),
             connectionChanged:connected=>{
                 renderSyncStatus();
                 if(connected&&L.ready()){
@@ -233,14 +260,16 @@
             },downloadBlob:(blob,name)=>{const link=document.createElement('a'),url=URL.createObjectURL(blob);link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);},
             refreshed:()=>refreshed().catch(()=>{})});
         if(L.isWorker)return;
-        const heartbeat=()=>{
-            const account=L.account();if(!account)return;
-            return S.put('leases',account,'editor',{documentId:currentId(),expires:document.visibilityState==='visible'&&editorView&&!editorView.classList.contains('hidden')?Date.now()+20000:0});
-        };
-        setInterval(()=>{heartbeat();if(!L.offline())L.kick();},10000);
-        document.addEventListener('visibilitychange',()=>{heartbeat();if(document.hidden)L.capture().then(()=>L.scheduleBackground()).catch(()=>{});});
+        // No polling: the lease follows the editor's visibility and document,
+        // and the outbox is kicked by events (see InhouseOfflineLibrary.kick).
+        if(editorView&&typeof MutationObserver==='function')new MutationObserver(()=>void heartbeat()).observe(editorView,{attributes:true,attributeFilter:['class']});
+        document.addEventListener('visibilitychange',()=>{
+            void heartbeat();
+            // Returning to the app probes Drive and kicks the outbox (library).
+            if(document.hidden)L.capture().then(()=>L.scheduleBackground()).catch(()=>{});
+        });
         window.addEventListener('online',()=>{if(state.driveAutosave&&driveDirty)queueDriveSave(true);});
-        await heartbeat();
+        await heartbeat(true);
         if(driveAccessToken)await authorizeBackground();
     }
     async function backgroundAccess(expectedAccount,rejectedToken=null) {
@@ -274,51 +303,84 @@
             options.signal?.removeEventListener('abort', abort);
         }
     }
+    // The hidden processor stays loaded while its owner page reuses it: each
+    // 'ihn-offline-run' message starts one more pass over the outbox instead
+    // of loading the whole app again. Android's headless processor (no owner
+    // page) runs once and reports to WorkManager.
     async function worker() {
-        let result;
-        try {
+        let prepared=null,profileChecked=false,running=null,again=false;
+        const embedded=root.parent!==root;
+        const prepare=async()=>{
             await initialize();
             const account=L.account();if(!account)throw new Error('No saved account');
             // Home owns authentication (including native/silent refresh).
             // Its hidden processor must not depend on a stale storage copy or
             // initialize a second OAuth client while the visible session works.
             let owner=null;
-            try {if(root.parent!==root&&root.parent.location.origin===location.origin)
+            try {if(embedded&&root.parent.location.origin===location.origin)
                 owner=root.parent.InhouseOfflineApp;}catch(_){}
             const access=owner?.backgroundAccess;
+            const session={account,owner,access,lastToken:null};
             if(access){
-                const credentials=await access(account);
-                driveAccessToken=credentials.token;driveTokenExpiry=credentials.expiry;
                 // Use the same owner for refreshes during long PDF jobs too.
-                let lastToken=credentials.token;
                 ensureDriveToken=async()=>{
-                    const next=await access(account,driveAccessToken?null:lastToken);
-                    lastToken=next.token;
+                    const next=await access(account,driveAccessToken?null:session.lastToken);
+                    session.lastToken=next.token;
                     driveAccessToken=next.token;driveTokenExpiry=next.expiry;
                     return next.token;
                 };
-            }else{
-                loadDriveTokenFromStorage();
-                if(!driveAccessToken && !useAndroidPkceFlow())throw new Error('Sign in to renew background access');
-                await ensureDriveToken(false);
             }
-            const profile=await (await driveFetch('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)')).json();
-            if(profile.user?.emailAddress?.toLowerCase()!==account)throw new Error('Background account changed');
-            const editor=await S.read('leases',account,'editor');
-            const guardedFetch=async(url,options)=>{
-                const active=await S.read('settings','__session__','active');
-                if(active?.enabled===false||(localStorage.getItem('drive-hint-email')||'').toLowerCase()!==account)throw new Error('Account signed out');
-                return documentFetch(url,options);
-            };
-            result=await root.InhouseOfflineSync.run(account,{background:true,fetch:guardedFetch,build:workerBuild,merge:async(doc,meta,remoteBlob)=>{await restore(doc,false);return merge(doc,meta,remoteBlob);},
-                progress:progress=>root.parent?.postMessage({type:'ihn-offline-progress',progress},location.origin),
-                skip:id=>editor?.documentId===id&&editor.expires>Date.now()});
-        } catch(error) {result={pending:1,errors:[{message:error.message}]};}
-        finally {
-            root.parent?.postMessage({type:'ihn-offline-complete',result},location.origin);
-            try {root.InhouseBackground?.complete?.(JSON.stringify(result));}catch(_){}
-        }
-        return result;
+            return session;
+        };
+        const runOnce=async()=>{
+            let result;
+            try {
+                if(!prepared)prepared=prepare().catch(error=>{prepared=null;throw error;});
+                const session=await prepared,{account,owner,access}=session;
+                if(access){
+                    const credentials=await access(account);
+                    driveAccessToken=credentials.token;driveTokenExpiry=credentials.expiry;
+                    session.lastToken=credentials.token;
+                }else{
+                    loadDriveTokenFromStorage();
+                    if(!driveAccessToken && !useAndroidPkceFlow())throw new Error('Sign in to renew background access');
+                    await ensureDriveToken(false);
+                }
+                if(!profileChecked){
+                    const profile=await (await driveFetch('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)')).json();
+                    if(profile.user?.emailAddress?.toLowerCase()!==account)throw new Error('Background account changed');
+                    profileChecked=true;
+                }
+                const editor=await S.read('leases',account,'editor');
+                const guardedFetch=async(url,options)=>{
+                    const active=await S.read('settings','__session__','active');
+                    if(active?.enabled===false||(localStorage.getItem('drive-hint-email')||'').toLowerCase()!==account)throw new Error('Account signed out');
+                    return documentFetch(url,options);
+                };
+                let ownerActive=null;try{ownerActive=owner?.activeId?.()||null;}catch(_){}
+                result=await root.InhouseOfflineSync.run(account,{background:true,fetch:guardedFetch,build:workerBuild,merge:async(doc,meta,remoteBlob)=>{await restore(doc,false);return merge(doc,meta,remoteBlob);},
+                    progress:progress=>root.parent?.postMessage({type:'ihn-offline-progress',progress},location.origin),
+                    skip:id=>id===ownerActive?'owner':editor?.documentId===id&&editor.expires>Date.now()});
+            } catch(error) {result={pending:1,errors:[{message:error.message}]};}
+            finally {
+                root.parent?.postMessage({type:'ihn-offline-complete',result,reusable:embedded},location.origin);
+                try {root.InhouseBackground?.complete?.(JSON.stringify(result));}catch(_){}
+            }
+            return result;
+        };
+        const schedule=async()=>{
+            if(running){again=true;return running;}
+            running=(async()=>{
+                let result;
+                do {again=false;result=await runOnce();} while(again);
+                return result;
+            })().finally(()=>{running=null;});
+            return running;
+        };
+        if(embedded)root.addEventListener('message',event=>{
+            if(event.origin===location.origin&&event.source===root.parent&&event.data?.type==='ihn-offline-run')void schedule();
+        });
+        return schedule();
     }
     async function newDocument() {
         const id=`local-${crypto.randomUUID()}`;
@@ -380,9 +442,13 @@
             finally {await L.syncFinished(result||{});}
             if(result?.errors?.length)showStatus(L.syncErrorText(result.errors[0]),{preserveState:true});
             retryBusySave(result,force,options,requestContext);
+            // A failed attempt now has a backoff deadline; let the library wait for it.
+            if(!result?.busy)void L.kick({reason:'after-save'});
             return result;
         }
-        const result=await S.withLease(L.account(),'sync',()=>isDocumentPersistenceContextCurrent(requestContext)?normal(force,options):{cancelled:true});
+        let result;
+        try {result=await S.withLease(L.account(),'sync',()=>isDocumentPersistenceContextCurrent(requestContext)?normal(force,options):{cancelled:true});}
+        finally {if(!result?.busy)L.leaseReleased();}
         retryBusySave(result,force,options,requestContext);
         return result;
     }
@@ -392,7 +458,7 @@
         if(!id)return queueDriveSave(true);
         const priority={documentId:id,token,expires:Date.now()+60000};
         await S.put('settings',account,'sync-priority',priority);
-        const renew=setInterval(()=>{void S.patch('settings',account,'sync-priority',old=>old.token===token?{...old,expires:Date.now()+60000}:old).catch(()=>{});},10000);
+        const renew=setInterval(()=>{void S.patch('settings',account,'sync-priority',old=>old.token===token?{...old,expires:Date.now()+60000}:old).catch(()=>{});},30000);
         try {
             const deadline=Date.now()+120000;
             while(isDocumentPersistenceContextCurrent(context)&&L.account()===account&&!L.offline()){
@@ -410,5 +476,5 @@
             void L.kick();
         }
     }
-    root.InhouseOfflineApp=Object.freeze({pauseForEditing,authorizeBackground,initialize,reconcileStartup,backgroundAccess,worker,restore,newDocument,confirmed,queueSave,saveNow,renderHome,renderFolder,currentId});
+    root.InhouseOfflineApp=Object.freeze({pauseForEditing,authorizeBackground,initialize,reconcileStartup,backgroundAccess,worker,restore,newDocument,confirmed,queueSave,saveNow,renderHome,renderFolder,currentId,activeId});
 })(window);
