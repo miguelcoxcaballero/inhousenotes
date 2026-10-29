@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use forja_math::Vec2;
 use serde::Deserialize;
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct ActionMap {
     /// Action name -> any of these keys.
     pub actions: HashMap<String, Vec<String>>,
@@ -20,6 +20,12 @@ pub struct ActionMap {
 
 fn sensitivity() -> f32 {
     0.0025
+}
+
+impl Default for ActionMap {
+    fn default() -> Self {
+        Self { actions: HashMap::new(), mouse_sensitivity: sensitivity(), invert_y: false }
+    }
 }
 
 impl ActionMap {

@@ -133,6 +133,9 @@ pub fn bind_vehicle_model_oriented(mut config: VehicleConfig, scene: &SceneData,
         bounds: forja_math::Aabb,
         front: bool,
         points: Vec<Vec3>,
+        /// Tyre and rim points only: off-centre brake pads would skew the
+        /// axle estimate by several degrees.
+        axle_points: Vec<Vec3>,
     }
     let mut wheels: Vec<Wheel> = Vec::new();
     for (node, b, front, pts, caliper) in parts {
@@ -143,11 +146,16 @@ pub fn bind_vehicle_model_oriented(mut config: VehicleConfig, scene: &SceneData,
                 w
             }
             None => {
-                wheels.push(Wheel { nodes: Vec::new(), calipers: Vec::new(), bounds: b, front, points: Vec::new() });
+                wheels.push(Wheel { nodes: Vec::new(), calipers: Vec::new(), bounds: b, front, points: Vec::new(), axle_points: Vec::new() });
                 wheels.last_mut().expect("just pushed")
             }
         };
-        if caliper { w.calipers.push(node) } else { w.nodes.push(node) }
+        if caliper {
+            w.calipers.push(node);
+        } else {
+            w.nodes.push(node);
+            w.axle_points.extend(pts.iter().copied());
+        }
         w.points.extend(pts);
     }
     // A spare wheel (the SUV's, on its tailgate) does not touch the ground:
@@ -170,7 +178,7 @@ pub fn bind_vehicle_model_oriented(mut config: VehicleConfig, scene: &SceneData,
     // physics' steer and spin are applied.
     let mut rest_yaw = Vec::with_capacity(wheels.len());
     for w in &mut wheels {
-        let q = straighten_yaw(&w.points);
+        let q = straighten_yaw(if w.axle_points.len() >= 8 { &w.axle_points } else { &w.points });
         let c = w.bounds.center();
         if q != forja_math::Quat::IDENTITY {
             let mut b = forja_math::Aabb::EMPTY;
@@ -180,6 +188,7 @@ pub fn bind_vehicle_model_oriented(mut config: VehicleConfig, scene: &SceneData,
             w.bounds = b;
         }
         w.points = Vec::new();
+        w.axle_points = Vec::new();
         rest_yaw.push(q);
     }
     let all = wheels.iter().fold(body, |acc, w| acc.union(&w.bounds));

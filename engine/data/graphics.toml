@@ -1,8 +1,12 @@
-# Graphics options (F9 in the game edits and saves this file).
+# Graphics options (F9 or Esc > Opciones > Graficos edits and saves this file).
 #
-# auto = true picks a preset from the GPU at startup: High on discrete GPUs
-# (dynamic resolution holds 60 FPS on mid-range cards), Medium on older or
-# entry-level discrete cards and strong integrated GPUs, Low otherwise.
+# Layout version: files without it (v0.1.3 and older) get their resolution
+# settings reset to native (render_scale 1.0, dynamic resolution off).
+version = 2
+
+# auto = true picks a preset from the GPU at startup: High on discrete GPUs,
+# Medium on older or entry-level discrete cards and strong integrated GPUs,
+# Low otherwise. Every preset renders at the window's native resolution.
 # With auto = false the named preset sets every cost knob below; use
 # preset = "custom" to keep hand-edited values. Presets only change costs
 # (resolutions, sample counts, update rates); the look (exposure, tonemap,
@@ -14,12 +18,22 @@ preset = "high"
 vsync = true
 # Frames the CPU may queue ahead of the display (1-3).
 frame_latency = 2
+# Frame rate cap (0: none; v-sync still applies).
+fps_cap = 0
+# "windowed", "borderless" (covers the monitor at its native resolution)
+# or "fullscreen" (exclusive, the monitor's native video mode).
+display_mode = "borderless"
 
-# Dynamic resolution: the internal resolution moves between
-# min_render_scale and render_scale to keep the GPU under target_fps.
-target_fps = 60.0
-dynamic_resolution = true
+# Internal resolution as a fraction of the window's physical pixels:
+# 1.0 is native with no upscaling; below 1 FSR 1 upscales.
 render_scale = 1.0
+# Most internal pixels (millions); 0 = no cap.
+max_render_mpix = 0.0
+# Dynamic resolution (off by default): lowers the scale, down to
+# min_render_scale, only while the GPU (timestamps) is over the target_fps
+# budget and the CPU is not. Without GPU timestamps it holds render_scale.
+dynamic_resolution = false
+target_fps = 60.0
 min_render_scale = 0.75
 
 # Sun shadows: texels per cascade side, cascades with soft PCSS penumbrae,

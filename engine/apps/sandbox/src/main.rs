@@ -1370,6 +1370,10 @@ impl Sandbox {
             self.fps_acc = (0.0, 0);
         }
         let paused = self.pause.open;
+        // F12 works in the pause menu too (checked before its end_frame).
+        if self.input.pressed("screenshot") {
+            self.want_screenshot = true;
+        }
         if paused {
             // Paused: the world stands still under the menu.
             self.input.end_frame();
@@ -1403,9 +1407,6 @@ impl Sandbox {
             if want != built {
                 self.rebuild_for_time(want);
             }
-        }
-        if self.input.pressed("screenshot") {
-            self.want_screenshot = true;
         }
         let t = Instant::now();
         if !paused {
