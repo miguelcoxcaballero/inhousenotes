@@ -23,7 +23,7 @@ async function library(initial = {}) {
     sandbox.window = sandbox;
     vm.runInNewContext(source, sandbox);
     const api = sandbox.InhouseOfflineLibrary;
-    await api.init({ quickAccess: () => false });
+    await api.init({});
     return { api, state };
 }
 function card() {

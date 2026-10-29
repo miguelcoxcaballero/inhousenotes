@@ -12,7 +12,7 @@
     const current=journal=>journal===engine&&journal.account===L.account()
         &&session===getDocumentSessionToken()&&journal.docId===(usable()?state.driveFileId:'');
     function context(){return {structure:getCollabStructureSnapshot(),fields:getCollabFieldSnapshot(),
-        name:state.exportName,calendar:state.calendarPageConfig||null};}
+        name:state.exportName};}
     function strokeOperation(pageId,item){
         return {v:1,kind:'stroke',pageId,stroke:{id:item.id,tool:item.tool,color:item.color,width:item.width,points:item.points,
             ...(item.syncStamp?{syncStamp:item.syncStamp}:{})}};
@@ -25,7 +25,7 @@
         return {backgroundImage,key:JSON.stringify(metadata)};
     }
     function sameMetadata(left,right){return !!left&&left.backgroundImage===right.backgroundImage&&left.key===right.key;}
-    const pageFields=['background','template','size','sidePanel'];
+    const pageFields=['background','template','size'];
     const contextFieldIndexes=new WeakMap();
     function pageFieldsKey(pageId,metadata){
         return JSON.stringify(pageFields.map(field=>metadata.fields?.[`page:${pageId}:${field}`]||null));
@@ -115,7 +115,7 @@
                     try{
                         const result=await applyRemotePages(op.pages,{sessionToken:token,fileId:docId,
                             additiveById:true,preserveLocalUnsynced:true,remoteStructure:op.structure,
-                            remoteFields:op.fields,remoteExportName:op.name,remoteCalendarPageConfig:op.calendar});
+                            remoteFields:op.fields,remoteExportName:op.name});
                         clearRemoteLiveStrokePreviews('',Infinity,op.pages);
                         if(result.changed){
                             // A journal receipt is not a PDF receipt. Keep PDF dirty

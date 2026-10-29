@@ -4,16 +4,15 @@ import {fakeInkDrive} from '../helpers/fake-ink-drive.mjs';
 const DOCUMENT='cache-invalidation',SOURCE='cache-source';
 const IDS=['cache-ink','cache-photo','cache-pdf'];
 
-async function setup(page,api,{duplicate=false,agenda=false}={}){
+async function setup(page,api,{duplicate=false}={}){
  await page.exposeFunction('cacheInkRequest',(url,options)=>api.request(url,options));
  await page.goto('/?e2e=1');await page.evaluate(()=>__IHN_TEST_API__.ready());
- return page.evaluate(async({documentId,ids,duplicate,agenda})=>{
+ return page.evaluate(async({documentId,ids,duplicate})=>{
   await InhouseOfflineLibrary.useAccount('cache-invalidation@example.test');
-  await __IHN_TEST_API__.resetLocalDocument(3,agenda?'Agenda 2026-2027':'Cache validity');
+  await __IHN_TEST_API__.resetLocalDocument(3,'Cache validity');
   await __IHN_TEST_API__.showEditorForTest();
   stopCollabPolling();beginDocumentSession();InhouseDriveInk.stop();
   state.driveFileId=documentId;state.driveFileName='';state.driveCanEdit=true;state.driveAutosave=false;
-  state.driveFolderKind=agenda?'agenda':null;state.calendarPageConfig=agenda?{mode:'week',startPage:0,startDateKey:'2026-09-07',nextDateKey:'2026-09-28'}:null;
   const canvas=document.createElement('canvas');canvas.width=canvas.height=4;
   const ctx=canvas.getContext('2d');ctx.fillStyle='#315bdb';ctx.fillRect(0,0,4,4);
   const photo=canvas.toDataURL();
@@ -69,9 +68,9 @@ async function setup(page,api,{duplicate=false,agenda=false}={}){
     previewDirty:!!p.scrollPreviewDirty,generationSame:(pageDirtyGeneration.get(i)||0)===previous?.generation};
   });
   window.cacheOperation=()=>({v:1,kind:'stroke',pageId:ids[0],stroke:cacheStroke});
-  window.cacheContextOp=()=>({v:1,pages:[],structure:getCollabStructureSnapshot(),fields:getCollabFieldSnapshot(),name:state.exportName,calendar:state.calendarPageConfig||null});
+  window.cacheContextOp=()=>({v:1,pages:[],structure:getCollabStructureSnapshot(),fields:getCollabFieldSnapshot(),name:state.exportName});
   seedCacheProbe();return {photo,stroke:cacheStroke};
- },{documentId:DOCUMENT,ids:IDS,duplicate,agenda});
+ },{documentId:DOCUMENT,ids:IDS,duplicate});
 }
 
 async function installOperation(page,api,id=SOURCE,operation=null){
@@ -125,8 +124,8 @@ test('moving one item invalidates the losing page even when that page is absent 
  expect(stored[1].photo).toBe(fixture.photo);
 });
 
-for(const kind of ['reorder','legacy','rename','calendar','sidePanel'])test(`incoming ${kind} conservatively invalidates every page`,async({page})=>{
- const api=fakeInkDrive(),fixture=await setup(page,api,{agenda:['rename','calendar','sidePanel'].includes(kind)});
+for(const kind of ['reorder','legacy','rename'])test(`incoming ${kind} conservatively invalidates every page`,async({page})=>{
+ const api=fakeInkDrive(),fixture=await setup(page,api);
  const op=await page.evaluate(kind=>{
   const op=cacheContextOp(),snapshot=buildTimelineSnapshotFromPages(state.pages);
   if(kind==='reorder'){
@@ -135,16 +134,9 @@ for(const kind of ['reorder','legacy','rename','calendar','sidePanel'])test(`inc
    op.pages=next.map(id=>snapshot.find(p=>p.pageId===id));
   }else if(kind==='legacy'){
    op.pages=snapshot.map(p=>{const copy={...p};delete copy.pageId;return copy;});op.pages[0].strokes=[cacheStroke];
-  }else if(kind==='rename'){
+  }else{
    op.name='Ordinary notes';op.fields.fields[COLLAB_DOC_NAME_KEY]={value:op.name,stamp:{clock:100,actor:'cache-remote'}};
    op.fields.clock=100;
-  }else if(kind==='sidePanel'){
-   const panel={title:'New calendar panel',dateKeys:['2026-09-07'],html:'<p>New calendar panel</p>'};
-   op.pages=[{...snapshot[0],sidePanel:panel}];
-   op.fields.fields[getCollabPageFieldKey(state.pages[0].pageId,'sidePanel')]={value:panel,stamp:{clock:100,actor:'cache-remote'}};op.fields.clock=100;
-  }else{
-   op.calendar={mode:'day',startPage:0,startDateKey:'2026-09-07',nextDateKey:'2026-09-10'};
-   op.fields.fields[COLLAB_DOC_CALENDAR_KEY]={value:op.calendar,stamp:{clock:100,actor:'cache-remote'}};op.fields.clock=100;
   }
   return op;
  },kind);
@@ -161,11 +153,11 @@ for(const kind of ['reorder','legacy','rename','calendar','sidePanel'])test(`inc
   expect(stored[2]).toMatchObject({background:'pdf',pdfPageIndex:1});
  }
  if(kind==='reorder')expect((await durablePages(page)).map(p=>p.id)).toEqual([IDS[2],IDS[0],IDS[1]]);
- if(kind==='rename')expect(await page.evaluate(()=>({name:state.exportName,calendar:canUseAgendaCalendarForCurrentDocument()}))).toEqual({name:'Ordinary notes',calendar:false});
+ if(kind==='rename')expect(await page.evaluate(()=>state.exportName)).toBe('Ordinary notes');
 });
 
-test('an ordinary stroke in an unchanged calendar keeps unrelated page caches',async({page})=>{
- const api=fakeInkDrive();await setup(page,api,{agenda:true});await installOperation(page,api);const result=await readSource(page);
+test('an ordinary stroke keeps unrelated page caches',async({page})=>{
+ const api=fakeInkDrive();await setup(page,api);await installOperation(page,api);const result=await readSource(page);
  expect(result.seen).toBe(1);expect(result.results.at(-1).invalidatedPageIds).toEqual([IDS[0]]);result.caches.slice(1).forEach(expectUntouched);
 });
 
@@ -190,9 +182,9 @@ test('direct P2P merge returns its targeted cache proof and exact content hash w
   const patch=buildTimelineSnapshotFromPages([{...state.pages[0],strokes:[cacheStroke]}])[0],op=cacheContextOp();
   const merged=await applyRemotePages([patch],{sessionToken:getDocumentSessionToken(),fileId:state.driveFileId,
    additiveById:true,preserveLocalUnsynced:true,remoteStructure:op.structure,remoteFields:op.fields,
-   remoteExportName:op.name,remoteCalendarPageConfig:op.calendar,captureContentHash:true});
+   remoteExportName:op.name,captureContentHash:true});
   return {merged,caches:inspectCacheProbe(),invalidations:cacheInvalidations,
-   expected:ihnCanonicalDocumentHash(state.pages.map(p=>sanitizePageForStorage(p)),getCollabStructureSnapshot(),state.calendarPageConfig,state.exportName,getCollabFieldSnapshot())};
+   expected:ihnCanonicalDocumentHash(state.pages.map(p=>sanitizePageForStorage(p)),getCollabStructureSnapshot(),state.exportName,getCollabFieldSnapshot())};
  });
  expect(result.merged.invalidatedPageIds).toEqual([IDS[0]]);expect(result.merged.contentHash).toBe(result.expected);
  expect(result.invalidations).toEqual([IDS[0]]);result.caches.slice(1).forEach(expectUntouched);

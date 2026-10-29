@@ -124,7 +124,6 @@ function createHarness(overrides = {}) {
     isReadOnly: false,
     driveHeadRevisionId: 'rev-1',
     exportName: 'Document',
-    calendarPageConfig: null,
     collabStructure: core.ihnNormalizeStructureMeta(null, ['p1']),
     collabFields: core.ihnNormalizeFieldMeta(null),
     pages: [{
@@ -326,7 +325,6 @@ globalThis.__liveTest = {
     return ihnCanonicalDocumentHash(
       state.pages.map(page => sanitizePageForStorage(page)),
       getCollabStructureSnapshot(),
-      state.calendarPageConfig,
       state.exportName,
       getCollabFieldSnapshot()
     );
@@ -519,7 +517,6 @@ function liveEnvelope(state, overrides = {}) {
     sequence: 1,
     sentAt: Date.now(),
     exportName: state.exportName,
-    calendarPageConfig: state.calendarPageConfig,
     structure: JSON.parse(JSON.stringify(state.collabStructure)),
     fields: JSON.parse(JSON.stringify(state.collabFields)),
     pages: JSON.parse(JSON.stringify(state.pages)),
@@ -1144,7 +1141,6 @@ test('a page delta with the confirmed base applies and advances to the advertise
   const targetHash = core.ihnCanonicalDocumentHash(
     targetPages,
     state.collabStructure,
-    state.calendarPageConfig,
     state.exportName,
     state.collabFields
   );
@@ -2172,7 +2168,6 @@ test('a historical applied hash is merged again after the document moves C to D 
   const hashFor = pages => core.ihnCanonicalDocumentHash(
     pages,
     harness.state.collabStructure,
-    harness.state.calendarPageConfig,
     harness.state.exportName,
     harness.state.collabFields
   );

@@ -245,7 +245,6 @@ assert.match(html, /async function persistTimelineHistory\(/);
 assert.match(html, /async function captureTimelineRecoveryPoint\(/);
 assert.match(html, /Before restoring \$\{whenStr\}/);
 assert.match(html, /backgroundImage: page\.backgroundImage/);
-assert.match(html, /calendarPageConfig:/);
 assert.match(html, /legacyCoverStrokes:/);
 
 assert.match(html, /const DRIVE_BUILD_IDLE_WINDOW_MS = 180;/);
@@ -440,11 +439,6 @@ assert.match(
   /const itemLocationResolution = await reconcileDuplicateItemsAcrossPages\(\{[\s\S]{0,700}hasLocalMerges = true;/,
   'remote merges must publish deterministic item-location reconciliation'
 );
-assert.match(
-  html,
-  /function removeCalendarImportedImages[\s\S]{0,900}trackDeletedStrokeIds\(page, removed\)/,
-  'clearing legacy calendar cards must persist causal tombstones'
-);
 assert.doesNotMatch(html, /Saving the last document to Drive in the background/);
 assert.match(html, /#loading-overlay\.home-save-transition/);
 assert.match(html, /function showHomeSaveLoading\(/);
@@ -460,7 +454,7 @@ assert.doesNotMatch(html, /Finishing (the )?previous (Drive )?save/i);
 // Home closes the document's recurring work; nothing may revive it there.
 assert.match(app, /function showDriveHome\(\)[\s\S]{0,1200}closeDocumentScopedWork\(\);/);
 assert.match(app, /function showWelcomeView\(\)[\s\S]{0,1200}closeDocumentScopedWork\(\);/);
-assert.match(app, /function closeDocumentScopedWork\(\) \{\n\s+stopCollabPolling\(\);\n\s+spStopAutoSync\(\);[\s\S]{0,700}documentClosedToHome = !!state\.driveFileId;\n\s+suspendDocumentInkSession\(\);/);
+assert.match(app, /function closeDocumentScopedWork\(\) \{\n\s+stopCollabPolling\(\);[\s\S]{0,700}documentClosedToHome = !!state\.driveFileId;\n\s+suspendDocumentInkSession\(\);/);
 assert.match(app, /function suspendDocumentInkSession\(\) \{[\s\S]{0,200}documentSessionActivated = false;\n\s+window\.InhouseDriveInk\?\.start\(\);/);
 // A long background stops the document's remaining live loops; becoming
 // visible restores them before polling restarts.
@@ -625,7 +619,6 @@ assert.match(html, /ihnDeletionWinsItem\(mergedDeletionStamps, candidate\)/);
 assert.match(html, /function acquireLocalPageStructureMutation\(/);
 assert.match(html, /function acquireRemotePageMerge\(/);
 assert.match(html, /releaseRemotePageMerge\(mergeToken\)/);
-assert.match(html, /reconcileConcurrentCalendarPanels\(\{/);
 assert.match(html, /const activePageStoreTransactions = new Set\(\);/);
 assert.match(html, /let strokeOpsFlushPromise = null;/);
 assert.match(html, /let activeStrokeOpsTransaction = null;/);
@@ -750,7 +743,7 @@ const sampleFields = {
   clock: 42,
   fields: {
     'doc:exportName': { value: 'Diseño · 東京', stamp: { clock: 41, actor: 'peer-a' } },
-    'page:p1:sidePanel': { value: null, stamp: { clock: 42, actor: 'peer-b' } }
+    'page:p1:template': { value: 'default', stamp: { clock: 42, actor: 'peer-b' } }
   }
 };
 const fieldsCodecContext = vm.createContext({
@@ -784,7 +777,7 @@ const timelineContext = vm.createContext({
   console,
   A4_WIDTH: 210,
   A4_HEIGHT: 297,
-  state: { versionHistory: [], calendarPageConfig: null, exportName: 'Document' },
+  state: { versionHistory: [], exportName: 'Document' },
   simpleHash(value) {
     let hash = 0;
     for (let index = 0; index < value.length; index += 1) hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
@@ -811,8 +804,8 @@ const timelineContext = vm.createContext({
 vm.runInContext(html.slice(timelineStart, timelineEnd), timelineContext, { filename: 'timeline-v5.js' });
 const basePage = [{ pageId: 'page-a', strokes: [], images: [], backgroundSource: 'template', pageWidth: 210, pageHeight: 297 }];
 assert.notEqual(
-  timelineContext.timelineSnapshotHash(basePage, null, 'First name'),
-  timelineContext.timelineSnapshotHash(basePage, null, 'Second name'),
+  timelineContext.timelineSnapshotHash(basePage, 'First name'),
+  timelineContext.timelineSnapshotHash(basePage, 'Second name'),
   'document name changes must be tracked'
 );
 const mergedTimeline = timelineContext.mergeVersionHistories([
@@ -882,7 +875,6 @@ const localStructureAcquireEnd = html.indexOf('function assertLocalPageStructure
 const localStructureAcquireSource = html.slice(localStructureAcquireStart, localStructureAcquireEnd);
 assert.match(localStructureAcquireSource, /expectedContext = captureLocalPageStructureDocumentContext\(\)/);
 assert.match(localStructureAcquireSource, /isLocalPageStructureDocumentContextCurrent\(expectedContext\)/);
-assert.match(html, /beginDocumentSession\(\{ preserveLocalStructureToken: structureToken \}\)/);
 
 assert.match(
   remotePageApplySource,
@@ -932,11 +924,6 @@ assert.doesNotMatch(
 assert.match(exportFetchSource, /fetchStableDrivePdfSnapshot/);
 assert.match(html, /decodeCollabStructureFromKeywords\(keywords, pageIds = \[\], options = \{\}\)/);
 assert.match(html, /if \(options\.throwOnInvalid\) throw error;/);
-assert.match(
-  html,
-  /page\.sidePanel\.title = titleEl\.textContent;[\s\S]{0,180}markPageDirty\(pageIndex, 'full'\);/,
-  'side-panel title edits must be durable in PAGE_STORE'
-);
 
 const storageSaveStart = html.indexOf('async function saveToStorage');
 const storageSaveEnd = html.indexOf('async function loadFromStorage', storageSaveStart);
@@ -1095,18 +1082,6 @@ assert.doesNotMatch(driveBinSource, /\$\{file\.name/);
 assert.match(driveBinSource, /textContent = file\.name/);
 assert.doesNotMatch(scannerListSource, /\$\{p\.name/);
 assert.match(scannerListSource, /textContent = p\.name/);
-const sidePanelSanitizerStart = html.indexOf('const CALENDAR_ALLOWED_TAGS');
-const sidePanelSanitizerEnd = html.indexOf('function byteLengthOfPdfData', sidePanelSanitizerStart);
-const sidePanelSanitizerSource = html.slice(sidePanelSanitizerStart, sidePanelSanitizerEnd);
-assert.match(sidePanelSanitizerSource, /documentRef\.createElement\('template'\)/);
-assert.match(sidePanelSanitizerSource, /CALENDAR_ALLOWED_ATTRIBUTES/);
-assert.match(sidePanelSanitizerSource, /element\.removeAttribute\(attribute\.name\)/);
-assert.match(sidePanelSanitizerSource, /--sp-event-color/);
-assert.doesNotMatch(
-  html.slice(html.indexOf('function buildSidePanelElement'), html.indexOf('function refreshPageSidePanelLayout')),
-  /body\.innerHTML = panelData\.html/,
-  'persisted calendar HTML must be sanitized before it reaches the live DOM'
-);
 const driveTokenRequestSource = html.slice(
   html.indexOf('function ensureDriveToken'),
   html.indexOf('function signInDrive', html.indexOf('function ensureDriveToken'))
@@ -1127,12 +1102,6 @@ assert.match(html, /documentSessionId \+= 1;[\s\S]{0,800}embeddedMetadataCache\.
 assert.match(html, /if \(isDocumentSessionTokenValid\(cacheSessionToken\)\) \{\s*embeddedMetadataCache\.set/);
 assert.match(html, /if \(raw\.length > 16384\) return null;/);
 assert.match(html, /const COLLAB_KEYWORD_SECTION_MAX_CHARS = 8 \* 1024 \* 1024;/);
-assert.match(html, /const CALENDAR_KEYWORD_SECTION_MAX_CHARS = 64 \* 1024;/);
-assert.equal(
-  (html.match(/calB64\.length > CALENDAR_KEYWORD_SECTION_MAX_CHARS/g) || []).length,
-  2,
-  'both local-open and remote-merge calendar metadata parsers must be bounded'
-);
 // Must match securityCore.MAX_PDF_BYTES, not a smaller hardcoded value — a
 // stricter cap here would silently reject a clean-original attachment that
 // was legitimately captured and written under the real 64MB upload limit.

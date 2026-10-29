@@ -104,10 +104,10 @@ test('Home stops every document-scoped loop and nothing restarts it', async ({ p
   expect(idle.map(c => `${c.method} ${c.path}${c.media ? '?alt=media' : ''}${c.q ? '?q' : ''}`)).toEqual([]);
   expect(await page.evaluate(() => ({
     poll: !!state.collabPollInterval, ping: !!_presencePingInterval, heartbeat: !!_presenceHeartbeatInterval,
-    live: !!ihnLiveSupervisorTimer, signal: !!ihnLiveSignalTimer, calendar: !!spSyncInterval,
+    live: !!ihnLiveSupervisorTimer, signal: !!ihnLiveSignalTimer,
     // The document is still in memory for exit uploads, just inactive.
     file: state.driveFileId, active: isDocumentEditorActive()
-  }))).toEqual({ poll: false, ping: false, heartbeat: false, live: false, signal: false, calendar: false, file: DOC, active: false });
+  }))).toEqual({ poll: false, ping: false, heartbeat: false, live: false, signal: false, file: DOC, active: false });
 });
 
 test('reopening from Home restarts collaboration for the document', async ({ page }) => {
@@ -146,7 +146,7 @@ test('a document left before its Drive save finished is still uploaded from Home
   expect(await page.evaluate(() => !!state.collabPollInterval || !!ihnLiveSupervisorTimer)).toBe(false);
 });
 
-test('a hidden editor pauses Drive polling and calendar sync, then resumes when visible', async ({ page }) => {
+test('a hidden editor pauses Drive polling, then resumes when visible', async ({ page }) => {
   const net = await installFakeDrive(page);
   await openSignedIn(page, net);
   const setVisibility = value => page.evaluate(v => {
@@ -155,15 +155,15 @@ test('a hidden editor pauses Drive polling and calendar sync, then resumes when 
     document.dispatchEvent(new Event('visibilitychange'));
   }, value);
   await setVisibility('hidden');
-  expect(await page.evaluate(() => ({ poll: !!state.collabPollInterval, heartbeat: !!_presenceHeartbeatInterval, calendar: !!spSyncInterval })))
-    .toEqual({ poll: false, heartbeat: false, calendar: false });
+  expect(await page.evaluate(() => ({ poll: !!state.collabPollInterval, heartbeat: !!_presenceHeartbeatInterval })))
+    .toEqual({ poll: false, heartbeat: false });
   await page.waitForTimeout(800);
   const before = net.calls.length;
   await page.waitForTimeout(3000);
   expect(net.calls.slice(before).filter(c => c.method === 'GET' && c.path.endsWith(`/files/${DOC}`) && !c.media).length).toBeLessThanOrEqual(1);
   await setVisibility('visible');
-  expect(await page.evaluate(() => ({ poll: !!state.collabPollInterval, heartbeat: !!_presenceHeartbeatInterval, calendar: !!spSyncInterval })))
-    .toEqual({ poll: true, heartbeat: true, calendar: true });
+  expect(await page.evaluate(() => ({ poll: !!state.collabPollInterval, heartbeat: !!_presenceHeartbeatInterval })))
+    .toEqual({ poll: true, heartbeat: true });
 });
 
 async function setVisibility(page, value) {
