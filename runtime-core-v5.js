@@ -60,36 +60,6 @@
         return signal?.reason || new DOMException('Aborted', 'AbortError');
     }
 
-    function delay(ms, signal) {
-        return new Promise((resolve, reject) => {
-            if (signal?.aborted) { reject(abortError(signal)); return; }
-            const finish = error => {
-                clearTimeout(timer);
-                signal?.removeEventListener('abort', abort);
-                if (error) reject(error); else resolve();
-            };
-            const abort = () => finish(abortError(signal));
-            const timer = setTimeout(() => finish(), ms);
-            signal?.addEventListener('abort', abort, { once: true });
-        });
-    }
-
-    async function runWithRetries(operation, options = {}) {
-        if (typeof operation !== 'function') throw new TypeError('Retry operation must be a function');
-        const attempts = Number.isFinite(options.attempts) ? Math.max(1, Math.min(8, Math.floor(options.attempts))) : 3;
-        const baseDelayMs = Number.isFinite(options.baseDelayMs) ? Math.max(0, Math.min(5000, options.baseDelayMs)) : 80;
-        for (let attempt = 0; attempt < attempts; attempt++) {
-            if (options.signal?.aborted) throw abortError(options.signal);
-            try { return await operation(attempt); }
-            catch (error) {
-                if (options.signal?.aborted) throw abortError(options.signal);
-                if (error?.name === 'AbortError' || attempt + 1 === attempts
-                    || options.shouldRetry?.(error, attempt) === false) throw error;
-                await delay(Math.min(5000, baseDelayMs * 2 ** attempt), options.signal);
-            }
-        }
-    }
-
     // A running snapshot is immutable. Requests arriving during it belong to
     // the next batch, and their promises cannot resolve with the older save.
     class CoalescingQueue {
@@ -202,7 +172,7 @@
 
     // One host alarm for every paused document task. Rust owns eligibility,
     // deadlines, FIFO admission and session rejection; this bridge owns Promises
-    // and AbortSignals. Older/offline WASM versions use the equivalent fallback.
+    // and AbortSignals. Without the WASM planner the equivalent fallback runs.
     class DocumentWorkQueue {
         constructor(readState, options = {}) {
             this.readState = readState;
@@ -300,7 +270,7 @@
         get diagnostics() { return {backend:this.planner ? 'rust' : 'javascript', pending:this.waiters.size, wakes:this.wakes, maxBatch:this.maxBatch}; }
     }
 
-    const api = Object.freeze({ fetchWithDeadline, settleWithTimeout, runWithRetries, CoalescingQueue, WorkerRpcClient, DocumentWorkQueue });
+    const api = Object.freeze({ fetchWithDeadline, settleWithTimeout, CoalescingQueue, WorkerRpcClient, DocumentWorkQueue });
     root.InhouseRuntimeCore = api;
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window);

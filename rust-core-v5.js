@@ -7,7 +7,7 @@
     url.search = new URL(scriptUrl || root.location.href).search;
     url.searchParams.delete('native');
     if(root.InhouseAssetUrl)url.search=new URL(root.InhouseAssetUrl(url.href)).search;
-    let core = null, folderCore = false, folderScratch = null;
+    let core = null;
     const ready = (async () => {
         try {
             if (typeof WebAssembly === 'undefined') return false;
@@ -16,7 +16,6 @@
             const { instance } = await WebAssembly.instantiate(await response.arrayBuffer(), {});
             if (instance.exports.core_abi_version() !== 1) return false;
             core = instance.exports;
-            folderCore = core.folder_plan_version?.() === 1;
             return true;
         } catch (_) { return false; }
     })();
@@ -183,39 +182,23 @@
         } catch (_) { return null; }
         finally { release(pixels); release(distance); release(measured); release(output); }
     }
-    // Geometry is planned once per navigation and handed to WAAPI. There is no
-    // animation frame callback or DOM access on the WASM boundary.
-    function folderBuffer() {
-        if (!folderScratch) folderScratch = allocation(32 * 8);
-        return folderScratch.pointer;
-    }
+    // Folder scenes are planned once per navigation and handed to WAAPI.
     function folderMotion(bounds, rect, backwards = false) {
         if (!bounds || !rect) return null;
         const input = [bounds.left, bounds.top, bounds.width, bounds.height,
             rect.left, rect.top, rect.width, rect.height];
         if (!input.every(Number.isFinite) || bounds.width <= 0 || bounds.height <= 0 || rect.width <= 0 || rect.height <= 0) return null;
-        let values, backend = 'javascript';
-        if (folderCore && core.folder_motion) {
-            try {
-                const pointer = folderBuffer();
-                if (!core.folder_motion(...input, +!!backwards, pointer)) return null;
-                values = new Float64Array(core.memory.buffer, pointer, 29);
-                backend = 'rust';
-            } catch (_) { /* A cached or unavailable core must not block navigation. */ }
-        }
-        if (!values) {
-            const scale = Math.max((bounds.width + 4) / rect.width, (bounds.height + 4) / (rect.height * .94));
-            const width = rect.width * scale, height = rect.height * scale;
-            const finalLeft = (bounds.width - width) / 2;
-            const finalTop = (bounds.height - rect.height * .94 * scale) / 2 - rect.height * .06 * scale;
-            const dx = finalLeft - (rect.left - bounds.left), dy = finalTop - (rect.top - bounds.top);
-            values = [scale, finalLeft, finalTop, dx, dy, width, height, 1100 * scale,
-                backwards ? 560 : 600, backwards ? -112 : 0, backwards ? 0 : -112,
-                .55, 0, .15, 1, backwards ? .4 : .2, 0, .2, 1,
-                backwards ? 0 : 1, 0, backwards ? .6 : .4, backwards ? 1 : 0,
-                backwards ? 1 : 1 / scale, backwards ? 1 / scale : 1,
-                backwards ? dx : 0, backwards ? dy : 0, backwards ? 0 : dx, backwards ? 0 : dy];
-        }
+        const scale = Math.max((bounds.width + 4) / rect.width, (bounds.height + 4) / (rect.height * .94));
+        const width = rect.width * scale, height = rect.height * scale;
+        const finalLeft = (bounds.width - width) / 2;
+        const finalTop = (bounds.height - rect.height * .94 * scale) / 2 - rect.height * .06 * scale;
+        const dx = finalLeft - (rect.left - bounds.left), dy = finalTop - (rect.top - bounds.top);
+        const values = [scale, finalLeft, finalTop, dx, dy, width, height, 1100 * scale,
+            backwards ? 560 : 600, backwards ? -112 : 0, backwards ? 0 : -112,
+            .55, 0, .15, 1, backwards ? .4 : .2, 0, .2, 1,
+            backwards ? 0 : 1, 0, backwards ? .6 : .4, backwards ? 1 : 0,
+            backwards ? 1 : 1 / scale, backwards ? 1 / scale : 1,
+            backwards ? dx : 0, backwards ? dy : 0, backwards ? 0 : dx, backwards ? 0 : dy];
         if (values[0] <= 0 || !values.every(Number.isFinite)) return null;
         const easing = index => `cubic-bezier(${values[index]}, ${values[index + 1]}, ${values[index + 2]}, ${values[index + 3]})`;
         return {
@@ -226,28 +209,16 @@
             zoomFrames: [
                 { transform: `translate(${values[25]}px, ${values[26]}px) scale(${values[23]})` },
                 { transform: `translate(${values[27]}px, ${values[28]}px) scale(${values[24]})` }
-            ], backend
+            ]
         };
     }
     function folderFade(elapsedFraction, backwards = false) {
         if (!Number.isFinite(elapsedFraction)) return null;
-        let values, backend = 'javascript';
-        if (folderCore && core.folder_fade) {
-            try {
-                const pointer = folderBuffer(), count = core.folder_fade(elapsedFraction, +!!backwards, pointer);
-                if (count !== 3 && count !== 4) return null;
-                values = new Float64Array(core.memory.buffer, pointer, count * 2);
-                backend = 'rust';
-            } catch (_) { /* Use the same plan while an older core is cached. */ }
-        }
-        if (!values) {
-            const from = Math.min(.9, Math.max(0, Math.min(1, elapsedFraction)) + .03);
-            const to = Math.max(.7, Math.min(1, from + .15));
-            values = backwards ? [0, 1, .3, 1, 1, 0] : [0, 0, from, 0, to, 1, 1, 1];
-        }
+        const from = Math.min(.9, Math.max(0, Math.min(1, elapsedFraction)) + .03);
+        const to = Math.max(.7, Math.min(1, from + .15));
+        const values = backwards ? [0, 1, .3, 1, 1, 0] : [0, 0, from, 0, to, 1, 1, 1];
         const frames = [];
         for (let i = 0; i < values.length; i += 2) frames.push({ offset: values[i], opacity: values[i + 1] });
-        Object.defineProperty(frames, 'backend', { value: backend });
         return frames;
     }
     function folderRows(heights, gap, columns, count) {
@@ -260,37 +231,7 @@
             && bottom >= top && overscan >= 0 && Number.isFinite(top - overscan) && Number.isFinite(bottom + overscan);
         const validSpan = (first, end) => Number.isSafeInteger(first) && Number.isSafeInteger(end)
             && first >= 0 && end >= first && end <= rowCount;
-        if (folderCore && core.folder_rows_new && core.folder_rows_range && core.folder_rows_span && core.folder_rows_drop) {
-            let input, output, context = 0;
-            try {
-                input = allocation(Math.max(8, heights.byteLength));
-                view(input).set(new Uint8Array(heights.buffer, heights.byteOffset, heights.byteLength));
-                context = core.folder_rows_new(input.pointer, heights.length, gap, columns, count);
-                if (!context) return null;
-                output = allocation(16);
-                let disposed = false;
-                return {
-                    backend: 'rust',
-                    range(top, bottom, overscan = 0) {
-                        if (disposed || !validRange(top, bottom, overscan)) return null;
-                        if (!core.folder_rows_range(context, top, bottom, overscan, output.pointer)) return null;
-                        const result = new Float64Array(core.memory.buffer, output.pointer, 2);
-                        return { start: result[0], end: result[1], backend: 'rust' };
-                    },
-                    span(first, end) {
-                        if (disposed || !validSpan(first, end)) return null;
-                        const height = core.folder_rows_span(context, first, end);
-                        return Number.isFinite(height) ? height : null;
-                    },
-                    dispose() {
-                        if (!disposed) { disposed = true; core.folder_rows_drop(context); release(output); }
-                    }
-                };
-            } catch (_) { if (context) core.folder_rows_drop(context); release(output); }
-            finally { release(input); }
-        }
-        // The prefix is built once, including when WASM has not finished
-        // loading. Scrolling performs only two binary searches afterwards.
+        // The prefix is built once; scrolling performs only two binary searches.
         const tops = new Float64Array(rowCount), bottoms = new Float64Array(rowCount);
         let top = 0, disposed = false;
         for (let row = 0; row < rowCount; row++) {
@@ -308,12 +249,11 @@
             return low;
         };
         return {
-            backend: 'javascript',
             range(top, bottom, overscan = 0) {
                 if (disposed || !validRange(top, bottom, overscan)) return null;
                 const first = partition(bottoms, top - overscan, false);
                 const end = Math.max(first, partition(tops, bottom + overscan, true));
-                return { start: Math.min(count, first * columns), end: Math.min(count, end * columns), backend: 'javascript' };
+                return { start: Math.min(count, first * columns), end: Math.min(count, end * columns) };
             },
             span(first, end) {
                 if (disposed || !validSpan(first, end)) return null;
@@ -323,7 +263,7 @@
         };
     }
     function checkpointCodec(bytes, decodedLength = null) {
-        if (!core || core.ink_checkpoint_version?.() !== 1) return null;
+        if (!core) return null;
         if (!(bytes instanceof Uint8Array) || !bytes.length) return null;
         const capacity = decodedLength === null ? Math.ceil(bytes.length / 8) * 9 : decodedLength;
         if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > 72 * 1024 * 1024) throw new RangeError('Ink checkpoint too large');
@@ -376,7 +316,7 @@
         hitCache.clear(); hitCacheBytes = 0;
     }
     function strokeHitTest(points, x, y, radius, generation) {
-        if (!core?.editor_stroke_hit || !Array.isArray(points) || points.length < 256
+        if (!core || !Array.isArray(points) || points.length < 256
             || points.length > 262144 || ![x,y,radius].every(Number.isFinite)
             || radius < 0 || Math.max(Math.abs(x),Math.abs(y),radius) > 1e9) return null;
         if (generation !== hitGeneration) { clearHitCache(); hitGeneration = generation; }
@@ -409,7 +349,7 @@
         return result < 0 ? null : !!result;
     }
     function documentWorkQueue() {
-        if (core?.document_work_version?.() !== 1) return null;
+        if (!core) return null;
         let handle = core.document_work_new(), output = null;
         if (!handle) return null;
         try { output = allocation(17 * 8); }
@@ -438,7 +378,7 @@
         };
     }
     function pdfInk(strokes, bounds, rasterScale = 1) {
-        if (!core?.pdf_ink_path || !Array.isArray(strokes) || !bounds) return null;
+        if (!core || !Array.isArray(strokes) || !bounds) return null;
         let length = 0;
         for (const stroke of strokes) {
             if (stroke.tool === 'eraser-stroke') continue;

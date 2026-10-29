@@ -24,13 +24,10 @@ function transform(frame) {
     return { x: +x, y: +y, scale: +scale };
 }
 
-test('folder plans use the actual no-import Rust core and preserve card and screen endpoints', async () => {
-    assert.deepEqual(WebAssembly.Module.imports(await WebAssembly.compile(bytes)), []);
+test('folder plans preserve card and screen endpoints', () => {
     for (const container of [bounds, { left: -173, top: 12.5, width: 1280, height: 720 }, { left: 0, top: 0, width: 320, height: 480 }]) {
         for (const rect of [card, { left: 700, top: -800, width: 87.5, height: 43 }, { left: -20, top: 0, width: 1000, height: 1700 }]) {
             const motion = api.folderMotion(container, rect), closing = api.folderMotion(container, rect, true);
-            assert.equal(motion.backend, 'rust');
-            assert.equal(closing.backend, 'rust');
             assert.equal(motion.duration, 600);
             assert.equal(closing.duration, 560);
             assert.equal(motion.hingeFrom, 0);
@@ -66,8 +63,6 @@ test('motion rejects invalid or overflowing layout data without producing invali
 test('fade plans have ordered offsets and continuous opacity at late interior mounts', () => {
     for (const fraction of [-3, 0, .1, .37, .69, .88, 1, 4]) {
         const frames = api.folderFade(fraction);
-        assert.equal(frames.backend, 'rust');
-        assert.equal(Object.keys(frames).includes('backend'), false);
         assert.equal(frames[0].offset, 0);
         assert.equal(frames.at(-1).offset, 1);
         assert.equal(frames[0].opacity, 0);
@@ -97,7 +92,6 @@ function expectedRange(heights, gap, columns, count, top, bottom, overscan = 0) 
 }
 function checkRange(layout, heights, gap, columns, count, top, bottom, overscan = 0) {
     const actual = layout.range(top, bottom, overscan);
-    assert.equal(actual.backend, layout.backend);
     const { start, end } = actual;
     assert.deepEqual({ start, end }, expectedRange(heights, gap, columns, count, top, bottom, overscan));
     assert.ok(start >= 0 && start <= end && end <= count);
@@ -112,7 +106,6 @@ test('variable row queries match visible physical tracks, gaps, overscan and par
         const gap = random() * 50;
         const heights = Float64Array.from({ length: Math.ceil(count / columns) + 1 }, () => 40 + random() * 400);
         const layout = api.folderRows(heights, gap, columns, count);
-        assert.equal(layout.backend, 'rust');
         const total = [...heights].reduce((sum, height) => sum + height + gap, 0);
         for (let query = 0; query < 35; query++) {
             const top = random() * (total + 600) - 300, bottom = top + random() * 1100;
@@ -144,56 +137,22 @@ test('row contexts reject invalid data, are isolated and cannot be queried after
     const heights = new Float64Array([100, 150, 300]);
     const first = api.folderRows(heights, 25, 2, 5), second = api.folderRows(new Float64Array([250]), 0, 3, 3);
     heights.fill(1); // Caller changes cannot mutate an already measured context.
-    assert.deepEqual(plain(first.range(120, 140)), { start: 2, end: 4, backend: 'rust' });
+    assert.deepEqual(plain(first.range(120, 140)), { start: 2, end: 4 });
     for (const invalid of [[NaN, 10], [0, Infinity], [20, 10], [0, 10, -1], [-Number.MAX_VALUE, 10, Number.MAX_VALUE]]) assert.equal(first.range(...invalid), null);
     for (const invalid of [[-1, 1], [1, 0], [0, 4], [0, 1.5], [NaN, 2]]) assert.equal(first.span(...invalid), null);
     assert.equal(first.span(2, 2), 0);
     first.dispose(); first.dispose();
     assert.equal(first.range(0, 100), null);
     assert.equal(first.span(0, 1), null);
-    assert.deepEqual(plain(second.range(0, 100)), { start: 0, end: 3, backend: 'rust' });
+    assert.deepEqual(plain(second.range(0, 100)), { start: 0, end: 3 });
     second.dispose();
     const empty = api.folderRows(new Float64Array(), 0, 2, 0);
-    assert.deepEqual(plain(empty.range(-100, 100)), { start: 0, end: 0, backend: 'rust' });
+    assert.deepEqual(plain(empty.range(-100, 100)), { start: 0, end: 0 });
     assert.equal(empty.span(0, 0), 0);
     empty.dispose();
 });
 
-test('scroll queries reuse Rust memory and survive memory growth by unrelated pixel work', async () => {
-    let allocations = 0, frees = 0, memory;
-    const instrumented = adapter({ WebAssembly: {
-        async instantiate(buffer, imports) {
-            const result = await WebAssembly.instantiate(buffer, imports), original = result.instance.exports;
-            memory = original.memory;
-            return { instance: { exports: { ...original,
-                alloc(size) { allocations++; return original.alloc(size); },
-                free(pointer, size) { frees++; original.free(pointer, size); }
-            } } };
-        }
-    } });
-    await instrumented.ready;
-    const heights = new Float64Array([100, 200, 300]);
-    const layout = instrumented.folderRows(heights, 10, 3, 8);
-    instrumented.folderMotion(bounds, card); // Allocate the shared navigation scratch once.
-    const countBefore = allocations, freesBefore = frees, memoryBefore = memory.buffer;
-    for (let query = 0; query < 1000; query++) {
-        checkRange(layout, heights, 10, 3, 8, query % 700, query % 700 + 50);
-        assert.equal(layout.span(0, 3), 620);
-        instrumented.folderMotion(bounds, card, !!(query % 2));
-        instrumented.folderFade(query / 1000);
-    }
-    assert.equal(allocations, countBefore);
-    assert.equal(frees, freesBefore);
-    const pixels = new Uint8Array(4 * 1024 * 1024).fill(255);
-    assert.ok(instrumented.splitRgba(pixels));
-    assert.notEqual(memory.buffer, memoryBefore);
-    checkRange(layout, heights, 10, 3, 8, 315, 500);
-    assert.equal(layout.span(1, 3), 510);
-    layout.dispose();
-    assert.equal(frees, freesBefore + 4); // Three pixel buffers and the row result buffer.
-});
-
-test('navigation stays synchronous before loading, without WASM, and with an older cached ABI', async () => {
+test('navigation stays synchronous before loading, without WASM, and never calls the core', async () => {
     let respond;
     const pending = adapter({ fetch: () => new Promise(resolve => { respond = resolve; }) });
     const absent = adapter({ WebAssembly: undefined });
@@ -205,17 +164,14 @@ test('navigation stays synchronous before loading, without WASM, and with an old
     for (const fallback of [pending, absent, old]) {
         for (const backwards of [false, true]) {
             const motion = fallback.folderMotion(bounds, card, backwards);
-            assert.equal(motion.backend, 'javascript');
-            assert.deepEqual({ ...plain(motion), backend: 'rust' }, plain(api.folderMotion(bounds, card, backwards)));
+            assert.deepEqual(plain(motion), plain(api.folderMotion(bounds, card, backwards)));
             for (const elapsed of [-1, 0, .37, 1, 2]) {
                 const frames = fallback.folderFade(elapsed, backwards);
-                assert.equal(frames.backend, 'javascript');
                 assert.deepEqual(plain(frames), plain(api.folderFade(elapsed, backwards)));
             }
         }
         const heights = new Float64Array([170, 240, 30, 100]);
         const rows = fallback.folderRows(heights, 13, 2, 7);
-        assert.equal(rows.backend, 'javascript');
         for (let y = -100; y < 900; y += 17) checkRange(rows, heights, 13, 2, 7, y, y + 5, 10);
         assert.equal(rows.span(1, 4), 396);
         rows.dispose();
@@ -227,7 +183,6 @@ test('navigation stays synchronous before loading, without WASM, and with an old
     const beforeReady = pending.folderRows(new Float64Array([150]), 0, 1, 1);
     respond(new Response(bytes));
     assert.equal(await pending.ready, true);
-    assert.equal(pending.folderMotion(bounds, card).backend, 'rust');
-    assert.equal(beforeReady.range(0, 50).backend, 'javascript');
+    assert.deepEqual(plain(beforeReady.range(0, 50)), { start: 0, end: 1 });
     beforeReady.dispose();
 });
