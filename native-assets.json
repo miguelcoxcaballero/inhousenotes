@@ -2,13 +2,13 @@
   "schemaVersion": 1,
   "assets": {
     "/app-v5.js": {
-      "sha256": "1c6f1f5ec3a6e3ff716fd8b110469ebedfbc299d5f7fdafcad254cb855b8a454",
-      "size": 1957491,
+      "sha256": "52ce796caf543ecca8d8c04b0fc12d9e99d0e9bf7fad966e3e7f25ec19b206c6",
+      "size": 1988920,
       "mime": "application/javascript"
     },
     "/boot-v5.js": {
-      "sha256": "562b21440d2cc94fc98f41fe731388d7a076242b3d9e14c3e8a18c680c91dace",
-      "size": 10191,
+      "sha256": "0b521f3367211bfeabbfd1fc5ee0ccce52a20402e33a72c2c83c52409cc4789c",
+      "size": 10423,
       "mime": "application/javascript"
     },
     "/bullet-template.js": {
@@ -57,18 +57,18 @@
       "mime": "application/javascript"
     },
     "/live-collaboration-v5.js": {
-      "sha256": "fd92ca4363da59792c4abea8c989b5936edbc48e67f0e77575b739a48c01ee0e",
-      "size": 179110,
+      "sha256": "1cfc437f102056fefb9a45e1b496fd41f19d9223084459e39f1ae57b03b8d30f",
+      "size": 195274,
       "mime": "application/javascript"
     },
     "/offline-app-v5.js": {
-      "sha256": "ce8fd89f22330e877024381055e1de23a94dd71064b57d3e6a34640f55e12e16",
-      "size": 28180,
+      "sha256": "e9fdc9bcaebb3723c5749bc4b51c293561a418c6603bea43d9f5619812c985b8",
+      "size": 32155,
       "mime": "application/javascript"
     },
     "/offline-library-v5.js": {
-      "sha256": "7e7b2ac5d7f7a6733b24486538fbcdb92b05742052de36f083e09c67cbd15ef8",
-      "size": 29071,
+      "sha256": "3bf1f87b7997bd9809805f603272e026d9afb6ae8de3353f323996fb33c7aa89",
+      "size": 40620,
       "mime": "application/javascript"
     },
     "/offline-media-v5.js": {
@@ -77,13 +77,13 @@
       "mime": "application/javascript"
     },
     "/offline-store-v5.js": {
-      "sha256": "98c0996013c2f368acbde4d860d5009b2466d8a3858f721b480abbcfb368856a",
-      "size": 12178,
+      "sha256": "bb9c6a729baad62a8f4012211093fd6f14bceee0eee5b468d5c15f5552dd52d3",
+      "size": 14062,
       "mime": "application/javascript"
     },
     "/offline-sync-v5.js": {
-      "sha256": "38f6fca9c986ad85279e263ce4d0c4e1c8878ec3466758c4f2844ccd3c074bad",
-      "size": 16261,
+      "sha256": "24c14b11a9ce7f6dabbd4ee1cc88ba23a1c100c9bc435b9b1176007c80f1bf8d",
+      "size": 19097,
       "mime": "application/javascript"
     },
     "/offline-v5.css": {
