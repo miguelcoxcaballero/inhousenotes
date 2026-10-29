@@ -2,14 +2,15 @@
 
 How the renderer spends a frame, what each quality preset changes, and the
 budget it is designed for. Target: **1080p at 60 FPS or more on a mid-range
-GPU (GTX 1660 / RX 580 class) with the High preset**, with dynamic
-resolution absorbing the heavy views.
+GPU (GTX 1660 / RX 580 class) with the High preset**, at the window's
+native resolution (render scale 100% on every preset; lower scales and
+dynamic resolution are player options).
 
 ## Tools
 
 | Tool | What it does |
 |---|---|
-| **F11** in the game | Frame profiler: FPS, frame-time graph (CPU white, GPU green, lines at 16.7 and 33.3 ms), internal resolution and render scale, draw calls, triangles and instances (camera and shadows), lights, static grid size, cascades refreshed this frame, VRAM estimate, CPU time per game system and per renderer scope, GPU time per pass, the heaviest scenes by triangles, and a CSV logger. |
+| **F11** in the game | Frame profiler: FPS, frame-time graph (CPU white, GPU green, lines at 16.7 and 33.3 ms), internal resolution, render scale and window size, whether the frame is CPU-bound or GPU-bound (CPU work vs GPU timestamps), draw calls, triangles and instances (camera and shadows), lights, static grid size, cascades refreshed this frame, VRAM estimate, CPU time per game system and per renderer scope, GPU time per pass, the heaviest scenes by triangles, and a CSV logger. |
 | **F9** in the game | Graphics options (preset, auto, every cost knob below). Applies at once except the texture cap (next map); *Save* writes `data/graphics.toml`. |
 | `sandbox --bench N [--preset P] [--csv f.csv]` | Headless: N real-time frames after warm-up; prints mean/p50/p95 frame time, per-system CPU, renderer scopes, GPU passes, counts and the heaviest scenes (camera and shadow). |
 | `FORJA_LEGACY_STATICS=1` | Sandbox: resubmit the whole world every frame as before the static grid (before/after comparisons). |
@@ -143,7 +144,7 @@ when the GPU is over budget).
 
 | Knob | Low | Medium | High | Ultra |
 |---|---|---|---|---|
-| Render scale (max / min, dynamic) | 0.75 / 0.5 | 0.9 / 0.6 | 1.0 / 0.75 | 1.0 fixed |
+| Render scale (default) / dynamic floor when enabled | 1.0 / 0.5 | 1.0 / 0.6 | 1.0 / 0.75 | 1.0 / 0.85 |
 | Shadow map per cascade | 1024 | 1536 | 2048 | 4096 |
 | PCSS cascades (rest PCF) | 0 | 1 | 2 | 4 |
 | Far cascade refresh | every 4 frames | every 3 | every 2 | every frame |
@@ -158,7 +159,6 @@ when the GPU is over budget).
 | LOD detail | 0.5 | 0.75 | 1.0 | 1.5 |
 | Depth of field (cutscenes, photo mode) | off | off | on | on |
 | TAA, bloom, camera stage (grade, grain, aberration) | on | on | on | on |
-| Internal pixel budget (then FSR 1 EASU to the window) | 1.0 MP | 2.1 MP | 3.7 MP | 8.3 MP |
 | Motion blur (samples) | off | 6 | 10 | 16 |
 | Volumetric fog (froxels at 1080p, range) | off (analytic) | 120x68x48, 120 m | 160x90x64, 160 m | 240x135x96, 200 m |
 | GTAO bent normals (cone specular occlusion) | off | on | on | on |
@@ -169,26 +169,43 @@ RX 4xx/5xx, MX, RX 6400/6500, RTX 3050 laptop...) which get Medium; strong
 integrated GPUs (Radeon 780M/880M/890M, Apple M) get Medium, other
 integrated GPUs, WARP / lavapipe and unknown devices Low. **Intel integrated
 graphics** (vendor 0x8086: UHD, Iris Xe, the Arc Xe-LPG of Meteor/Lunar
-Lake laptops) get their own profile: the Medium look with a 1.2 MP internal
-budget, dynamic resolution down to 35%, 1536 shadow maps with one PCSS
+Lake laptops) get their own profile: the Medium look at the panel's native
+resolution (no pixel budget, dynamic resolution off), 1536 shadow maps with one PCSS
 cascade and the far cascades every 4th frame, 12-step SSR, 2048 lights, one
 shadowed spot, no motion blur, no froxel fog (the analytic fog and lamp
 glow stay), bent normals on, FSR 1 on.
 
-**Internal pixel budget**: the render scale is now capped so the internal
-image never exceeds the preset's pixel budget, whatever the window: v0.1.2
-rendered a 2880x1800 laptop panel at 0.9 x native = 4.2 MP on Medium (2x
-the pixels of 1080p), which is the main reason it ran at ~10 FPS on an
-Intel Arc iGPU. The window keeps its native resolution (UI included) and
-the last pass upsamples with FSR 1 EASU.
+**Resolution (v0.1.4)**: every preset and adapter profile renders at 100%
+of the window's physical pixels, with TAA and no upscaling. The window
+opens borderless at the monitor's native resolution (or windowed /
+exclusive fullscreen, options menu) and the process is per-monitor DPI
+aware, so a 2880x1800 panel at 200% scaling gets a 2880x1800 swapchain
+(the UI is drawn at the same scale factor and stays crisp). The startup
+log prints the monitor, its scaling and the window's physical size, and
+the internal resolution is logged at startup and on every change.
 
-**Dynamic resolution**: the GPU frame time (timestamps; frame time when
-unsupported) is smoothed, and the internal scale drops (towards the
-pixel-count estimate, at most 15% at a time, in 5% steps) after ~0.25 s over
-90% of the frame budget, and rises 5% after ~1 s under 68% of it. TAA
-accumulates at the internal resolution, CAS sharpens it and the camera
-stage (or the final pass) upsamples with FSR 1 EASU, so 0.5-0.75 still
-looks sharp. The scale never exceeds the pixel budget above.
+v0.1.3 capped the internal image per preset (Low 1.0 MP ... Ultra 8.3 MP,
+Intel iGPUs 1.2 MP) and ran dynamic resolution from the frame time when
+GPU timestamps were missing: on the Galaxy Book4 Pro (Core Ultra 5 125H,
+Arc 7 Xe-cores, 2880x1800) that rendered ~0.48 x native and could drop to
+0.35, which looked blurrier than v0.1.2 and gave no frame rate, because
+the frame was not limited by pixels. That cap is gone; old
+`graphics.toml` files (no `version`) have their resolution settings reset
+to native when loaded.
+
+**Render scale** (options: 100 / 85 / 75 / 67 / 50%): below 100% the last
+pass upsamples with FSR 1 EASU. Presets do not change it.
+
+**Dynamic resolution** (off by default): it only lowers the scale when the
+**GPU is the bottleneck**: the smoothed GPU time from timestamp queries
+over 90% of the `target_fps` budget *and* the frame's CPU work (game +
+extraction + renderer + UI, without the swapchain wait) under it, for
+~0.25 s; then towards the pixel-count estimate, at most 15% at a time, in
+5% steps, never under the preset's floor. It rises 5% after ~1 s under
+68% of the budget. CPU-bound frames never lower it (fewer pixels would
+only blur them), and without timestamps it stays at the render scale
+(the frame time is not used as a stand-in). F11 shows `CPU-bound` /
+`GPU-bound` with both times, so the bottleneck is visible on the machine.
 
 ## Budget on a mid-range GPU (1080p, GTX 1660 / RX 580)
 
@@ -232,6 +249,15 @@ the CPU cost of ~9 k draws, consistent with the ~10 FPS reported. Whether
 the CPU side (draw submission, ~2 k camera + ~3-6 k shadow draws) also
 limits it on a 15-28 W laptop CPU must be read from F11 on the machine;
 world streaming / HLOD is being handled separately.
+
+*Since v0.1.4 the Intel profile renders at native resolution* (the 1.2 MP
+column above is the v0.1.3 budget): at 5.2 MP the per-pixel rows grow
+~4x when the GPU is the limit, which is then visible in F11 as
+`GPU-bound`, and the player can lower the render scale or enable the
+GPU-only dynamic resolution. v0.1.3 showed that lowering the pixels did
+not raise the frame rate on that laptop, i.e. the frame is CPU-bound
+there (draw submission, culling, game systems), so the pixels are spent
+on image quality instead.
 
 Measured shares of the new passes (lavapipe, default map at dusk, 960x540
 fixed, 10 frames; only proportions are meaningful): sky LUT 0.2-0.5% of

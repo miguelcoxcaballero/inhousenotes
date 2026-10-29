@@ -161,6 +161,46 @@ fn car_concept_wheels_are_grouped() {
     assert!(bound.wheel_nodes.iter().all(|w| w.len() >= 3));
     assert!(bound.config.wheels.iter().filter(|w| w.steer).all(|w| w.position.z > 0.5));
     assert!(bound.config.wheels.iter().all(|w| w.radius > 0.25 && w.radius < 0.5), "{:?}", bound.config.wheels.iter().map(|w| w.radius).collect::<Vec<_>>());
+    // The unnamed tyre meshes under `WheelFrontL` etc. turn with their
+    // wheel (they were left in the body, frozen at the rest pose).
+    let world = scene.world_matrices();
+    for (w, nodes) in bound.wheel_nodes.iter().enumerate() {
+        assert!(nodes.iter().any(|&n| scene.nodes[n].name.is_empty()), "wheel {w} has its tyre: {:?}", nodes.iter().map(|&n| &scene.nodes[n].name).collect::<Vec<_>>());
+        assert!(bound.wheel_calipers[w].iter().all(|&n| scene.nodes[n].name.contains("BrakePad")));
+    }
+    // The model is posed with the front wheels steered 30 degrees; the
+    // binding undoes it (rears are straight).
+    for (w, q) in bound.wheel_rest.iter().enumerate() {
+        let (axis, angle) = q.to_axis_angle();
+        let front = bound.config.wheels[w].steer;
+        if front {
+            assert!((angle.to_degrees() - 30.0).abs() < 3.0 && axis.y.abs() > 0.99, "front wheel {w}: {axis} {}", angle.to_degrees());
+        } else {
+            assert!(angle.to_degrees() < 3.0, "rear wheel {w}: {}", angle.to_degrees());
+        }
+        // Straightened, the tyre's axle lies along X.
+        let pts: Vec<_> = bound.wheel_nodes[w]
+            .iter()
+            .flat_map(|&n| {
+                let m = world[n];
+                scene.meshes[scene.nodes[n].mesh.unwrap()].iter().flat_map(move |p| p.positions.iter().map(move |v| m.transform_point3(*v)))
+            })
+            .map(|p| *q * p)
+            .collect();
+        assert_eq!(forja_gameplay::straighten_yaw(&pts), forja_math::Quat::IDENTITY, "wheel {w} straight");
+    }
+}
+
+#[test]
+fn kenney_suv_spare_wheel_is_body() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/downloaded/kenney_car_kit/suv.glb");
+    if !path.exists() {
+        return;
+    }
+    let scene = forja_assets::load_gltf(&path).unwrap();
+    let bound = bind_vehicle_model(forja_physics::VehicleConfig::sedan(), &scene, 1.8);
+    assert_eq!(bound.config.wheels.len(), 4, "the spare on the tailgate is not a road wheel");
+    assert!(bound.wheel_rest.iter().all(|q| *q == forja_math::Quat::IDENTITY), "Kenney wheels are modelled straight");
 }
 
 #[test]

@@ -2932,6 +2932,8 @@ dependencies = [
  "log",
  "pollster",
  "rayon",
+ "serde",
+ "toml",
  "winit",
 ]
 

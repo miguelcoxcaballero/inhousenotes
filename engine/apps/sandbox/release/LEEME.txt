@@ -66,6 +66,13 @@ REQUISITOS
 
 CONTROLES
   Clic izquierdo en la ventana  capturar el raton
+  Esc                           menu de pausa: Reanudar, Opciones (graficos,
+                                pantalla, escala de render, resolucion
+                                dinamica, limite de FPS, sensibilidad del
+                                raton, invertir eje Y), Controles y Salir
+                                (pide confirmacion). Esc otra vez reanuda.
+                                Esc ya no cierra el juego; Alt+F4 o cerrar
+                                la ventana, si.
   W A S D / flechas             moverse / acelerar, frenar y girar
   Raton                         mirar
   Shift                         correr
@@ -84,15 +91,26 @@ CONTROLES
                                 nocturna se prepara en segundo plano y se
                                 cambia sin detener el juego)
   F9                            opciones graficas y presets
-  F11                           perfilador de rendimiento
+  F11                           perfilador de rendimiento (resolucion
+                                interna, si limita la CPU o la GPU)
   F10                           ayuda           F12 captura de pantalla
-  Esc                           soltar el raton / salir
 
-  Los controles se pueden cambiar en data\input.toml.
+  Las teclas se pueden cambiar en data\input.toml; la sensibilidad del
+  raton y el eje Y se guardan desde el menu de pausa en data\controls.toml.
+
+PANTALLA Y RESOLUCION
+  El juego arranca en ventana sin bordes a la resolucion nativa de la
+  pantalla (en un portatil 2880x1800 con escalado del 200 % renderiza los
+  2880x1800 pixeles reales) y renderiza al 100 % en todos los presets, sin
+  reescalado. En Opciones (Esc) o F9 se puede elegir Ventana / Ventana sin
+  bordes / Pantalla completa, bajar la escala de render (85 / 75 / 67 /
+  50 %, reescalada con FSR 1) y activar la resolucion dinamica (apagada por
+  defecto: solo baja la resolucion cuando la GPU es el cuello de botella).
 
 OPCIONES (desde una consola)
   Forja.exe --map spain|kit|osm|track|terrain   elegir mapa
-  Forja.exe --size 1920x1080                     tamano de ventana
+  Forja.exe --size 1920x1080                     ventana de ese tamano
+  Forja.exe --windowed                           en ventana
   Forja.exe --preset low|medium|high|ultra       preset grafico
 
 LICENCIAS
