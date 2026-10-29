@@ -1026,20 +1026,11 @@ test('concurrent local and out-of-order peer strokes survive a stale snapshot', 
   ]));
 });
 
-test('untrusted shared HTML and hostile PDF sources fail closed', async ({ page }) => {
+test('hostile PDF sources fail closed', async ({ page }) => {
   await page.goto('/?e2e=1', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.InhouseSecurityCore);
   const result = await page.evaluate(async () => {
     const core = window.InhouseSecurityCore;
-    const malicious = [
-      '<div class="sp-day-section evil" onclick="window.pwned=1">',
-      '<script>window.pwned=1</script>',
-      '<div class="sp-events-list">',
-      '<button class="sp-event" data-sp-event="same" style="--sp-event-color:#112233;background:url(javascript:alert(1))">A</button>',
-      '<button class="sp-event" data-sp-event="same">duplicate</button>',
-      '</div></div>'
-    ].join('');
-    const sanitized = core.sanitizeCalendarPanelHtml(malicious, document);
     const blocked = ['javascript:alert(1)', 'data:application/pdf;base64,AA==', 'file:///tmp/bad.pdf']
       .map(url => {
         try {
@@ -1064,7 +1055,6 @@ test('untrusted shared HTML and hostile PDF sources fail closed', async ({ page 
       malformedBlocked = true;
     }
     return {
-      sanitized,
       blocked,
       largeBlocked,
       malformedBlocked,
@@ -1072,8 +1062,6 @@ test('untrusted shared HTML and hostile PDF sources fail closed', async ({ page 
       evalAllowed: safeParams.isEvalSupported
     };
   });
-  expect(result.sanitized).not.toMatch(/script|onclick|javascript:|evil/);
-  expect((result.sanitized.match(/data-sp-event="same"/g) || []).length).toBe(1);
   expect(result.blocked).toEqual([true, true, true]);
   expect(result.largeBlocked).toBe(true);
   expect(result.malformedBlocked).toBe(true);

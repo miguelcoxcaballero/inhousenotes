@@ -197,7 +197,7 @@
         const ordered=list=>list.sort(compareRecents);
         const view=(name,fallback)=>Array.isArray(savedViews[name])
             ? savedViews[name].map(id=>activeAliases.get(id)).filter(Boolean) : fallback;
-        const files=active.filter(e=>e.mimeType==='application/pdf'&&!host.quickAccess?.(e));
+        const files=active.filter(e=>e.mimeType==='application/pdf');
         const recents=view('recents',ordered(files).slice(0,12));
         return {recents:recentItems(recents),
             starred:view('starred',ordered(active.filter(e=>e.starred)).slice(0,12)),

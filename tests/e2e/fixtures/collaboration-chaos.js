@@ -21,8 +21,7 @@
             backgroundSource: 'template',
             templateKind: 'default',
             pageWidth: 210,
-            pageHeight: 297,
-            sidePanel: null
+            pageHeight: 297
         };
     }
 
@@ -139,7 +138,7 @@
             order: clone(state.order),
             pages: clone(pages),
             exportName,
-            hash: root.ihnCanonicalDocumentHash(pages, state.structure, null, exportName, state.fields)
+            hash: root.ihnCanonicalDocumentHash(pages, state.structure, exportName, state.fields)
         };
     }
 

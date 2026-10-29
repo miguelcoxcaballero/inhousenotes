@@ -47,22 +47,15 @@
     function selectBootDestination() {
         try {
             const raw = localStorage.getItem('drive-token-v1');
-            const hasCurrentScopes = localStorage.getItem('google-scope-version-v1') === 'drive-calendar-v2';
-            const grantedScopes = localStorage.getItem('google-granted-scopes-v1') || '';
-            const hasCalendarScope = grantedScopes.split(/\s+/)
-                .includes('https://www.googleapis.com/auth/calendar.events');
             let hasToken = false;
             if (raw) {
                 const parsed = JSON.parse(raw);
-                hasToken = !!(hasCurrentScopes && parsed?.token && parsed?.expiry
-                    && parsed.scopeVersion === 'drive-calendar-v2'
+                hasToken = !!(parsed?.token && parsed?.expiry
                     && String(parsed.grantedScopes || '').split(/\s+/)
-                        .includes('https://www.googleapis.com/auth/calendar.events')
+                        .includes('https://www.googleapis.com/auth/drive')
                     && Date.now() < parsed.expiry - 60000);
             }
-            const hasRefresh = hasCurrentScopes
-                && hasCalendarScope
-                && !!localStorage.getItem('drive-refresh-token-v1');
+            const hasRefresh = !!localStorage.getItem('drive-refresh-token-v1');
             const returning = localStorage.getItem('drive-remember-v1') === '1' || !!localStorage.getItem('drive-hint-email');
             root.__INHOUSE_BOOT_SIGNED_IN__ = hasToken || hasRefresh || returning;
         } catch (error) {
