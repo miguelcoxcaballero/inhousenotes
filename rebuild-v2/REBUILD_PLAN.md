@@ -64,7 +64,7 @@ merge colaborativo, fases de presencia.
   "Add calendar to pages", side-panels por página (agenda/diario).
 - **Plataforma**: modo app Android (WebView wrapper, `android app/` empaqueta el HTML
   con `html_to_apk_builder.py`), temas, toolbar arrastrable con snap, responsive.
-- Fuera de alcance: `scanner/` es una app aparte; no se toca.
+- Fuera de alcance: el escáner se quitó (el botón «Scan pages» muestra «Soon»).
 
 ---
 

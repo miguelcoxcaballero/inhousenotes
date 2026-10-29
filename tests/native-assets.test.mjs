@@ -16,7 +16,7 @@ test('APK manifest and inline resource map describe the exact public bytes',()=>
   assert.equal(createHash('sha256').update(bytes).digest('hex'),info.sha256,path);
   assert.equal(hashes[path],info.sha256,path);
  }
- for(const page of ['index.html','scanner/index.html']){
+ for(const page of ['index.html']){
   for(const [,url] of readFileSync(page,'utf8').matchAll(/(?:src|href)="([^"]+[?&](?:amp;)?native=[a-f0-9]+)"/g)){
    const resolved=new URL(url.replaceAll('&amp;','&'),`https://inhousenotes.com/${page}`);
    assert.equal(resolved.searchParams.get('native'),manifest.assets[resolved.pathname].sha256);
