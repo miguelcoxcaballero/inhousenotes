@@ -4085,3 +4085,23 @@ async function ihnApplyLiveEnvelope(
         }
     }
 }
+
+// Page lifecycle (owned by app-v5.js): resume/focus/network events only wake a
+// live session that is running or still owns peers. A document closed to Home
+// keeps its lifecycle listeners installed, and each app resume used to publish
+// a rendezvous comment and poll signals for a file nobody was editing.
+const ihnWakeOpenLiveCollaboration = ihnWakeLiveCollaboration;
+ihnWakeLiveCollaboration = function ihnWakeLiveCollaborationIfOpen(reason) {
+    if (!ihnLiveSupervisorTimer && !ihnLivePeers.size) return;
+    return ihnWakeOpenLiveCollaboration(reason);
+};
+
+// Page lifecycle (owned by app-v5.js): local edits, tab-sync requests and
+// exit-save merges call startLiveCollaboration(). None of them may revive the
+// P2P session of a document closed to Home or suspended in the background;
+// app-v5.js restarts it when the document is shown again.
+const ihnStartLiveCollaborationUnlessPaused = startLiveCollaboration;
+startLiveCollaboration = function startLiveCollaborationIfDocumentLive() {
+    if (typeof isDocumentLiveWorkPaused === 'function' && isDocumentLiveWorkPaused()) return;
+    return ihnStartLiveCollaborationUnlessPaused();
+};
