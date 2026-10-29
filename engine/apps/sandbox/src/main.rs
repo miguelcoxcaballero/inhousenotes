@@ -849,6 +849,8 @@ fn run_smoke(args: &Args) {
         let _ = renderer.device.poll(forja_render::wgpu::PollType::wait_indefinitely());
         if let Some(tr) = &mut trace {
             tr.mark("gpu wait");
+            // GPU pass times (timestamp queries, a few frames late).
+            tr.details("gpu wait", &renderer.profiler.last);
             tr.note(extract.stream_note());
         }
         let dt = t.elapsed().as_secs_f32() * 1000.0;
@@ -1327,6 +1329,9 @@ impl Sandbox {
         let view = surface_tex.texture.create_view(&Default::default());
         if let Some(tr) = &mut self.trace {
             tr.mark("acquire");
+            // The acquire waits for the GPU: its pass times (timestamp
+            // queries, a few frames late) show what it waits for.
+            tr.details("acquire", &gpu.renderer.profiler.last);
         }
         let tr = Instant::now();
         gpu.renderer.render(&frame, &view);
@@ -1396,6 +1401,8 @@ impl Sandbox {
                 };
                 tr.note(format!("present {:?} latency {} surface {}x{} internal {}x{} scale {:.2}", gpu.config.present_mode, gpu.config.desired_maximum_frame_latency, gpu.config.width, gpu.config.height, iw, ih, scale));
                 tr.note(bg);
+                let st = gpu.renderer.stats;
+                tr.note(format!("draws {} shadow draws {} tris {:.2} M shadow {:.2} M | gpu {:.1} ms ({})", st.draw_calls, st.shadow_draws, st.triangles as f64 / 1e6, st.shadow_triangles as f64 / 1e6, gpu.renderer.profiler.total_ms, gpu.renderer.adapter_info.name));
                 tr.note(self.extract.stream_note());
             }
         }
