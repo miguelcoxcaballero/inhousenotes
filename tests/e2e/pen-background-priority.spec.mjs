@@ -84,7 +84,7 @@ test('an interrupted PDF worker never switches to an expensive main-thread expor
  });
  expect(error).toBe('AbortError');
 });
-test('native background sync stops once per writing burst and is rescheduled after idle',async({page,context})=>{
+test('native background sync stops once per writing burst and is requested again once the app is hidden',async({page,context})=>{
  await context.setOffline(true);
  const result=await page.evaluate(async()=>{
   await InhouseOfflineLibrary.useAccount('native-pause@example.test');
@@ -96,9 +96,16 @@ test('native background sync stops once per writing burst and is rescheduled aft
   const during={stopped,scheduled};
   isPenWriting=false;lastUserInteractionAt=0;
   InhouseOfflineLibrary.resumeAfterEditing();
-  return {during,after:{stopped,scheduled}};
+  await new Promise(resolve=>setTimeout(resolve,0));
+  // The visible app keeps uploading its own outbox: no second (headless)
+  // app instance is started while the user is in the app.
+  const visible={stopped,scheduled,paused:InhouseOfflineLibrary.diagnostics().nativePaused};
+  await InhouseOfflineStore.checkpoint('native-pause@example.test','queued',{blob:new Blob(['pdf']),entry:{id:'queued',name:'Queued.pdf',parents:['root']}});
+  Object.defineProperty(document,'visibilityState',{configurable:true,get:()=>'hidden'});
+  await InhouseOfflineLibrary.scheduleBackground();
+  return {during,visible,hidden:{stopped,scheduled}};
  });
- expect(result).toEqual({during:{stopped:1,scheduled:0},after:{stopped:1,scheduled:1}});
+ expect(result).toEqual({during:{stopped:1,scheduled:0},visible:{stopped:1,scheduled:0,paused:false},hidden:{stopped:1,scheduled:1}});
 });
 test('the editor uses Rust and a shared alarm for concurrent document waits',async({page})=>{
  const result=await page.evaluate(async()=>{
