@@ -99,6 +99,8 @@ function harness() {
       requests.push({ at: now, method: options.method || 'GET', kind: 'fetch', url, body: options.body, keepalive: !!options.keepalive });
       // Optional virtual network latency, to hold a heartbeat in flight.
       if (context.fetchDelayMs) await new Promise(resolve => schedule(resolve, context.fetchDelayMs, false));
+      // Optional Drive rejection (driveFetch throws on any non-ok status).
+      if (context.fetchStatus) throw Object.assign(new Error(`Drive API error ${context.fetchStatus}`), { status: context.fetchStatus });
       return { ok: true, json: async () => ({}) };
     },
     loadDriveProfile: async () => {},
@@ -416,6 +418,28 @@ test('a wake beat blocked by a save or by a beat already in flight follows withi
   assert.equal(beats.length, 1, 'one more beat after the in-flight one');
   assert.ok(beatTime(beats[0]) >= frameAt, 'and it is newer than the frame');
   assert.ok(beats[0].at - frameAt <= 1_500, `wake beat ${beats[0].at - frameAt} ms after the frame`);
+});
+
+test('a wake beat that Drive rejects keeps the ordinary 4 s retry instead of 0.5 s', async () => {
+  const h = harness();
+  h.probe.startCollabPolling();
+  await h.advance(MINUTE + 3_000);
+  // Rate limited (or any failure): only a skipped beat may retry every 0.5 s.
+  h.context.fetchStatus = 429;
+  let since = h.mark();
+  h.probe.notePresencePreviewFramePublished('doc-1');
+  await h.advance(10_000);
+  const attempts = beatRequests(h, since);
+  assert.ok(attempts.length >= 2 && attempts.length <= 4, `attempts in 10 s ${attempts.length} (0.5 s retries would be ~20)`);
+  for (let i = 1; i < attempts.length; i++) {
+    assert.ok(attempts[i].at - attempts[i - 1].at >= 4_000, `retry gap ${attempts[i].at - attempts[i - 1].at} ms`);
+  }
+  // Once Drive accepts again the cadence returns to the solo beat.
+  h.context.fetchStatus = 0;
+  await h.advance(5_000);
+  since = h.mark();
+  await h.advance(MINUTE);
+  assert.ok(h.heartbeats(since) <= 4, `solo beats after recovery ${h.heartbeats(since)}`);
 });
 
 test('going to the background while alone rewrites the heartbeat with the 2 s window', async () => {
