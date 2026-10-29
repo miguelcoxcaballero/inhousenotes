@@ -45,10 +45,46 @@ impl Preset {
     }
 }
 
+/// How the game window covers the screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DisplayMode {
+    /// A normal window (75% of the monitor).
+    Windowed,
+    /// Borderless window covering the monitor at its native resolution.
+    #[default]
+    Borderless,
+    /// Exclusive fullscreen at the monitor's native video mode.
+    Fullscreen,
+}
+
+impl DisplayMode {
+    pub const ALL: [DisplayMode; 3] = [DisplayMode::Windowed, DisplayMode::Borderless, DisplayMode::Fullscreen];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            DisplayMode::Windowed => "Ventana",
+            DisplayMode::Borderless => "Ventana sin bordes",
+            DisplayMode::Fullscreen => "Pantalla completa",
+        }
+    }
+}
+
+/// Render scales offered in the options (FSR 1 upscales below 100%).
+pub const RENDER_SCALES: [f32; 5] = [1.0, 0.85, 0.75, 0.67, 0.5];
+
+/// Version of the `graphics.toml` layout. Files from before version 2
+/// (v0.1.3 and older) had a per-preset internal pixel budget and dynamic
+/// resolution on by default: their resolution settings are reset to native.
+pub const CONFIG_VERSION: u32 = 2;
+
 /// Every cost knob of the renderer. Serialized as `data/graphics.toml`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GraphicsConfig {
+    /// Layout version of the file ([`CONFIG_VERSION`]; 0 when missing).
+    #[serde(default)]
+    pub version: u32,
     /// `auto` picks a preset from the adapter at startup.
     pub auto: bool,
     pub preset: Preset,
@@ -58,16 +94,23 @@ pub struct GraphicsConfig {
     pub frame_latency: u32,
     /// Frame rate the dynamic resolution aims for.
     pub target_fps: f32,
-    /// Scale internal resolution from GPU time to hold `target_fps`.
+    /// Frame rate cap (0: none; v-sync still applies).
+    pub fps_cap: u32,
+    /// Window, borderless or exclusive fullscreen.
+    pub display_mode: DisplayMode,
+    /// Lower the internal resolution while the GPU (timestamps) is over
+    /// the `target_fps` budget and the CPU is not. Off by default; without
+    /// GPU timestamps it stays at `render_scale`.
     pub dynamic_resolution: bool,
-    /// Internal resolution scale (fixed, or the start/max when dynamic).
+    /// Internal resolution as a fraction of the window's physical pixels
+    /// (1.0: native, no upscaling; below 1 FSR 1 EASU upscales), and the
+    /// ceiling of the dynamic resolution.
     pub render_scale: f32,
     /// Lowest scale the dynamic resolution may use.
     pub min_render_scale: f32,
-    /// Most internal pixels (millions) whatever the window size: a 2880x1800
-    /// laptop panel or a 4K monitor renders at this budget and the
-    /// upscaler (FSR 1 EASU) fills the window, so a preset costs the same
-    /// GPU time on any display. 0 = no cap.
+    /// Most internal pixels (millions) whatever the window size; 0 = no
+    /// cap (the default: the game renders at the window's native
+    /// resolution unless `render_scale` says otherwise).
     pub max_render_mpix: f32,
     /// Shadow map size per cascade (texels).
     pub shadow_resolution: u32,
@@ -134,15 +177,18 @@ pub struct GraphicsConfig {
 impl Default for GraphicsConfig {
     fn default() -> Self {
         let mut c = Self {
+            version: CONFIG_VERSION,
             auto: true,
             preset: Preset::High,
             vsync: true,
             frame_latency: 2,
             target_fps: 60.0,
-            dynamic_resolution: true,
+            fps_cap: 0,
+            display_mode: DisplayMode::Borderless,
+            dynamic_resolution: false,
             render_scale: 1.0,
             min_render_scale: 0.75,
-            max_render_mpix: 3.7,
+            max_render_mpix: 0.0,
             shadow_resolution: 2048,
             pcss_cascades: 2,
             far_cascade_interval: 2,
@@ -182,27 +228,24 @@ impl GraphicsConfig {
         c
     }
 
-    /// Sets every cost knob of `p` (keeps vsync, auto, fps target and the
-    /// profiler options).
+    /// Sets every cost knob of `p`. Keeps the player's display choices:
+    /// vsync, frame cap, window mode, render scale, dynamic resolution,
+    /// auto, fps target and the profiler options. Every preset renders at
+    /// the window's native resolution (no pixel budget): v0.1.3 capped the
+    /// internal image per preset (1.2 MP on Intel iGPUs, ~0.48 of a
+    /// 2880x1800 panel) and looked blurry without gaining frame rate.
     pub fn apply_preset(&mut self, p: Preset) {
         self.preset = p;
-        let (scale, min_scale, dynamic, shadow, pcss, far, sdist, ao_half, ssr, ssr_steps, contact, lights, tex, lod) = match p {
-            Preset::Low => (0.75, 0.5, true, 1024, 0, 4, 0.6, true, false, 16, false, 512, 1024, 0.5),
-            Preset::Medium => (0.9, 0.6, true, 1536, 1, 3, 0.8, true, true, 16, true, 2048, 2048, 0.75),
-            Preset::High => (1.0, 0.75, true, 2048, 2, 2, 1.0, true, true, 32, true, 4096, 2048, 1.0),
-            Preset::Ultra => (1.0, 1.0, false, 4096, 4, 1, 1.0, false, true, 48, true, 65535, 4096, 1.5),
+        let (min_scale, shadow, pcss, far, sdist, ao_half, ssr, ssr_steps, contact, lights, tex, lod) = match p {
+            Preset::Low => (0.5f32, 1024, 0, 4, 0.6, true, false, 16, false, 512, 1024, 0.5),
+            Preset::Medium => (0.6, 1536, 1, 3, 0.8, true, true, 16, true, 2048, 2048, 0.75),
+            Preset::High => (0.75, 2048, 2, 2, 1.0, true, true, 32, true, 4096, 2048, 1.0),
+            Preset::Ultra => (0.85, 4096, 4, 1, 1.0, false, true, 48, true, 65535, 4096, 1.5),
             Preset::Custom => return,
         };
-        self.render_scale = scale;
-        self.min_render_scale = min_scale;
-        // Internal pixel budgets: ~1280x800, 1080p, 1440p, 4K.
-        self.max_render_mpix = match p {
-            Preset::Low => 1.0,
-            Preset::Medium => 2.1,
-            Preset::High => 3.7,
-            _ => 8.3,
-        };
-        self.dynamic_resolution = dynamic;
+        // Floor of the (optional) dynamic resolution.
+        self.min_render_scale = min_scale.min(self.render_scale);
+        self.max_render_mpix = 0.0;
         self.shadow_resolution = shadow;
         self.pcss_cascades = pcss;
         self.far_cascade_interval = far;
@@ -261,6 +304,7 @@ impl GraphicsConfig {
     pub fn sanitized(mut self) -> Self {
         self.frame_latency = self.frame_latency.clamp(1, 3);
         self.target_fps = self.target_fps.clamp(20.0, 360.0);
+        self.fps_cap = if self.fps_cap == 0 { 0 } else { self.fps_cap.clamp(20, 500) };
         self.render_scale = self.render_scale.clamp(0.25, 2.0);
         self.min_render_scale = self.min_render_scale.clamp(0.25, self.render_scale);
         self.max_render_mpix = if self.max_render_mpix <= 0.0 { 0.0 } else { self.max_render_mpix.clamp(0.3, 40.0) };
@@ -284,18 +328,37 @@ impl GraphicsConfig {
 
     pub fn from_toml(text: &str) -> Result<Self, String> {
         let mut c: Self = toml::from_str(text).map_err(|e| e.to_string())?;
+        if c.version < 2 {
+            // v0.1.3 and older: per-preset pixel budgets and dynamic
+            // resolution by default made the image blurry; start native.
+            c.render_scale = 1.0;
+            c.max_render_mpix = 0.0;
+            c.dynamic_resolution = false;
+            c.version = CONFIG_VERSION;
+        }
         if c.preset != Preset::Custom && !c.auto {
             // Presets win over stale individual values unless Custom.
             let keep = c.clone();
             c.apply_preset(keep.preset);
-            c.vsync = keep.vsync;
-            c.frame_latency = keep.frame_latency;
-            c.target_fps = keep.target_fps;
-            c.profiler_overlay = keep.profiler_overlay;
-            c.profiler_csv = keep.profiler_csv;
-            c.dynamic_resolution = keep.dynamic_resolution;
+            c.keep_player_choices(&keep);
         }
         Ok(c.sanitized())
+    }
+
+    /// Copies the settings that are the player's, not the preset's
+    /// (display, frame rate, resolution, profiler) from `from`.
+    pub fn keep_player_choices(&mut self, from: &GraphicsConfig) {
+        self.vsync = from.vsync;
+        self.frame_latency = from.frame_latency;
+        self.target_fps = from.target_fps;
+        self.fps_cap = from.fps_cap;
+        self.display_mode = from.display_mode;
+        self.render_scale = from.render_scale;
+        self.dynamic_resolution = from.dynamic_resolution;
+        self.min_render_scale = self.min_render_scale.min(from.render_scale);
+        self.max_render_mpix = from.max_render_mpix;
+        self.profiler_overlay = from.profiler_overlay;
+        self.profiler_csv = from.profiler_csv.clone();
     }
 
     pub fn to_toml(&self) -> String {
@@ -316,21 +379,22 @@ impl GraphicsConfig {
     /// then the tuning of its GPU class. Intel integrated graphics
     /// ([`is_intel_integrated`]) share LPDDR memory bandwidth with the CPU,
     /// so they keep the Medium look (same lighting, AO, reflections, bloom,
-    /// camera stage) with the costs that scale with bandwidth cut: a 1.2 MP
-    /// internal budget upscaled by FSR 1 (2880x1800 -> ~1390x870), dynamic
-    /// resolution down to 35%, 1536 shadow maps with only the first cascade
-    /// PCSS and the far cascades every 4th frame, 12-step SSR, 2048 lights,
-    /// one shadowed spot, no motion blur or volumetric froxels (the analytic
-    /// fog and lamp glow stay), bent normals on (they cost ALU, not memory).
+    /// camera stage) at the panel's native resolution (no pixel budget,
+    /// no dynamic resolution unless the player turns it on) with the
+    /// other bandwidth costs cut: 1536 shadow maps with only the first
+    /// cascade PCSS and the far cascades every 4th frame, 12-step SSR,
+    /// 2048 lights, one shadowed spot, no motion blur or volumetric froxels
+    /// (the analytic fog and lamp glow stay), bent normals on (they cost
+    /// ALU, not memory).
     pub fn for_adapter(info: &wgpu::AdapterInfo) -> (Preset, GraphicsConfig) {
         let preset = Self::auto_preset(info);
         let mut c = Self::for_preset(preset);
         if is_intel_integrated(info) {
             c.apply_preset(Preset::Medium);
-            c.max_render_mpix = 1.2;
+            c.max_render_mpix = 0.0;
             c.render_scale = 1.0;
-            c.min_render_scale = 0.35;
-            c.dynamic_resolution = true;
+            c.min_render_scale = 0.5;
+            c.dynamic_resolution = false;
             c.shadow_resolution = 1536;
             c.pcss_cascades = 1;
             c.far_cascade_interval = 4;
@@ -385,48 +449,92 @@ pub fn is_intel_integrated(info: &wgpu::AdapterInfo) -> bool {
     info.vendor == 0x8086 && info.device_type == wgpu::DeviceType::IntegratedGpu
 }
 
-/// Internal resolution controller: keeps the GPU frame time under the
-/// target by moving the render scale in steps of 5%, with hysteresis
-/// (lowers after ~0.25 s over budget, raises after ~1 s well under it) so
-/// render targets are not reallocated every frame.
+/// What limits the frame rate, from the CPU work of a frame and the GPU
+/// time of its passes (timestamps).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum FrameBound {
+    /// No GPU timestamps: cannot tell.
+    #[default]
+    Unknown,
+    Cpu,
+    Gpu,
+}
+
+impl FrameBound {
+    pub fn of(cpu_ms: f32, gpu_ms: Option<f32>) -> FrameBound {
+        match gpu_ms {
+            Some(g) if g > 0.0 => {
+                if g > cpu_ms { FrameBound::Gpu } else { FrameBound::Cpu }
+            }
+            _ => FrameBound::Unknown,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            FrameBound::Unknown => "unknown (no GPU timestamps)",
+            FrameBound::Cpu => "CPU-bound",
+            FrameBound::Gpu => "GPU-bound",
+        }
+    }
+}
+
+/// Internal resolution controller. It only ever lowers the resolution when
+/// the **GPU** is the bottleneck: the smoothed GPU time (timestamp
+/// queries) over the `target_fps` budget while the CPU work of the frame
+/// is under it. A CPU-bound frame (draw submission, culling, game systems)
+/// would not get faster with fewer pixels, only blurrier, so it never
+/// lowers it; without timestamps it stays at the configured scale. Steps
+/// of 5% with hysteresis (lowers after ~0.25 s over budget, raises after
+/// ~1 s well under it) so render targets are not reallocated every frame.
 #[derive(Clone, Debug)]
 pub struct DynamicResolution {
     pub scale: f32,
     over: u32,
     under: u32,
-    avg_ms: f32,
+    avg_gpu: f32,
+    avg_cpu: f32,
+    /// Why the last change happened (for the log and F11).
+    pub reason: &'static str,
 }
 
 impl DynamicResolution {
     pub fn new(scale: f32) -> Self {
-        Self { scale, over: 0, under: 0, avg_ms: 0.0 }
+        Self { scale, over: 0, under: 0, avg_gpu: 0.0, avg_cpu: 0.0, reason: "start" }
     }
 
-    /// Feeds one frame's GPU time (ms); returns the scale to use.
-    pub fn update(&mut self, gpu_ms: f32, cfg: &GraphicsConfig) -> f32 {
-        self.update_capped(gpu_ms, cfg, cfg.render_scale)
+    /// Feeds one frame's GPU time (`None` without timestamps) and CPU
+    /// work (ms); returns the scale to use.
+    pub fn update(&mut self, gpu_ms: Option<f32>, cpu_ms: f32, cfg: &GraphicsConfig) -> f32 {
+        self.update_capped(gpu_ms, cpu_ms, cfg, cfg.render_scale)
     }
 
     /// [`Self::update`] with the largest scale for the output size
     /// ([`GraphicsConfig::max_scale_for`]).
-    pub fn update_capped(&mut self, gpu_ms: f32, cfg: &GraphicsConfig, max: f32) -> f32 {
+    pub fn update_capped(&mut self, gpu_ms: Option<f32>, cpu_ms: f32, cfg: &GraphicsConfig, max: f32) -> f32 {
         let max = max.min(cfg.render_scale);
         let min = cfg.min_render_scale.min(max);
-        if !cfg.dynamic_resolution {
+        let gpu = gpu_ms.filter(|g| *g > 0.0);
+        if !cfg.dynamic_resolution || gpu.is_none() {
+            if self.scale != max {
+                self.reason = if cfg.dynamic_resolution { "dynamic resolution needs GPU timestamps: fixed scale" } else { "fixed render scale" };
+            }
             self.scale = max;
+            self.over = 0;
+            self.under = 0;
             return max;
         }
-        if gpu_ms <= 0.0 {
-            self.scale = self.scale.clamp(min, max);
-            return self.scale;
-        }
-        self.avg_ms = if self.avg_ms == 0.0 { gpu_ms } else { self.avg_ms * 0.85 + gpu_ms * 0.15 };
+        let gpu = gpu.unwrap_or(0.0);
+        let smooth = |avg: f32, v: f32| if avg == 0.0 { v } else { avg * 0.85 + v * 0.15 };
+        self.avg_gpu = smooth(self.avg_gpu, gpu);
+        self.avg_cpu = smooth(self.avg_cpu, cpu_ms.max(0.0));
         // Leave ~10% headroom for the CPU-GPU overlap and the UI.
         let budget = 1000.0 / cfg.target_fps * 0.9;
-        if self.avg_ms > budget {
+        let gpu_bound = self.avg_gpu > budget && self.avg_cpu < budget;
+        if gpu_bound {
             self.over += 1;
             self.under = 0;
-        } else if self.avg_ms < budget * 0.75 {
+        } else if self.avg_gpu < budget * 0.75 {
             self.under += 1;
             self.over = 0;
         } else {
@@ -436,16 +544,18 @@ impl DynamicResolution {
         let step = 0.05;
         if self.over > 15 && self.scale > min {
             // GPU time scales roughly with pixel count (scale^2).
-            let want = self.scale * (budget / self.avg_ms).sqrt();
+            let want = self.scale * (budget / self.avg_gpu).sqrt();
             self.scale = (want.max(self.scale - 0.15)).max(min);
             self.scale = (self.scale / step).floor() * step;
             self.scale = self.scale.max(min);
             self.over = 0;
-            self.avg_ms = 0.0;
+            self.avg_gpu = 0.0;
+            self.reason = "GPU-bound: GPU time over budget, CPU under it";
         } else if self.under > 60 && self.scale < max {
             self.scale = (self.scale + step).min(max);
             self.under = 0;
-            self.avg_ms = 0.0;
+            self.avg_gpu = 0.0;
+            self.reason = "GPU under budget";
         }
         self.scale = self.scale.clamp(min, max);
         self.scale
@@ -467,6 +577,12 @@ mod tests {
         assert!(!l.ssr && h.ssr && h.taa && h.ssao);
         assert_eq!(h.render_scale, 1.0);
         assert_eq!(GraphicsConfig::default(), h);
+        // Native resolution on every preset, no pixel budget, no DRS.
+        for p in Preset::ALL {
+            let c = GraphicsConfig::for_preset(p);
+            assert_eq!((c.render_scale, c.max_render_mpix, c.dynamic_resolution), (1.0, 0.0, false), "{p:?}");
+            assert_eq!(c.max_scale_for(2880, 1800), 1.0);
+        }
     }
 
     #[test]
@@ -480,9 +596,10 @@ mod tests {
         // Intel Arc (Meteor Lake) iGPU: the Medium look on a 1.2 MP budget.
         let arc = wgpu::AdapterInfo { vendor: 0x8086, ..info("Intel(R) Arc(TM) Graphics", wgpu::DeviceType::IntegratedGpu) };
         let (_, c) = GraphicsConfig::for_adapter(&arc);
-        assert!(!c.motion_blur && c.volumetric_fog == 0 && c.ssao && c.ssr && c.bloom && c.fsr);
-        let s = c.max_scale_for(2880, 1800);
-        assert!((2880.0 * s * 1800.0 * s) <= 1.25e6 && s > 0.45, "{s}");
+        assert!(!c.motion_blur && c.volumetric_fog == 0 && c.ssao && c.ssr && c.bloom && c.fsr && c.taa);
+        // The 2880x1800 panel renders at its native resolution.
+        assert_eq!(c.max_scale_for(2880, 1800), 1.0);
+        assert!(!c.dynamic_resolution);
         assert_eq!(GraphicsConfig::for_preset(Preset::High).max_scale_for(1920, 1080), 1.0);
     }
 
@@ -498,22 +615,64 @@ mod tests {
         assert!(!c.vsync);
         let t = "auto = false\npreset = \"custom\"\nshadow_resolution = 3000\n";
         assert_eq!(GraphicsConfig::from_toml(t).unwrap().shadow_resolution, 3072);
+        // A v0.1.3 file (no version) with the old Intel budget starts native.
+        let t = "auto = true\npreset = \"medium\"\nrender_scale = 0.9\nmax_render_mpix = 1.2\nmin_render_scale = 0.35\ndynamic_resolution = true\n";
+        let c = GraphicsConfig::from_toml(t).unwrap();
+        assert_eq!((c.render_scale, c.max_render_mpix, c.dynamic_resolution, c.version), (1.0, 0.0, false, CONFIG_VERSION));
+        // Current files keep the player's choices across a preset.
+        let mut c = GraphicsConfig::for_preset(Preset::High);
+        c.auto = false;
+        c.render_scale = 0.75;
+        c.dynamic_resolution = true;
+        c.display_mode = DisplayMode::Windowed;
+        c.fps_cap = 90;
+        let back = GraphicsConfig::from_toml(&c.to_toml()).unwrap();
+        assert_eq!((back.render_scale, back.dynamic_resolution, back.display_mode, back.fps_cap), (0.75, true, DisplayMode::Windowed, 90));
+        c.apply_preset(Preset::Low);
+        assert_eq!(c.render_scale, 0.75, "presets do not touch the render scale");
     }
 
     #[test]
     fn dynamic_resolution_tracks_budget() {
-        let cfg = GraphicsConfig::for_preset(Preset::Medium);
+        let mut cfg = GraphicsConfig::for_preset(Preset::Medium);
+        cfg.dynamic_resolution = true;
         let mut d = DynamicResolution::new(cfg.render_scale);
+        // GPU-bound: GPU 30 ms, CPU 5 ms at a 60 FPS target.
         for _ in 0..40 {
-            d.update(30.0, &cfg);
+            d.update(Some(30.0), 5.0, &cfg);
         }
         assert!(d.scale < cfg.render_scale);
         assert!(d.scale >= cfg.min_render_scale);
         let low = d.scale;
         for _ in 0..400 {
-            d.update(5.0, &cfg);
+            d.update(Some(5.0), 5.0, &cfg);
         }
         assert!(d.scale > low);
         assert!(d.scale <= cfg.render_scale);
+    }
+
+    #[test]
+    fn dynamic_resolution_ignores_cpu_bound_frames() {
+        let mut cfg = GraphicsConfig::for_preset(Preset::Medium);
+        cfg.dynamic_resolution = true;
+        let mut d = DynamicResolution::new(1.0);
+        // ~10 FPS limited by the CPU (90 ms of CPU work, GPU 30 ms): the
+        // resolution must stay native.
+        for _ in 0..600 {
+            assert_eq!(d.update(Some(30.0), 90.0, &cfg), 1.0);
+        }
+        // Without GPU timestamps it never moves either.
+        let mut d = DynamicResolution::new(1.0);
+        for _ in 0..600 {
+            assert_eq!(d.update(None, 5.0, &cfg), 1.0);
+        }
+        // Off (the default) holds the configured scale.
+        let mut cfg = GraphicsConfig::for_preset(Preset::Medium);
+        cfg.render_scale = 0.75;
+        let mut d = DynamicResolution::new(1.0);
+        assert_eq!(d.update(Some(100.0), 1.0, &cfg), 0.75);
+        assert_eq!(FrameBound::of(20.0, Some(8.0)), FrameBound::Cpu);
+        assert_eq!(FrameBound::of(5.0, Some(8.0)), FrameBound::Gpu);
+        assert_eq!(FrameBound::of(5.0, None), FrameBound::Unknown);
     }
 }

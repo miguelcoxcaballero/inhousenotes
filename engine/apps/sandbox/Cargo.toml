@@ -25,3 +25,5 @@ log.workspace = true
 env_logger.workspace = true
 pollster.workspace = true
 rayon.workspace = true
+serde.workspace = true
+toml.workspace = true

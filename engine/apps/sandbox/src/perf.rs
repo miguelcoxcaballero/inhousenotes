@@ -10,7 +10,7 @@ use std::collections::VecDeque;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use forja_render::{DynamicResolution, GraphicsConfig, Preset, RenderStats, Renderer};
+use forja_render::{DisplayMode, DynamicResolution, FrameBound, GraphicsConfig, Preset, RENDER_SCALES, RenderStats, Renderer};
 
 const HISTORY: usize = 240;
 
@@ -30,6 +30,8 @@ pub struct FrameSample {
     pub fixed_steps: u32,
     pub stats: RenderStats,
     pub render_scale: f32,
+    /// Window (swapchain) size in physical pixels.
+    pub output: (u32, u32),
     /// Scenes with most camera triangles `(name, instances, triangles)`
     /// (filled only while the overlay is open).
     pub heavy: Vec<(std::sync::Arc<str>, u32, u64)>,
@@ -47,6 +49,10 @@ pub struct PerfState {
     pub history: VecDeque<(f32, f32)>,
     pub last: FrameSample,
     pub gpu_timing: bool,
+    /// What limited the last frame (CPU work vs GPU timestamps).
+    pub bound: FrameBound,
+    /// Internal resolution last rendered (logged when it changes).
+    pub internal: (u32, u32),
     cfg_path: PathBuf,
     csv: Option<std::io::BufWriter<std::fs::File>>,
     pub csv_path: Option<PathBuf>,
@@ -68,22 +74,28 @@ impl PerfState {
         if cfg.auto {
             let keep = cfg.clone();
             // The preset of this adapter class with its tuning (Intel
-            // iGPUs: see `GraphicsConfig::for_adapter`).
+            // iGPUs: see `GraphicsConfig::for_adapter`), with the player's
+            // display choices (window mode, render scale, frame cap...).
             cfg = GraphicsConfig { auto: true, ..auto_cfg };
+            cfg.keep_player_choices(&keep);
             if forja_render::quality::is_intel_integrated(&renderer.adapter_info) {
-                log::info!("graphics: Intel integrated GPU profile ({} look, {:.1} MP internal, FSR 1 upscale)", auto_preset.label(), cfg.max_render_mpix);
+                log::info!("graphics: Intel integrated GPU profile ({} look at native resolution)", auto_preset.label());
             }
-            cfg.vsync = keep.vsync;
-            cfg.frame_latency = keep.frame_latency;
-            cfg.target_fps = keep.target_fps;
-            cfg.profiler_overlay = keep.profiler_overlay;
-            cfg.profiler_csv = keep.profiler_csv.clone();
         }
         if let Some(p) = std::env::var("FORJA_PRESET").ok().and_then(|p| parse_preset(&p)) {
             cfg.auto = false;
             cfg.apply_preset(p);
         }
-        log::info!("graphics: preset {} (auto {} -> {}), scale {:.2}{}", cfg.preset.label(), cfg.auto, auto_preset.label(), cfg.render_scale, if cfg.dynamic_resolution { " dynamic" } else { "" });
+        let timing = renderer.profiler.supported();
+        log::info!(
+            "graphics: preset {} (auto {} -> {}), render scale {:.0}%, dynamic resolution {}, GPU timestamps {}",
+            cfg.preset.label(),
+            cfg.auto,
+            auto_preset.label(),
+            cfg.render_scale * 100.0,
+            if !cfg.dynamic_resolution { "off" } else if timing { "on (GPU-bound frames only)" } else { "on but inactive (no timestamps)" },
+            if timing { "yes" } else { "no" }
+        );
         let csv_path = std::env::var("FORJA_PROFILE_CSV").ok().or_else(|| (!cfg.profiler_csv.is_empty()).then(|| cfg.profiler_csv.clone())).map(PathBuf::from);
         let mut s = Self {
             overlay: cfg.profiler_overlay,
@@ -94,7 +106,9 @@ impl PerfState {
             dirty: true,
             history: VecDeque::with_capacity(HISTORY),
             last: FrameSample::default(),
-            gpu_timing: renderer.profiler.supported(),
+            gpu_timing: timing,
+            bound: FrameBound::Unknown,
+            internal: (0, 0),
             cfg_path: cfg_path.to_path_buf(),
             csv: None,
             csv_path: None,
@@ -137,6 +151,7 @@ impl PerfState {
             self.history.pop_front();
         }
         self.history.push_back((sample.frame_ms, sample.gpu_ms));
+        self.bound = FrameBound::of(sample.cpu_ms(), self.gpu_ms_of(&sample));
         if let Some(w) = &mut self.csv {
             let list = |v: &[(&'static str, f32)]| v.iter().map(|(n, ms)| format!("{n}:{ms:.3}")).collect::<Vec<_>>().join(";");
             let s = &sample.stats;
@@ -170,14 +185,33 @@ impl PerfState {
         self.last = sample;
     }
 
-    /// Render scale for the next frame (dynamic resolution from GPU time;
-    /// without timestamp queries the frame time stands in for it).
-    /// Internal resolution scale for a `width` x `height` output (dynamic
-    /// resolution within the preset's pixel budget).
+    /// GPU time of a frame from timestamps (`None` when unsupported or
+    /// not read back yet).
+    fn gpu_ms_of(&self, s: &FrameSample) -> Option<f32> {
+        (self.gpu_timing && s.gpu_ms > 0.0).then_some(s.gpu_ms)
+    }
+
+    /// Internal resolution scale for a `width` x `height` output: the
+    /// render scale (1.0 = native), lowered by the dynamic resolution only
+    /// while the GPU is the bottleneck (never for CPU-bound frames, never
+    /// without timestamps; the frame time is not used as a stand-in).
     pub fn next_scale(&mut self, width: u32, height: u32) -> f32 {
-        let gpu = if self.gpu_timing { self.last.gpu_ms } else { self.last.frame_ms * 0.9 };
+        let gpu = self.gpu_ms_of(&self.last);
         let max = self.cfg.max_scale_for(width, height);
-        self.drs.update_capped(gpu, &self.cfg, max)
+        self.drs.update_capped(gpu, self.last.cpu_ms(), &self.cfg, max)
+    }
+
+    /// Logs the internal resolution when it changes (and the first time).
+    pub fn note_internal(&mut self, iw: u32, ih: u32, out_w: u32, out_h: u32) {
+        if self.internal != (iw, ih) {
+            log::info!(
+                "internal resolution {iw}x{ih} ({:.0}% of the {out_w}x{out_h} window{}): {}",
+                iw as f32 / out_w.max(1) as f32 * 100.0,
+                if iw < out_w { ", FSR 1 upscale" } else { ", native, no upscaling" },
+                self.drs.reason
+            );
+            self.internal = (iw, ih);
+        }
     }
 
     pub fn save(&mut self) {
@@ -185,6 +219,14 @@ impl PerfState {
             Ok(()) => self.message = Some(format!("Saved {}", self.cfg_path.display())),
             Err(e) => self.message = Some(format!("{}: {e}", self.cfg_path.display())),
         }
+    }
+}
+
+impl FrameSample {
+    /// CPU work of the frame (game, extraction, renderer, UI), without the
+    /// wait for the swapchain.
+    pub fn cpu_ms(&self) -> f32 {
+        self.sim_ms + self.extract_ms + self.render_cpu_ms + self.ui_ms
     }
 }
 
@@ -221,7 +263,22 @@ pub fn draw_overlay(ctx: &egui::Context, p: &mut PerfState) {
             painter.add(egui::Shape::line(pts, egui::Stroke::new(1.2, egui::Color32::from_rgb(120, 230, 120))));
         }
         let st = &s.stats;
-        u.label(format!("{}x{} (scale {:.2}) · preset {}", st.width, st.height, s.render_scale, p.cfg.preset.label()));
+        u.label(format!(
+            "internal {}x{} ({:.0}%{}) -> window {}x{} · preset {}",
+            st.width,
+            st.height,
+            s.render_scale * 100.0,
+            if s.render_scale < 1.0 { ", FSR 1" } else { ", native" },
+            s.output.0,
+            s.output.1,
+            p.cfg.preset.label()
+        ));
+        let gpu_txt = if p.gpu_timing && s.gpu_ms > 0.0 { format!("{:.1} ms", s.gpu_ms) } else { "n/a".into() };
+        u.label(egui::RichText::new(format!("{} · CPU {:.1} ms / GPU {} · dynamic res {}", p.bound.label(), s.cpu_ms(), gpu_txt, if p.cfg.dynamic_resolution { if p.gpu_timing { "on" } else { "on (inactive: no timestamps)" } } else { "off" })).color(match p.bound {
+            FrameBound::Cpu => egui::Color32::from_rgb(240, 190, 90),
+            FrameBound::Gpu => egui::Color32::from_rgb(130, 220, 130),
+            FrameBound::Unknown => egui::Color32::GRAY,
+        }));
         u.label(format!("draws {} + shadow {} · tris {:.2} M + shadow {:.2} M", st.draw_calls, st.shadow_draws, st.triangles as f64 / 1e6, st.shadow_triangles as f64 / 1e6));
         u.label(format!("instances {} (+{} shadow, {} culled) · lights {}", st.instances_drawn, st.shadow_instances, st.instances_culled, st.lights));
         u.label(format!("static {} parts in {} cells · cascades {:04b} · VRAM ~{:.0} MB", st.static_instances, st.static_cells, st.cascades_updated, st.vram_mb));
@@ -271,154 +328,21 @@ pub fn draw_overlay(ctx: &egui::Context, p: &mut PerfState) {
     });
 }
 
-/// F9: graphics options. Changes apply at once (texture size on the next
-/// map load); "Save" writes `data/graphics.toml`.
+/// F9: graphics options window. Changes apply at once (texture size on the
+/// next map load); "Guardar" writes `data/graphics.toml`.
 pub fn draw_options(ctx: &egui::Context, p: &mut PerfState) {
     if !p.options {
         return;
     }
-    let before = p.cfg.clone();
     let mut save = false;
-    egui::Window::new("Graphics (F9)").anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).resizable(false).collapsible(false).show(ctx, |u| {
-        u.horizontal(|u| {
-            u.label("Preset");
-            for pr in Preset::ALL {
-                if u.selectable_label(p.cfg.preset == pr, pr.label()).clicked() {
-                    p.cfg.apply_preset(pr);
-                    p.cfg.auto = false;
-                }
-            }
-            if u.selectable_label(p.cfg.auto, format!("Auto ({})", p.auto_preset.label())).clicked() {
-                p.cfg.auto = true;
-                p.cfg.apply_preset(p.auto_preset);
-            }
-        });
-        u.separator();
-        let c = &mut p.cfg;
-        let mut custom = false;
-        egui::Grid::new("gfx").num_columns(2).striped(true).show(u, |g| {
-            g.label("V-sync");
-            g.checkbox(&mut c.vsync, "");
-            g.end_row();
-            g.label("Target FPS");
-            g.add(egui::Slider::new(&mut c.target_fps, 30.0..=240.0));
-            g.end_row();
-            g.label("Dynamic resolution");
-            custom |= g.checkbox(&mut c.dynamic_resolution, "").changed();
-            g.end_row();
-            g.label("Render scale (max)");
-            custom |= g.add(egui::Slider::new(&mut c.render_scale, 0.5..=1.0)).changed();
-            g.end_row();
-            g.label("Min render scale");
-            custom |= g.add(egui::Slider::new(&mut c.min_render_scale, 0.5..=1.0)).changed();
-            g.end_row();
-            g.label("Shadow resolution");
-            g.horizontal(|g| {
-                for r in [1024, 1536, 2048, 4096] {
-                    custom |= g.selectable_value(&mut c.shadow_resolution, r, r.to_string()).changed();
-                }
-            });
-            g.end_row();
-            g.label("Soft shadow cascades (PCSS)");
-            custom |= g.add(egui::Slider::new(&mut c.pcss_cascades, 0..=4)).changed();
-            g.end_row();
-            g.label("Far shadow update every");
-            custom |= g.add(egui::Slider::new(&mut c.far_cascade_interval, 1..=4).suffix(" frames")).changed();
-            g.end_row();
-            g.label("Shadow distance");
-            custom |= g.add(egui::Slider::new(&mut c.shadow_distance_scale, 0.5..=1.5)).changed();
-            g.end_row();
-            g.label("Ambient occlusion");
-            g.horizontal(|g| {
-                custom |= g.checkbox(&mut c.ssao, "on").changed();
-                custom |= g.checkbox(&mut c.ssao_half_res, "half res").changed();
-            });
-            g.end_row();
-            g.label("Reflections (SSR)");
-            g.horizontal(|g| {
-                custom |= g.checkbox(&mut c.ssr, "on").changed();
-                custom |= g.add(egui::Slider::new(&mut c.ssr_steps, 8..=48).text("steps")).changed();
-            });
-            g.end_row();
-            g.label("Contact shadows");
-            custom |= g.checkbox(&mut c.contact_shadows, "").changed();
-            g.end_row();
-            g.label("Bloom");
-            custom |= g.checkbox(&mut c.bloom, "").changed();
-            g.end_row();
-            g.label("Depth of field (cutscenes)");
-            custom |= g.checkbox(&mut c.dof, "").changed();
-            g.end_row();
-            g.label("Motion blur");
-            g.horizontal(|g| {
-                custom |= g.checkbox(&mut c.motion_blur, "on").changed();
-                custom |= g.add(egui::Slider::new(&mut c.motion_blur_samples, 4..=24).text("samples")).changed();
-            });
-            g.end_row();
-            g.label("Volumetric fog");
-            g.horizontal(|g| {
-                for (n, label) in [(0, "off"), (1, "low"), (2, "high"), (3, "ultra")] {
-                    custom |= g.selectable_value(&mut c.volumetric_fog, n, label).changed();
-                }
-            });
-            g.end_row();
-            g.label("Bent-normal occlusion");
-            custom |= g.checkbox(&mut c.bent_normals, "").changed();
-            g.end_row();
-            g.label("FSR 1 upscaling");
-            custom |= g.checkbox(&mut c.fsr, "").changed();
-            g.end_row();
-            g.label("Max internal pixels");
-            custom |= g.add(egui::Slider::new(&mut c.max_render_mpix, 0.5..=8.3).suffix(" MP")).changed();
-            g.end_row();
-            g.label("Lights per frame");
-            g.horizontal(|g| {
-                for (n, label) in [(512, "512"), (2048, "2k"), (4096, "4k"), (65535, "all")] {
-                    custom |= g.selectable_value(&mut c.max_lights, n, label).changed();
-                }
-            });
-            g.end_row();
-            g.label("Shadowed spot lights");
-            custom |= g.add(egui::Slider::new(&mut c.spot_shadows, 0..=4)).changed();
-            g.end_row();
-            g.label("Small shadow casters (texels)");
-            custom |= g.add(egui::Slider::new(&mut c.shadow_caster_texels, 1.0..=8.0)).changed();
-            g.end_row();
-            g.label("City detail distance (HLOD beyond)");
-            g.horizontal(|g| {
-                for (n, label) in [(150.0, "150 m"), (250.0, "250 m"), (400.0, "400 m"), (0.0, "all detail")] {
-                    custom |= g.selectable_value(&mut c.hlod_distance, n, label).changed();
-                }
-            });
-            g.end_row();
-            g.label("Building shadow proxies from");
-            g.horizontal(|g| {
-                for (n, label) in [(1, "c1"), (2, "c2"), (3, "c3"), (4, "off")] {
-                    custom |= g.selectable_value(&mut c.shadow_proxy_cascade, n, label).changed();
-                }
-            });
-            g.end_row();
-            g.label("LOD detail");
-            custom |= g.add(egui::Slider::new(&mut c.lod_detail, 0.25..=2.0)).changed();
-            g.end_row();
-            g.label("Texture size (next map)");
-            g.horizontal(|g| {
-                for r in [1024, 2048, 4096] {
-                    custom |= g.selectable_value(&mut c.max_texture_size, r, r.to_string()).changed();
-                }
-            });
-            g.end_row();
-        });
-        if custom {
-            c.preset = Preset::Custom;
-            c.auto = false;
-        }
+    egui::Window::new("Gráficos (F9)").anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).resizable(false).collapsible(false).show(ctx, |u| {
+        graphics_options(u, p);
         u.separator();
         u.horizontal(|u| {
-            if u.button("Save").clicked() {
+            if u.button("Guardar").clicked() {
                 save = true;
             }
-            if u.button("Close").clicked() {
+            if u.button("Cerrar").clicked() {
                 p.options = false;
             }
             if let Some(m) = &p.message {
@@ -426,13 +350,198 @@ pub fn draw_options(ctx: &egui::Context, p: &mut PerfState) {
             }
         });
     });
-    if p.cfg != before {
-        p.cfg = p.cfg.clone().sanitized();
-        p.drs = DynamicResolution::new(p.cfg.render_scale);
-        p.dirty = true;
-    }
     if save {
         p.save();
+    }
+}
+
+/// The graphics settings (F9 window and the pause menu's options): preset,
+/// display (window mode, v-sync, frame cap), resolution (render scale,
+/// dynamic resolution) and, folded, every cost knob.
+pub fn graphics_options(u: &mut egui::Ui, p: &mut PerfState) {
+    let before = p.cfg.clone();
+    u.horizontal_wrapped(|u| {
+        u.label("Calidad");
+        for pr in Preset::ALL {
+            let name = match pr {
+                Preset::Low => "Baja",
+                Preset::Medium => "Media",
+                Preset::High => "Alta",
+                Preset::Ultra => "Ultra",
+                Preset::Custom => "Personalizada",
+            };
+            if u.selectable_label(p.cfg.preset == pr && !p.cfg.auto, name).clicked() {
+                p.cfg.apply_preset(pr);
+                p.cfg.auto = false;
+            }
+        }
+        if u.selectable_label(p.cfg.auto, format!("Auto ({})", p.auto_preset.label())).clicked() {
+            p.cfg.auto = true;
+            p.cfg.apply_preset(p.auto_preset);
+        }
+        if p.cfg.preset == Preset::Custom {
+            u.small("(personalizada)");
+        }
+    });
+    u.separator();
+    let internal = (p.last.stats.width, p.last.stats.height);
+    let output = p.last.output;
+    let gpu_timing = p.gpu_timing;
+    let c = &mut p.cfg;
+    egui::Grid::new("display").num_columns(2).striped(true).show(u, |g| {
+        g.label("Pantalla");
+        g.horizontal(|g| {
+            for m in DisplayMode::ALL {
+                g.selectable_value(&mut c.display_mode, m, m.label());
+            }
+        });
+        g.end_row();
+        g.label("Sincronización vertical");
+        g.checkbox(&mut c.vsync, "");
+        g.end_row();
+        g.label("Límite de FPS");
+        g.horizontal(|g| {
+            for (n, label) in [(0, "sin límite"), (30, "30"), (60, "60"), (90, "90"), (120, "120"), (144, "144")] {
+                g.selectable_value(&mut c.fps_cap, n, label);
+            }
+        });
+        g.end_row();
+        g.label("Escala de render");
+        g.horizontal(|g| {
+            for s in RENDER_SCALES {
+                let on = (c.render_scale - s).abs() < 0.005;
+                if g.selectable_label(on, format!("{:.0}%", s * 100.0)).clicked() {
+                    c.render_scale = s;
+                }
+            }
+        });
+        g.end_row();
+        g.label("");
+        g.small(if c.render_scale < 0.995 { format!("FSR 1 reescala a la ventana · interna {}x{} -> {}x{}", internal.0, internal.1, output.0, output.1) } else { format!("nativa, sin reescalado · {}x{}", output.0, output.1) });
+        g.end_row();
+        g.label("Resolución dinámica");
+        g.checkbox(&mut c.dynamic_resolution, if gpu_timing { "solo si la GPU limita" } else { "sin marcas de tiempo de GPU: no actúa" });
+        g.end_row();
+        if c.dynamic_resolution {
+            g.label("  FPS objetivo");
+            g.add(egui::Slider::new(&mut c.target_fps, 30.0..=144.0));
+            g.end_row();
+            g.label("  Escala mínima");
+            g.add(egui::Slider::new(&mut c.min_render_scale, 0.5..=1.0));
+            g.end_row();
+        }
+    });
+    let mut custom = false;
+    egui::CollapsingHeader::new("Avanzado (coste de cada efecto)").show(u, |u| {
+        egui::ScrollArea::vertical().max_height(320.0).show(u, |u| {
+            egui::Grid::new("gfx").num_columns(2).striped(true).show(u, |g| {
+                g.label("Resolución de sombras");
+                g.horizontal(|g| {
+                    for r in [1024, 1536, 2048, 4096] {
+                        custom |= g.selectable_value(&mut c.shadow_resolution, r, r.to_string()).changed();
+                    }
+                });
+                g.end_row();
+                g.label("Cascadas con sombra suave (PCSS)");
+                custom |= g.add(egui::Slider::new(&mut c.pcss_cascades, 0..=4)).changed();
+                g.end_row();
+                g.label("Sombras lejanas cada");
+                custom |= g.add(egui::Slider::new(&mut c.far_cascade_interval, 1..=4).suffix(" fotogramas")).changed();
+                g.end_row();
+                g.label("Distancia de sombras");
+                custom |= g.add(egui::Slider::new(&mut c.shadow_distance_scale, 0.5..=1.5)).changed();
+                g.end_row();
+                g.label("Oclusión ambiental");
+                g.horizontal(|g| {
+                    custom |= g.checkbox(&mut c.ssao, "sí").changed();
+                    custom |= g.checkbox(&mut c.ssao_half_res, "media resolución").changed();
+                });
+                g.end_row();
+                g.label("Reflejos (SSR)");
+                g.horizontal(|g| {
+                    custom |= g.checkbox(&mut c.ssr, "sí").changed();
+                    custom |= g.add(egui::Slider::new(&mut c.ssr_steps, 8..=48).text("pasos")).changed();
+                });
+                g.end_row();
+                g.label("Sombras de contacto");
+                custom |= g.checkbox(&mut c.contact_shadows, "").changed();
+                g.end_row();
+                g.label("Resplandor (bloom)");
+                custom |= g.checkbox(&mut c.bloom, "").changed();
+                g.end_row();
+                g.label("Profundidad de campo (escenas)");
+                custom |= g.checkbox(&mut c.dof, "").changed();
+                g.end_row();
+                g.label("Desenfoque de movimiento");
+                g.horizontal(|g| {
+                    custom |= g.checkbox(&mut c.motion_blur, "sí").changed();
+                    custom |= g.add(egui::Slider::new(&mut c.motion_blur_samples, 4..=24).text("muestras")).changed();
+                });
+                g.end_row();
+                g.label("Niebla volumétrica");
+                g.horizontal(|g| {
+                    for (n, label) in [(0, "no"), (1, "baja"), (2, "alta"), (3, "ultra")] {
+                        custom |= g.selectable_value(&mut c.volumetric_fog, n, label).changed();
+                    }
+                });
+                g.end_row();
+                g.label("Oclusión con normales curvadas");
+                custom |= g.checkbox(&mut c.bent_normals, "").changed();
+                g.end_row();
+                g.label("FSR 1 (bajo 100%)");
+                custom |= g.checkbox(&mut c.fsr, "").changed();
+                g.end_row();
+                g.label("Luces por fotograma");
+                g.horizontal(|g| {
+                    for (n, label) in [(512, "512"), (2048, "2k"), (4096, "4k"), (65535, "todas")] {
+                        custom |= g.selectable_value(&mut c.max_lights, n, label).changed();
+                    }
+                });
+                g.end_row();
+                g.label("Focos con sombra");
+                custom |= g.add(egui::Slider::new(&mut c.spot_shadows, 0..=4)).changed();
+                g.end_row();
+                g.label("Omitir sombras pequeñas (texels)");
+                custom |= g.add(egui::Slider::new(&mut c.shadow_caster_texels, 1.0..=8.0)).changed();
+                g.end_row();
+                g.label("Detalle de ciudad (HLOD más allá)");
+                g.horizontal(|g| {
+                    for (n, label) in [(150.0, "150 m"), (250.0, "250 m"), (400.0, "400 m"), (0.0, "todo")] {
+                        custom |= g.selectable_value(&mut c.hlod_distance, n, label).changed();
+                    }
+                });
+                g.end_row();
+                g.label("Sombras simplificadas desde");
+                g.horizontal(|g| {
+                    for (n, label) in [(1, "c1"), (2, "c2"), (3, "c3"), (4, "no")] {
+                        custom |= g.selectable_value(&mut c.shadow_proxy_cascade, n, label).changed();
+                    }
+                });
+                g.end_row();
+                g.label("Detalle de LOD");
+                custom |= g.add(egui::Slider::new(&mut c.lod_detail, 0.25..=2.0)).changed();
+                g.end_row();
+                g.label("Texturas (siguiente mapa)");
+                g.horizontal(|g| {
+                    for r in [1024, 2048, 4096] {
+                        custom |= g.selectable_value(&mut c.max_texture_size, r, r.to_string()).changed();
+                    }
+                });
+                g.end_row();
+            });
+        });
+    });
+    if custom {
+        c.preset = Preset::Custom;
+        c.auto = false;
+    }
+    if p.cfg != before {
+        p.cfg = p.cfg.clone().sanitized();
+        if p.cfg.render_scale != before.render_scale || p.cfg.dynamic_resolution != before.dynamic_resolution {
+            p.drs = DynamicResolution::new(p.cfg.render_scale);
+            p.drs.reason = "changed in the options";
+        }
+        p.dirty = true;
     }
 }
 

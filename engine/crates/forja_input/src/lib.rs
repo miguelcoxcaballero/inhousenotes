@@ -13,6 +13,9 @@ pub struct ActionMap {
     pub actions: HashMap<String, Vec<String>>,
     #[serde(default = "sensitivity")]
     pub mouse_sensitivity: f32,
+    /// Mouse up looks down (flight-style vertical axis).
+    #[serde(default)]
+    pub invert_y: bool,
 }
 
 fn sensitivity() -> f32 {
@@ -92,7 +95,13 @@ impl Input {
     }
 
     pub fn look(&self) -> Vec2 {
-        self.mouse_delta * self.map.mouse_sensitivity
+        let d = self.mouse_delta * self.map.mouse_sensitivity;
+        if self.map.invert_y { Vec2::new(d.x, -d.y) } else { d }
+    }
+
+    /// Whether `key` is bound to `action`.
+    pub fn is_bound(&self, action: &str, key: &str) -> bool {
+        self.keys(action).iter().any(|k| k == key)
     }
 }
 
@@ -111,6 +120,12 @@ mod tests {
         assert!(!input.pressed("forward") && input.held("forward"));
         input.key_up("KeyW");
         assert!(input.released("forward"));
+        input.map.invert_y = true;
+        input.mouse_moved(Vec2::new(10.0, 10.0));
+        let l = input.look();
+        assert!(l.x > 0.0 && l.y < 0.0, "invert Y flips only the vertical axis");
+        assert!(input.is_bound("pause", "Escape"), "Esc opens the pause menu");
+        assert!(!input.map.actions.contains_key("quit"), "nothing quits on Esc");
         for a in ["fire", "aim", "jump", "enter_vehicle", "reload", "inventory", "handbrake"] {
             assert!(input.map.actions.contains_key(a), "unbound action {a}");
         }

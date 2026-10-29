@@ -10,7 +10,10 @@
 //! `--bench N` renders N real-time frames headless after the warm-up and
 //! prints CPU/GPU timings (`--csv file.csv` logs every frame). In the game,
 //! F11 shows the frame profiler and F9 the graphics options
-//! (`data/graphics.toml`).
+//! (`data/graphics.toml`). Esc opens the pause menu (resume, options,
+//! controls, quit). The game renders at the window's native resolution
+//! (physical pixels; `--windowed` for a window instead of borderless
+//! fullscreen).
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -19,8 +22,9 @@ use std::time::Instant;
 use forja_core::App;
 use forja_input::{ActionMap, Input};
 use forja_math::{Vec2, Vec3};
-use forja_render::{DrawInstance, FrameDesc, ModelHandle, Renderer};
+use forja_render::{DisplayMode, DrawInstance, FrameDesc, ModelHandle, Renderer};
 use sandbox::game::{self, Hud, Intent, MapKind, Paths, RenderScene};
+use sandbox::pause::{self, PauseMenu};
 use sandbox::perf::{self, FrameSample, PerfState};
 use sandbox::ui;
 use winit::application::ApplicationHandler;
@@ -57,6 +61,20 @@ struct Args {
     smoke: usize,
     /// `--window`: run the smoke test in a window (swapchain path).
     window: bool,
+    /// `--windowed`: a window instead of the saved display mode.
+    windowed: bool,
+    /// Headless: menu drawn over the screenshot (`--ui pause|options|
+    /// controls|help|quit|f9|f11`).
+    ui: Option<String>,
+    /// Headless: UI scale (the OS DPI scaling, e.g. 2 for 200%).
+    ppp: f32,
+    /// Headless: after the screenshot, `N:K` more frames saving every K-th
+    /// (`<screenshot>_bNN.png`).
+    burst: Option<(usize, usize)>,
+    /// Headless: camera on the driven car (`--car-cam chase|wheel|side`).
+    car_cam: Option<String>,
+    /// Headless `drive_turn`: which car to get into (`--car N`).
+    car: usize,
 }
 
 fn parse_vec3(s: &str) -> Option<Vec3> {
@@ -65,7 +83,7 @@ fn parse_vec3(s: &str) -> Option<Vec3> {
 }
 
 fn parse_args() -> Args {
-    let mut a = Args { map: MapKind::Spain, screenshot: None, script: "idle".into(), frames: 90, width: 1600, height: 900, hours: None, camera: None, preset: None, bench: 0, csv: None, night_switch: false, stability: 0, adapter: forja_render::gpu::AdapterChoice::from_env(), smoke: 0, window: false };
+    let mut a = Args { map: MapKind::Spain, screenshot: None, script: "idle".into(), frames: 90, width: 1600, height: 900, hours: None, camera: None, preset: None, bench: 0, csv: None, night_switch: false, stability: 0, adapter: forja_render::gpu::AdapterChoice::from_env(), smoke: 0, window: false, windowed: false, ui: None, ppp: 1.0, burst: None, car_cam: None, car: 0 };
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
     let mut eye = None;
@@ -81,6 +99,8 @@ fn parse_args() -> Args {
                 let (w, h) = v.split_once('x').expect("WxH");
                 a.width = w.parse().expect("width");
                 a.height = h.parse().expect("height");
+                // A window of that physical size.
+                a.windowed = true;
             }
             "--time" => a.hours = v.parse().ok(),
             "--eye" => eye = parse_vec3(&v),
@@ -101,6 +121,19 @@ fn parse_args() -> Args {
                 i += 1;
                 continue;
             }
+            "--windowed" => {
+                a.windowed = true;
+                i += 1;
+                continue;
+            }
+            "--ui" => a.ui = Some(v),
+            "--ppp" => a.ppp = v.parse().expect("ppp"),
+            "--burst" => {
+                let (n, k) = v.split_once(':').unwrap_or((v.as_str(), "1"));
+                a.burst = Some((n.parse().expect("burst N"), k.parse::<usize>().expect("burst K").max(1)));
+            }
+            "--car-cam" => a.car_cam = Some(v),
+            "--car" => a.car = v.parse().expect("car index"),
             _ => {
                 eprintln!("unknown argument {}", args[i]);
                 std::process::exit(2);
@@ -321,6 +354,16 @@ fn script_intent(script: &str, frame: usize, i: &mut Intent) {
                 i.movement = Vec2::new(if frame > 60 { 0.35 } else { 0.0 }, 1.0);
             }
         }
+        // Straight, then weaving left and right (wheel visuals).
+        "drive_turn" => {
+            if frame == 2 {
+                i.enter = true;
+            }
+            if frame > 5 {
+                let steer = if frame > 50 { ((frame - 50) as f32 * 0.06).sin() } else { 0.0 };
+                i.movement = Vec2::new(steer, 0.8);
+            }
+        }
         "shoot" => {
             if frame == 1 {
                 i.movement = Vec2::new(0.0, 1.0);
@@ -386,6 +429,7 @@ fn bench(args: &Args, app: &mut App, renderer: &mut Renderer, extract: &mut Extr
             fixed_steps: timings.fixed_steps,
             stats: renderer.stats,
             render_scale: 1.0,
+            output: (w, h),
             heavy: Vec::new(),
         };
         acc.push(sample.clone());
@@ -496,11 +540,20 @@ fn run_headless(args: &Args) {
     }
     let t0 = Instant::now();
     for f in 0..args.frames {
+        if f == 1 && args.script == "drive_turn" {
+            // Beside car `--car`, so the scripted F gets in.
+            let car = app.world.res::<forja_physics::Vehicles>().0.get(args.car).and_then(|v| app.world.res::<forja_physics::PhysicsWorld>().body(v.body).map(|b| b.iso()));
+            if let Some(iso) = car {
+                let at = iso.transform_point(Vec3::new(-2.2, 0.5, 0.0));
+                app.world.scope::<game::player::Player, _>(|w, p| p.controller.teleport(w.res_mut::<forja_physics::PhysicsWorld>(), at));
+            }
+        }
         script_intent(&args.script, f, app.world.res_mut::<Intent>());
         app.update_with_dt(1.0 / 60.0);
         if let Some(cam) = args.camera {
             app.world.res_mut::<game::camera::CameraRig>().fixed = Some(cam);
         }
+        car_camera(args, &mut app);
     }
     let sim_ms = t0.elapsed().as_secs_f32() * 1000.0 / args.frames as f32;
     // One more frame so a fixed camera takes effect.
@@ -523,12 +576,132 @@ fn run_headless(args: &Args) {
         let hud = app.world.res_mut::<Hud>();
         hud.physics_ms = sim_ms;
     }
-    // HUD on top.
-    let raw = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(args.width as f32, args.height as f32))), ..Default::default() };
-    let out = ctx.run_ui(raw, |ui| ui::draw(ui.ctx(), &mut app.world, &mut ui_state));
-    let jobs = ctx.tessellate(out.shapes, 1.0);
-    let screen = egui_wgpu::ScreenDescriptor { size_in_pixels: [args.width, args.height], pixels_per_point: 1.0 };
-    for (id, deltas) in &out.textures_delta.set {
+    let out_path = args.screenshot.clone().expect("screenshot path");
+    if let Some(dir) = out_path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let mut menu = PauseMenu::new(std::env::temp_dir().join("forja-controls-headless.toml"), &forja_input::ActionMap::default());
+    let img = headless_ui(args, &tex, &ctx, &mut egui_renderer, &mut renderer, &mut app, &mut ui_state, &mut perf_state, &mut menu);
+    img.save(&out_path).expect("save screenshot");
+    if let Some((n, k)) = args.burst {
+        // More frames of the same script, every K-th saved (wheel visuals
+        // while driving and turning).
+        for f in 1..=n {
+            script_intent(&args.script, args.frames + f, app.world.res_mut::<Intent>());
+            app.update_with_dt(1.0 / 60.0);
+            car_camera(args, &mut app);
+            if f % k == 0 {
+                let frame = extract.frame(&mut renderer, &mut app);
+                let tex = renderer.render_offscreen(&frame, args.width, args.height);
+                let img = renderer.read_image(&tex);
+                let stem = out_path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                let path = out_path.with_file_name(format!("{stem}_b{:02}.png", f / k));
+                img.save(&path).expect("save burst frame");
+                let steer: Vec<String> = {
+                    let d = app.world.res::<game::vehicles::Driving>().0;
+                    d.and_then(|i| app.world.res::<forja_physics::Vehicles>().0.get(i).map(|v| v.wheels.iter().map(|w| format!("{:.1}/{:.0}", w.steer_angle.to_degrees(), w.spin.to_degrees() % 360.0)).collect())).unwrap_or_default()
+                };
+                println!("{}: frame {} wheels (steer deg / spin deg) {}", path.display(), args.frames + f, steer.join(" "));
+            }
+        }
+    }
+    if args.night_switch {
+        night_switch(args, app, renderer, extract, &out_path);
+        return;
+    }
+    println!(
+        "{}: {} | sim {:.2} ms/frame | render {:.0} ms | {:?}",
+        out_path.display(),
+        app.world.res::<Hud>().map,
+        sim_ms,
+        render_ms,
+        renderer.stats
+    );
+}
+
+/// Headless `--car-cam`: the camera follows the driven (or nearest) car:
+/// `chase` behind it, `wheel` close on the front-left wheel, `side` level
+/// with the car's left side.
+fn car_camera(args: &Args, app: &mut App) {
+    let Some(mode) = args.car_cam.as_deref() else { return };
+    let idx = app.world.res::<game::vehicles::Driving>().0.unwrap_or(args.car);
+    let Some(iso) = app.world.res::<forja_physics::Vehicles>().0.get(idx).and_then(|v| app.world.res::<forja_physics::PhysicsWorld>().body(v.body).map(|b| b.iso())) else { return };
+    let half = app.world.res::<forja_physics::Vehicles>().0[idx].config.chassis_half;
+    let (eye, look) = match mode {
+        "wheel" => (Vec3::new(half.x + 1.6, 0.1, half.z + 1.3), Vec3::new(half.x * 0.8, -0.35, half.z * 0.62)),
+        "side" => (Vec3::new(half.x + 4.5, 0.3, 0.0), Vec3::new(0.0, -0.2, 0.0)),
+        _ => (Vec3::new(2.5, 2.2, -half.z - 4.5), Vec3::new(0.0, 0.0, half.z * 0.3)),
+    };
+    app.world.res_mut::<game::camera::CameraRig>().fixed = Some((iso.transform_point(eye), iso.transform_point(look)));
+}
+
+/// HUD (and `--ui` menu) over a headless frame at `--ppp` UI scale.
+#[allow(clippy::too_many_arguments)]
+fn headless_ui(
+    args: &Args,
+    tex: &forja_render::wgpu::Texture,
+    ctx: &egui::Context,
+    egui_renderer: &mut egui_wgpu::Renderer,
+    renderer: &mut Renderer,
+    app: &mut App,
+    ui_state: &mut ui::UiState,
+    perf_state: &mut PerfState,
+    menu: &mut PauseMenu,
+) -> image::RgbaImage {
+    let ppp = args.ppp.max(0.5);
+    perf_state.last.stats = renderer.stats;
+    perf_state.last.output = (args.width, args.height);
+    perf_state.last.render_scale = 1.0;
+    match args.ui.as_deref() {
+        Some("pause") => menu.open(),
+        Some("quit") => {
+            menu.open();
+            menu.screen = pause::Screen::ConfirmQuit;
+        }
+        Some("help") => {
+            menu.open();
+            menu.screen = pause::Screen::Help;
+        }
+        Some("options") => {
+            menu.open();
+            menu.screen = pause::Screen::Options;
+        }
+        Some("controls") => {
+            menu.open();
+            menu.screen = pause::Screen::Options;
+            menu.tab = pause::OptionsTab::Controls;
+        }
+        Some("f9") => perf_state.options = true,
+        Some("f11") => perf_state.overlay = true,
+        _ => {}
+    }
+    let mut map = forja_input::ActionMap::default();
+    ctx.set_zoom_factor(ppp);
+    // egui lays windows out over a couple of passes and fades windows in
+    // (~0.1 s): run half a second of 60 Hz UI frames and keep the last
+    // one, with every texture upload.
+    let mut sets = Vec::new();
+    let mut last = None;
+    for i in 0..30 {
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(args.width as f32 / ppp, args.height as f32 / ppp))),
+            time: Some(i as f64 / 60.0),
+            predicted_dt: 1.0 / 60.0,
+            ..Default::default()
+        };
+        let out = ctx.run_ui(raw, |ui| {
+            ui::draw(ui.ctx(), &mut app.world, ui_state);
+            perf::draw_overlay(ui.ctx(), perf_state);
+            perf::draw_options(ui.ctx(), perf_state);
+            pause::draw(ui.ctx(), menu, perf_state, &mut map);
+        });
+        sets.extend(out.textures_delta.set.clone());
+        last = Some(out);
+    }
+    let out = last.expect("ran");
+    let jobs = ctx.tessellate(out.shapes, out.pixels_per_point);
+    let screen = egui_wgpu::ScreenDescriptor { size_in_pixels: [args.width, args.height], pixels_per_point: out.pixels_per_point };
+    for (id, deltas) in &sets {
         for delta in deltas {
             egui_renderer.update_texture(&renderer.device, &renderer.queue, *id, delta);
         }
@@ -553,24 +726,7 @@ fn run_headless(args: &Args) {
         egui_renderer.render(&mut pass.forget_lifetime(), &jobs, &screen);
     }
     renderer.queue.submit(extra.into_iter().chain([enc.finish()]));
-    let img = renderer.read_image(&tex);
-    let out_path = args.screenshot.clone().expect("screenshot path");
-    if let Some(dir) = out_path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    img.save(&out_path).expect("save screenshot");
-    if args.night_switch {
-        night_switch(args, app, renderer, extract, &out_path);
-        return;
-    }
-    println!(
-        "{}: {} | sim {:.2} ms/frame | render {:.0} ms | {:?}",
-        out_path.display(),
-        app.world.res::<Hud>().map,
-        sim_ms,
-        render_ms,
-        renderer.stats
-    );
+    renderer.read_image(tex)
 }
 
 /// Shadow stability: how much the image changes between frames when only
@@ -830,6 +986,8 @@ struct Gpu {
     egui_state: egui_winit::State,
     egui_renderer: egui_wgpu::Renderer,
     present_modes: Vec<forja_render::wgpu::PresentMode>,
+    /// Window mode currently applied.
+    display: DisplayMode,
 }
 
 struct Sandbox {
@@ -855,6 +1013,10 @@ struct Sandbox {
     loading: Option<String>,
     /// Clock and player carried into a world rebuilt at dusk or dawn.
     carry: Option<Carry>,
+    /// Esc menu; the game is paused while it is open.
+    pause: PauseMenu,
+    /// Frame cap: when the next frame may start.
+    next_frame: Instant,
 }
 
 /// A world built on a worker thread ([`App`] is `Send`).
@@ -903,7 +1065,9 @@ impl Sandbox {
     fn new(args: Args) -> Self {
         let paths = paths();
         let map_text = std::fs::read_to_string(paths.data.join("input.toml")).unwrap_or_default();
-        let input = Input::new(ActionMap::from_toml(&map_text).unwrap_or_default());
+        let mut input = Input::new(ActionMap::from_toml(&map_text).unwrap_or_default());
+        let pause = PauseMenu::new(paths.data.join("controls.toml"), &input.map);
+        pause.controls.apply(&mut input.map);
         let map = args.map;
         // The window opens at once with a loading screen while the world
         // is built on a worker thread.
@@ -927,6 +1091,38 @@ impl Sandbox {
             carry: None,
             frames: 0,
             smoke_ms: Vec::new(),
+            pause,
+            next_frame: Instant::now(),
+        }
+    }
+
+    /// Opens or closes the pause menu: the game stops and the mouse is
+    /// released while it is open.
+    fn set_paused(&mut self, on: bool) {
+        if on {
+            self.pause.open();
+            self.input.reset();
+            self.capture(false);
+        } else {
+            self.pause.open = false;
+            self.input.reset();
+            self.capture(true);
+        }
+    }
+
+    /// Esc: closes the inventory or the F9 window if open, else toggles
+    /// the pause menu.
+    fn on_escape(&mut self) {
+        if self.pause.open {
+            self.set_paused(false);
+        } else if self.ui.inventory_open {
+            self.ui.inventory_open = false;
+            self.capture(true);
+        } else if let Some(p) = self.perf.as_mut().filter(|p| p.options) {
+            p.options = false;
+            self.capture(true);
+        } else if self.loading.is_none() || self.pending.as_ref().is_some_and(|p| p.background) {
+            self.set_paused(true);
         }
     }
 
@@ -1158,9 +1354,6 @@ impl Sandbox {
 
     fn redraw(&mut self, event_loop: &ActiveEventLoop) {
         if self.update_loading() {
-            if self.input.pressed("quit") {
-                event_loop.exit();
-            }
             self.input.end_frame();
             if let Some(gpu) = &self.gpu {
                 gpu.window.request_redraw();
@@ -1176,26 +1369,23 @@ impl Sandbox {
             self.ui.fps = self.fps_acc.1 as f32 / self.fps_acc.0;
             self.fps_acc = (0.0, 0);
         }
-        if self.input.pressed("quit") {
-            if self.captured {
-                self.capture(false);
-            } else {
-                event_loop.exit();
-                return;
-            }
+        let paused = self.pause.open;
+        if paused {
+            // Paused: the world stands still under the menu.
+            self.input.end_frame();
         }
-        if self.input.pressed("inventory") {
+        if !paused && self.input.pressed("inventory") {
             self.ui.inventory_open = !self.ui.inventory_open;
             self.capture(!self.ui.inventory_open);
         }
-        if self.input.pressed("debug_physics") {
+        if !paused && self.input.pressed("debug_physics") {
             self.ui.debug = !self.ui.debug;
         }
-        if self.input.pressed("next_map") {
+        if !paused && self.input.pressed("next_map") {
             let next = self.map.next();
             self.switch_map(next);
         }
-        if self.input.pressed("time_of_day") {
+        if !paused && self.input.pressed("time_of_day") {
             let t = self.app.world.res_mut::<game::env::TimeOfDay>();
             // First press leaves the photo sky for the simulated atmosphere.
             if t.photo_sky {
@@ -1207,7 +1397,7 @@ impl Sandbox {
         // The procedural city bakes lit windows and lamps for the hour it was
         // built at: crossing dusk or dawn rebuilds it for the new time, in
         // the background (the game keeps running until it is ready).
-        if self.map == MapKind::Spain {
+        if !paused && self.map == MapKind::Spain {
             let want = self.app.world.res::<game::env::TimeOfDay>().night_content();
             let built = self.app.world.res::<game::world::GameWorld>().night_content;
             if want != built {
@@ -1217,10 +1407,12 @@ impl Sandbox {
         if self.input.pressed("screenshot") {
             self.want_screenshot = true;
         }
-        self.sample_input();
-        self.input.end_frame();
         let t = Instant::now();
-        self.app.update_with_dt(dt);
+        if !paused {
+            self.sample_input();
+            self.input.end_frame();
+            self.app.update_with_dt(dt);
+        }
         let sim_ms = t.elapsed().as_secs_f32() * 1000.0;
         {
             let bodies = self.app.world.res::<forja_physics::PhysicsWorld>().body_count();
@@ -1232,6 +1424,10 @@ impl Sandbox {
         let Some(perf_state) = &mut self.perf else { return };
         if std::mem::take(&mut perf_state.dirty) {
             gpu.renderer.apply_graphics(&perf_state.cfg);
+            if perf_state.cfg.display_mode != gpu.display && !(self.args.smoke > 0 || self.args.windowed) {
+                gpu.display = perf_state.cfg.display_mode;
+                apply_display_mode(&gpu.window, gpu.display);
+            }
             let mode = present_mode(&gpu.present_modes, perf_state.cfg.vsync);
             let latency = perf_state.cfg.frame_latency;
             if gpu.config.present_mode != mode || gpu.config.desired_maximum_frame_latency != latency {
@@ -1245,6 +1441,7 @@ impl Sandbox {
         let scale = perf_state.next_scale(gpu.config.width, gpu.config.height);
         let iw = ((gpu.config.width as f32 * scale) as u32).max(64);
         let ih = ((gpu.config.height as f32 * scale) as u32).max(64);
+        perf_state.note_internal(iw, ih, gpu.config.width, gpu.config.height);
         gpu.renderer.resize(iw, ih);
         let te = Instant::now();
         let frame = self.extract.frame(&mut gpu.renderer, &mut self.app);
@@ -1269,10 +1466,14 @@ impl Sandbox {
         let ctx = gpu.egui_state.egui_ctx().clone();
         let world = &mut self.app.world;
         let ui_state = &mut self.ui;
+        let menu = &mut self.pause;
+        let map = &mut self.input.map;
+        let mut menu_action = pause::Action::None;
         let out = ctx.run_ui(raw, |ui| {
             ui::draw(ui.ctx(), world, ui_state);
             perf::draw_overlay(ui.ctx(), perf_state);
             perf::draw_options(ui.ctx(), perf_state);
+            menu_action = pause::draw(ui.ctx(), menu, perf_state, map);
         });
         gpu.egui_state.handle_platform_output(&gpu.window, out.platform_output);
         let jobs = ctx.tessellate(out.shapes, out.pixels_per_point);
@@ -1322,6 +1523,7 @@ impl Sandbox {
                 fixed_steps: timings.fixed_steps,
                 stats: gpu.renderer.stats,
                 render_scale: scale,
+                output: (gpu.config.width, gpu.config.height),
                 heavy: if perf_state.overlay { gpu.renderer.heaviest_meshes(6, false) } else { Vec::new() },
             });
         }
@@ -1349,7 +1551,25 @@ impl Sandbox {
                 Err(e) => log::warn!("screenshot: {e}"),
             }
         }
+        let cap = perf_state.cfg.fps_cap;
         gpu.window.request_redraw();
+        match menu_action {
+            pause::Action::Resume => self.set_paused(false),
+            pause::Action::Quit => {
+                log::info!("quit from the pause menu");
+                event_loop.exit();
+            }
+            pause::Action::None => {}
+        }
+        // Frame cap: wait out the rest of the frame's time slot.
+        if cap > 0 {
+            let slot = std::time::Duration::from_secs_f64(1.0 / cap as f64);
+            let now = Instant::now();
+            if self.next_frame > now {
+                std::thread::sleep(self.next_frame - now);
+            }
+            self.next_frame = self.next_frame.max(now - slot) + slot;
+        }
     }
 }
 
@@ -1358,8 +1578,37 @@ impl ApplicationHandler for Sandbox {
         if self.gpu.is_some() {
             return;
         }
-        let attrs = Window::default_attributes().with_title("Forja sandbox").with_inner_size(winit::dpi::PhysicalSize::new(self.args.width, self.args.height));
+        // The saved window mode (borderless fullscreen by default) at the
+        // monitor's physical resolution; the process is per-monitor DPI
+        // aware (winit), so a 2880x1800 panel at 200% scaling gives a
+        // 2880x1800 swapchain, not 1440x900 stretched by Windows.
+        let saved = std::fs::read_to_string(paths().data.join("graphics.toml")).ok().and_then(|t| forja_render::GraphicsConfig::from_toml(&t).ok()).unwrap_or_default();
+        let display = if self.args.smoke > 0 || self.args.windowed { DisplayMode::Windowed } else { saved.display_mode };
+        let monitor = event_loop.primary_monitor().or_else(|| event_loop.available_monitors().next());
+        let explicit = std::env::args().any(|a| a == "--size");
+        let size = if self.args.smoke > 0 || explicit {
+            winit::dpi::PhysicalSize::new(self.args.width, self.args.height)
+        } else {
+            monitor.as_ref().map_or(winit::dpi::PhysicalSize::new(self.args.width, self.args.height), |m| {
+                let s = m.size();
+                winit::dpi::PhysicalSize::new((s.width * 3 / 4).max(640), (s.height * 3 / 4).max(360))
+            })
+        };
+        let attrs = Window::default_attributes().with_title("Forja").with_inner_size(size).with_fullscreen(fullscreen_for(monitor.as_ref(), display));
         let window = Arc::new(event_loop.create_window(attrs).expect("window"));
+        if let Some(m) = window.current_monitor() {
+            log::info!(
+                "display: monitor {} {}x{} physical px at {:.0}% scaling ({} Hz), window {}x{} physical px, mode {:?}",
+                m.name().unwrap_or_default(),
+                m.size().width,
+                m.size().height,
+                m.scale_factor() * 100.0,
+                m.refresh_rate_millihertz().map_or(0, |r| r / 1000),
+                window.inner_size().width,
+                window.inner_size().height,
+                display
+            );
+        }
         let instance = forja_render::create_instance_with_display(Box::new(event_loop.owned_display_handle()));
         let surface = instance.create_surface(window.clone()).expect("surface");
         let mut renderer = match Renderer::new_with(&instance, Some(&surface), &self.args.adapter) {
@@ -1392,13 +1641,27 @@ impl ApplicationHandler for Sandbox {
         let egui_state = egui_winit::State::new(egui_ctx, egui::ViewportId::ROOT, &window, Some(window.scale_factor() as f32), None, None);
         let egui_renderer = egui_wgpu::Renderer::new(&renderer.device, renderer.output_format, Default::default());
         log::info!("{} on {:?}", renderer.adapter_info.name, renderer.adapter_info.backend);
-        self.gpu = Some(Gpu { window, surface, config, renderer, egui_state, egui_renderer, present_modes });
+        self.gpu = Some(Gpu { window, surface, config, renderer, egui_state, egui_renderer, present_modes, display });
         self.capture(true);
         self.last = Instant::now();
         self.gpu.as_ref().expect("just set").window.request_redraw();
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+        // Esc before egui (which would take it to unfocus a widget): the
+        // pause menu. Old bindings files call it `quit`; nothing quits on
+        // Esc any more.
+        if let WindowEvent::KeyboardInput { event: k, .. } = &event
+            && let PhysicalKey::Code(code) = k.physical_key
+            && k.state == ElementState::Pressed
+            && !k.repeat
+        {
+            let name = format!("{code:?}");
+            if self.input.is_bound("pause", &name) || self.input.is_bound("quit", &name) || (name == "Escape" && !self.input.map.actions.contains_key("pause")) {
+                self.on_escape();
+                return;
+            }
+        }
         if let Some(gpu) = &mut self.gpu {
             let resp = gpu.egui_state.on_window_event(&gpu.window, &event);
             if resp.consumed && !self.captured {
@@ -1420,7 +1683,15 @@ impl ApplicationHandler for Sandbox {
             }
             WindowEvent::Focused(false) => {
                 self.input.reset();
-                self.capture(false);
+                // Alt+Tab pauses the game (not the unattended smoke run).
+                if self.args.smoke == 0 && !self.pause.open && self.captured {
+                    self.set_paused(true);
+                } else {
+                    self.capture(false);
+                }
+            }
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                log::info!("display scaling changed to {:.0}%", scale_factor * 100.0);
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
@@ -1433,7 +1704,7 @@ impl ApplicationHandler for Sandbox {
                                     p.overlay = !p.overlay;
                                 }
                             }
-                            "F9" => {
+                            "F9" if !self.pause.open => {
                                 let open = self.perf.as_mut().map(|p| {
                                     p.options = !p.options;
                                     p.options
@@ -1454,7 +1725,7 @@ impl ApplicationHandler for Sandbox {
             }
             WindowEvent::MouseInput { state, button, .. } => {
                 let menu = self.perf.as_ref().is_some_and(|p| p.options);
-                if !self.captured && state == ElementState::Pressed && button == MouseButton::Left && !self.ui.inventory_open && !menu {
+                if !self.captured && state == ElementState::Pressed && button == MouseButton::Left && !self.ui.inventory_open && !menu && !self.pause.open {
                     self.capture(true);
                     return;
                 }
@@ -1481,6 +1752,34 @@ impl ApplicationHandler for Sandbox {
             self.input.mouse_moved(Vec2::new(delta.0 as f32, delta.1 as f32));
         }
     }
+}
+
+/// Fullscreen setting of a window mode on `monitor`: borderless covers it
+/// at its desktop resolution; exclusive uses its largest, fastest video
+/// mode (borderless when it lists none).
+fn fullscreen_for(monitor: Option<&winit::monitor::MonitorHandle>, mode: DisplayMode) -> Option<winit::window::Fullscreen> {
+    use winit::window::Fullscreen;
+    match mode {
+        DisplayMode::Windowed => None,
+        DisplayMode::Borderless => Some(Fullscreen::Borderless(monitor.cloned())),
+        DisplayMode::Fullscreen => {
+            let best = monitor.and_then(|m| m.video_modes().max_by_key(|v| (v.size().width as u64 * v.size().height as u64, v.refresh_rate_millihertz())));
+            Some(best.map_or(Fullscreen::Borderless(monitor.cloned()), Fullscreen::Exclusive))
+        }
+    }
+}
+
+/// Switches a live window to `mode` (options menu).
+fn apply_display_mode(window: &Window, mode: DisplayMode) {
+    let monitor = window.current_monitor();
+    window.set_fullscreen(fullscreen_for(monitor.as_ref(), mode));
+    if mode == DisplayMode::Windowed
+        && let Some(m) = &monitor
+    {
+        let s = m.size();
+        let _ = window.request_inner_size(winit::dpi::PhysicalSize::new(s.width * 3 / 4, s.height * 3 / 4));
+    }
+    log::info!("display mode {mode:?}");
 }
 
 /// FIFO with v-sync; without it Mailbox (no tearing, lowest latency) or
@@ -1510,7 +1809,15 @@ fn main() {
         run_headless(&args);
         return;
     }
-    let event_loop = EventLoop::new().expect("event loop");
+    let mut builder = EventLoop::builder();
+    #[cfg(windows)]
+    {
+        // Per-monitor DPI awareness (winit's default, stated explicitly):
+        // the swapchain gets the panel's physical pixels.
+        use winit::platform::windows::EventLoopBuilderExtWindows;
+        builder.with_dpi_aware(true);
+    }
+    let event_loop = builder.build().expect("event loop");
     let mut sandbox = Sandbox::new(args);
     event_loop.run_app(&mut sandbox).expect("event loop");
 }
