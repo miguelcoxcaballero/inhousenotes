@@ -26903,7 +26903,9 @@
         const COLLAB_RECENT_REMOTE_FAST_MS = 60000; // stay fast after a remote revision
         const COLLAB_SOLO_SAVE_CATCHUP_DELAYS = [1800];
         const COLLAB_SHARED_SAVE_CATCHUP_DELAYS = [900, 1800, 3500];
+        const COLLAB_MODE_WATCH_MS = 1000; // local mode re-check outside 'shared' (no request)
         let collabPollDueAt = 0;
+        let collabModeWatchTimer = null;
         let collabPollLoopGeneration = 0;
         let collabFastPollUntil = 0;
         let collabPollInProgress = false;
@@ -26984,10 +26986,32 @@
                 if (typeof getLiveCollaborationOverview === 'function') overview = getLiveCollaborationOverview();
             } catch (error) { overview = null; }
             if (overview) {
-                if (Number(overview.connectingPeerCount) > 0) return 'shared';
+                if (countAnsweredConnectingPeers(overview) > 0) return 'shared';
                 if (Number(overview.openPeerCount) > 0) linked = true;
             }
             return linked ? 'linked' : 'solo';
+        }
+
+        // A P2P negotiation proves that another device is here only once that
+        // device has spoken in it: it sent the offer we are answering, or it
+        // answered ours. An unanswered offer of our own is a guess: a peer
+        // cached from an earlier session (re-offered on every open) or one
+        // that left and is retried for up to 90 s. Guesses must not hold the
+        // Drive-only cadence; if the device is really there its answer, its
+        // own offer or its presence switches the mode at once.
+        function countAnsweredConnectingPeers(overview = null) {
+            let peers = null;
+            try {
+                peers = typeof ihnLivePeers !== 'undefined' ? ihnLivePeers : null;
+            } catch (error) { peers = null; }
+            // Without the peer table, keep the overview's count.
+            if (!peers || typeof peers.values !== 'function') return Number(overview?.connectingPeerCount) || 0;
+            let count = 0;
+            for (const peer of peers.values()) {
+                if (!peer || peer.closing || peer.channel?.readyState === 'open') continue;
+                if (peer.initiator === false || peer.pc?.remoteDescription) count += 1;
+            }
+            return count;
         }
 
         // Re-evaluates the mode after presence or P2P state changed and only
@@ -26998,6 +27022,30 @@
             _lastCollabPresenceMode = collabMode;
             retuneCollabCadence();
             return collabMode;
+        }
+
+        // The P2P layer starts answering an offer, or applies the answer to
+        // its own, without telling us: only a channel opening or closing calls
+        // refreshPresenceViews. Outside 'shared' mode (where every 0.6 s poll
+        // re-evaluates presence anyway), re-check the mode locally once a
+        // second, so such a handshake gets the fast cadence at once instead of
+        // at the next 20 s poll. No request is made by this check.
+        function scheduleCollabModeWatch() {
+            if (collabModeWatchTimer || !state.collabEnabled) return;
+            if (getCollabPresenceMode() === 'shared') return;
+            const generation = collabPollLoopGeneration;
+            collabModeWatchTimer = setTimeout(() => {
+                collabModeWatchTimer = null;
+                if (generation !== collabPollLoopGeneration || !state.collabEnabled) return;
+                noteCollabPresenceModeChange();
+                scheduleCollabModeWatch();
+            }, COLLAB_MODE_WATCH_MS);
+        }
+
+        function stopCollabModeWatch() {
+            if (!collabModeWatchTimer) return;
+            clearTimeout(collabModeWatchTimer);
+            collabModeWatchTimer = null;
         }
 
         function getCollabPollDelay(now = Date.now()) {
@@ -27039,6 +27087,7 @@
                 state.collabPollInterval = null;
             }
             collabPollDueAt = 0;
+            stopCollabModeWatch();
         }
 
         // Called whenever presence or remote activity changes: bring the next
@@ -27047,6 +27096,7 @@
             if (!state.collabEnabled) return;
             scheduleNextCollabPoll();
             retunePresenceHeartbeat();
+            scheduleCollabModeWatch();
         }
 
         function noteRemoteRevisionActivity() {
@@ -27144,6 +27194,7 @@
             startPresencePing();
             pollDriveRevision();
             scheduleNextCollabPoll();
+            scheduleCollabModeWatch();
             console.log('Collab polling started (adaptive interval:', getCollabPollDelay(), 'ms)');
         }
 
@@ -27151,6 +27202,9 @@
             stopCollabPollLoop();
             state.collabEnabled = false;
             clearCollabFastCatchup();
+            // Leave with a 2 s beat so a solo device's long online window
+            // does not outlive it (see sendPresenceDepartureBeat).
+            sendPresenceDepartureBeat();
             stopPresencePing();
             // Keep WebRTC peers, retry state and deferred Drive merges alive.
             // Mobile WebViews frequently emit visibilitychange for short app
@@ -27286,15 +27340,34 @@
         // advertises its own interval in the packed runtime field ('r', 4th
         // slot) so readers widen their online window to match. Records without
         // it (older apps) keep the original 2 s × 6 misses window.
+        //
+        // The online window is also how long a device that vanished without
+        // clearing its presence (killed, crashed, offline) still looks online
+        // to others, who keep their fast cadence for it meanwhile. So a slow
+        // beat only gets one interval plus a fixed grace, and a device going
+        // to the background first rewrites its beat with the 2 s interval.
         const PRESENCE_HEARTBEAT_INTERVAL = 2000; // 2 seconds: Drive-only collaborator present
         const PRESENCE_LINKED_HEARTBEAT_INTERVAL = 6000; // collaborators linked peer-to-peer
-        const PRESENCE_IDLE_HEARTBEAT_INTERVAL = 30000; // alone in the document
+        const PRESENCE_IDLE_HEARTBEAT_INTERVAL = 20000; // alone in the document (same as its poll)
         const PRESENCE_HEARTBEAT_MISS_LIMIT = 6;
-        const PRESENCE_RELAXED_HEARTBEAT_MISS_LIMIT = 2; // for advertised intervals > 2 s
-        const PRESENCE_MAX_ADVERTISED_HEARTBEAT_MS = 120000;
+        // One retried beat (4 s) plus PATCH latency and clock skew. Keeps the
+        // 6 s linked cadence at the original 13.2 s window; solo is 27.2 s.
+        const PRESENCE_SLOW_HEARTBEAT_GRACE_MS = 7200;
+        const PRESENCE_MAX_ADVERTISED_HEARTBEAT_MS = 30000; // longest window 37.2 s
         const PRESENCE_HEARTBEAT_RETRY_MS = 4000; // after a skipped or failed beat
+        // Read-only viewers never appear in presence (they cannot write
+        // properties) and have no P2P link, so no presence mode accounts for
+        // them. Their live-preview reader sleeps once this device's newest
+        // frame is 20 s old and wakes early only on a new heartbeat from this
+        // device. The first frame published after this quiet spell is
+        // therefore followed by a heartbeat at once, in every mode.
+        const PRESENCE_PREVIEW_QUIET_MS = 10000;
+        const PRESENCE_PREVIEW_WAKE_RETRY_MS = 500; // wake beat skipped by a save / beat in flight
         const PRESENCE_ONLINE_STICKY_MISS_LIMIT = 3; // extra polls before turning gray
         let presenceAdvertisedHeartbeatMs = PRESENCE_HEARTBEAT_INTERVAL;
+        let presenceLastBeatAt = 0; // heartbeat time of the last record this device wrote
+        let presenceLastPreviewFrameAt = 0;
+        let presencePreviewWakeAt = 0; // frame still waiting for a later heartbeat
         let _lastCollabPresenceMode = '';
         let _presenceOnlineStability = new Map();
 
@@ -27429,12 +27502,13 @@
             return Math.min(PRESENCE_MAX_ADVERTISED_HEARTBEAT_MS, Math.floor(ms));
         }
 
-        // How long after its last heartbeat a record still counts as online.
+        // How long after its last heartbeat a record still counts as online:
+        // 13.2 s for 2 s and 6 s beats, 27.2 s for a solo (20 s) beat.
         function getPresenceOnlineWindowMs(record) {
             const fastWindow = (PRESENCE_HEARTBEAT_INTERVAL * PRESENCE_HEARTBEAT_MISS_LIMIT) + 1200;
             const interval = normalizePresenceHeartbeatMs(record?.i);
             if (interval <= PRESENCE_HEARTBEAT_INTERVAL) return fastWindow;
-            return Math.max(fastWindow, (interval * PRESENCE_RELAXED_HEARTBEAT_MISS_LIMIT) + 1200);
+            return Math.max(fastWindow, interval + PRESENCE_SLOW_HEARTBEAT_GRACE_MS);
         }
 
         function parsePackedPresence(chunk) {
@@ -27767,6 +27841,7 @@
                     }
                 );
                 _presenceCanHeartbeat = true;
+                presenceLastBeatAt = now;
             } catch (err) {
                 console.warn('Presence ping failed:', err);
             }
@@ -27793,6 +27868,7 @@
                 _presenceHeartbeatInterval = null;
                 _presenceHeartbeatDueAt = 0;
                 const interval = getPresenceHeartbeatDelay();
+                const startedAt = Date.now();
                 let sent = false;
                 try {
                     sent = await pulsePresenceHeartbeat(interval);
@@ -27801,12 +27877,48 @@
                         // Never wait longer than the interval others were told
                         // to expect. A beat skipped (save in flight, profile
                         // not ready) or failed retries soon, so a slow cadence
-                        // never doubles into an apparent disconnect.
+                        // never doubles into an apparent disconnect. Sent beats
+                        // are spaced from their start, as the original
+                        // setInterval did, so PATCH latency does not widen the
+                        // gap others measure (but never back to back).
                         const next = Math.min(interval, presenceAdvertisedHeartbeatMs);
-                        schedulePresenceHeartbeat(sent ? next : Math.min(next, PRESENCE_HEARTBEAT_RETRY_MS));
+                        let nextDelay = sent
+                            ? Math.max(next - (Date.now() - startedAt), Math.min(next, PRESENCE_HEARTBEAT_INTERVAL) / 2)
+                            : Math.min(next, PRESENCE_HEARTBEAT_RETRY_MS);
+                        // A preview frame published after this beat started
+                        // still needs a beat of its own.
+                        if (hasPendingPresencePreviewWake()) {
+                            nextDelay = sent ? 0 : Math.min(nextDelay, PRESENCE_PREVIEW_WAKE_RETRY_MS);
+                        }
+                        schedulePresenceHeartbeat(nextDelay);
                     }
                 }
             }, Math.max(0, delay));
+        }
+
+        function hasPendingPresencePreviewWake(now = Date.now()) {
+            if (!presencePreviewWakeAt) return false;
+            // A viewer that missed this wake reads the frame on its own
+            // schedule; never retry for longer than a quiet spell.
+            if (now - presencePreviewWakeAt > PRESENCE_PREVIEW_QUIET_MS) presencePreviewWakeAt = 0;
+            return !!presencePreviewWakeAt;
+        }
+
+        // The live-preview publisher calls this after Drive confirmed a frame
+        // of this device's unfinished ink. Frames inside a writing burst need
+        // nothing: a viewer reading them stays awake. The first frame after a
+        // quiet spell gets a heartbeat right away (strictly after the frame),
+        // so a viewer whose reader went to sleep wakes on its next metadata
+        // poll instead of after up to 15 s. Read-only viewers cannot appear in
+        // presence, so this never depends on seeing anyone there.
+        function notePresencePreviewFramePublished(fileId = state.driveFileId) {
+            if (!fileId || fileId !== state.driveFileId) return;
+            const now = Date.now();
+            const quietFor = now - presenceLastPreviewFrameAt;
+            presenceLastPreviewFrameAt = now;
+            if (quietFor < PRESENCE_PREVIEW_QUIET_MS) return;
+            presencePreviewWakeAt = now;
+            schedulePresenceHeartbeat(0);
         }
 
         function retunePresenceHeartbeat() {
@@ -27848,6 +27960,8 @@
                     }
                 );
                 presenceAdvertisedHeartbeatMs = advertised;
+                presenceLastBeatAt = now;
+                if (presencePreviewWakeAt && now >= presencePreviewWakeAt) presencePreviewWakeAt = 0;
                 sent = true;
             } catch (err) {
                 // Best-effort heartbeat; ignore transient errors.
@@ -27855,6 +27969,40 @@
                 _presenceHeartbeatInFlight = false;
             }
             return sent;
+        }
+
+        // Called when the document goes to the background. Others count this
+        // device online for the window its last beat advertised; after a solo
+        // (20 s) beat that is 27.2 s. Rewrite the beat with the 2 s interval,
+        // as before adaptive heartbeats, so they see it offline 13.2 s after
+        // it left. keepalive lets it finish if the page is then closed.
+        function sendPresenceDepartureBeat() {
+            if (!_presencePingInterval || !_presenceCanHeartbeat) return false;
+            const now = Date.now();
+            const fastWindow = getPresenceOnlineWindowMs(null);
+            const advertisedWindow = getPresenceOnlineWindowMs({ i: presenceAdvertisedHeartbeatMs });
+            if (advertisedWindow <= fastWindow) return false;
+            // An old enough beat already expires within 13.2 s.
+            if (presenceLastBeatAt && presenceLastBeatAt + advertisedWindow <= now + fastWindow) return false;
+            // Same rule as every heartbeat: never touch file metadata while a
+            // save is uploading. The 27.2 s window still bounds this case.
+            if (driveSaveInProgress) return false;
+            if (!state.driveFileId || !driveAccessToken || !driveUserProfile) return false;
+            const patch = {
+                [getPresenceFieldKey(getPresenceKey(), 'r')]: packPresenceRuntime(now, PRESENCE_HEARTBEAT_INTERVAL)
+            };
+            presenceAdvertisedHeartbeatMs = PRESENCE_HEARTBEAT_INTERVAL;
+            presenceLastBeatAt = now;
+            driveFetch(
+                `https://www.googleapis.com/drive/v3/files/${state.driveFileId}`,
+                {
+                    method: 'PATCH',
+                    keepalive: true,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ properties: patch })
+                }
+            ).catch(() => { /* best effort: the solo window still bounds it */ });
+            return true;
         }
 
         function startPresencePing() {
@@ -27907,6 +28055,9 @@
             }
             _presenceHeartbeatDueAt = 0;
             presenceAdvertisedHeartbeatMs = PRESENCE_HEARTBEAT_INTERVAL;
+            presenceLastBeatAt = 0;
+            presenceLastPreviewFrameAt = 0;
+            presencePreviewWakeAt = 0;
             _lastCollabPresenceMode = '';
             _presenceHeartbeatInFlight = false;
             _presenceCanHeartbeat = false;
@@ -27939,6 +28090,7 @@
                         })
                     }
                 );
+                presenceLastBeatAt = Math.max(presenceLastBeatAt, now);
             } catch (err) {
                 // Best-effort visual telemetry; the save itself must not depend on it.
             } finally {
