@@ -83,6 +83,54 @@ test('real WebRTC connects new devices without edits, including a third account'
   });
 });
 
+test('a device that has been alone for a while still connects a newcomer within seconds', async ({ browser }) => {
+  await withLiveReplicas(browser, async replica => {
+    const first = await replica('first@example.com');
+    // Mimic the app's metadata poll, which hands presence and the directed
+    // offer mailbox to the live module, so the lone device scans comments
+    // only as a slow fallback.
+    await first.evaluate(() => {
+      window.__feed = setInterval(async () => {
+        try {
+          const response = await driveFetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=appProperties`, { method: 'GET' });
+          const data = await response.json();
+          await ihnConsumeSignalMailboxesFromProperties(data.appProperties || {});
+        } catch (error) { /* next tick retries */ }
+      }, 1000);
+    });
+    await first.waitForTimeout(9000);
+    const before = await first.evaluate(() => ({ mode: ihnLiveSignalMode(), delay: ihnNextSignalPollDelay() }));
+    expect(before).toEqual({ mode: 'solo', delay: 30000 });
+    const joinedAt = Date.now();
+    const second = await replica('second@example.com');
+    for (const page of [first, second]) {
+      await expect.poll(() => page.evaluate(() => window.__IHN_TEST_API__.liveConnectionOverviewForTest().openPeerCount), { timeout: 8000, intervals: [50] }).toBe(1);
+    }
+    console.log('Lone device connected a newcomer after (ms):', Date.now() - joinedAt);
+    await first.evaluate(() => clearInterval(window.__feed));
+  });
+});
+
+test('a remembered device reconnects promptly when the document is reopened', async ({ browser }) => {
+  await withLiveReplicas(browser, async replica => {
+    const first = await replica('first@example.com');
+    const second = await replica('second@example.com');
+    for (const page of [first, second]) {
+      await expect.poll(() => page.evaluate(() => window.__IHN_TEST_API__.liveConnectionOverviewForTest().openPeerCount), { timeout: 8000, intervals: [50] }).toBe(1);
+    }
+    // Close and reopen the document on the second device: its warm start
+    // offers to the remembered first device once, which is present.
+    await second.evaluate(() => stopLiveCollaboration());
+    await second.waitForTimeout(500);
+    const reopenedAt = Date.now();
+    await second.evaluate(() => startLiveCollaboration());
+    for (const page of [first, second]) {
+      await expect.poll(() => page.evaluate(() => window.__IHN_TEST_API__.liveConnectionOverviewForTest().openPeerCount), { timeout: 10_000, intervals: [50] }).toBe(1);
+    }
+    console.log('Remembered device reconnected after reopening (ms):', Date.now() - reopenedAt);
+  });
+});
+
 test('a second tab joins an idle document and reconciles without a new edit', async ({ browser }) => {
   await withLiveReplicas(browser, async replica => {
     const first = await replica('same@example.com', 'first', true);
