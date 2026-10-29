@@ -135,6 +135,9 @@
             },
             announce:async(fileId,id,actor,preview=false)=>{
                 root.publishDriveInkHint?.(fileId,id,preview);
+                // A confirmed live frame: read-only viewers (no P2P, never in
+                // presence) wake on this device's next presence heartbeat.
+                if(preview&&typeof notePresencePreviewFramePublished==='function')notePresencePreviewFramePublished(fileId);
                 if(driveSaveInProgress)return;
                 const device=getPresenceClientId().replace(/[^a-zA-Z0-9]/g,'').slice(-24);
                 const key=`${preview?'ihn_live_':'ihn_ink_'}${device}`,announcementKey=`${fileId}:${preview}`;
