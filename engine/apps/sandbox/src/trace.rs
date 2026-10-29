@@ -337,13 +337,14 @@ impl FrameTrace {
         }
         let fps = 1000.0 * n / span.max(1e-3);
         let line = format!(
-            "trace {} f{}-{}: {:.2} ms/frame ({fps:.1} fps), max {:.1}{segs} || main thread cpu {:.0}% of wall, process cpu {:.2} cores | fixed steps {:.2}/frame | log {} lines {:.2} ms/frame | upload flushes {} ({:.1} ms) | events {:.1}/frame{}{}",
+            "trace {} f{}-{}: {:.2} ms/frame ({fps:.1} fps), max {:.1}{segs} || main thread cpu {:.0}% of wall ({:.2} ms/frame), process cpu {:.2} cores | fixed steps {:.2}/frame | log {} lines {:.2} ms/frame | upload flushes {} ({:.1} ms) | events {:.1}/frame{}{}",
             self.label,
             self.frame - self.frames as u64,
             self.frame - 1,
             self.wall / n,
             self.worst.0,
             100.0 * main_cpu / span.max(1e-3),
+            main_cpu / n,
             proc_cpu / span.max(1e-3),
             self.fixed_steps as f64 / n,
             logs.0 - self.log0.0,

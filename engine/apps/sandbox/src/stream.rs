@@ -13,10 +13,13 @@
 //!   dropped as before);
 //! * beyond 1.4x the HLOD distance a tile's blocks are released
 //!   ([`Renderer::release_model`]) and the tile is held at its HLOD;
-//! * within 1.2x a worker reads and decodes them; the main thread
-//!   re-uploads at most two tiles per frame and lets the tile show its
-//!   detail again (the switch itself happens at 1.0x / 0.9x, so a tile is
-//!   resident before it is needed and never flips at the border).
+//! * within 1.2x a worker reads and decodes them and converts the
+//!   vertices to the renderer's layout; the main thread only copies them
+//!   into the renderer's shared mesh pools (no GPU resource is created and
+//!   nothing waits), at most [`RELOAD_BYTES_PER_FRAME`] per frame, and lets
+//!   the tile show its detail again (the switch itself happens at 1.0x /
+//!   0.9x, so a tile is resident before it is needed and never flips at
+//!   the border).
 //!
 //! Shared modules (windows, shops) are used by every tile and stay
 //! resident; they are cheap to keep and their instances are culled with
@@ -28,12 +31,16 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 
 use forja_assets::SceneData;
 use forja_math::Vec3;
-use forja_render::{ModelHandle, Renderer};
+use forja_render::{MeshUpload, ModelHandle, Renderer};
+
+/// Re-upload budget per frame: a tile (~5 MB) at a time, so a tile
+/// becoming resident costs one memcpy of its meshes, not a hitch.
+pub const RELOAD_BYTES_PER_FRAME: u64 = 8 << 20;
 
 enum State {
     Resident,
     Released,
-    Loading(Receiver<Option<Vec<SceneData>>>),
+    Loading(Receiver<Option<Vec<MeshUpload>>>),
 }
 
 struct Tile {
@@ -111,8 +118,7 @@ impl Streamer {
         }
     }
 
-    /// Once the first upload is done: waits for the writer (every scene
-    /// on disk) so tiles may be released.
+    /// Waits for the writer (every scene on disk); at exit.
     fn flush(&mut self) {
         self.writer = None;
         if let Some(h) = self.writer_done.take() {
@@ -120,13 +126,30 @@ impl Streamer {
         }
     }
 
+    /// Once the first upload is done the writer gets no more scenes;
+    /// `true` once it has written them all (tiles may then be released).
+    /// Never waits for it.
+    fn writer_finished(&mut self) -> bool {
+        self.writer = None;
+        match &self.writer_done {
+            Some(h) if !h.is_finished() => false,
+            Some(_) => {
+                if let Some(h) = self.writer_done.take() {
+                    let _ = h.join();
+                }
+                true
+            }
+            None => true,
+        }
+    }
+
     /// One frame of streaming decisions for a camera at `eye`.
     pub fn update(&mut self, renderer: &mut Renderer, handles: &[ModelHandle], eye: Vec3) {
-        if self.writer.is_some() {
-            self.flush();
+        if !self.writer_finished() {
+            return;
         }
         let d0 = renderer.settings.hlod_distance;
-        let mut reloads = 0;
+        let mut budget = RELOAD_BYTES_PER_FRAME;
         for i in 0..self.tiles.len() {
             let group = self.tiles[i].group;
             let d = renderer.static_group_distance(group, eye).unwrap_or(0.0);
@@ -145,23 +168,24 @@ impl Streamer {
                 State::Released if near => {
                     let (tx, rx) = channel();
                     let paths: Vec<PathBuf> = self.tiles[i].models.iter().map(|&m| self.path(m)).collect();
-                    std::thread::spawn(move || {
-                        let scenes: Option<Vec<SceneData>> = paths.iter().map(|p| std::fs::read(p).ok().and_then(|b| forja_assets::cache::Reader::new(&b)).and_then(|mut r| r.scene())).collect();
+                    let _ = std::thread::Builder::new().name("stream loader".into()).spawn(move || {
+                        crate::threads::lower_priority();
+                        let scenes: Option<Vec<MeshUpload>> = paths.iter().map(|p| std::fs::read(p).ok().and_then(|b| forja_assets::cache::Reader::new(&b)).and_then(|mut r| r.scene()).map(|s| MeshUpload::prepare(&s))).collect();
                         let _ = tx.send(scenes);
                     });
                     self.tiles[i].state = State::Loading(rx);
                 }
-                State::Loading(rx) if reloads < 2 => {
+                State::Loading(rx) if budget > 0 => {
                     if let Ok(result) = rx.try_recv() {
-                        reloads += 1;
                         let Some(scenes) = result else {
                             log::warn!("stream: tile {group} could not be read back; it stays at its HLOD");
                             self.tiles[i].state = State::Released;
                             continue;
                         };
+                        budget = budget.saturating_sub(scenes.iter().map(MeshUpload::bytes).sum());
                         let mut bytes = 0;
                         for (&m, s) in self.tiles[i].models.iter().zip(&scenes) {
-                            bytes += renderer.reload_model(handles[m], s);
+                            bytes += renderer.reload_prepared(handles[m], s);
                         }
                         self.released_bytes = self.released_bytes.saturating_sub(bytes);
                         self.released_tiles -= 1;

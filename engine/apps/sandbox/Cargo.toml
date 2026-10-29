@@ -25,3 +25,5 @@ log.workspace = true
 env_logger.workspace = true
 pollster.workspace = true
 rayon.workspace = true
+mimalloc.workspace = true
+libmimalloc-sys.workspace = true

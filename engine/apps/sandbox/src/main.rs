@@ -17,6 +17,13 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use forja_core::App;
+
+/// mimalloc instead of the system heap: after loading a city (GBs of
+/// short-lived buffers) the libc heaps are fragmented and every small
+/// allocation of the frame (physics contact lists, render lists, wgpu
+/// command recording) got slow; mimalloc's per-thread pages are not.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 use forja_input::{ActionMap, Input};
 use forja_math::{Vec2, Vec3};
 use forja_render::{DrawInstance, FrameDesc, ModelHandle, Renderer};
@@ -238,7 +245,13 @@ impl Extract {
         } else {
             upload(app.world.res_mut::<RenderScene>(), None);
         }
-        renderer.flush_uploads();
+        // The loading screen waits for each slice (bounded staging memory);
+        // during play an upload never waits (the frame's submit takes it).
+        if budget.is_some() {
+            renderer.flush_uploads();
+        } else {
+            renderer.submit_uploads();
+        }
         forja_assets::progress::advance(0.85 + 0.15 * self.handles.len() as f32 / n.max(1) as f32);
         self.freed += freed;
         if self.handles.len() < n {
@@ -859,7 +872,7 @@ fn run_smoke(args: &Args) {
         }
         if f % 10 == 0 || f + 1 == args.smoke {
             let st = renderer.stats;
-            log::info!("smoke frame {f}: {dt:.1} ms, gpu {:.1} ms, {} draws, {:.2} M tris, {} shadow draws, {} lights, GPU errors {}", renderer.profiler.total_ms, st.draw_calls, st.triangles as f64 / 1e6, st.shadow_draws, st.lights, forja_render::gpu::GPU_ERRORS.load(std::sync::atomic::Ordering::Relaxed));
+            log::info!("smoke frame {f}: {dt:.1} ms, gpu {:.1} ms, {} draws, {:.2} M tris, {} shadow draws, {} draw calls, {} lights, GPU errors {}", renderer.profiler.total_ms, st.draw_calls, st.triangles as f64 / 1e6, st.shadow_draws, st.api_draws, st.lights, forja_render::gpu::GPU_ERRORS.load(std::sync::atomic::Ordering::Relaxed));
         }
     }
     println!("smoke: gpu passes: {}", renderer.profiler.last.iter().map(|(k, v)| format!("{k} {v:.2}")).collect::<Vec<_>>().join(", "));
@@ -905,6 +918,10 @@ struct Sandbox {
     trace: Option<sandbox::trace::FrameTrace>,
 }
 
+/// CPU time the fixed steps (physics, movement, combat) of one windowed
+/// frame may take; the rest of a backlog is dropped.
+const FIXED_STEP_BUDGET: std::time::Duration = std::time::Duration::from_millis(10);
+
 /// A world built on a worker thread ([`App`] is `Send`).
 struct Pending {
     handle: std::thread::JoinHandle<App>,
@@ -934,11 +951,15 @@ fn spawn_build(map: MapKind, hour: Option<f32>, background: bool) -> Pending {
                 }
                 app
             };
-            // A dusk/dawn build leaves cores to the running game (its
-            // parallel stages use this pool; at the first load the
-            // whole machine is the loader's).
-            let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
-            match background.then(|| rayon::ThreadPoolBuilder::new().num_threads(cores.saturating_sub(2).max(1)).build().ok()).flatten() {
+            // A dusk/dawn build leaves cores to the running game: its
+            // parallel stages use a pool of all cores but two, and it and
+            // its workers run below normal priority, so the main thread
+            // always gets a core. At the first load the whole machine is
+            // the loader's.
+            if background {
+                sandbox::threads::lower_priority();
+            }
+            match background.then(|| sandbox::threads::background_pool("world build")).flatten() {
                 Some(pool) => pool.install(build),
                 None => build(),
             }
@@ -1002,8 +1023,9 @@ impl Sandbox {
         self.app = App::new();
         self.extract = Extract::new();
         if let Some(gpu) = &mut self.gpu {
-            let renderer = Renderer::with_device(gpu.renderer.device.clone(), gpu.renderer.queue.clone(), gpu.renderer.adapter_info.clone(), gpu.renderer.output_format);
-            gpu.renderer = renderer;
+            // Same renderer, new content: the pipelines are not compiled
+            // again (seconds of FXC on Windows).
+            gpu.renderer.clear_scene();
             gpu.renderer.resize(gpu.config.width, gpu.config.height);
             if let Some(p) = &mut self.perf {
                 // New renderer: apply the graphics options (texture cap too).
@@ -1096,8 +1118,11 @@ impl Sandbox {
         self.app = App::new();
         self.extract = Extract::new();
         if let Some(gpu) = &mut self.gpu {
-            gpu.renderer = Renderer::with_device(gpu.renderer.device.clone(), gpu.renderer.queue.clone(), gpu.renderer.adapter_info.clone(), gpu.renderer.output_format);
+            gpu.renderer.clear_scene();
             gpu.renderer.resize(gpu.config.width, gpu.config.height);
+            if let Some(p) = &mut self.perf {
+                p.dirty = true;
+            }
         }
         perf::trim_heap();
         forja_assets::progress::reset("Preparando el mapa");
@@ -1276,6 +1301,9 @@ impl Sandbox {
             tr.mark("input");
         }
         let t = Instant::now();
+        // Real time: a slow frame must not ask for ever more fixed steps
+        // (see `Time::set_fixed_budget`).
+        self.app.world.res_mut::<forja_core::Time>().set_fixed_budget(Some(FIXED_STEP_BUDGET));
         self.app.update_with_dt(dt);
         let sim_ms = t.elapsed().as_secs_f32() * 1000.0;
         if let Some(tr) = &mut self.trace {
@@ -1402,7 +1430,7 @@ impl Sandbox {
                 tr.note(format!("present {:?} latency {} surface {}x{} internal {}x{} scale {:.2}", gpu.config.present_mode, gpu.config.desired_maximum_frame_latency, gpu.config.width, gpu.config.height, iw, ih, scale));
                 tr.note(bg);
                 let st = gpu.renderer.stats;
-                tr.note(format!("draws {} shadow draws {} tris {:.2} M shadow {:.2} M | gpu {:.1} ms ({})", st.draw_calls, st.shadow_draws, st.triangles as f64 / 1e6, st.shadow_triangles as f64 / 1e6, gpu.renderer.profiler.total_ms, gpu.renderer.adapter_info.name));
+                tr.note(format!("draws {} shadow draws {} draw calls {} tris {:.2} M shadow {:.2} M | gpu {:.1} ms ({})", st.draw_calls, st.shadow_draws, st.api_draws, st.triangles as f64 / 1e6, st.shadow_triangles as f64 / 1e6, gpu.renderer.profiler.total_ms, gpu.renderer.adapter_info.name));
                 tr.note(self.extract.stream_note());
             }
         }

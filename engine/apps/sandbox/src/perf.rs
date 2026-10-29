@@ -476,8 +476,13 @@ pub fn upload_estimate(models: &[std::sync::Arc<forja_assets::SceneData>], caps:
 
 /// Hands freed heap pages back to the system (glibc keeps the temporaries
 /// of the city build otherwise: ~1 GB of resident memory on the default
-/// map). A no-op elsewhere.
+/// map), from mimalloc and, on Linux, from glibc.
 pub fn trim_heap() {
+    // The game's allocator (mimalloc): return freed pages to the OS.
+    // SAFETY: mi_collect only releases memory mimalloc no longer uses.
+    unsafe {
+        libmimalloc_sys::mi_collect(true);
+    }
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
     {
         unsafe extern "C" {

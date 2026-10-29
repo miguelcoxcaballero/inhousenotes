@@ -146,6 +146,23 @@ pub struct Time {
     pub time_scale: f32,
     accumulator: f32,
     max_steps: u32,
+    /// CPU budget of the fixed steps of one frame (`None`: unbounded, the
+    /// deterministic default). See [`Time::set_fixed_budget`].
+    fixed_budget: Option<Duration>,
+}
+
+impl Time {
+    /// Bounds the CPU time the fixed steps of one frame may take. A slow
+    /// frame asks for more fixed steps (6 at 10 FPS), each costing as much
+    /// as before, which makes the next frame slower still: the "spiral of
+    /// death" that pins a game at a low frame rate. With a budget, once it
+    /// is spent the frame's remaining steps are dropped (the game runs
+    /// slower than real time instead of at a lower frame rate). At least
+    /// one step runs whenever one is due. Real-time loops set it; tests
+    /// and replays keep the default (every step runs).
+    pub fn set_fixed_budget(&mut self, budget: Option<Duration>) {
+        self.fixed_budget = budget;
+    }
 }
 
 impl Default for Time {
@@ -159,6 +176,7 @@ impl Default for Time {
             time_scale: 1.0,
             accumulator: 0.0,
             max_steps: 8,
+            fixed_budget: None,
         }
     }
 }
@@ -341,11 +359,19 @@ impl App {
             t.alpha = t.accumulator / t.fixed_dt;
             n
         };
-        self.world.res_mut::<SystemTimings>().fixed_steps = steps;
         self.run_stage(FRAME_STAGES[0]);
-        for _ in 0..steps {
+        let budget = self.world.res::<Time>().fixed_budget;
+        let t0 = Instant::now();
+        let mut done = 0;
+        while done < steps {
+            if done > 0 && budget.is_some_and(|b| t0.elapsed() >= b) {
+                // Out of budget: the rest of the backlog is dropped.
+                break;
+            }
             self.run_stage(Stage::FixedUpdate);
+            done += 1;
         }
+        self.world.res_mut::<SystemTimings>().fixed_steps = done;
         for stage in &FRAME_STAGES[1..] {
             self.run_stage(*stage);
         }
@@ -383,6 +409,31 @@ mod tests {
             app.update_with_dt(1.0 / 30.0);
         }
         assert_eq!(app.world.res::<Counter>().0, 120);
+    }
+
+    #[test]
+    fn fixed_budget_drops_the_backlog() {
+        let mut app = App::new();
+        app.add_plugin(CounterPlugin);
+        // Each step costs ~3 ms; a 10 FPS frame asks for 6 steps.
+        app.add_system(Stage::FixedUpdate, "slow", |_| {
+            let t = Instant::now();
+            while t.elapsed() < Duration::from_millis(3) {
+                std::hint::spin_loop();
+            }
+        });
+        app.update_with_dt(0.105);
+        assert_eq!(app.world.res::<Counter>().0, 6);
+        app.world.res_mut::<Time>().set_fixed_budget(Some(Duration::from_millis(5)));
+        app.update_with_dt(0.105);
+        let ran = app.world.res::<Counter>().0 - 6;
+        assert!((1..=2).contains(&ran), "{ran} steps ran");
+        assert_eq!(app.world.res::<SystemTimings>().fixed_steps, ran);
+        // The dropped steps do not come back next frame.
+        app.world.res_mut::<Time>().set_fixed_budget(None);
+        let before = app.world.res::<Counter>().0;
+        app.update_with_dt(1.0 / 60.0);
+        assert!(app.world.res::<Counter>().0 - before <= 1);
     }
 
     #[test]
