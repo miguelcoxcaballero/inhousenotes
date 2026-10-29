@@ -487,22 +487,45 @@
             margin-left: 0;
         }
 
-        .presence-avatar-wrapper.p2p-connecting::before {
+        /* "Searching" pulse. It animates only opacity and transform, so it
+           runs on the compositor: animating box-shadow repainted the header
+           on the main thread every frame (measured at 4x CPU throttle: the
+           main thread saturated, 38 paints/s) for as long as another device
+           was online without a direct link. The ring is ::before; its blue
+           halo is ::after, a fixed shadow whose opacity follows the product
+           the old keyframes produced (ring opacity x shadow alpha), with
+           cubic-bezier(0.56, 0, 0.6, 0.95) fitting that curve within 1%.
+           It stops after ~60 s (23 cycles) on the dim frame it starts and
+           ends on; a new presence render restarts it. */
+        .presence-avatar-wrapper.p2p-connecting::before,
+        .presence-avatar-wrapper.p2p-connecting::after {
             content: '';
             position: absolute;
             inset: -2px;
-            border: 1.7px solid rgba(66, 133, 244, 0.9);
             border-radius: 50%;
-            box-shadow:
-                0 0 0 1px rgba(66, 133, 244, 0.08),
-                0 0 9px rgba(66, 133, 244, 0.42);
-            opacity: 0.3;
             transform: scale(0.97);
             transform-origin: center;
             pointer-events: none;
             z-index: 1;
-            animation: presence-peer-connecting 2.6s ease-in-out infinite;
-            will-change: opacity, transform, box-shadow;
+            animation-duration: 2.6s;
+            animation-iteration-count: 23;
+            animation-fill-mode: forwards;
+        }
+
+        .presence-avatar-wrapper.p2p-connecting::before {
+            border: 1.7px solid rgba(66, 133, 244, 0.9);
+            opacity: 0.3;
+            animation-name: presence-peer-connecting;
+            animation-timing-function: ease-in-out;
+        }
+
+        .presence-avatar-wrapper.p2p-connecting::after {
+            box-shadow:
+                0 0 0 2px rgba(66, 133, 244, 0.12),
+                0 0 11px rgba(66, 133, 244, 0.48);
+            opacity: 0.09375;
+            animation-name: presence-peer-connecting-scale, presence-peer-connecting-glow;
+            animation-timing-function: ease-in-out, linear;
         }
 
         @keyframes presence-peer-connecting {
@@ -510,17 +533,39 @@
             100% {
                 opacity: 0.25;
                 transform: scale(0.97);
-                box-shadow:
-                    0 0 0 1px rgba(66, 133, 244, 0.06),
-                    0 0 4px rgba(66, 133, 244, 0.18);
             }
 
             50% {
                 opacity: 1;
                 transform: scale(1.1);
-                box-shadow:
-                    0 0 0 2px rgba(66, 133, 244, 0.12),
-                    0 0 11px rgba(66, 133, 244, 0.48);
+            }
+        }
+
+        @keyframes presence-peer-connecting-scale {
+            0%,
+            100% {
+                transform: scale(0.97);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+        }
+
+        /* 0.09375 = 0.25 x 0.18 / 0.48: the dim halo of the old keyframes. */
+        @keyframes presence-peer-connecting-glow {
+            0% {
+                opacity: 0.09375;
+                animation-timing-function: cubic-bezier(0.56, 0, 0.6, 0.95);
+            }
+
+            50% {
+                opacity: 1;
+                animation-timing-function: cubic-bezier(0.4, 0.05, 0.44, 1);
+            }
+
+            100% {
+                opacity: 0.09375;
             }
         }
 
@@ -714,6 +759,14 @@
                 animation: none;
                 opacity: 0.82;
                 transform: none;
+                box-shadow:
+                    0 0 0 1px rgba(66, 133, 244, 0.08),
+                    0 0 9px rgba(66, 133, 244, 0.42);
+            }
+
+            .presence-avatar-wrapper.p2p-connecting::after {
+                content: none;
+                animation: none;
             }
         }
 
@@ -3306,7 +3359,7 @@
                 rgba(0, 0, 0, 0.12) 45%,
                 rgba(0, 0, 0, 0.06) 90%);
             background-size: 220% 100%;
-            animation: drive-skeleton-shimmer 1.2s infinite linear;
+            animation: drive-skeleton-shimmer 1.2s linear 25 forwards;
         }
 
         [data-theme="dark"] .calendar-loading-line,
@@ -4901,7 +4954,17 @@
             border-radius: 50%;
             border: 2px solid rgba(224, 122, 60, 0.2);
             border-top-color: var(--accent-orange);
-            animation: home-pull-refresh-spin 0.72s linear infinite;
+            /* Named only while the indicator can be seen (below). At rest it
+               sits at opacity 0 on every Home screen, and a running infinite
+               spin there kept the compositor drawing 60 frames a second for
+               as long as Home was open. */
+            animation: none 0.72s linear infinite;
+        }
+
+        #drive-home.home-is-pulling .home-pull-refresh-spinner,
+        #drive-home.home-is-refreshing .home-pull-refresh-spinner,
+        #drive-home.home-pull-resetting .home-pull-refresh-spinner {
+            animation-name: home-pull-refresh-spin;
         }
 
         #drive-home.home-pull-resetting .drive-main,
@@ -5009,19 +5072,32 @@
 
         .drive-status-skeleton {
             display: inline-block;
+            position: relative;
+            overflow: hidden;
             height: 11px;
             width: 240px;
             max-width: 100%;
             border-radius: 6px;
+        }
+
+        /* Same gradient as the other skeletons, moved by transform (see
+           drive-skeleton-slide in § 2.5e). */
+        .drive-status-skeleton::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: -480px;
+            right: -240px;
             background: linear-gradient(90deg,
                 rgba(0, 0, 0, 0.05) 0%,
                 rgba(0, 0, 0, 0.10) 50%,
                 rgba(0, 0, 0, 0.05) 100%);
             background-size: 480px 100%;
-            animation: drive-skeleton-shimmer 1.2s infinite linear;
+            animation: drive-skeleton-slide 1.2s linear 25 forwards;
         }
 
-        [data-theme="dark"] .drive-status-skeleton {
+        [data-theme="dark"] .drive-status-skeleton::after {
             background: linear-gradient(90deg,
                 rgba(255, 255, 255, 0.05) 0%,
                 rgba(255, 255, 255, 0.10) 50%,
@@ -5183,17 +5259,24 @@
             isolation: isolate;
         }
 
+        /* The preview clips (overflow: hidden), so the shimmer is a wider
+           strip that slides by transform on the compositor (see
+           drive-skeleton-slide in § 2.5e) instead of repainting the card,
+           and its blurred label above it, on every frame. */
         .drive-card-preview.is-loading::after {
             content: '';
             position: absolute;
-            inset: 0;
+            top: 0;
+            bottom: 0;
+            left: -480px;
+            right: -240px;
             z-index: 0;
             background: linear-gradient(90deg,
                 rgba(0, 0, 0, 0.05) 0%,
                 rgba(0, 0, 0, 0.1) 50%,
                 rgba(0, 0, 0, 0.05) 100%);
             background-size: 480px 100%;
-            animation: drive-skeleton-shimmer 1.2s infinite linear;
+            animation: drive-skeleton-slide 1.2s linear 25 forwards;
         }
 
         .drive-card-preview img {
@@ -6261,10 +6344,26 @@
         }
 
         /* ┄ § 2.5e  Card skeletons (shimmer placeholders while loading) ───── */
-        /* Skeleton placeholders shown while Drive content is loading */
+        /* Skeleton placeholders shown while Drive content is loading.
+
+           drive-skeleton-shimmer moves background-position, which repaints
+           the element on the main thread every frame (at 4x CPU throttle a
+           few loading cards kept the main thread ~90% busy). The Home
+           placeholders instead paint the same 480px gradient once on a
+           pseudo-element that starts one period (480px) to the left, so the
+           pattern lines up with the box, and is 720px wider than the box, so
+           it covers it at every offset; drive-skeleton-slide moves it by the
+           same -240px..240px with a transform the compositor runs. Both
+           shimmers stop after 25 cycles (30 s) on the frame they start on:
+           a placeholder still waiting after that is stuck, not loading. */
         @keyframes drive-skeleton-shimmer {
             0% { background-position: -240px 0; }
             100% { background-position: 240px 0; }
+        }
+
+        @keyframes drive-skeleton-slide {
+            0% { transform: translateX(-240px); }
+            100% { transform: translateX(240px); }
         }
 
         .drive-skeleton-shimmer,
@@ -6272,25 +6371,63 @@
         .drive-card-skeleton .skeleton-preview,
         .drive-folder-card-skeleton .skeleton-bar,
         .drive-folder-card-skeleton .skeleton-icon {
+            position: relative;
+            overflow: hidden;
+            border-radius: 6px;
+        }
+
+        .drive-skeleton-shimmer::after,
+        .drive-card-skeleton .skeleton-bar::after,
+        .drive-card-skeleton .skeleton-preview::after,
+        .drive-folder-card-skeleton .skeleton-bar::after,
+        .drive-folder-card-skeleton .skeleton-icon::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: -480px;
+            right: -240px;
             background: linear-gradient(90deg,
                 rgba(0, 0, 0, 0.05) 0%,
                 rgba(0, 0, 0, 0.10) 50%,
                 rgba(0, 0, 0, 0.05) 100%);
             background-size: 480px 100%;
-            animation: drive-skeleton-shimmer 1.2s infinite linear;
-            border-radius: 6px;
+            animation: drive-skeleton-slide 1.2s linear 25 forwards;
         }
 
-        [data-theme="dark"] .drive-card-skeleton .skeleton-bar,
-        [data-theme="dark"] .drive-card-skeleton .skeleton-preview,
-        [data-theme="dark"] .drive-folder-card-skeleton .skeleton-bar,
-        [data-theme="dark"] .drive-folder-card-skeleton .skeleton-icon {
+        [data-theme="dark"] .drive-card-skeleton .skeleton-bar::after,
+        [data-theme="dark"] .drive-card-skeleton .skeleton-preview::after,
+        [data-theme="dark"] .drive-folder-card-skeleton .skeleton-bar::after,
+        [data-theme="dark"] .drive-folder-card-skeleton .skeleton-icon::after {
             background: linear-gradient(90deg,
                 rgba(255, 255, 255, 0.05) 0%,
                 rgba(255, 255, 255, 0.10) 50%,
                 rgba(255, 255, 255, 0.05) 100%);
             background-size: 480px 100%;
-            animation: drive-skeleton-shimmer 1.2s infinite linear;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .drive-skeleton-shimmer::after,
+            .drive-card-skeleton .skeleton-bar::after,
+            .drive-card-skeleton .skeleton-preview::after,
+            .drive-folder-card-skeleton .skeleton-bar::after,
+            .drive-folder-card-skeleton .skeleton-icon::after,
+            .drive-status-skeleton::after,
+            .drive-card-preview.is-loading::after,
+            .calendar-loading-line,
+            .calendar-day.loading .calendar-skeleton-line,
+            .share-modal-loading .skel-section-label,
+            .share-modal-loading .skel-avatar,
+            .share-modal-loading .skel-bar,
+            .share-modal-loading .skel-form-label,
+            .share-modal-loading .skel-input,
+            .share-modal-loading .skel-select,
+            .share-modal-loading .skel-button,
+            .share-modal-loading .skel-link-icon,
+            .share-modal-loading .skel-link-text,
+            .share-modal-loading .skel-copy-button {
+                animation: none !important;
+            }
         }
 
         .drive-card-skeleton {
@@ -6629,7 +6766,7 @@
                 rgba(0, 0, 0, 0.10) 50%,
                 rgba(0, 0, 0, 0.05) 100%);
             background-size: 480px 100%;
-            animation: drive-skeleton-shimmer 1.2s infinite linear;
+            animation: drive-skeleton-shimmer 1.2s linear 25 forwards;
         }
 
         [data-theme="dark"] .share-modal-loading .skel-section-label,
@@ -6647,7 +6784,7 @@
                 rgba(255, 255, 255, 0.10) 50%,
                 rgba(255, 255, 255, 0.05) 100%);
             background-size: 480px 100%;
-            animation: drive-skeleton-shimmer 1.2s infinite linear;
+            animation: drive-skeleton-shimmer 1.2s linear 25 forwards;
         }
 
         #share-modal-overlay.loading #share-owner-info,
@@ -8368,15 +8505,17 @@
             animation: none;
         }
 
-        /* Shimmer placeholders animate background-position on the main
-           thread. Inside the moving scene every tick would repaint the whole
-           composited interior at viewport size, so the zoom could never hold
-           a steady 120 Hz. Hold them still until the folder has landed. */
+        /* Shimmer placeholders used to animate background-position on the
+           main thread, and inside the moving scene every tick would repaint
+           the whole composited interior at viewport size, so the zoom could
+           never hold a steady 120 Hz. They now slide by transform, but each
+           running strip would still be one more moving layer rasterised at
+           zoom scale. Hold them still until the folder has landed. */
         #drive-home .drive-folder-transition .drive-card-preview.is-loading::after,
-        #drive-home .drive-folder-transition .drive-skeleton-shimmer,
-        #drive-home .drive-folder-transition .skeleton-bar,
-        #drive-home .drive-folder-transition .skeleton-preview,
-        #drive-home .drive-folder-transition .skeleton-icon {
+        #drive-home .drive-folder-transition .drive-skeleton-shimmer::after,
+        #drive-home .drive-folder-transition .skeleton-bar::after,
+        #drive-home .drive-folder-transition .skeleton-preview::after,
+        #drive-home .drive-folder-transition .skeleton-icon::after {
             animation-play-state: paused;
         }
 
