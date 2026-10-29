@@ -99,7 +99,7 @@
         // browser-only features are hidden (download button, fullscreen, etc.).
         function detectInhouseApp() {
             const params = new URLSearchParams(window.location.search);
-            const explicitAppFlag = params.get('inhouse_app') || params.get('app');
+            const explicitAppFlag = params.get('inhouse_app');
             const userAgent = navigator.userAgent || '';
             const fromAppUserAgent = /\bInhouseNotesApp\/\d+(?:\.\d+)?\b/i.test(userAgent);
             if (explicitAppFlag === '0' || explicitAppFlag === 'false') {
@@ -415,20 +415,11 @@
         const GOOGLE_SCOPE_VERSION_KEY = 'google-scope-version-v1';
         const GOOGLE_GRANTED_SCOPES_KEY = 'google-granted-scopes-v1';
         const GOOGLE_SCOPE_VERSION = 'drive-calendar-v2';
-        // Android OAuth client (type "Android") for PKCE + offline refresh tokens.
-        // Leave empty to keep using the implicit-flow web client.
-        // To enable refresh-token persistence in the Android app:
-        //   1) Create an "Android" OAuth client in Google Cloud Console with the APK package + SHA-1.
-        //   2) Paste the client ID below.
-        //   3) Add `inhousenotes://oauth2callback` as an authorized redirect (Android clients accept this implicitly).
-        //   4) Rebuild the APK once (MainActivity must forward query params, see android app/html_to_apk_builder.py).
+        // Android OAuth client (type "Android", APK package + SHA-1) for PKCE + offline refresh tokens.
         const ANDROID_OAUTH_CLIENT_ID = '435784295430-9ta7t92s33r25bamvrnbmgt65iihqpfo.apps.googleusercontent.com';
         const ANDROID_PKCE_REDIRECT_URI = 'com.local.inhousenotes:/oauth2redirect';
-        const useAndroidPkceFlow = () => isInhouseApp && !!ANDROID_OAUTH_CLIENT_ID;
         const THEME_KEY = 'inhouse-theme';
-        const VIEW_MODE_KEY = 'notebook-view-mode-v1';
         const DATA_STORAGE_KEY = (OFFLINE_WORKER ? 'background-' : '') + 'notebook-data-v3';
-        const LEGACY_DATA_KEYS = ['notebook-data-v2'];
         const DB_NAME = (OFFLINE_WORKER ? 'background-' : '') + 'notebook-data-db-v1';
         const DB_VERSION = 4;
         const DB_STORE = 'snapshots';
@@ -2041,8 +2032,6 @@
         // Home tabs, manila folders and the folder view (§ 4.15b)
         const DRIVE_HOME_TABS = ['home', 'starred', 'shared', 'files'];
         const DRIVE_DEFAULT_FOLDER_COLOR = '#e3c58e';
-        const DRIVE_FOLDER_OPEN_MS = 600;
-        const DRIVE_FOLDER_CLOSE_MS = 560;
         let driveHomeTab = 'home';
         let driveFolderViewOriginId = null;
         let driveFolderAnimation = null;
@@ -2270,7 +2259,6 @@
             await Promise.all([loadFromStorage(), offlineLibraryReady]);
             await window.InhouseOfflineApp.reconcileStartup();
             void window.InhouseOfflineLibrary.resume().catch(error=>console.warn('Offline resume pending:',error));
-            bakeLegacyEraserAreaStrokes();
             const editorVisibleAtBoot = !!(editorView && !editorView.classList.contains('hidden'));
             if (editorVisibleAtBoot) {
                 if (state.pages.length === 0) {
@@ -2307,7 +2295,6 @@
                 // copied links retain the file/resource key until opening succeeds.
             }
 
-            const lastView = loadViewMode();
             const hasStoredDriveToken = (() => {
                 try {
                     const raw = localStorage.getItem(DRIVE_TOKEN_KEY);
@@ -6133,7 +6120,6 @@
             clearSharedEditorSignInGate();
             closeDocumentScopedWork();
             clearDriveSyncTimers();
-            saveViewMode('drive');
             startDriveHomeAutoRefresh();
             updateCalendarFeatureAvailability();
         }
@@ -6250,7 +6236,6 @@
                 clampToolbarPosition();
                 scheduleVisiblePageUpdate(true);
             });
-            saveViewMode('editor');
         }
 
         // ── § 4.5  Theme, appearance & Drive authentication ───────────────────
@@ -6286,13 +6271,12 @@
             }, delay);
         }
         function initDriveAuth() {
-            const hadRedirectToken = processDriveOAuthRedirect();
             const hasStoredToken = loadDriveTokenFromStorage();
             if (isInhouseApp) {
                 updateDriveAuthUI();
-                if (hadRedirectToken || hasStoredToken) {
+                if (hasStoredToken) {
                     refreshDriveFiles();
-                } else if (useAndroidPkceFlow()) {
+                } else {
                     let hasRefresh = false;
                     try {
                         hasRefresh = localStorage.getItem(GOOGLE_SCOPE_VERSION_KEY) === GOOGLE_SCOPE_VERSION
@@ -6309,7 +6293,7 @@
                 }
                 return;
             }
-            if(!initialDriveListingStarted&&(hadRedirectToken||hasStoredToken)) {
+            if(!initialDriveListingStarted&&hasStoredToken) {
                 initialDriveListingStarted=true;updateDriveAuthUI();void refreshDriveFiles();
             }
             if (!window.google || !google.accounts || !google.accounts.oauth2) {
@@ -6331,10 +6315,6 @@
                     .then(() => refreshDriveFiles())
                     .catch(() => updateDriveAuthUI());
             }
-        }
-
-        function getDriveRedirectUri() {
-            return `${window.location.origin}/?oauth_callback=1`;
         }
 
         function openAndroidAuthUrl(authUrl) {
@@ -6439,7 +6419,6 @@
             let refreshToken = '';
             try { refreshToken = localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY) || ''; } catch (err) {}
             if (!refreshToken) throw new Error('No refresh token stored');
-            if (!ANDROID_OAUTH_CLIENT_ID) throw new Error('Android OAuth client ID not configured');
             const body = new URLSearchParams();
             body.set('client_id', ANDROID_OAUTH_CLIENT_ID);
             body.set('grant_type', 'refresh_token');
@@ -6495,95 +6474,12 @@
             updateDriveAuthUI();
         }
 
-        function startDriveRedirectSignIn() {
-            if (useAndroidPkceFlow()) {
-                startAndroidPkceSignIn().catch(err => {
-                    console.error('PKCE sign-in failed:', err);
-                    if (driveStatusEl) driveStatusEl.textContent = 'Sign-in failed. Try again.';
-                });
-                return;
-            }
-            try {
-                localStorage.setItem(DRIVE_REMEMBER_KEY, '1');
-            } catch (err) {}
-            const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-            authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
-            authUrl.searchParams.set('redirect_uri', getDriveRedirectUri());
-            authUrl.searchParams.set('response_type', 'token');
-            authUrl.searchParams.set('scope', GOOGLE_API_SCOPE);
-            authUrl.searchParams.set('include_granted_scopes', 'true');
-            authUrl.searchParams.set('state', 'inhouse_notes_app');
-            try {
-                const hint = localStorage.getItem('drive-hint-email');
-                if (hint) authUrl.searchParams.set('login_hint', hint);
-            } catch (err) {}
-            const hasFreshConsent = (() => {
-                try {
-                    return localStorage.getItem('drive-consent-granted') === '1'
-                        && localStorage.getItem(GOOGLE_SCOPE_VERSION_KEY) === GOOGLE_SCOPE_VERSION;
-                }
-                catch (err) { return false; }
-            })();
-            if (!hasFreshConsent) {
-                authUrl.searchParams.set('prompt', 'consent');
-            }
-            const url = authUrl.toString();
-            if (isInhouseApp && openAndroidAuthUrl(url)) {
-                if (driveStatusEl) driveStatusEl.textContent = 'Complete sign-in in the Google window.';
-                return;
-            }
-            window.location.assign(url);
-        }
-
-        function completeDriveSignInFromParams(params) {
-            const oauthError = params.get('error');
-            if (oauthError) {
-                if (oauthError && driveStatusEl) {
-                    driveStatusEl.textContent = `Sign-in failed: ${oauthError}`;
-                }
-                return false;
-            }
-            const token = params.get('access_token');
-            if (!token) return false;
-            const grantedScopes = normalizeGrantedScopes(params.get('scope'));
-            if (!hasGoogleScope(grantedScopes, CALENDAR_SCOPE)) {
-                clearDriveTokenStorage();
-                if (driveStatusEl) {
-                    driveStatusEl.textContent = 'Calendar access was not granted. Sign in again and accept Calendar access.';
-                }
-                return false;
-            }
-            driveSignedOut = false;
-            driveAuthNeedsReconnect = false;
-            const expiresIn = parseInt(params.get('expires_in') || '3600', 10);
-            driveAccessToken = token;
-            driveTokenExpiry = Date.now() + Math.max(60, expiresIn) * 1000;
-            saveDriveTokenToStorage(driveAccessToken, driveTokenExpiry, grantedScopes);
-            try { localStorage.setItem('drive-consent-granted', '1'); } catch (err) {}
-            try { localStorage.setItem(GOOGLE_SCOPE_VERSION_KEY, GOOGLE_SCOPE_VERSION); } catch (err) {}
-            scheduleDriveTokenRefresh();
-            updateDriveAuthUI();
-            try {
-                window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
-            } catch (err) {}
-            return true;
-        }
-
-        function processDriveOAuthRedirect() {
-            const rawHash = (window.location.hash || '').replace(/^#/, '');
-            const rawSearch = (window.location.search || '').replace(/^\?/, '');
-            if (!rawHash.includes('access_token=') && !rawHash.includes('error=') && !rawSearch.includes('error=')) {
-                return false;
-            }
-            return completeDriveSignInFromParams(new URLSearchParams(rawHash || rawSearch));
-        }
-
         window.handleInhouseNativeOAuth = (payload) => {
             const raw = String(payload || '').replace(/^[#?]/, '');
             const params = new URLSearchParams(raw);
             // PKCE flow: redirect carries ?code=...
             const code = params.get('code');
-            if (code && useAndroidPkceFlow()) {
+            if (code && isInhouseApp) {
                 exchangeAuthCodeForTokens(code)
                     .then(() => refreshDriveFiles())
                     .catch(err => {
@@ -6592,12 +6488,9 @@
                     });
                 return true;
             }
-            // Implicit flow fallback: #access_token=...
-            const signedIn = completeDriveSignInFromParams(params);
-            if (signedIn) {
-                refreshDriveFiles();
-            }
-            return signedIn;
+            const oauthError = params.get('error');
+            if (oauthError && driveStatusEl) driveStatusEl.textContent = `Sign-in failed: ${oauthError}`;
+            return false;
         };
 
         function driveIsOffline() { return window.InhouseOfflineLibrary?.offline() || navigator.onLine===false; }
@@ -6794,7 +6687,7 @@
 
         function requestDriveToken(interactive = false, requestGeneration = driveTokenRequestGeneration) {
             // Android PKCE path: silently refresh using stored refresh_token, no popup ever.
-            if (useAndroidPkceFlow()) {
+            if (isInhouseApp) {
                 let hasRefresh = false;
                 try {
                     hasRefresh = localStorage.getItem(GOOGLE_SCOPE_VERSION_KEY) === GOOGLE_SCOPE_VERSION
@@ -6882,7 +6775,10 @@
             driveSignedOut = false;
             driveAuthNeedsReconnect = false;
             if (isInhouseApp) {
-                startDriveRedirectSignIn();
+                startAndroidPkceSignIn().catch(err => {
+                    console.error('PKCE sign-in failed:', err);
+                    if (driveStatusEl) driveStatusEl.textContent = 'Sign-in failed. Try again.';
+                });
                 return;
             }
             ensureDriveToken(true)
@@ -10336,12 +10232,12 @@
             if (!scene) { onSwap(); return; }
             const { ghost, layer, surface, rect, bounds } = scene;
             let motion = window.InhouseRust?.folderMotion?.(bounds, rect, backwards);
-            const duration = motion?.duration ?? (backwards ? DRIVE_FOLDER_CLOSE_MS : DRIVE_FOLDER_OPEN_MS);
+            if (!motion) { onSwap(); return; }
+            const { duration } = motion;
             const cover = ghost.querySelector(':scope > .drive-folder-cover');
             const resting = art ? getComputedStyle(art.querySelector('.drive-folder-cover')).transform : 'none';
             driveHome.appendChild(layer);
             const closed = resting && resting !== 'none' ? resting : 'rotateY(0deg)';
-            const opened = 'rotateY(-112deg)';
             const animations = [];
             let fade = null;
             const focusBefore = document.activeElement;
@@ -10351,7 +10247,7 @@
                 // One shared ease-in-out: the scene accelerates gently out of
                 // the card and settles softly onto the final layout.
                 const animation = el.animate(frames, {
-                    duration, fill: 'both', easing: motion?.easing || 'cubic-bezier(0.55, 0, 0.15, 1)', ...timing
+                    duration, fill: 'both', easing: motion.easing, ...timing
                 });
                 animation.pause();
                 animation.currentTime = 0;
@@ -10404,17 +10300,8 @@
             // Closing starts with the outgoing viewport already in the
             // scene. Opening paints just the lightweight lid first.
             let prepareFrame = 0, prepareTimer = 0;
-            const geometry = () => {
-                if (motion) return motion;
-                // Keep navigation usable if an older adapter is still cached.
-                const scale = Math.max((bounds.width + 4) / rect.width, (bounds.height + 4) / (rect.height * 0.94));
-                const finalLeft = (bounds.width - rect.width * scale) / 2;
-                const finalTop = (bounds.height - rect.height * 0.94 * scale) / 2 - rect.height * 0.06 * scale;
-                return { scale, finalLeft, finalTop,
-                    dx: finalLeft - (rect.left - bounds.left), dy: finalTop - (rect.top - bounds.top) };
-            };
             const sizeGhost = () => {
-                const { scale } = geometry();
+                const { scale } = motion;
                 // Rasterise at the final size, then shrink to the card. Growing
                 // a card-sized DOM surface required a second large raster job
                 // just as its zoom started, even with native animations.
@@ -10427,18 +10314,10 @@
                 // shadows) grow with the layout so the shrunk start is the card.
                 ghost.style.setProperty('--ghost-scale', String(scale));
             };
-            const zoomFrames = () => {
-                if (motion) return motion.zoomFrames;
-                const { scale, dx, dy } = geometry();
-                const at = amount => `translate(${dx * amount}px, ${dy * amount}px) scale(${(1 + (scale - 1) * amount) / scale})`;
-                return backwards
-                    ? [{ transform: at(1) }, { transform: at(0) }]
-                    : [{ transform: at(0) }, { transform: at(1) }];
-            };
             sizeGhost();
             const mountInterior = interior => {
                 if (!interior) return;
-                const { finalLeft, finalTop } = geometry();
+                const { finalLeft, finalTop } = motion;
                 const scrollTop = backwards ? previous.scrollTop : driveFolderViewScrollEl.scrollTop;
                 Object.assign(interior.style, {
                     top: `${-finalTop}px`,
@@ -10480,7 +10359,7 @@
                             .some(key => Math.abs(destination.rect[key] - rect[key]) > .5);
                         if (retarget) {
                             Object.assign(rect, destination.rect);
-                            motion = window.InhouseRust?.folderMotion?.(bounds, rect, backwards);
+                            motion = window.InhouseRust.folderMotion(bounds, rect, backwards) || motion;
                             sizeGhost();
                         }
                         destinationArt.style.visibility = 'hidden';
@@ -10526,30 +10405,24 @@
                     // Held invisible until it joins the running movement.
                     fade = animate(interior, [{ opacity: 0 }, { opacity: 0 }], { easing: 'linear' });
                 }
-                if (retarget) zoom.effect.setKeyframes(zoomFrames());
+                if (retarget) zoom.effect.setKeyframes(motion.zoomFrames);
             };
             // Opacity would flatten the opaque lid's two 3D faces. Animate
             // transform only; the browser compositor owns every motion frame.
             // The lid and the zoom are one movement on one timeline: the lid
             // turns for the whole duration of the zoom, leading slightly at
             // the start and settling together with the enlargement.
-            const zoom = animate(ghost, zoomFrames());
-            const hingeFrames = motion
-                ? [motion.hingeFrom, motion.hingeTo].map(angle => ({ transform: angle === 0 ? closed : `rotateY(${angle}deg)` }))
-                : backwards ? [{ transform: opened }, { transform: closed }] : [{ transform: closed }, { transform: opened }];
-            const hinge = animate(cover, hingeFrames,
-                { easing: motion?.hingeEasing || (backwards ? 'cubic-bezier(0.4, 0, 0.2, 1)' : 'cubic-bezier(0.2, 0, 0.2, 1)') });
+            const zoom = animate(ghost, motion.zoomFrames);
+            const hingeFrames = [motion.hingeFrom, motion.hingeTo].map(angle => ({ transform: angle === 0 ? closed : `rotateY(${angle}deg)` }));
+            const hinge = animate(cover, hingeFrames, { easing: motion.hingeEasing });
             // The name and ⋮ printed on the lid stay legible while the lid
             // starts to turn, then fade before they would become enlarged.
             const labels = Array.from(cover.querySelectorAll(':scope > .drive-folder-cover-face > :is(.drive-folder-print, .drive-card-menu)'))
-                .map(print => animate(print, motion?.labelFrames || (backwards
-                    ? [{ opacity: 0 }, { opacity: 0, offset: .6 }, { opacity: 1 }]
-                    : [{ opacity: 1 }, { opacity: 0, offset: .4 }, { opacity: 0 }]), { easing: 'linear' }));
+                .map(print => animate(print, motion.labelFrames, { easing: 'linear' }));
             // Closing shows the outgoing interior from its first frame and
             // fades it out over the shrinking folder.
             if (backwards && previous?.view) {
-                fade = animate(previous.view, window.InhouseRust?.folderFade?.(0, true)
-                    || [{ opacity: 1 }, { opacity: 1, offset: .3 }, { opacity: 0 }], { easing: 'linear' });
+                fade = animate(previous.view, window.InhouseRust.folderFade(0, true), { easing: 'linear' });
             }
             // The movement starts with the tap. Its first frame only adds the
             // lid (and, closing, the outgoing interior); nothing waits for the
@@ -10568,10 +10441,7 @@
                 if (done) return;
                 if (!backwards && fade) {
                     const elapsed = Math.min(1, Math.max(0, zoom.currentTime / duration));
-                    const from = Math.min(.9, elapsed + .03);
-                    fade.effect.setKeyframes(window.InhouseRust?.folderFade?.(elapsed, false)
-                        || [{ opacity: 0 }, { opacity: 0, offset: from },
-                            { opacity: 1, offset: Math.max(.7, Math.min(1, from + .15)) }, { opacity: 1 }]);
+                    fade.effect.setKeyframes(window.InhouseRust.folderFade(elapsed, false));
                     fade.play();
                     fade.startTime = zoom.startTime;
                 }
@@ -13990,28 +13860,6 @@
             queueScrollPagePreviews(true);
         }
 
-        function bakeLegacyEraserAreaStrokes() {
-            let changed = false;
-            state.pages.forEach((page, pageIndex) => {
-                if (!page || !Array.isArray(page.strokes)) return;
-                const erasers = page.strokes.filter(stroke => stroke.tool === 'eraser-area' && stroke.points && stroke.points.length);
-                if (erasers.length === 0) return;
-                changed = true;
-
-                page.strokes = page.strokes.filter(stroke => !(stroke.tool && stroke.tool.startsWith('eraser')));
-                erasers.forEach(stroke => {
-                    const radius = (stroke.width || state.eraserWidth) / 2;
-                    stroke.points.forEach(pt => {
-                        eraseAreaAtPoint(pageIndex, pt.x, pt.y, radius, { deferRedraw: true });
-                    });
-                });
-            });
-            if (changed) {
-                markAllPagesDirty();
-                scheduleSave(true);
-            }
-        }
-
         function syncEraserMenuState() {
             if (!eraserToggle) return;
             eraserToggle.checked = state.eraserMode === 'stroke';
@@ -16525,7 +16373,6 @@
 
             document.addEventListener('fullscreenchange', handleFullscreenChange);
             document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-            document.addEventListener('msfullscreenchange', handleFullscreenChange);
             handleFullscreenChange();
 
             window.addEventListener('beforeunload', (event) => {
@@ -16600,7 +16447,7 @@
         }
 
         function isFullscreenActive() {
-            return document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement;
+            return document.fullscreenElement || document.webkitFullscreenElement;
         }
 
         function setFullscreenButtonState(button, isActive) {
@@ -16634,8 +16481,6 @@
                     document.exitFullscreen();
                 } else if (document.webkitExitFullscreen) {
                     document.webkitExitFullscreen();
-                } else if (document.msExitFullscreen) {
-                    document.msExitFullscreen();
                 }
                 return;
             }
@@ -16643,8 +16488,6 @@
                 root.requestFullscreen();
             } else if (root.webkitRequestFullscreen) {
                 root.webkitRequestFullscreen();
-            } else if (root.msRequestFullscreen) {
-                root.msRequestFullscreen();
             }
         }
 
@@ -21707,23 +21550,6 @@
             }
         }
 
-        function saveViewMode(mode) {
-            try {
-                localStorage.setItem(VIEW_MODE_KEY, mode);
-            } catch (e) {
-                console.error('Failed to save view mode:', e);
-            }
-        }
-
-        function loadViewMode() {
-            try {
-                return localStorage.getItem(VIEW_MODE_KEY);
-            } catch (e) {
-                console.error('Failed to load view mode:', e);
-                return null;
-            }
-        }
-
         function saveDriveTokenToStorage(token, expiry, grantedScopes = GOOGLE_API_SCOPE) {
             try {
                 const payload = JSON.stringify({ token, expiry, scopeVersion: GOOGLE_SCOPE_VERSION, grantedScopes });
@@ -22062,19 +21888,9 @@
                 if (parsed.exportName) {
                     state.exportName = parsed.exportName;
                 }
-                state.driveAutosave = typeof parsed.autosave === 'boolean' ? parsed.autosave : !!parsed.fileId;
-                if (typeof parsed.canEdit === 'boolean') {
-                    state.driveCanEdit = parsed.canEdit;
-                } else if (typeof parsed.autosave === 'boolean') {
-                    state.driveCanEdit = parsed.autosave;
-                } else {
-                    state.driveCanEdit = true;
-                }
-                if (typeof parsed.ownedByMe === 'boolean') {
-                    state.driveOwnedByMe = parsed.ownedByMe;
-                } else {
-                    state.driveOwnedByMe = state.driveCanEdit;
-                }
+                state.driveAutosave = !!parsed.autosave;
+                state.driveCanEdit = parsed.canEdit !== false;
+                state.driveOwnedByMe = parsed.ownedByMe !== false;
                 state.driveOwnerName = typeof parsed.ownerName === 'string' ? parsed.ownerName : '';
                 state.driveOwnerEmail = typeof parsed.ownerEmail === 'string' ? parsed.ownerEmail : '';
                 state.driveOwnerPhoto = typeof parsed.ownerPhoto === 'string' ? parsed.ownerPhoto : '';
@@ -22195,14 +22011,6 @@
                     if (!db.objectStoreNames.contains(OPS_STORE)) {
                         const opsStore = db.createObjectStore(OPS_STORE, { keyPath: 'id', autoIncrement: true });
                         opsStore.createIndex('pageIndex', 'pageIndex', { unique: false });
-                    } else {
-                        const tx = request.transaction;
-                        if (tx) {
-                            const opsStore = tx.objectStore(OPS_STORE);
-                            if (!opsStore.indexNames.contains('pageIndex')) {
-                                opsStore.createIndex('pageIndex', 'pageIndex', { unique: false });
-                            }
-                        }
                     }
                     if (!db.objectStoreNames.contains(TIMELINE_STORE)) {
                         db.createObjectStore(TIMELINE_STORE, { keyPath: 'key' });
@@ -22528,12 +22336,10 @@
 
         async function cloneSanitizedPageForStorage(page, sessionToken, isStale = () => false, packed = false, normalizedInput = false) {
             if (!await waitForHotInteractionToSettle({sessionToken,windowMs:PAGE_CHECKPOINT_IDLE_MS}) || isStale()) return null;
-            if (packed && typeof structuredClone === 'function' && window.InhouseDocumentProcessing) return packInkPageForStorage(page,sessionToken,isStale);
+            if (packed && window.InhouseDocumentProcessing) return packInkPageForStorage(page,sessionToken,isStale);
             const sanitized = normalizedInput ? page : sanitizePageForStorage(page);
-            const clone = value => typeof structuredClone === 'function'
-                ? structuredClone(value) : JSON.parse(JSON.stringify(value));
             const { strokes, legacyCoverStrokes, ...metadata } = sanitized;
-            const result = clone(metadata);
+            const result = structuredClone(metadata);
             let sliceStart = performance.now();
             for (const [key, source] of [['strokes', strokes], ['legacyCoverStrokes', legacyCoverStrokes]]) {
                 if (!Array.isArray(source)) { result[key] = source; continue; }
@@ -22542,7 +22348,7 @@
                 // edits. Small clones avoid a document-sized blocking task.
                 for (const stroke of source.slice()) {
                     if (isStale()) return null;
-                    result[key].push(clone(stroke));
+                    result[key].push(structuredClone(stroke));
                     if (performance.now() - sliceStart >= 4) {
                         await yieldProcessingForUi();
                         if (isStale() || !await waitForHotInteractionToSettle({sessionToken,windowMs:PAGE_CHECKPOINT_IDLE_MS}) || isStale()) return null;
@@ -23967,7 +23773,6 @@
         async function loadFromStorage() {
             let localPayload = null;
             let idbPayload = null;
-            let legacyPayload = null;
             legacyPagesCache = null;
 
             try {
@@ -23979,34 +23784,16 @@
                 console.error('Failed to load from localStorage:', e);
             }
 
-            if (!localPayload) {
-                LEGACY_DATA_KEYS.forEach((key) => {
-                    if (legacyPayload) return;
-                    try {
-                        const data = localStorage.getItem(key);
-                        if (data) {
-                            legacyPayload = JSON.parse(data);
-                        }
-                    } catch (err) {
-                        console.error('Failed to load legacy payload:', err);
-                    }
-                });
-            }
-
             try {
                 const record = await loadFromIndexedDb();
-                if (record && record.data) {
-                    if (typeof record.data === 'string') {
-                        idbPayload = JSON.parse(record.data);
-                    } else if (typeof record.data === 'object') {
-                        idbPayload = record.data;
-                    }
+                if (record && typeof record.data === 'object') {
+                    idbPayload = record.data;
                 }
             } catch (e) {
                 console.error('Failed to load from IndexedDB:', e);
             }
 
-            const candidates = [localPayload, idbPayload, legacyPayload].filter(Boolean);
+            const candidates = [localPayload, idbPayload].filter(Boolean);
             const best = candidates.reduce((acc, item) => {
                 if (!acc) return item;
                 const accTime = typeof acc.savedAt === 'number' ? acc.savedAt : 0;
@@ -24031,32 +23818,27 @@
                     });
                 }
                 if (Number.isSafeInteger(restoredSession) && restoredSession > 0) documentSessionId = restoredSession;
-                const hasLegacyStrokes = best.pages.some(page => Array.isArray(page?.strokes));
-                if (hasLegacyStrokes) {
-                    await migrateLegacyPayload(best);
-                } else {
-                    state.pages = best.pages.map(page => {
-                        const kind = normalizeTemplateKind(page?.templateKind);
-                        const kindDefaults = getTemplateKindDefaults(kind);
-                        return {
-                            pageId: page?.pageId || generatePageId(),
-                            strokes: null,
-                            images: null,
-                            backgroundImage: page?.backgroundImage || null,
-                            backgroundSource: page?.backgroundSource || (page?.pdfPageIndex ? 'pdf' : (page?.backgroundImage ? 'custom' : 'template')),
-                            templateKind: kind,
-                            pdfPageIndex: Number.isFinite(page?.pdfPageIndex) ? page.pdfPageIndex : null,
-                            pageWidth: normalizePageDimension(page?.pageWidth, kindDefaults.width),
-                            pageHeight: normalizePageDimension(page?.pageHeight, kindDefaults.height),
-                            preview: page?.preview || null,
-                            strokeCount: typeof page?.strokeCount === 'number' ? page.strokeCount : 0,
-                            sidePanel: page?.sidePanel || null,
-                            unloaded: true,
-                            needsRedraw: true
-                        };
-                    });
-                    state.lastSavedAt = typeof best.savedAt === 'number' ? best.savedAt : null;
-                }
+                state.pages = best.pages.map(page => {
+                    const kind = normalizeTemplateKind(page?.templateKind);
+                    const kindDefaults = getTemplateKindDefaults(kind);
+                    return {
+                        pageId: page?.pageId || generatePageId(),
+                        strokes: null,
+                        images: null,
+                        backgroundImage: page?.backgroundImage || null,
+                        backgroundSource: page?.backgroundSource || (page?.pdfPageIndex ? 'pdf' : (page?.backgroundImage ? 'custom' : 'template')),
+                        templateKind: kind,
+                        pdfPageIndex: Number.isFinite(page?.pdfPageIndex) ? page.pdfPageIndex : null,
+                        pageWidth: normalizePageDimension(page?.pageWidth, kindDefaults.width),
+                        pageHeight: normalizePageDimension(page?.pageHeight, kindDefaults.height),
+                        preview: page?.preview || null,
+                        strokeCount: typeof page?.strokeCount === 'number' ? page.strokeCount : 0,
+                        sidePanel: page?.sidePanel || null,
+                        unloaded: true,
+                        needsRedraw: true
+                    };
+                });
+                state.lastSavedAt = typeof best.savedAt === 'number' ? best.savedAt : null;
                 if (best.calendarPageConfig && typeof best.calendarPageConfig.mode === 'string') {
                     state.calendarPageConfig = {
                         mode: best.calendarPageConfig.mode,
@@ -27767,8 +27549,6 @@
         }
 
         const PRESENCE_FIELD_SUFFIXES = ['q', 'r'];
-        const PRESENCE_LEGACY_FIELD_SUFFIXES = ['n', 'e', 'p', 't', 'd', 'v', 'l', 'c', 'h', 's', 'm'];
-        const PRESENCE_ALL_FIELD_SUFFIXES = [...PRESENCE_FIELD_SUFFIXES, ...PRESENCE_LEGACY_FIELD_SUFFIXES];
         const PRESENCE_SAVE_ACTIVE_MS = 6500;
         const PRESENCE_SAVE_DONE_MS = 2200;
         const PRESENCE_PROCESSING_MIN_VISIBLE_MS = 900;
@@ -27887,18 +27667,12 @@
             return `p_${simpleHash(`${email}:${clientId}`)}`;
         }
 
-        function getLegacyPresenceKey() {
-            const email = driveUserProfile?.email || 'anon';
-            const device = detectDeviceType().charAt(0); // m, t, p
-            return `p_${simpleHash(email)}_${device}`;
-        }
-
         function getPresenceFieldKey(prefix, suffix) {
             return `${prefix}_${suffix}`;
         }
 
         function parsePresenceChunkKey(key) {
-            const match = /^((?:p_[a-z0-9]+))_([qrnedtpvlchsm])$/i.exec(key || '');
+            const match = /^((?:p_[a-z0-9]+))_([qr])$/i.exec(key || '');
             if (!match) return null;
             return { prefix: match[1], field: match[2].toLowerCase() };
         }
@@ -27916,31 +27690,9 @@
 
         function buildPresenceRecordFromChunk(chunk, now) {
             const packed = parsePackedPresence(chunk);
-            if (packed) {
-                const freshness = getPresenceFreshnessTs(chunk);
-                return Number.isFinite(freshness) && now - freshness <= PRESENCE_STALE_MS ? packed : null;
-            }
-            const freshnessTs = getPresenceFreshnessTs(chunk);
-            if (!Number.isFinite(freshnessTs) || now - freshnessTs > PRESENCE_STALE_MS) return null;
-            const ts = Number(chunk.t);
-            if (!Number.isFinite(ts)) return null; // ignore heartbeat-only partial records
-            const hb = Number(chunk.h);
-            const name = (chunk.n || '').trim();
-            const email = (chunk.e || '').trim();
-            if (!name && !email) return null;
-            return {
-                n: name,
-                e: email,
-                p: chunk.p || '',
-                d: normalizePresenceDeviceType(chunk.d),
-                v: chunk.v || '',
-                l: chunk.l || '',
-                c: String(chunk.c || '').trim(),
-                s: normalizePresenceSavePhase(chunk.s || ''),
-                m: Number(chunk.m) || 0,
-                t: ts,
-                h: Number.isFinite(hb) ? hb : 0
-            };
+            if (!packed) return null;
+            const freshness = getPresenceFreshnessTs(chunk);
+            return Number.isFinite(freshness) && now - freshness <= PRESENCE_STALE_MS ? packed : null;
         }
 
         function normalizePresenceSavePhase(phase) {
@@ -28116,17 +27868,12 @@
             if (driveSaveInProgress) return;
             if (!state.driveFileId || !driveAccessToken || !driveUserProfile) return;
             const keyPrefix = getPresenceKey();
-            const legacyKey = getLegacyPresenceKey();
             const now = Date.now();
             const patch = {
                 [getPresenceFieldKey(keyPrefix, 'q')]: packPresenceIdentity(),
-                [getPresenceFieldKey(keyPrefix, 'r')]: packPresenceRuntime(now),
-                [legacyKey]: null
+                [getPresenceFieldKey(keyPrefix, 'r')]: packPresenceRuntime(now)
             };
             const privateCleanup = {};
-            PRESENCE_LEGACY_FIELD_SUFFIXES.forEach(suffix => {
-                patch[getPresenceFieldKey(keyPrefix, suffix)] = null;
-            });
             try {
                 // Read current appProperties to clean stale entries
                 const metaRes = await driveFetch(
@@ -28135,7 +27882,7 @@
                 );
                 const metaData = await metaRes.json();
                 Object.keys(metaData.appProperties || {}).forEach(key => {
-                    if (key === legacyKey || key.startsWith(`${keyPrefix}_`)) privateCleanup[key] = null;
+                    if (key.startsWith(`${keyPrefix}_`)) privateCleanup[key] = null;
                 });
                 const props = { ...(metaData.appProperties || {}), ...(metaData.properties || {}) };
                 updatePresenceFromProps(props);
@@ -28149,17 +27896,8 @@
                         grouped.get(chunkKey.prefix)[chunkKey.field] = v;
                         continue;
                     }
-                    // Legacy payloads: remove stale/corrupt entries and keep active ones.
-                    if (k === legacyKey) continue;
-                    try {
-                        const legacy = JSON.parse(v);
-                        const legacyTs = Number(legacy?.t);
-                        if (!Number.isFinite(legacyTs) || now - legacyTs > PRESENCE_STALE_MS) {
-                            patch[k] = null;
-                        }
-                    } catch (e) {
-                        patch[k] = null;
-                    }
+                    // Anything else under p_ predates the packed q/r format.
+                    patch[k] = null;
                 }
 
                 // Remove stale/corrupt chunked records from other clients.
@@ -28167,7 +27905,7 @@
                     if (prefix === keyPrefix) return;
                     const record = buildPresenceRecordFromChunk(chunk, now);
                     if (record && String(record.c || '').trim() !== getPresenceClientId()) return;
-                    PRESENCE_ALL_FIELD_SUFFIXES.forEach(suffix => {
+                    PRESENCE_FIELD_SUFFIXES.forEach(suffix => {
                         patch[getPresenceFieldKey(prefix, suffix)] = null;
                     });
                 });
@@ -28468,8 +28206,6 @@
             }
             const now = Date.now();
             const myKey = driveUserProfile ? getPresenceKey() : null;
-            const myLegacyKey = driveUserProfile ? getLegacyPresenceKey() : null;
-            const myClientId = getPresenceClientId();
             const active = [];
             const grouped = new Map();
 
@@ -28480,34 +28216,10 @@
                     if (myKey && chunkKey.prefix === myKey) continue; // same browser/device
                     if (!grouped.has(chunkKey.prefix)) grouped.set(chunkKey.prefix, {});
                     grouped.get(chunkKey.prefix)[chunkKey.field] = v;
-                    continue;
                 }
-                // Legacy single-key payload fallback
-                if (myLegacyKey && k === myLegacyKey) continue;
-                try {
-                    const data = JSON.parse(v);
-                    const ts = Number(data?.t);
-                    if (!Number.isFinite(ts) || now - ts > PRESENCE_STALE_MS) continue;
-                    const clientId = String(data?.c || '').trim();
-                    if (myClientId && clientId && clientId === myClientId) continue;
-                    active.push({
-                        n: data.n || '',
-                        e: data.e || '',
-                        p: data.p || '',
-                        d: normalizePresenceDeviceType(data.d),
-                        v: data.v || '',
-                        l: data.l || '',
-                        c: String(data?.c || '').trim(),
-                        s: normalizePresenceSavePhase(data.s || ''),
-                        m: Number(data?.m) || 0,
-                        t: ts,
-                        h: Number(data?.h) || 0
-                    });
-                } catch (e) { /* skip corrupt */ }
             }
 
             grouped.forEach(chunk => {
-                if (myClientId && String(chunk?.c || '').trim() === myClientId) return;
                 const record = buildPresenceRecordFromChunk(chunk, now);
                 if (!record) return;
                 active.push(record);
@@ -28883,9 +28595,8 @@
         async function clearPresence() {
             if (!state.driveFileId || !driveAccessToken || !driveUserProfile) return;
             const keyPrefix = getPresenceKey();
-            const legacyKey = getLegacyPresenceKey();
-            const properties = { [legacyKey]: null };
-            PRESENCE_ALL_FIELD_SUFFIXES.forEach(suffix => {
+            const properties = {};
+            PRESENCE_FIELD_SUFFIXES.forEach(suffix => {
                 properties[getPresenceFieldKey(keyPrefix, suffix)] = null;
             });
             try {
@@ -31180,11 +30891,6 @@
                 const restored = restoreHistoryItems(page.strokes, action.strokes, 'stroke');
                 untrackDeletedStrokeIds(page, restored);
                 redrawPage(actionPageIndex);
-            } else if (action.type === 'transform-strokes') {
-                const page = state.pages[actionPageIndex];
-                const replaced = replaceHistoryItems(page.strokes, action.before, 'stroke');
-                stampCollaborativeItems(replaced);
-                redrawPage(actionPageIndex);
             } else if (action.type === 'transform-selection') {
                 const page = state.pages[actionPageIndex];
                 if (!Array.isArray(page.images)) page.images = [];
@@ -31328,11 +31034,6 @@
                 const page = state.pages[actionPageIndex];
                 const removed = removeHistoryItems(page.strokes, action.strokes, 'stroke');
                 trackDeletedStrokeIds(page, removed);
-                redrawPage(actionPageIndex);
-            } else if (action.type === 'transform-strokes') {
-                const page = state.pages[actionPageIndex];
-                const replaced = replaceHistoryItems(page.strokes, action.after, 'stroke');
-                stampCollaborativeItems(replaced);
                 redrawPage(actionPageIndex);
             } else if (action.type === 'transform-selection') {
                 const page = state.pages[actionPageIndex];
@@ -35397,12 +35098,6 @@
                 && typeof window.InhouseNative.beginPdfExport === 'function'
                 && typeof window.InhouseNative.appendPdfExportChunk === 'function'
                 && typeof window.InhouseNative.finishPdfExport === 'function') {
-                let nativeApiVersion = 1;
-                if (typeof window.InhouseNative.getPdfExportApiVersion === 'function') {
-                    try {
-                        nativeApiVersion = Number(window.InhouseNative.getPdfExportApiVersion()) || 1;
-                    } catch (err) {}
-                }
                 const base64 = await blobToBase64(pdfBlob);
                 window.InhouseNative.beginPdfExport(safeName);
                 const chunkSize = 240000;
@@ -35410,16 +35105,9 @@
                     window.InhouseNative.appendPdfExportChunk(base64.slice(i, i + chunkSize));
                     await yieldToMainThread();
                 }
-                const nativeResult = nativeApiVersion >= 2
-                    ? waitForNativePdfExportResult()
-                    : null;
+                const nativeResult = waitForNativePdfExportResult();
                 window.InhouseNative.finishPdfExport();
-                if (nativeResult) await nativeResult;
-                return;
-            }
-            if (isInhouseApp && window.InhouseNative && typeof window.InhouseNative.savePdf === 'function') {
-                const base64 = await blobToBase64(pdfBlob);
-                window.InhouseNative.savePdf(safeName, base64);
+                await nativeResult;
                 return;
             }
             if (isInhouseApp && navigator.canShare && navigator.share) {
