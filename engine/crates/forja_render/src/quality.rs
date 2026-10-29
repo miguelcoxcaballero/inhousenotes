@@ -534,7 +534,9 @@ impl DynamicResolution {
         if gpu_bound {
             self.over += 1;
             self.under = 0;
-        } else if self.avg_gpu < budget * 0.75 {
+        } else if self.avg_gpu < budget * 0.75 || self.avg_cpu >= budget {
+            // GPU headroom, or the CPU limits the frame: fewer pixels no
+            // longer help, so climb back towards `render_scale`.
             self.under += 1;
             self.over = 0;
         } else {
@@ -555,7 +557,7 @@ impl DynamicResolution {
             self.scale = (self.scale + step).min(max);
             self.under = 0;
             self.avg_gpu = 0.0;
-            self.reason = "GPU under budget";
+            self.reason = if self.avg_cpu >= budget { "CPU-bound: fewer pixels do not help" } else { "GPU under budget" };
         }
         self.scale = self.scale.clamp(min, max);
         self.scale
@@ -674,5 +676,23 @@ mod tests {
         assert_eq!(FrameBound::of(20.0, Some(8.0)), FrameBound::Cpu);
         assert_eq!(FrameBound::of(5.0, Some(8.0)), FrameBound::Gpu);
         assert_eq!(FrameBound::of(5.0, None), FrameBound::Unknown);
+    }
+
+    #[test]
+    fn dynamic_resolution_recovers_when_cpu_bound() {
+        let mut cfg = GraphicsConfig::for_preset(Preset::Medium);
+        cfg.dynamic_resolution = true;
+        let mut d = DynamicResolution::new(cfg.render_scale);
+        // GPU-bound first: the scale drops.
+        for _ in 0..40 {
+            d.update(Some(30.0), 5.0, &cfg);
+        }
+        assert!(d.scale < 1.0);
+        // Then CPU-bound with the GPU still over budget: lowering the
+        // resolution no longer helps, so it climbs back to native.
+        for _ in 0..600 {
+            d.update(Some(30.0), 90.0, &cfg);
+        }
+        assert_eq!(d.scale, cfg.render_scale);
     }
 }
