@@ -34,7 +34,9 @@ la agenda y el diario y sus funciones y ponlo en soon también".)
   calendarPageConfig/IH_CAL handling). Their entry points stay in place with a "Soon" badge and show the
   same "Soon" notice. Existing documents whose pages use the agenda/diary template still open and show the
   same page background (the SVG drawn behind the ink) so no user document looks broken; calendar side
-  panels are simply not shown. New pages added to such a document use the default template.
+  panels are simply not shown. Adding pages keeps the v5 rule (a new page takes the last page's template).
+  Their files (Diary/, Agenda/ folders, DiaryYYYY/AgendaYYYY-YYYY PDFs) are ordinary documents again: they
+  appear in Recents and folders like any other PDF.
 - Existing documents with scanned pages (images + strokes) open, render and sync normally.
 
 ## 2. Network documents that sync instantly — by design
