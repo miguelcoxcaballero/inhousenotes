@@ -2913,6 +2913,9 @@
                 <div class="selection-handle handle-sw" data-handle="sw"></div>
             `;
 
+            setOverlayCanvasInk(lassoOverlay, false);
+            setOverlayCanvasInk(cursorOverlay, false);
+            setOverlayCanvasInk(remoteLiveOverlay, false);
             wrapper.insertBefore(canvas, wrapper.firstChild);
             wrapper.insertBefore(lassoOverlay, wrapper.lastChild);
             wrapper.insertBefore(cursorOverlay, wrapper.lastChild);
@@ -3686,9 +3689,11 @@
             const overlayScale = getOverlayCanvasRenderScale(overlay, pageWidth, CURSOR_OVERLAY_BASE_SCALE);
             ctx.setTransform(overlayScale, 0, 0, overlayScale, 0, 0);
             ctx.clearRect(0, 0, overlay.width / overlayScale, overlay.height / overlayScale);
+            setOverlayCanvasInk(overlay, false);
             if (!page?.pageId) return;
             remoteLiveStrokePreviews.forEach(record => {
                 if (record.pageId !== page.pageId || !record.points.length) return;
+                setOverlayCanvasInk(overlay, true);
                 const stroke = {
                     tool: record.tool,
                     color: record.color,
@@ -3710,6 +3715,7 @@
             const points = record.points;
             const start = Math.max(0, Math.min(points.length, Number(record.renderedPointCount) || 0));
             if (start >= points.length) return true;
+            setOverlayCanvasInk(overlay, true);
             const ctx = overlay.getContext('2d');
             const { width: pageWidth } = getPageDimensions(pageIndex);
             const overlayScale = getOverlayCanvasRenderScale(overlay, pageWidth, CURSOR_OVERLAY_BASE_SCALE);
@@ -4670,10 +4676,12 @@
             const ctx = lassoCanvas.getContext('2d');
             ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.clearRect(0, 0, lassoCanvas.width, lassoCanvas.height);
+            setOverlayCanvasInk(lassoCanvas, false);
         }
 
         function drawLassoPath(lassoCanvas, points) {
             if (!lassoCanvas || points.length === 0) return;
+            setOverlayCanvasInk(lassoCanvas, true);
             const ctx = lassoCanvas.getContext('2d');
             const pageIndex = parseInt(lassoCanvas.dataset.page || '-1', 10);
             const { width: pageWidth } = (Number.isFinite(pageIndex) && pageIndex >= 0)
@@ -4762,7 +4770,8 @@
             if (previous) ctx.clearRect(previous.x, previous.y, previous.width, previous.height);
             const last = points.length - 1;
             const from = Number.isInteger(stroke.liveCurveIndex) ? stroke.liveCurveIndex : 0;
-            if (from >= last) { liveCursorPreviewBounds.delete(previewCanvas); return; }
+            if (from >= last) { liveCursorPreviewBounds.delete(previewCanvas); setOverlayCanvasInk(previewCanvas, false); return; }
+            setOverlayCanvasInk(previewCanvas, true);
             const chain = points.slice(Math.max(0, from - 1));
             const offset = from > 0 ? 1 : 0;
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -4805,12 +4814,26 @@
         }
 
         const liveCursorPreviewBounds = new WeakMap();
+        // A page has three full-page transparent overlays (lasso, live tip,
+        // remote ink) that are empty almost all the time. A visible canvas is
+        // composited every frame, and without a GPU canvas every visible one is
+        // re-uploaded whenever any canvas on screen changes, so each pen frame
+        // paid for empty overlays too. Hide an overlay while it holds no ink;
+        // every drawing path below reveals it before it draws.
+        function setOverlayCanvasInk(overlay, hasInk) {
+            if (!overlay) return;
+            const hidden = !hasInk;
+            if (overlay.__inkHidden === hidden) return;
+            overlay.__inkHidden = hidden;
+            overlay.style.visibility = hidden ? 'hidden' : '';
+        }
         function drawLiveHighlighterAppend(pageIndex, stroke, cachedPreviewCanvas = null, metrics = null) {
             const previewCanvas = cachedPreviewCanvas || document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
             const points = stroke?.points;
             if (!previewCanvas || !Array.isArray(points) || points.length === 0) return;
             const start = Math.max(0, Math.min(points.length, Number(stroke.livePreviewPointCount) || 0));
             if (start >= points.length) return;
+            setOverlayCanvasInk(previewCanvas, true);
             const ctx = previewCanvas.getContext('2d');
             const overlayScale = (metrics && metrics.cursorOverlay === previewCanvas && Number.isFinite(metrics.cursorScale))
                 ? metrics.cursorScale
@@ -4911,6 +4934,7 @@
         function drawEraserPreview(pageIndex, pos) {
             const previewCanvas = document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
             if (!previewCanvas) return;
+            setOverlayCanvasInk(previewCanvas, true);
             const ctx = previewCanvas.getContext('2d');
             const { width: pageWidth } = getPageDimensions(pageIndex);
             const overlayScale = getOverlayCanvasRenderScale(previewCanvas, pageWidth, CURSOR_OVERLAY_BASE_SCALE);
@@ -4950,6 +4974,7 @@
                 ctx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
             }
             liveCursorPreviewBounds.delete(previewCanvas);
+            setOverlayCanvasInk(previewCanvas, false);
         }
 
         // ── § 4.12  Selection & lasso tool ───────────────────────────────────
@@ -5457,12 +5482,14 @@
             const ctx = lassoCanvas.getContext('2d');
             ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.clearRect(0, 0, lassoCanvas.width, lassoCanvas.height);
+            setOverlayCanvasInk(lassoCanvas, false);
 
             if (state.selection.pageIndex !== pageIndex) return;
             const page = state.pages[pageIndex];
             if (!page || !Array.isArray(page.strokes)) return;
             const strokeIndices = state.selection.strokeIndices || [];
             if (strokeIndices.length === 0) return;
+            setOverlayCanvasInk(lassoCanvas, true);
 
             const { width: pageWidth } = getPageDimensions(pageIndex);
             const overlayScale = getOverlayCanvasRenderScale(lassoCanvas, pageWidth, getLassoOverlayScale(state.zoom));
