@@ -236,6 +236,37 @@
             }
             if (ctx) ctx.drawImage(cached, 0, 0);
         }
+
+        // Page thumbnails are CPU canvases (they are JPEG-encoded). Drawing the
+        // full-size template canvas into one is a GPU readback on every
+        // thumbnail; keep a CPU copy already reduced to the thumbnail's pixel
+        // size instead. The copy follows the source canvas, so clearing
+        // _tplCache (theme/template reload) also refreshes it.
+        const _tplThumbCache = new Map(); // key "kind|WxH|TWxTH" -> { source, canvas }
+        function drawTemplateBackgroundThumbnail(ctx, width, height, kind, pixelWidth, pixelHeight) {
+            const resolvedKind = kind || TEMPLATE_KINDS.DEFAULT;
+            drawTemplateBackground(null, width, height, 1, resolvedKind);
+            const source = _tplCache.get(`${resolvedKind}|${width}x${height}`);
+            if (!source) return;
+            const tw = Math.max(1, Math.round(pixelWidth)), th = Math.max(1, Math.round(pixelHeight));
+            const key = `${resolvedKind}|${width}x${height}|${tw}x${th}`;
+            let entry = _tplThumbCache.get(key);
+            if (!entry || entry.source !== source) {
+                const canvas = document.createElement('canvas');
+                canvas.width = tw;
+                canvas.height = th;
+                const thumbCtx = canvas.getContext('2d', { willReadFrequently: true });
+                thumbCtx.drawImage(source, 0, 0, tw, th);
+                // Materialize the pixels now (one readback per template size)
+                // so later thumbnails copy CPU memory instead of the source.
+                thumbCtx.getImageData(0, 0, 1, 1);
+                entry = { source, canvas };
+                _tplThumbCache.delete(key);
+                if (_tplThumbCache.size >= 6) _tplThumbCache.delete(_tplThumbCache.keys().next().value);
+                _tplThumbCache.set(key, entry);
+            }
+            if (ctx) ctx.drawImage(entry.canvas, 0, 0, width, height);
+        }
         const FULLSCREEN_ICON_ENTER = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="15 3 21 3 21 9"/>
                 <polyline points="9 21 3 21 3 15"/>
@@ -1926,6 +1957,20 @@
         let isGestureInteracting = false;
         let penWritingIdleTimer = null;
         let penWritingIdleDeadline = 0;
+        // Writing bursts: consecutive pen strokes with short pauses (letters,
+        // words). Whole-document background work (Drive PDF build/upload,
+        // offline library copy) started in such a pause is aborted by the next
+        // stroke and its main-thread slices land right at pen-down, so while a
+        // burst continues it waits for a longer quiet period. Durable local
+        // stroke operations are unaffected: they still flush at pen idle.
+        const PEN_BURST_WINDOW_MS = 3000;
+        const PEN_BURST_QUIET_MS = 1200;
+        let penBurstLastStrokeAt = 0;
+        let penBurstPreviousStrokeAt = 0;
+        let lastPenActivityAt = 0;
+        // Deferred view maintenance (visible pages, canvas resolution) that
+        // waits for the pen to lift instead of polling while ink is drawn.
+        const afterPenWritingTasks = new Map();
         let lastPenEventTime = 0;
         let lastUserInteractionAt = 0;
         let documentSessionId = 1;
@@ -2595,7 +2640,10 @@
             canvasResolutionSyncHandle = setTimeout(() => {
                 canvasResolutionSyncHandle = null;
                 if (isViewportInteracting()) {
-                    scheduleCanvasResolutionSync();
+                    // Writing does not change zoom; resync after the pen lifts
+                    // instead of waking every 90 ms for the whole burst.
+                    if (isPenWriting) runAfterPenWriting('canvas-resolution', () => scheduleCanvasResolutionSync());
+                    else scheduleCanvasResolutionSync();
                     return;
                 }
                 warmTemplateBackgroundUrlsForDoc();
@@ -2923,6 +2971,9 @@
                 <div class="selection-handle handle-sw" data-handle="sw"></div>
             `;
 
+            setOverlayCanvasInk(lassoOverlay, false);
+            setOverlayCanvasInk(cursorOverlay, false);
+            setOverlayCanvasInk(remoteLiveOverlay, false);
             wrapper.insertBefore(canvas, wrapper.firstChild);
             wrapper.insertBefore(lassoOverlay, wrapper.lastChild);
             wrapper.insertBefore(cursorOverlay, wrapper.lastChild);
@@ -3521,10 +3572,17 @@
         // viewport, activates their canvases, and unloads pages that moved
         // far enough away (to stay within the MAX_ACTIVE_PAGES memory limit).
         function updateVisiblePages(force = false) {
+            const deferHeavy = !force && isViewportInteracting();
+            // Ink never moves the viewport: while the pen writes there are no
+            // new pages to show and no thumbnails to queue. Reconcile once when
+            // the pen lifts instead of re-reading the layout every 140 ms.
+            if (deferHeavy && isPenWriting) {
+                runAfterPenWriting('visible-pages', () => scheduleVisiblePageUpdate());
+                return;
+            }
             queueScrollPagePreviews();
             const pageCount = state.pages.length;
             if (!pageCount) return;
-            const deferHeavy = !force && isViewportInteracting();
 
             // During active interaction (scroll/pinch), skip all DOM work
             if (deferHeavy) {
@@ -3696,9 +3754,11 @@
             const overlayScale = getOverlayCanvasRenderScale(overlay, pageWidth, CURSOR_OVERLAY_BASE_SCALE);
             ctx.setTransform(overlayScale, 0, 0, overlayScale, 0, 0);
             ctx.clearRect(0, 0, overlay.width / overlayScale, overlay.height / overlayScale);
+            setOverlayCanvasInk(overlay, false);
             if (!page?.pageId) return;
             remoteLiveStrokePreviews.forEach(record => {
                 if (record.pageId !== page.pageId || !record.points.length) return;
+                setOverlayCanvasInk(overlay, true);
                 const stroke = {
                     tool: record.tool,
                     color: record.color,
@@ -3720,6 +3780,7 @@
             const points = record.points;
             const start = Math.max(0, Math.min(points.length, Number(record.renderedPointCount) || 0));
             if (start >= points.length) return true;
+            setOverlayCanvasInk(overlay, true);
             const ctx = overlay.getContext('2d');
             const { width: pageWidth } = getPageDimensions(pageIndex);
             const overlayScale = getOverlayCanvasRenderScale(overlay, pageWidth, CURSOR_OVERLAY_BASE_SCALE);
@@ -4382,6 +4443,7 @@
                     interruptDocumentBackgroundWork();
                     window.InhouseOfflineLibrary?.pauseForEditing?.();
                 }
+                notePenStrokeStart();
                 notePenActivity();
 
                 if (state.currentTool === 'eraser-stroke') {
@@ -4680,10 +4742,12 @@
             const ctx = lassoCanvas.getContext('2d');
             ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.clearRect(0, 0, lassoCanvas.width, lassoCanvas.height);
+            setOverlayCanvasInk(lassoCanvas, false);
         }
 
         function drawLassoPath(lassoCanvas, points) {
             if (!lassoCanvas || points.length === 0) return;
+            setOverlayCanvasInk(lassoCanvas, true);
             const ctx = lassoCanvas.getContext('2d');
             const pageIndex = parseInt(lassoCanvas.dataset.page || '-1', 10);
             const { width: pageWidth } = (Number.isFinite(pageIndex) && pageIndex >= 0)
@@ -4772,7 +4836,8 @@
             if (previous) ctx.clearRect(previous.x, previous.y, previous.width, previous.height);
             const last = points.length - 1;
             const from = Number.isInteger(stroke.liveCurveIndex) ? stroke.liveCurveIndex : 0;
-            if (from >= last) { liveCursorPreviewBounds.delete(previewCanvas); return; }
+            if (from >= last) { liveCursorPreviewBounds.delete(previewCanvas); setOverlayCanvasInk(previewCanvas, false); return; }
+            setOverlayCanvasInk(previewCanvas, true);
             const chain = points.slice(Math.max(0, from - 1));
             const offset = from > 0 ? 1 : 0;
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -4815,12 +4880,26 @@
         }
 
         const liveCursorPreviewBounds = new WeakMap();
+        // A page has three full-page transparent overlays (lasso, live tip,
+        // remote ink) that are empty almost all the time. A visible canvas is
+        // composited every frame, and without a GPU canvas every visible one is
+        // re-uploaded whenever any canvas on screen changes, so each pen frame
+        // paid for empty overlays too. Hide an overlay while it holds no ink;
+        // every drawing path below reveals it before it draws.
+        function setOverlayCanvasInk(overlay, hasInk) {
+            if (!overlay) return;
+            const hidden = !hasInk;
+            if (overlay.__inkHidden === hidden) return;
+            overlay.__inkHidden = hidden;
+            overlay.style.visibility = hidden ? 'hidden' : '';
+        }
         function drawLiveHighlighterAppend(pageIndex, stroke, cachedPreviewCanvas = null, metrics = null) {
             const previewCanvas = cachedPreviewCanvas || document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
             const points = stroke?.points;
             if (!previewCanvas || !Array.isArray(points) || points.length === 0) return;
             const start = Math.max(0, Math.min(points.length, Number(stroke.livePreviewPointCount) || 0));
             if (start >= points.length) return;
+            setOverlayCanvasInk(previewCanvas, true);
             const ctx = previewCanvas.getContext('2d');
             const overlayScale = (metrics && metrics.cursorOverlay === previewCanvas && Number.isFinite(metrics.cursorScale))
                 ? metrics.cursorScale
@@ -4921,6 +5000,7 @@
         function drawEraserPreview(pageIndex, pos) {
             const previewCanvas = document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
             if (!previewCanvas) return;
+            setOverlayCanvasInk(previewCanvas, true);
             const ctx = previewCanvas.getContext('2d');
             const { width: pageWidth } = getPageDimensions(pageIndex);
             const overlayScale = getOverlayCanvasRenderScale(previewCanvas, pageWidth, CURSOR_OVERLAY_BASE_SCALE);
@@ -4960,6 +5040,7 @@
                 ctx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
             }
             liveCursorPreviewBounds.delete(previewCanvas);
+            setOverlayCanvasInk(previewCanvas, false);
         }
 
         // ── § 4.12  Selection & lasso tool ───────────────────────────────────
@@ -5467,12 +5548,14 @@
             const ctx = lassoCanvas.getContext('2d');
             ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.clearRect(0, 0, lassoCanvas.width, lassoCanvas.height);
+            setOverlayCanvasInk(lassoCanvas, false);
 
             if (state.selection.pageIndex !== pageIndex) return;
             const page = state.pages[pageIndex];
             if (!page || !Array.isArray(page.strokes)) return;
             const strokeIndices = state.selection.strokeIndices || [];
             if (strokeIndices.length === 0) return;
+            setOverlayCanvasInk(lassoCanvas, true);
 
             const { width: pageWidth } = getPageDimensions(pageIndex);
             const overlayScale = getOverlayCanvasRenderScale(lassoCanvas, pageWidth, getLassoOverlayScale(state.zoom));
@@ -23484,7 +23567,11 @@
         }
         async function processScrollPagePreview() {
             if(scrollPreviewBusy||!scrollPreviewQueue.size)return;
-            if(isViewportInteracting()){scrollPreviewTimer=setTimeout(()=>{scrollPreviewTimer=null;void processScrollPagePreview();},240);return;}
+            // A thumbnail rebuild redraws every stroke of the page and encodes a
+            // JPEG; between the strokes of a writing burst it only competes with
+            // the pen (the page being written on shows its live canvas anyway).
+            const penBurstQuiet=getPenBurstQuietRemaining();
+            if(isViewportInteracting()||penBurstQuiet>0){scrollPreviewTimer=setTimeout(()=>{scrollPreviewTimer=null;void processScrollPagePreview();},Math.max(240,penBurstQuiet+40));return;}
             let pageIndex=-1,priority=Infinity;
             for(const [index,value] of scrollPreviewQueue)if(value<priority){pageIndex=index;priority=value;}
             scrollPreviewQueue.delete(pageIndex);scrollPreviewBusy=true;
@@ -23499,7 +23586,9 @@
                 if(!valid()||!data)return;
                 const {width,height}=getPageDimensions(pageIndex),scale=Math.min(.25,320/width,440/height);
                 canvas=document.createElement('canvas');canvas.width=Math.ceil(width*scale);canvas.height=Math.ceil(height*scale);
-                const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+                // CPU-backed: encoding a GPU canvas is a synchronous readback that
+                // waits for all queued GPU work, including the pen's page canvas.
+                const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
                 const source=data.backgroundSource||(data.pdfPageIndex?'pdf':'template');
                 if(source==='pdf'&&!data.backgroundImage){
                     const pdf=activePdfDocument;if(!pdf||!data.pdfPageIndex)return;
@@ -23515,7 +23604,7 @@
                 if(!valid())return;
                 ctx.setTransform(scale,0,0,scale,0,0);
                 if(data.backgroundImage)ctx.drawImage(getCachedImage(data.backgroundImage),0,0,width,height);
-                else if(source==='template'){const kind=normalizeTemplateKind(data.templateKind);drawTemplateBackground(ctx,width,height,width/getTemplateKindDefaults(kind).width,kind);}
+                else if(source==='template'){const kind=normalizeTemplateKind(data.templateKind);drawTemplateBackgroundThumbnail(ctx,width,height,kind,width*scale,height*scale);}
                 if(data.bakedBackground)ctx.drawImage(getCachedImage(data.bakedBackground),0,0,width,height);
                 if(!pendingCleanOriginalSwap)drawLegacyCoverStrokes(ctx,data);
                 drawImagesOnContext(ctx,data,pageIndex);
@@ -23548,7 +23637,9 @@
             const previewCanvas = document.createElement('canvas');
             previewCanvas.width = Math.max(1, Math.floor(pageWidth * scale));
             previewCanvas.height = Math.max(1, Math.floor(pageHeight * scale));
-            const ctx = previewCanvas.getContext('2d');
+            // CPU-backed for the same reason as the scroll thumbnails: toDataURL
+            // on a GPU canvas stalls the main thread on a GPU readback.
+            const ctx = previewCanvas.getContext('2d', { willReadFrequently: true });
             ctx.scale(scale, scale);
             ctx.fillStyle = 'white';
             ctx.fillRect(0, 0, pageWidth, pageHeight);
@@ -23562,8 +23653,7 @@
                 }
             } else if (backgroundSource === 'template' || backgroundSource === undefined) {
                 const kind = normalizeTemplateKind(page.templateKind);
-                const kindDefaults = getTemplateKindDefaults(kind);
-                drawTemplateBackground(ctx, pageWidth, pageHeight, pageWidth / kindDefaults.width, kind);
+                drawTemplateBackgroundThumbnail(ctx, pageWidth, pageHeight, kind, pageWidth * scale, pageHeight * scale);
             }
             // For PDF background pages with no image loaded yet, white fill is already done above
 
@@ -25128,6 +25218,11 @@
                 armPausedSaveWatchdog(360);
                 return;
             }
+            const penBurstQuiet = getPenBurstQuietRemaining();
+            if (penBurstQuiet > 0) {
+                armPausedSaveWatchdog(Math.max(360, penBurstQuiet + 40));
+                return;
+            }
             recordSaveDebug(`Resuming paused save (${reason})`, { phase: 'building' });
             showStatus('Changes pending...', { phase: 'building' });
             if (saveQueued || pageDirty.size > 0 || strokeOpsQueue.length > 0) {
@@ -25227,6 +25322,7 @@
             }
             isPenWriting = false;
             flushStrokeOpsQueue();
+            flushAfterPenWritingTasks();
             pendingStrokeOps.forEach((ops, pageIndex) => {
                 if (ops.length >= STROKE_OP_COMPACT_THRESHOLD) {
                     markPageDirty(pageIndex, 'full');
@@ -25257,9 +25353,67 @@
         }
 
         let penWritingIdleDelay = DOCUMENT_SAVE_IDLE_MS;
+        function notePenStrokeStart(now = Date.now()) {
+            penBurstPreviousStrokeAt = penBurstLastStrokeAt;
+            penBurstLastStrokeAt = now;
+            lastPenActivityAt = now;
+        }
+
+        // Remaining quiet time before whole-document work may start. Zero for
+        // an isolated stroke, when leaving the editor, or in the background.
+        function getPenBurstQuietRemaining(now = Date.now()) {
+            if (forceFlushingForExit || document.hidden) return 0;
+            if (!penBurstPreviousStrokeAt
+                || penBurstLastStrokeAt - penBurstPreviousStrokeAt > PEN_BURST_WINDOW_MS) return 0;
+            return Math.max(0, lastPenActivityAt + PEN_BURST_QUIET_MS - now);
+        }
+
+        function runAfterPenWriting(key, task) {
+            afterPenWritingTasks.set(key, task);
+        }
+
+        function flushAfterPenWritingTasks() {
+            if (!afterPenWritingTasks.size) return;
+            const tasks = Array.from(afterPenWritingTasks.values());
+            afterPenWritingTasks.clear();
+            tasks.forEach(task => {
+                try { task(); } catch (error) { console.warn('Deferred pen-idle task failed:', error); }
+            });
+        }
+
+        // The offline library copies the whole document into IndexedDB (a
+        // full structured clone read + write). Request it once the writing
+        // burst pauses; leaving the editor or hiding the app captures at once.
+        let penBurstOfflineCaptureTimer = null;
+        function scheduleOfflineCaptureAfterPenBurst() {
+            const library = window.InhouseOfflineLibrary;
+            if (!library?.scheduleCapture) return;
+            const remaining = getPenBurstQuietRemaining();
+            if (remaining <= 0) {
+                if (penBurstOfflineCaptureTimer) {
+                    clearTimeout(penBurstOfflineCaptureTimer);
+                    penBurstOfflineCaptureTimer = null;
+                }
+                library.scheduleCapture();
+                return;
+            }
+            if (penBurstOfflineCaptureTimer) return;
+            const tick = () => {
+                const left = getPenBurstQuietRemaining();
+                if (left > 0) {
+                    penBurstOfflineCaptureTimer = setTimeout(tick, left);
+                    return;
+                }
+                penBurstOfflineCaptureTimer = null;
+                window.InhouseOfflineLibrary?.scheduleCapture?.();
+            };
+            penBurstOfflineCaptureTimer = setTimeout(tick, remaining);
+        }
+
         function notePenActivity() {
             const wasWriting = isPenWriting;
             noteRecentUserActivity();
+            lastPenActivityAt = lastUserInteractionAt;
             isPenWriting = true;
             // Only update status indicator on the first pen event of a stroke,
             // not on every pointermove — avoids DOM thrashing during drawing.
@@ -25363,8 +25517,9 @@
                 preparedDrivePdfTimer = null;
                 if (!state.driveAutosave || state.isReadOnly || !driveAccessToken
                     || driveContentVersion === driveUploadedContentVersion) return;
-                if (hasSmoothInteraction() || hasRecentUserActivity()) {
-                    schedulePreparedDrivePdf(Math.max(60, getRecentUserActivityRemaining() + 24));
+                if (hasSmoothInteraction() || hasRecentUserActivity() || getPenBurstQuietRemaining() > 0) {
+                    schedulePreparedDrivePdf(Math.max(60, getRecentUserActivityRemaining() + 24,
+                        getPenBurstQuietRemaining() + 24));
                     return;
                 }
                 prepareDrivePdfBlob().catch(err => {
@@ -25465,7 +25620,7 @@
 
         function bumpDriveContentVersion() {
             window.InhouseDriveInk?.change();
-            window.InhouseOfflineLibrary?.scheduleCapture();
+            scheduleOfflineCaptureAfterPenBurst();
             clearDriveSaveBlocked();
             driveContentVersion += 1;
             invalidatePreparedDrivePdf();
@@ -26179,9 +26334,10 @@
                     scheduleDeferredDriveSaveRetry(Math.max(INTERACTION_IDLE_MS + 120, 260));
                     return;
                 }
-                if (hasRecentUserActivity()) {
+                if (hasRecentUserActivity() || getPenBurstQuietRemaining() > 0) {
                     deferredDriveSave = true;
-                    scheduleDeferredDriveSaveRetry(Math.max(180, getRecentUserActivityRemaining() + 90));
+                    scheduleDeferredDriveSaveRetry(Math.max(180, getRecentUserActivityRemaining() + 90,
+                        getPenBurstQuietRemaining() + 90));
                     return;
                 }
                 if (!driveAccessToken) {
@@ -26221,9 +26377,10 @@
                 scheduleDeferredDriveSaveRetry();
                 return;
             }
-            if (hasRecentUserActivity()) {
+            if (hasRecentUserActivity() || getPenBurstQuietRemaining() > 0) {
                 deferredDriveSave = true;
-                scheduleDeferredDriveSaveRetry(Math.max(180, getRecentUserActivityRemaining() + 90));
+                scheduleDeferredDriveSaveRetry(Math.max(180, getRecentUserActivityRemaining() + 90,
+                    getPenBurstQuietRemaining() + 90));
                 return;
             }
             if (!driveAccessToken) {
@@ -26248,6 +26405,16 @@
             }, DRIVE_SYNC_IDLE_DELAY);
             if (!driveSyncMaxTimeout) {
                 driveSyncMaxTimeout = setTimeout(() => {
+                    // A forced save in the middle of a writing burst would be
+                    // aborted by the next stroke; save when the burst pauses.
+                    const penBurstQuiet = getPenBurstQuietRemaining();
+                    if (penBurstQuiet > 0) {
+                        driveSyncMaxTimeout = null;
+                        driveDirty = true;
+                        deferredDriveSave = true;
+                        scheduleDeferredDriveSaveRetry(penBurstQuiet + 90);
+                        return;
+                    }
                     queueDriveSave(true);
                 }, DRIVE_SYNC_MAX_DELAY);
             }
@@ -26614,6 +26781,20 @@
                     forceUpload: !!(previous.options.forceUpload || next.options.forceUpload) } })
         );
         async function queueDriveSave(force = false, options = {}) {
+            // Every queued Drive save first copies the whole document into the
+            // offline library. A non-forced save during a writing burst would
+            // only be deferred afterwards, so defer it before that copy.
+            if (!force && state.driveAutosave && !state.isReadOnly && !driveSaveBlockedReason) {
+                const penBurstQuiet = getPenBurstQuietRemaining();
+                if (penBurstQuiet > 0) {
+                    if (driveContentVersion !== driveUploadedContentVersion) driveDirty = true;
+                    if (driveDirty) {
+                        deferredDriveSave = true;
+                        scheduleDeferredDriveSaveRetry(penBurstQuiet + 90);
+                    }
+                    return;
+                }
+            }
             const context = captureDocumentPersistenceContext();
             return driveCheckpointQueue.request(context.sessionToken, { context, force, options });
         }
@@ -26637,10 +26818,10 @@
             }
             if (!driveDirty && !force) return;
             const sessionToken = getDocumentSessionToken();
-            if ((hasSmoothInteraction() || hasRecentUserActivity()) && !force) {
+            if ((hasSmoothInteraction() || hasRecentUserActivity() || getPenBurstQuietRemaining() > 0) && !force) {
                 deferredDriveSave = true;
-                scheduleDeferredDriveSaveRetry(hasRecentUserActivity()
-                    ? Math.max(180, getRecentUserActivityRemaining() + 90)
+                scheduleDeferredDriveSaveRetry(hasRecentUserActivity() || getPenBurstQuietRemaining() > 0
+                    ? Math.max(180, getRecentUserActivityRemaining() + 90, getPenBurstQuietRemaining() + 90)
                     : undefined);
                 return;
             }
@@ -31538,12 +31719,24 @@
         }
 
         let homeSaveLoadingCleanupTimer = null;
+        let loadingFadeOutTimer = null;
+
+        // The spinner only animates while the overlay is visible or fading out
+        // (see #loading-overlay:not(.visible):not(.fading-out) in the CSS).
+        function cancelLoadingFadeOut() {
+            if (loadingFadeOutTimer) {
+                clearTimeout(loadingFadeOutTimer);
+                loadingFadeOutTimer = null;
+            }
+            loadingOverlay.classList.remove('fading-out');
+        }
 
         function showLoading(text) {
             if (homeSaveLoadingCleanupTimer) {
                 clearTimeout(homeSaveLoadingCleanupTimer);
                 homeSaveLoadingCleanupTimer = null;
             }
+            cancelLoadingFadeOut();
             loadingOverlay.classList.remove('home-save-transition');
             loadingText.textContent = text;
             loadingOverlay.setAttribute('aria-busy', 'true');
@@ -31555,6 +31748,7 @@
                 clearTimeout(homeSaveLoadingCleanupTimer);
                 homeSaveLoadingCleanupTimer = null;
             }
+            cancelLoadingFadeOut();
             loadingText.textContent = text;
             loadingOverlay.setAttribute('aria-busy', 'true');
             loadingOverlay.classList.add('home-save-transition', 'visible');
@@ -31562,6 +31756,15 @@
 
         function hideLoading() {
             const wasHomeTransition = loadingOverlay.classList.contains('home-save-transition');
+            if (loadingOverlay.classList.contains('visible')) {
+                cancelLoadingFadeOut();
+                loadingOverlay.classList.add('fading-out');
+                // Matches the overlay's 0.3s opacity/visibility transition.
+                loadingFadeOutTimer = setTimeout(() => {
+                    loadingFadeOutTimer = null;
+                    loadingOverlay.classList.remove('fading-out');
+                }, 360);
+            }
             loadingOverlay.classList.remove('visible');
             loadingOverlay.setAttribute('aria-busy', 'false');
             if (!wasHomeTransition) {

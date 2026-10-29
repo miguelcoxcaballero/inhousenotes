@@ -4308,6 +4308,14 @@
             }
         }
 
+        /* The overlay stays in the DOM while hidden. An infinite animation on
+           an invisible spinner still forces a style/paint frame at the display
+           rate for the whole editor session; spin only while it can be seen
+           (including the fade-out). */
+        #loading-overlay:not(.visible):not(.fading-out) .spinner {
+            animation: none;
+        }
+
         #loading-text {
             color: white;
             margin-top: 16px;
