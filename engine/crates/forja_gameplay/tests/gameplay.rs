@@ -168,15 +168,19 @@ fn car_concept_wheels_are_grouped() {
         assert!(nodes.iter().any(|&n| scene.nodes[n].name.is_empty()), "wheel {w} has its tyre: {:?}", nodes.iter().map(|&n| &scene.nodes[n].name).collect::<Vec<_>>());
         assert!(bound.wheel_calipers[w].iter().all(|&n| scene.nodes[n].name.contains("BrakePad")));
     }
-    // The model is posed with the front wheels steered 30 degrees; the
-    // binding undoes it (rears are straight).
+    // The model is posed with the front wheels steered 30 degrees (the
+    // `WheelFront*` node matrices turn the axle from X to (0.866, 0, 0.5)
+    // in Y-up space); the binding undoes it to within 1 degree (rears are
+    // straight).
     for (w, q) in bound.wheel_rest.iter().enumerate() {
         let (axis, angle) = q.to_axis_angle();
         let front = bound.config.wheels[w].steer;
         if front {
-            assert!((angle.to_degrees() - 30.0).abs() < 3.0 && axis.y.abs() > 0.99, "front wheel {w}: {axis} {}", angle.to_degrees());
+            assert!((angle.to_degrees() - 30.0).abs() < 1.0 && axis.y.abs() > 0.99, "front wheel {w}: {axis} {}", angle.to_degrees());
+            // The axle is R_y(-30 deg) * X; undoing it is a turn about +Y.
+            assert!(axis.y > 0.0, "front wheel {w} straightened the wrong way: {axis}");
         } else {
-            assert!(angle.to_degrees() < 3.0, "rear wheel {w}: {}", angle.to_degrees());
+            assert!(angle.to_degrees() < 1.0, "rear wheel {w}: {}", angle.to_degrees());
         }
         // Straightened, the tyre's axle lies along X.
         let pts: Vec<_> = bound.wheel_nodes[w]
