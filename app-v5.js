@@ -27334,6 +27334,7 @@
         let _presenceCanHeartbeat = false;
         let _presenceHeartbeatDueAt = 0;
         let _presenceHeartbeatGeneration = 0;
+        let _presenceHeartbeatFailedAt = 0; // start time of the last beat Drive rejected
         const PRESENCE_PING_INTERVAL = 120000; // 2 minutes
         const PRESENCE_STALE_MS = 600000; // 10 minutes
         // Heartbeats are adaptive like revision polling. Each heartbeat
@@ -27886,8 +27887,13 @@
                             ? Math.max(next - (Date.now() - startedAt), Math.min(next, PRESENCE_HEARTBEAT_INTERVAL) / 2)
                             : Math.min(next, PRESENCE_HEARTBEAT_RETRY_MS);
                         // A preview frame published after this beat started
-                        // still needs a beat of its own.
-                        if (hasPendingPresencePreviewWake()) {
+                        // still needs a beat of its own. Only a beat that was
+                        // skipped (save upload, beat in flight) retries that
+                        // fast; one Drive rejected or that failed on the
+                        // network keeps the ordinary retry, so errors and 429s
+                        // are not hammered every 0.5 s.
+                        const failed = !sent && _presenceHeartbeatFailedAt >= startedAt;
+                        if (!failed && hasPendingPresencePreviewWake()) {
                             nextDelay = sent ? 0 : Math.min(nextDelay, PRESENCE_PREVIEW_WAKE_RETRY_MS);
                         }
                         schedulePresenceHeartbeat(nextDelay);
@@ -27965,6 +27971,7 @@
                 sent = true;
             } catch (err) {
                 // Best-effort heartbeat; ignore transient errors.
+                _presenceHeartbeatFailedAt = Date.now();
             } finally {
                 _presenceHeartbeatInFlight = false;
             }
