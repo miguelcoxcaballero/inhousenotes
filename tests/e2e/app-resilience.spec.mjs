@@ -261,7 +261,7 @@ test('Scan pages stays below Photo with a Soon badge and only shows a Soon notic
 
   const framesBefore = page.frames().length;
   await scan.click();
-  await expect(page.locator('#save-indicator')).toContainText('Soon');
+  await expect(page.locator('#save-indicator')).toHaveAttribute('aria-label', 'Soon');
   expect(page.frames().length).toBe(framesBefore);
   expect(await page.locator('iframe[src*="scanner"]').count()).toBe(0);
   await expect(page.locator('#pages-panel')).toHaveClass(/visible/);
