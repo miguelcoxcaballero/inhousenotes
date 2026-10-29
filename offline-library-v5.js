@@ -470,7 +470,7 @@
             if (!force && lastRunEndedAt && now - lastRunEndedAt < MIN_RUN_GAP_MS) { armKick(lastRunEndedAt + MIN_RUN_GAP_MS); return; }
             // An upload in this or another window holds the account's sync
             // lease; starting a processor now would only find it busy.
-            const lease = S.activeLease ? await S.activeLease(account, 'sync') : await S.read('leases', account, 'sync');
+            const lease = await S.activeLease(account, 'sync');
             if (lease?.expires > Date.now()) { waitingForLease = true; armKick(lease.expires + 50); return; }
             waitingForLease = false;
             if (offline() || host.busy() || account !== kickAccount) { deferredKick = true; armKick(Date.now() + BUSY_RECHECK_MS); return; }
@@ -617,6 +617,6 @@
     function disable() {initialized=false;resumed=false;stopScheduling();stopOfflineProbes();}
     function logout() {setSyncProgress({phase:'idle',pending:0,id:null,errors:[]});account='';loaded=false;savedViews={};entries=[];storedEntries=new Map();documents.clear();indexCatalogue();retireWorker();stopScheduling();nativeScheduled=null;cancelNative();}
     root.InhouseOfflineLibrary=Object.freeze({pauseForEditing,resumeAfterEditing,init,resume,disable,account:()=>account,offline,networkAvailable,ready:()=>initialized&&loaded&&!!account,folder,combine,home,recentItems,syncErrorText,observed,cache,capture,scheduleCapture,prepared,
-        openRecord,pin,createFolder,catalogue,kick,leaseReleased,setSyncProgress,syncFinished,syncStatus:()=>({...syncState}),scheduleBackground,decorate,reload,useAccount,logout,settings:showSettings,record,isWorker,
+        openRecord,pin,createFolder,kick,leaseReleased,setSyncProgress,syncFinished,syncStatus:()=>({...syncState}),scheduleBackground,decorate,reload,useAccount,logout,settings:showSettings,record,isWorker,
         diagnostics:()=>({...diagnostics,workerAlive:!!worker,workerRunning,timerAt:kickTimerAt||null,runRetryAt:runRetryAt||null,probing:!!probeTimer,nativePaused:nativePausedForEditing})});
 })(window);

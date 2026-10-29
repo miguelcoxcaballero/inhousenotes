@@ -336,18 +336,12 @@
         return history;
     }
 
-    function estimateArchiveBytes(history, options = {}) {
-        if (!Array.isArray(history) || history.length === 0) return 0;
-        return stableStringify(createArchive(history, options)).length;
-    }
-
     const api = Object.freeze({
         ARCHIVE_SCHEMA_VERSION,
         DEFAULT_CHECKPOINT_INTERVAL,
         createArchive,
         encodeArchiveJson,
         materializeArchive,
-        estimateArchiveBytes,
         stableStringify,
         snapshotHash
     });
