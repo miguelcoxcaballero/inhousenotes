@@ -567,6 +567,7 @@ fn run_headless(args: &Args) {
     let mut perf_state = PerfState::load(&paths().data.join("graphics.toml"), &renderer);
     if let Some(p) = args.preset {
         perf_state.cfg.apply_preset(p);
+        log::info!("graphics: --preset {} applied", p.label());
     }
     if args.preset.is_some() || std::env::var_os("FORJA_PRESET").is_some() {
         // Headless captures keep the High defaults unless a preset is asked.
@@ -978,6 +979,7 @@ fn run_smoke(args: &Args) {
     }
     let mut perf_state = PerfState::load(&paths().data.join("graphics.toml"), &renderer);
     perf_state.cfg.apply_preset(args.preset.unwrap_or(forja_render::Preset::Low));
+    log::info!("graphics: smoke preset {} applied", perf_state.cfg.preset.label());
     renderer.apply_graphics(&perf_state.cfg);
     if let Ok(fx) = std::env::var("FORJA_FX") {
         renderer.settings.apply_fx(&fx);

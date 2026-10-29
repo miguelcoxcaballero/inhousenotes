@@ -1098,6 +1098,60 @@ struct DrawRange {
     base_vertex: i32,
 }
 
+/// The frame's small buffer writes (uniforms, lights, joints, lines, draw
+/// arguments) packed into one staging copy: every `queue.write_buffer`
+/// creates and later frees its own staging buffer in wgpu-core (a
+/// placed resource per call on D3D12). [`FrameWrites::flush`] writes them
+/// all at once into a persistent upload buffer and copies each to its
+/// destination in a command buffer that runs first in the frame's submit,
+/// so they land before any pass, exactly like `write_buffer`.
+#[derive(Default)]
+struct FrameWrites {
+    data: Vec<u8>,
+    /// Destination, offset there, offset in `data`, size.
+    copies: Vec<(wgpu::Buffer, u64, u64, u64)>,
+    upload: Option<wgpu::Buffer>,
+    cap: u64,
+    /// Writes of the last frame (frame trace).
+    pub last: usize,
+}
+
+impl FrameWrites {
+    fn stage(&mut self, dst: &wgpu::Buffer, offset: u64, bytes: &[u8]) {
+        if bytes.is_empty() {
+            return;
+        }
+        let at = self.data.len() as u64;
+        self.data.extend_from_slice(bytes);
+        // Copies need 4-byte sizes and offsets.
+        while self.data.len() % wgpu::COPY_BUFFER_ALIGNMENT as usize != 0 {
+            self.data.push(0);
+        }
+        self.copies.push((dst.clone(), offset, at, self.data.len() as u64 - at));
+    }
+
+    /// The copy command buffer (to submit before the frame's passes).
+    fn flush(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) -> Option<wgpu::CommandBuffer> {
+        self.last = self.copies.len();
+        if self.copies.is_empty() {
+            return None;
+        }
+        let len = self.data.len() as u64;
+        if len > self.cap || self.upload.is_none() {
+            self.cap = len.next_power_of_two().max(64 * 1024);
+            self.upload = Some(device.create_buffer(&wgpu::BufferDescriptor { label: Some("frame writes"), size: self.cap, usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false }));
+        }
+        let upload = self.upload.as_ref().expect("allocated");
+        queue.write_buffer(upload, 0, &self.data);
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("frame writes") });
+        for (dst, off, at, size) in self.copies.drain(..) {
+            enc.copy_buffer_to_buffer(upload, at, &dst, off, size);
+        }
+        self.data.clear();
+        Some(enc.finish())
+    }
+}
+
 /// `DrawIndexedIndirectArgs` as the GPU reads them.
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -1446,6 +1500,8 @@ pub struct Renderer {
     view_lists: Vec<ViewList>,
     /// Arguments of the merged draws ([`DrawStream`]) and their buffer.
     indirect_args: Vec<IndirectArgs>,
+    /// The frame's small writes, staged together ([`FrameWrites`]).
+    writes: FrameWrites,
     indirect_buf: Option<wgpu::Buffer>,
     indirect_cap: u64,
     /// Batches of the last frame: camera, then every shadow view.
@@ -2207,6 +2263,7 @@ impl Renderer {
             scratch: Vec::new(),
             view_lists: Vec::new(),
             indirect_args: Vec::new(),
+            writes: FrameWrites::default(),
             indirect_buf: None,
             indirect_cap: 0,
             last_batches: Default::default(),
@@ -3226,7 +3283,7 @@ impl Renderer {
             self.rebuild_frame_bind();
         }
         if !gpu_lights.is_empty() {
-            self.queue.write_buffer(&self.lights_buf, 0, bytemuck::cast_slice(&gpu_lights));
+            self.writes.stage(&self.lights_buf, 0, bytemuck::cast_slice(&gpu_lights));
         }
         let n_lights = gpu_lights.len() as u32;
         // Eye adaptation state: manual exposure keeps pre-exposure 1 (the
@@ -3244,12 +3301,12 @@ impl Renderer {
                 c: [a.high_percentile, EXPOSURE_LOG_MIN, EXPOSURE_LOG_RANGE, EXPOSURE_KEY_SCALE],
                 d: [lights::NITS_PER_UNIT, 0.0, 0.0, 0.0],
             };
-            self.queue.write_buffer(&self.exposure_uniform, 0, bytemuck::bytes_of(&u));
+            self.writes.stage(&self.exposure_uniform, 0, bytemuck::bytes_of(&u));
             if !self.auto_exposure_prev {
-                self.queue.write_buffer(&self.exposure_state, 0, bytemuck::cast_slice(&[1.0f32, 1.0, env.exposure, 0.0]));
+                self.writes.stage(&self.exposure_state, 0, bytemuck::cast_slice(&[1.0f32, 1.0, env.exposure, 0.0]));
             }
         } else {
-            self.queue.write_buffer(&self.exposure_state, 0, bytemuck::cast_slice(&[1.0f32, 1.0, env.exposure, 0.0]));
+            self.writes.stage(&self.exposure_state, 0, bytemuck::cast_slice(&[1.0f32, 1.0, env.exposure, 0.0]));
         }
         self.auto_exposure_prev = auto.is_some();
         // Real frame time (motion blur shutter); 1/60 for stills and jumps.
@@ -3429,12 +3486,12 @@ impl Renderer {
             params: [s.pcss_cascades as f32, s.ssr_steps.max(4) as f32, s.contact_steps.max(1) as f32, if half_ao { 2.0 } else { 1.0 }],
             extra: [fx_on(s.bent_normals && s.ssao), fx_on(s.sky_lut), fx_on(s.fsr), 0.0],
         };
-        self.queue.write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&uniforms));
-        self.queue.write_buffer(&self.quality_buf, 0, bytemuck::bytes_of(&quality));
-        self.queue.write_buffer(&self.taa_buf, 0, bytemuck::bytes_of(&tf.taa_params));
+        self.writes.stage(&self.frame_buf, 0, bytemuck::bytes_of(&uniforms));
+        self.writes.stage(&self.quality_buf, 0, bytemuck::bytes_of(&quality));
+        self.writes.stage(&self.taa_buf, 0, bytemuck::bytes_of(&tf.taa_params));
         for (i, m) in cascade_vp.iter().chain(&spot_vp[..n_spot]).enumerate() {
             if i >= 4 || refresh[i] {
-                self.queue.write_buffer(&self.cascade_bufs[i], 0, bytemuck::bytes_of(&m.to_cols_array_2d()));
+                self.writes.stage(&self.cascade_bufs[i], 0, bytemuck::bytes_of(&m.to_cols_array_2d()));
             }
         }
         self.cpu.add("setup", t0.elapsed().as_secs_f32() * 1000.0);
@@ -3704,14 +3761,14 @@ impl Renderer {
             self.joint_buf = self.device.create_buffer(&wgpu::BufferDescriptor { label: Some("joints"), size: self.joint_cap, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
             self.joint_bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("joints"), layout: &self.joints_bgl, entries: &[wgpu::BindGroupEntry { binding: 0, resource: self.joint_buf.as_entire_binding() }] });
         }
-        self.queue.write_buffer(&self.joint_buf, 0, bytemuck::cast_slice(&joints));
+        self.writes.stage(&self.joint_buf, 0, bytemuck::cast_slice(&joints));
         let line_bytes = (frame.lines.len() * std::mem::size_of::<LineVertex>()) as u64;
         if line_bytes > self.line_cap {
             self.line_cap = line_bytes.next_power_of_two();
             self.line_buf = self.device.create_buffer(&wgpu::BufferDescriptor { label: Some("lines"), size: self.line_cap, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         }
         if !frame.lines.is_empty() {
-            self.queue.write_buffer(&self.line_buf, 0, bytemuck::cast_slice(&frame.lines));
+            self.writes.stage(&self.line_buf, 0, bytemuck::cast_slice(&frame.lines));
         }
         let instance_bytes = bytes;
         self.scratch = all;
@@ -3722,8 +3779,7 @@ impl Renderer {
         let ev_incident = exposure::incident_ev100(meter_illuminance);
         let lux_ev = exposure::LUX_PER_UNIT * 100.0 / exposure::METER_K;
         let (open, close) = (env.auto_exposure_range[0].max(0.0), env.auto_exposure_range[1].max(0.0));
-        self.queue.write_buffer(
-            &t.post_bind.meter_uniform,
+        self.writes.stage(&t.post_bind.meter_uniform,
             0,
             bytemuck::bytes_of(&PostUniforms {
                 texel: [env.ev100.is_some() as u32 as f32, env.ev100.unwrap_or(0.0), env.exposure_compensation, 0.0],
@@ -3739,8 +3795,7 @@ impl Renderer {
         self.exposure_time = Some(frame.time);
         let tonemap_u = &pu[pu.len() - 2];
         let bloom_amount = if s.bloom { env.bloom } else { 0.0 };
-        self.queue.write_buffer(
-            tonemap_u,
+        self.writes.stage(tonemap_u,
             0,
             bytemuck::bytes_of(&if daylight {
                 PostUniforms {
@@ -3756,8 +3811,7 @@ impl Renderer {
         );
         // Bloom: first-mip compression (1 / limit) and the weight of the
         // wider mips (1 / 4 and 1 by day, as before).
-        self.queue.write_buffer(
-            &pu[0],
+        self.writes.stage(&pu[0],
             0,
             // By day the Karis average weights each 2x2 group by its exposed luma.
             bytemuck::bytes_of(&if daylight {
@@ -3768,14 +3822,13 @@ impl Renderer {
         );
         for (k, i) in (1..BLOOM_MIPS).rev().enumerate() {
             let (_, bw, bh) = t.bloom[i];
-            self.queue.write_buffer(&pu[BLOOM_MIPS + k], 0, bytemuck::bytes_of(&PostUniforms { texel: [1.0 / bw as f32, 1.0 / bh as f32, 0.0, 0.0], params: [env.bloom_radius.max(1e-3), 0.0, 0.0, 0.0], ..Default::default() }));
+            self.writes.stage(&pu[BLOOM_MIPS + k], 0, bytemuck::bytes_of(&PostUniforms { texel: [1.0 / bw as f32, 1.0 / bh as f32, 0.0, 0.0], params: [env.bloom_radius.max(1e-3), 0.0, 0.0, 0.0], ..Default::default() }));
         }
         // Final pass: FXAA without TAA, CAS sharpening with it (stronger
         // while the camera moves, when the temporal filter is softer).
         let still = tf.taa_params[3] > 0.5;
         let sharpen = if still { s.sharpen } else { (s.sharpen * 1.6).min(1.0) };
-        self.queue.write_buffer(
-            &pu[pu.len() - 1],
+        self.writes.stage(&pu[pu.len() - 1],
             0,
             bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0], params: [(!s.taa) as u32 as f32, sharpen, (!self.output_format.is_srgb()) as u32 as f32, fx_on(s.fsr)], ..Default::default() }),
         );
@@ -3797,7 +3850,7 @@ impl Renderer {
         if camera_on && !self.output_format.is_srgb() {
             // The camera stage is then the last pass and does the sRGB
             // encoding for a plain UNORM surface; FXAA must stay linear.
-            self.queue.write_buffer(&t.post_bind.uniforms[t.post_bind.uniforms.len() - 1], 0, bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0], params: [(!self.settings.taa) as u32 as f32, sharpen, 0.0, 0.0], ..Default::default() }));
+            self.writes.stage(&t.post_bind.uniforms[t.post_bind.uniforms.len() - 1], 0, bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0], params: [(!self.settings.taa) as u32 as f32, sharpen, 0.0, 0.0], ..Default::default() }));
         }
         // Multi-draw arguments: at most one per batch of each pass.
         let mdi = self.settings.multi_draw && self.device.features().contains(wgpu::Features::INDIRECT_FIRST_INSTANCE);
@@ -4088,7 +4141,7 @@ impl Renderer {
         if let Some(buf) = ctx.indirect
             && !indirect_args.is_empty()
         {
-            self.queue.write_buffer(buf, 0, bytemuck::cast_slice(&indirect_args));
+            self.writes.stage(buf, 0, bytemuck::cast_slice(&indirect_args));
         }
         self.indirect_args = indirect_args;
         self.cpu.add("encode", ao_fog_ms + post_ms);
@@ -4103,6 +4156,8 @@ impl Renderer {
         self.cpu.add("finish", enc_ms[3]);
         let _ = t_enc;
         let t_sub = std::time::Instant::now();
+        let writes = self.writes.flush(&self.device, &self.queue);
+        cmds.splice(0..0, writes);
         self.queue.submit(cmds);
         // The frame's submit carries every staged upload with it: their
         // staging memory is released once the GPU is past this frame.
