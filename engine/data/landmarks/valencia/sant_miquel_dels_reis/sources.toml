@@ -21,6 +21,25 @@ catastro_built = { value = 1890, source = "https://www1.sedecatastro.gob.es/CYCB
 catastro_use = { value = "3_industrial", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6256412&rc2=YJ2765E" }
 catastro_floor_area = { value = 21893.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6256412&rc2=YJ2765E", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 5, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 12 parts" }
+plan_axis = { value = 18.0, unit = "deg", source = "OSM relation 2024883 + building:parts 1247022571-77 (= Catastro 6256412YJ2765E geometry)", note = "long walls face 108/288 deg, end walls 16/196 deg; model notes use an axis frame t (bearing 108) / s (bearing 198) from the footprint anchor" }
+plan_overall = { value = [69.0, 141.0], unit = "m", source = "OSM relation 2024883 + building:parts 1247022571-77 (= Catastro 6256412YJ2765E geometry)", note = "across x along, corner towers included; outer walls t -32..34, s -74..67" }
+range_depths = { value = [14.0, 11.5, 13.0, 11.3, 9.4], unit = "m", source = "OSM relation 2024883 + building:parts 1247022571-77 (= Catastro 6256412YJ2765E geometry); https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0)", note = "west range north half / south half, north range, south range, east range" }
+h_north_ranges = { value = [18.2, 20.9], unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0)", note = "eaves (edge cells 18.5-18.8) and ridge (20.8 west range at s -40, 20.9 north range at t 0); hip roofs ~20 deg" }
+h_south_ranges = { value = [15.9, 17.9], unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0)", note = "eaves 15.9-16.1 and ridge 17.8-17.9 (west range south half at s 30, south range at t 0); east range 16.0 / 18.0-19.1" }
+corner_towers = { value = [12.0, 21.2, 22.2], unit = "m", source = "OSM relation 2024883 + building:parts 1247022571-77 (= Catastro 6256412YJ2765E geometry); https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0)", note = "plan ~12 x 12 m, roof terrace 21.0 (NE) 21.0 (SE) 21.4 (SW) 22.0 (NW, with the 5-arch loggia), parapet with balls (photos 02, 15)" }
+church_tower_plan = { value = [6.3, 6.2], unit = "m", source = "OSM part 1247022574 west-face steps at s -7.9 / 4.9 (north tower s -14.2..-7.9, south tower 4.9..11.1); photo 10 width ratio tower:frontis:tower = 205:380:250 px", note = "square towers, front at t -36.5" }
+church_tower_heights = { value = [12.6, 25.0, 31.6, 32.8, 35.2], unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0) (belfry roof cells 32.2 / 31.9) with a constrained 3-photo camera solve (photos 05, 10, 13; eye 1.6 m prior; c1 12.3, c2 24.6, c3 31.1 +-0.4)", note = "lower cornice, mid-stage cornice, belfry cornice, balustrade top, corner pinnacles; one round-arched bell opening per face (photos 10, 14)" }
+frontispiece = { value = [12.9, 9.1, 16.3, 21.2, 22.2], unit = "m", source = "OSM west front between the towers (width); https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0) (crest cell 22.2); photo 10 scaled on the tower lower cornice (25-27 px/m)", note = "width, lower / middle entablatures, top cornice, crest; door 3.2 x 4.9 m, St Michael niche in the middle order, window in the upper order (1623-1644 retable facade)" }
+nave = { value = [12.8, 20.0, 23.1], unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0) (ridge cells 22.5-23.1 along s -1.5 from t -25 to 12; eave cells 20.2-21.2 at s -6.5 / 3.5)", note = "width (between the towers, OSM), eaves, ridge; nave ends near t 16 (LiDAR 18.0 at t 18)" }
+church_block = { value = 15.0, unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0) (14.8-15.3 at t 20, s +-12; 17.2-17.8 behind the towers)" }
+dome_centre = { value = [-0.5, -1.5], unit = "m (t, s)", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0): least-squares centre of the dome cells (-1.4, -1.4) + ~1 m west plan offset; IGN PNOA orthophoto WMS https://www.ign.es/wms-inspire/pnoa-ma (CC BY 4.0), 0.125 m/px balustrade ring centre", note = "on the church axis (s -1.55 between the towers)" }
+drum = { value = [7.0, 23.0, 31.0], unit = "m", source = "IGN PNOA orthophoto WMS https://www.ign.es/wms-inspire/pnoa-ma (CC BY 4.0), 0.125 m/px (ring 13.9 m across); https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0) (31.0 at r 6.5, 23-25 at r 8, roof 22-24 around)", note = "radius, base, cornice top; balustrade 0.9 m with balls, 8 windows, pilasters (photos 01, 12, 14)" }
+dome_lantern = { value = [5.7, 36.6, 41.5, 43.6, 45.6], unit = "m", source = "photo 12 (telephoto, 38 px/m from the 13.9 m balustrade ring): shell 435 px wide, rise 193 px, lantern 187 px, cap 80 px, cross 75 px; https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0) (lantern cell 44.0)", note = "shell radius, shell top, lantern cornice, tiled cap, cross tip; blue glazed tiles, white lantern r 2.2" }
+south_cloister = { value = [31.0, 32.0, 7, 7.5, 13.9, 14.9], unit = "m", source = "OSM inner ring (garden); photo 01 (7 arches per side, two storeys); https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0) (gallery cells 14.7-15.1)", note = "garden, bays per side, ground storey top, upper storey top, balustrade top; galleries 5 m deep" }
+north_cloister = { value = [43.0, 46.0, 9], unit = "m", source = "OSM inner ring; photo 08", note = "courtyard; 9 bays per side with tall arched ground windows and 3 rows of paired small windows (library restoration), excavated floor" }
+prison_front = { value = [6.4, 8.6, 10.0], unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0) (wall cells 6.3-6.5, turret cells 8.2-8.4); Catastro facade photo proportions (big south tower ~1.6 x the gate turrets)", note = "1890s neo-medieval prison entrance range on the Avinguda de la Constitucio (OSM way 1247022587): wall, turrets, big south tower" }
+lidar_offset = { value = [-1.0, 0.0], unit = "m (t, s)", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0)", note = "fitted on wall edges and ridges: west range outer edge cells 1.5-2 m west of OSM, inner edges ~0; ridges -1.1 / -0.5 (west), +1.7 (north), -1.2 (south) => no consistent offset beyond ~1 m; heights taken from plateau cells only. Ground cells return no building (no street bias)." }
+camera_focal_catastro = { value = 48.9, unit = "deg fov_y", source = "EXIF of the Catastro facade photo: Canon IXUS 130, 5.0 mm on a 1/2.3 in sensor" }
 
 [[photo]]
 file = "photos/01_Monestir_de_Sant_Miquel_dels_Reis_Monasterio_de_San_Miguel_d.jpg"
@@ -31,8 +50,8 @@ license = "CC BY-SA 2.0"
 width = 1280
 height = 1427
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S cloister (inside)"
 
 [[photo]]
 file = "photos/02_Fachada_este_del_monasterio_de_San_Miguel_de_los_Reyes_01.jpg"
@@ -44,8 +63,8 @@ width = 1280
 height = 853
 camera = [-115.22, 157.09]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S"
 
 [[photo]]
 file = "photos/03_Sant_Miquel_dels_Reis_7151856743.jpg"
@@ -82,8 +101,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W"
 
 [[photo]]
 file = "photos/06_Remat_de_la_facana_de_l_esglesia_de_Sant_Miquel_dels_Reis.jpg"
@@ -118,8 +137,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "N cloister (inside)"
 
 [[photo]]
 file = "photos/09_051_Sant_Miquel_dels_Reis_Valencia_pati_nord_arc_de_Sant_Ben.jpg"
@@ -142,8 +161,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W"
 
 [[photo]]
 file = "photos/11_Sanmigueldelosreyesvalencia.jpg"
@@ -154,8 +173,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W"
 
 [[photo]]
 file = "photos/12_Cupula_de_la_iglesia_de_San_Miguel_de_los_Reyes_01.jpg"
@@ -167,8 +186,8 @@ width = 1280
 height = 853
 camera = [-115.26, 157.08]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SW (far, dome)"
 
 [[photo]]
 file = "photos/13_BVexterior20160116.jpg"
@@ -179,8 +198,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W"
 
 [[photo]]
 file = "photos/14_016_Sant_Miquel_dels_Reis_vist_des_dels_Orriols_Valencia.jpg"
@@ -191,8 +210,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W (far)"
 
 [[photo]]
 file = "photos/15_Sant_Miquel_dels_Reis_cel_les.jpg"
@@ -203,9 +222,21 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W"
 
+
+[[photo]]
+file = "photos/catastro_6256412YJ2765E.jpg"
+title = "Catastro fachada 6256412YJ2765E"
+url = "http://ovc.catastro.meh.es/OVCServWeb/OVCWcfLibres/OVCFotoFachada.svc/RecuperarFotoFachadaGet?ReferenciaCatastral=6256412YJ2765E"
+author = "Dirección General del Catastro"
+license = "Catastro open data (attribution required)"
+width = 2592
+height = 1944
+exterior = true
+selected = true
+side = "W (prison front)"
 [[plan]]
 file = "plans/01_Carnet_de_membre_de_la_Seccio_Filologica_de_l_Institut_d_Est.jpg"
 title = "File:Carnet de membre de la Secció Filològica de l'Institut d'Estudis Valencians de Manuel Sanchis Guarner.JPG"
