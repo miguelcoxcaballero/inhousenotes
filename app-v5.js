@@ -236,6 +236,37 @@
             }
             if (ctx) ctx.drawImage(cached, 0, 0);
         }
+
+        // Page thumbnails are CPU canvases (they are JPEG-encoded). Drawing the
+        // full-size template canvas into one is a GPU readback on every
+        // thumbnail; keep a CPU copy already reduced to the thumbnail's pixel
+        // size instead. The copy follows the source canvas, so clearing
+        // _tplCache (theme/template reload) also refreshes it.
+        const _tplThumbCache = new Map(); // key "kind|WxH|TWxTH" -> { source, canvas }
+        function drawTemplateBackgroundThumbnail(ctx, width, height, kind, pixelWidth, pixelHeight) {
+            const resolvedKind = kind || TEMPLATE_KINDS.DEFAULT;
+            drawTemplateBackground(null, width, height, 1, resolvedKind);
+            const source = _tplCache.get(`${resolvedKind}|${width}x${height}`);
+            if (!source) return;
+            const tw = Math.max(1, Math.round(pixelWidth)), th = Math.max(1, Math.round(pixelHeight));
+            const key = `${resolvedKind}|${width}x${height}|${tw}x${th}`;
+            let entry = _tplThumbCache.get(key);
+            if (!entry || entry.source !== source) {
+                const canvas = document.createElement('canvas');
+                canvas.width = tw;
+                canvas.height = th;
+                const thumbCtx = canvas.getContext('2d', { willReadFrequently: true });
+                thumbCtx.drawImage(source, 0, 0, tw, th);
+                // Materialize the pixels now (one readback per template size)
+                // so later thumbnails copy CPU memory instead of the source.
+                thumbCtx.getImageData(0, 0, 1, 1);
+                entry = { source, canvas };
+                _tplThumbCache.delete(key);
+                if (_tplThumbCache.size >= 6) _tplThumbCache.delete(_tplThumbCache.keys().next().value);
+                _tplThumbCache.set(key, entry);
+            }
+            if (ctx) ctx.drawImage(entry.canvas, 0, 0, width, height);
+        }
         const FULLSCREEN_ICON_ENTER = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="15 3 21 3 21 9"/>
                 <polyline points="9 21 3 21 3 15"/>
@@ -23370,7 +23401,9 @@
                 if(!valid()||!data)return;
                 const {width,height}=getPageDimensions(pageIndex),scale=Math.min(.25,320/width,440/height);
                 canvas=document.createElement('canvas');canvas.width=Math.ceil(width*scale);canvas.height=Math.ceil(height*scale);
-                const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+                // CPU-backed: encoding a GPU canvas is a synchronous readback that
+                // waits for all queued GPU work, including the pen's page canvas.
+                const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
                 const source=data.backgroundSource||(data.pdfPageIndex?'pdf':'template');
                 if(source==='pdf'&&!data.backgroundImage){
                     const pdf=activePdfDocument;if(!pdf||!data.pdfPageIndex)return;
@@ -23386,7 +23419,7 @@
                 if(!valid())return;
                 ctx.setTransform(scale,0,0,scale,0,0);
                 if(data.backgroundImage)ctx.drawImage(getCachedImage(data.backgroundImage),0,0,width,height);
-                else if(source==='template'){const kind=normalizeTemplateKind(data.templateKind);drawTemplateBackground(ctx,width,height,width/getTemplateKindDefaults(kind).width,kind);}
+                else if(source==='template'){const kind=normalizeTemplateKind(data.templateKind);drawTemplateBackgroundThumbnail(ctx,width,height,kind,width*scale,height*scale);}
                 if(data.bakedBackground)ctx.drawImage(getCachedImage(data.bakedBackground),0,0,width,height);
                 if(!pendingCleanOriginalSwap)drawLegacyCoverStrokes(ctx,data);
                 drawImagesOnContext(ctx,data,pageIndex);
@@ -23419,7 +23452,9 @@
             const previewCanvas = document.createElement('canvas');
             previewCanvas.width = Math.max(1, Math.floor(pageWidth * scale));
             previewCanvas.height = Math.max(1, Math.floor(pageHeight * scale));
-            const ctx = previewCanvas.getContext('2d');
+            // CPU-backed for the same reason as the scroll thumbnails: toDataURL
+            // on a GPU canvas stalls the main thread on a GPU readback.
+            const ctx = previewCanvas.getContext('2d', { willReadFrequently: true });
             ctx.scale(scale, scale);
             ctx.fillStyle = 'white';
             ctx.fillRect(0, 0, pageWidth, pageHeight);
@@ -23433,8 +23468,7 @@
                 }
             } else if (backgroundSource === 'template' || backgroundSource === undefined) {
                 const kind = normalizeTemplateKind(page.templateKind);
-                const kindDefaults = getTemplateKindDefaults(kind);
-                drawTemplateBackground(ctx, pageWidth, pageHeight, pageWidth / kindDefaults.width, kind);
+                drawTemplateBackgroundThumbnail(ctx, pageWidth, pageHeight, kind, pageWidth * scale, pageHeight * scale);
             }
             // For PDF background pages with no image loaded yet, white fill is already done above
 
