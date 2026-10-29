@@ -279,6 +279,21 @@ impl Extract {
         true
     }
 
+    /// Builds the renderer's static grid when the world's static set
+    /// changed (hundreds of ms for a city: the loading screen does it
+    /// before the first frame of play).
+    fn upload_statics(&mut self, renderer: &mut Renderer, app: &App) {
+        let rs = app.world.res::<RenderScene>();
+        let key = (rs.statics.len(), rs.volatile_statics.len());
+        if !self.legacy && self.statics_uploaded != Some(key) {
+            let kept = || rs.statics.iter().enumerate().filter(|(i, _)| rs.volatile_statics.binary_search(i).is_err());
+            let statics: Vec<DrawInstance> = kept().map(|(_, item)| DrawInstance { model: self.handles[item.model], transform: item.transform, nodes: item.nodes.clone(), joints: None, tint: item.tint, cast_shadows: true, motion_id: 0 }).collect();
+            let lod: Vec<forja_render::StaticLod> = kept().map(|(i, _)| rs.static_lod.get(i).map_or(forja_render::StaticLod::default(), |&(group, hlod)| forja_render::StaticLod { group, hlod })).collect();
+            renderer.set_static_instances_lod(&statics, &lod);
+            self.statics_uploaded = Some(key);
+        }
+    }
+
     fn frame(&mut self, renderer: &mut Renderer, app: &mut App) -> FrameDesc {
         let t0 = Instant::now();
         self.upload(renderer, app);
@@ -298,14 +313,8 @@ impl Extract {
         // static culling grid; only dynamic items are resubmitted per frame.
         // Items listed in `volatile_statics` (signal heads) change at run
         // time and are submitted per frame instead.
-        let key = (rs.statics.len(), rs.volatile_statics.len());
-        if !self.legacy && self.statics_uploaded != Some(key) {
-            let kept = || rs.statics.iter().enumerate().filter(|(i, _)| rs.volatile_statics.binary_search(i).is_err());
-            let statics: Vec<DrawInstance> = kept().map(|(_, item)| DrawInstance { model: self.handles[item.model], transform: item.transform, nodes: item.nodes.clone(), joints: None, tint: item.tint, cast_shadows: true, motion_id: 0 }).collect();
-            let lod: Vec<forja_render::StaticLod> = kept().map(|(i, _)| rs.static_lod.get(i).map_or(forja_render::StaticLod::default(), |&(group, hlod)| forja_render::StaticLod { group, hlod })).collect();
-            renderer.set_static_instances_lod(&statics, &lod);
-            self.statics_uploaded = Some(key);
-        }
+        self.upload_statics(renderer, app);
+        let rs = app.world.res::<RenderScene>();
         let t2 = Instant::now();
         self.timings[1].1 = (t2 - t1).as_secs_f32() * 1000.0;
         if let Some(st) = &mut self.stream {
@@ -1197,6 +1206,9 @@ impl Sandbox {
             }
             let done = self.extract.upload_for(&mut gpu.renderer, &mut self.app, Some(std::time::Duration::from_millis(40)));
             if done {
+                // The static grid too, so the first frame of play is not a
+                // half-second hitch.
+                self.extract.upload_statics(&mut gpu.renderer, &self.app);
                 self.loading = None;
                 self.last = Instant::now();
                 return false;

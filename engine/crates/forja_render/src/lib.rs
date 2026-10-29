@@ -805,6 +805,278 @@ impl GpuMesh {
     }
 }
 
+/// Batches per main-pass chunk recorded on one worker (see
+/// [`Renderer::render`]).
+const MAIN_CHUNK_BATCHES: usize = 256;
+
+/// `FORJA_MAIN_CHUNKS=n`: record the main pass in exactly `n` chunks.
+fn main_chunks_override() -> Option<usize> {
+    static N: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
+    *N.get_or_init(|| std::env::var("FORJA_MAIN_CHUNKS").ok().and_then(|v| v.parse().ok()))
+}
+
+/// One command buffer of the frame recorded on a worker thread (see
+/// [`Renderer::render`]): a shadow view, the prepass or the main pass, or
+/// only the `finish` of an encoder recorded on the main thread.
+enum PassJob<'a> {
+    Shadow { c: usize, base: usize, tw: Option<wgpu::RenderPassTimestampWrites<'a>> },
+    Prepass { base: usize, tw: Option<wgpu::RenderPassTimestampWrites<'a>> },
+    /// Batches `lo..hi` of the main pass (`first` clears the target,
+    /// `last` also draws the lines).
+    Main { base: usize, tw: Option<wgpu::RenderPassTimestampWrites<'a>>, lo: usize, hi: usize, first: bool, last: bool },
+    Finish(wgpu::CommandEncoder),
+}
+
+/// A finished [`PassJob`]: its commands, multi-draw arguments (written at
+/// `base` of the indirect buffer), counters and CPU time
+/// (`kind`: 0 shadows, 1 prepass, 2 main, 3 only `finish`).
+struct PassOut {
+    cmd: wgpu::CommandBuffer,
+    args: Vec<IndirectArgs>,
+    base: usize,
+    stats: RenderStats,
+    kind: usize,
+    ms: f32,
+}
+
+/// What the parallel passes read (all shared, nothing mutated).
+struct PassCtx<'a> {
+    device: &'a wgpu::Device,
+    pipelines: &'a Pipelines,
+    materials: &'a [GpuMaterial],
+    meshes: &'a [GpuMesh],
+    vpool: &'a mesh_pool::MeshPool,
+    ipool: &'a mesh_pool::MeshPool,
+    indirect: Option<&'a wgpu::Buffer>,
+    instances: &'a wgpu::Buffer,
+    cascade_binds: &'a [wgpu::BindGroup],
+    shadow_layers: &'a [wgpu::TextureView],
+    spot_shadow_layers: &'a [wgpu::TextureView],
+    joint_bind: &'a wgpu::BindGroup,
+    frame_bind: &'a wgpu::BindGroup,
+    sky_bind: &'a wgpu::BindGroup,
+    line_buf: &'a wgpu::Buffer,
+    targets: &'a Targets,
+    main_batches: &'a [Batch],
+    shadow_batches: &'a [Vec<Batch>],
+    /// Line vertices to draw after the main batches.
+    lines: u32,
+    /// Light sprites to draw after the sky (0: none).
+    sprites: u32,
+}
+
+impl PassCtx<'_> {
+    fn run(&self, job: PassJob<'_>) -> PassOut {
+        let t0 = std::time::Instant::now();
+        let mut stats = RenderStats::default();
+        let mut args: Vec<IndirectArgs> = Vec::new();
+        let (enc, base, kind) = match job {
+            PassJob::Finish(enc) => (enc, 0, 3),
+            PassJob::Shadow { c, base, tw } => {
+                let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("shadow") });
+                self.shadow(&mut enc, c, base, tw, &mut args, &mut stats);
+                (enc, base, 0)
+            }
+            PassJob::Prepass { base, tw } => {
+                let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("prepass") });
+                self.prepass(&mut enc, base, tw, &mut args, &mut stats);
+                (enc, base, 1)
+            }
+            PassJob::Main { base, tw, lo, hi, first, last } => {
+                let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("main") });
+                self.main(&mut enc, base, tw, (lo, hi, first, last), &mut args, &mut stats);
+                (enc, base, 2)
+            }
+        };
+        let cmd = enc.finish();
+        PassOut { cmd, args, base, stats, kind, ms: t0.elapsed().as_secs_f32() * 1000.0 }
+    }
+
+    /// Sun cascade `c` (< 4) or shadowed spot `c - 4`; alpha-masked
+    /// casters are alpha tested.
+    fn shadow(&self, enc: &mut wgpu::CommandEncoder, c: usize, base: usize, tw: Option<wgpu::RenderPassTimestampWrites<'_>>, args: &mut Vec<IndirectArgs>, stats: &mut RenderStats) {
+        let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("shadow"),
+            color_attachments: &[],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: if c < 4 { &self.shadow_layers[c] } else { &self.spot_shadow_layers[c - 4] },
+                depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: tw,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_vertex_buffer(1, self.instances.slice(..));
+        let mut bound: Option<(bool, bool)> = None;
+        let mut bound_mat = u32::MAX;
+        let mut ds = DrawStream::new(self.vpool, self.ipool, self.indirect, args, base);
+        for b in &self.shadow_batches[c] {
+            let masked = self.materials[b.material as usize].masked;
+            let mesh = &self.meshes[b.mesh as usize];
+            let Some(r) = mesh.draw_range(b.lod) else { continue };
+            if bound != Some((masked, b.skinned)) || (masked && b.material != bound_mat) {
+                ds.flush(&mut pass);
+            }
+            if bound != Some((masked, b.skinned)) {
+                pass.set_pipeline(match (masked, b.skinned) {
+                    (false, false) => &self.pipelines.shadow,
+                    (false, true) => &self.pipelines.shadow_skinned,
+                    (true, false) => &self.pipelines.shadow_masked,
+                    (true, true) => &self.pipelines.shadow_skinned_masked,
+                });
+                pass.set_bind_group(0, &self.cascade_binds[c], &[]);
+                pass.set_bind_group(1, self.joint_bind, &[]);
+                bound = Some((masked, b.skinned));
+                bound_mat = u32::MAX;
+            }
+            if masked && b.material != bound_mat {
+                pass.set_bind_group(2, &self.materials[b.material as usize].bind_group, &[]);
+                bound_mat = b.material;
+            }
+            ds.draw(&mut pass, &r, if b.skinned { mesh.skin.as_ref().map(|sk| (b.mesh, sk)) } else { None }, b.first..b.first + b.count);
+            stats.shadow_draws += 1;
+            stats.shadow_instances += b.count;
+            stats.shadow_triangles += (r.count / 3) as u64 * b.count as u64;
+        }
+        ds.flush(&mut pass);
+        stats.api_draws += ds.calls;
+    }
+
+    /// Depth + normal prepass of the opaque surfaces (blended ones are
+    /// sorted last and skipped). Opaque materials keep whatever material
+    /// group is bound: their prepass shader reads no texture.
+    fn prepass(&self, enc: &mut wgpu::CommandEncoder, base: usize, tw: Option<wgpu::RenderPassTimestampWrites<'_>>, args: &mut Vec<IndirectArgs>, stats: &mut RenderStats) {
+        let t = self.targets;
+        let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("prepass"),
+            color_attachments: &[
+                Some(wgpu::RenderPassColorAttachment {
+                    view: &t.normal,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.0, g: 1.0, b: 0.0, a: 0.0 }), store: wgpu::StoreOp::Store },
+                }),
+                Some(wgpu::RenderPassColorAttachment { view: &t.velocity, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store } }),
+            ],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &t.depth,
+                depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(0.0), store: wgpu::StoreOp::Store }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: tw,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_vertex_buffer(1, self.instances.slice(..));
+        let mut bound_pipe = usize::MAX;
+        let mut bound_mat = u32::MAX;
+        let mut ds = DrawStream::new(self.vpool, self.ipool, self.indirect, args, base);
+        for b in self.main_batches.iter().take_while(|b| b.pipe < 3) {
+            let Some(r) = self.meshes[b.mesh as usize].draw_range(b.lod) else { continue };
+            let pipe = b.pipe as usize;
+            let masked = self.materials[b.material as usize].masked;
+            let pp = pipe * 2 + masked as usize;
+            if pp != bound_pipe || ((masked || bound_mat == u32::MAX) && b.material != bound_mat) {
+                ds.flush(&mut pass);
+            }
+            if pp != bound_pipe {
+                pass.set_pipeline(&self.pipelines.prepass[pipe][masked as usize]);
+                pass.set_bind_group(0, self.frame_bind, &[]);
+                pass.set_bind_group(2, self.joint_bind, &[]);
+                bound_pipe = pp;
+            }
+            if (masked || bound_mat == u32::MAX) && b.material != bound_mat {
+                pass.set_bind_group(1, &self.materials[b.material as usize].bind_group, &[]);
+                bound_mat = b.material;
+            }
+            let mesh = &self.meshes[b.mesh as usize];
+            ds.draw(&mut pass, &r, if pipe == 2 { mesh.skin.as_ref().map(|sk| (b.mesh, sk)) } else { None }, b.first..b.first + b.count);
+        }
+        ds.flush(&mut pass);
+        stats.api_draws += ds.calls;
+    }
+
+    /// Main HDR pass + sky + lines, depth-tested against the prepass
+    /// (read-only, so the shaders can also sample it).
+    fn main(&self, enc: &mut wgpu::CommandEncoder, base: usize, tw: Option<wgpu::RenderPassTimestampWrites<'_>>, (lo, hi, first, last): (usize, usize, bool, bool), args: &mut Vec<IndirectArgs>, stats: &mut RenderStats) {
+        let t = self.targets;
+        let main_batches = self.main_batches;
+        // The sky goes after the opaque batches and before the blended ones.
+        let sky_at = main_batches.iter().position(|b| b.pipe >= 3).unwrap_or(main_batches.len());
+        let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("main"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &t.hdr,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations { load: if first { wgpu::LoadOp::Clear(wgpu::Color::BLACK) } else { wgpu::LoadOp::Load }, store: wgpu::StoreOp::Store },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &t.depth, depth_ops: None, stencil_ops: None }),
+            timestamp_writes: tw,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_vertex_buffer(1, self.instances.slice(..));
+        let mut bound_pipe = u8::MAX;
+        let mut bound_mat = u32::MAX;
+        let mut ds = DrawStream::new(self.vpool, self.ipool, self.indirect, args, base);
+        // Opaque first; the sky goes after opaque and before blended (in
+        // the chunk that holds the first blended batch, or the last one).
+        let end = if last { main_batches.len() + 1 } else { hi };
+        for i in lo..end {
+            if i == sky_at {
+                ds.flush(&mut pass);
+                pass.set_pipeline(&self.pipelines.sky);
+                pass.set_bind_group(0, self.frame_bind, &[]);
+                pass.set_bind_group(1, self.sky_bind, &[]);
+                pass.draw(0..3, 0..1);
+                if self.sprites > 0 {
+                    pass.set_pipeline(&self.pipelines.sprites);
+                    pass.draw(0..4, 0..self.sprites);
+                }
+                bound_pipe = u8::MAX;
+            }
+            let Some(b) = main_batches.get(i) else { break };
+            let Some(r) = self.meshes[b.mesh as usize].draw_range(b.lod) else { continue };
+            if b.pipe != bound_pipe || b.material != bound_mat {
+                ds.flush(&mut pass);
+            }
+            if b.pipe != bound_pipe {
+                pass.set_pipeline(match b.pipe {
+                    0 => &self.pipelines.opaque,
+                    1 => &self.pipelines.double_sided,
+                    2 => &self.pipelines.skinned,
+                    4 => &self.pipelines.skinned_blend,
+                    _ => &self.pipelines.blend,
+                });
+                pass.set_bind_group(0, self.frame_bind, &[]);
+                pass.set_bind_group(2, self.joint_bind, &[]);
+                pass.set_bind_group(3, &t.screen_bind, &[]);
+                bound_pipe = b.pipe;
+                bound_mat = u32::MAX;
+            }
+            if b.material != bound_mat {
+                pass.set_bind_group(1, &self.materials[b.material as usize].bind_group, &[]);
+                bound_mat = b.material;
+            }
+            let mesh = &self.meshes[b.mesh as usize];
+            ds.draw(&mut pass, &r, if b.skinned { mesh.skin.as_ref().map(|sk| (b.mesh, sk)) } else { None }, b.first..b.first + b.count);
+            stats.draw_calls += 1;
+            stats.instances_drawn += b.count;
+            stats.triangles += (r.count / 3) as u64 * b.count as u64;
+        }
+        ds.flush(&mut pass);
+        stats.api_draws += ds.calls;
+        if last && self.lines > 0 {
+            pass.set_pipeline(&self.pipelines.lines);
+            pass.set_bind_group(0, self.frame_bind, &[]);
+            pass.set_vertex_buffer(0, self.line_buf.slice(..));
+            pass.draw(0..self.lines, 0..1);
+        }
+    }
+}
+
 /// One view's static instances and batches (see [`Renderer::render`]).
 #[derive(Default)]
 struct ViewList {
@@ -813,6 +1085,8 @@ struct ViewList {
     scratch: static_scene::GatherScratch,
     /// First instance of `out` in the frame's instance buffer.
     base: u32,
+    /// Worker CPU ms of the last gather.
+    ms: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -848,6 +1122,8 @@ struct DrawStream<'a> {
     /// `None`: every draw is direct (no `INDIRECT_FIRST_INSTANCE`).
     indirect: Option<&'a wgpu::Buffer>,
     args: &'a mut Vec<IndirectArgs>,
+    /// Index of `args[0]` in the indirect buffer.
+    base: usize,
     start: usize,
     vpage: Option<u32>,
     ipage: Option<u32>,
@@ -857,9 +1133,9 @@ struct DrawStream<'a> {
 }
 
 impl<'a> DrawStream<'a> {
-    fn new(vpool: &'a mesh_pool::MeshPool, ipool: &'a mesh_pool::MeshPool, indirect: Option<&'a wgpu::Buffer>, args: &'a mut Vec<IndirectArgs>) -> Self {
+    fn new(vpool: &'a mesh_pool::MeshPool, ipool: &'a mesh_pool::MeshPool, indirect: Option<&'a wgpu::Buffer>, args: &'a mut Vec<IndirectArgs>, base: usize) -> Self {
         let start = args.len();
-        Self { vpool, ipool, indirect, args, start, vpage: None, ipage: None, skin: None, calls: 0 }
+        Self { vpool, ipool, indirect, args, base, start, vpage: None, ipage: None, skin: None, calls: 0 }
     }
 
     /// Issues the merged draws collected since the last flush.
@@ -872,7 +1148,7 @@ impl<'a> DrawStream<'a> {
             self.calls += 1;
         } else if n > 1 {
             let buf = self.indirect.expect("indirect buffer");
-            pass.multi_draw_indexed_indirect(buf, (self.start * std::mem::size_of::<IndirectArgs>()) as u64, n as u32);
+            pass.multi_draw_indexed_indirect(buf, ((self.base + self.start) * std::mem::size_of::<IndirectArgs>()) as u64, n as u32);
             self.calls += 1;
         }
         self.start = self.args.len();
@@ -1237,10 +1513,21 @@ pub fn default_backends() -> wgpu::Backends {
     if cfg!(windows) { wgpu::Backends::DX12 | wgpu::Backends::VULKAN } else { wgpu::Backends::PRIMARY }
 }
 
+/// wgpu's release defaults minus `VALIDATION_INDIRECT_CALL`: with it, every
+/// `multi_draw_indexed_indirect` is split per argument on the CPU and
+/// rewritten by a validation compute pass (on DX12 the draws then read a
+/// copy with another stride). The renderer writes its own arguments from
+/// validated mesh ranges. `WGPU_VALIDATION_INDIRECT_CALL=1` turns it back on
+/// (`with_env` runs after this).
+fn instance_flags(flags: wgpu::InstanceFlags) -> wgpu::InstanceFlags {
+    flags - wgpu::InstanceFlags::VALIDATION_INDIRECT_CALL
+}
+
 /// Instance bound to a window system display (needed by Wayland/GL; harmless elsewhere).
 pub fn create_instance_with_display(display: Box<dyn wgpu::wgt::WgpuHasDisplayHandle>) -> wgpu::Instance {
     let mut desc = wgpu::InstanceDescriptor::new_with_display_handle(display);
     desc.backends = default_backends();
+    desc.flags = instance_flags(desc.flags);
     wgpu::Instance::new(desc.with_env())
 }
 
@@ -1249,6 +1536,7 @@ pub fn create_instance_with_display(display: Box<dyn wgpu::wgt::WgpuHasDisplayHa
 pub fn create_instance() -> wgpu::Instance {
     let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
     desc.backends = default_backends();
+    desc.flags = instance_flags(desc.flags);
     wgpu::Instance::new(desc.with_env())
 }
 
@@ -3171,6 +3459,112 @@ impl Renderer {
         let focal = height as f32 * 0.5 / tan_half_fov;
         let lod_scale = std::f32::consts::PI * focal * focal * 0.5 * s.lod_detail;
         self.statics.update_groups(cam.position, s.hlod_distance);
+        // Dynamic instances are culled on a worker while the static views
+        // are gathered (they only read the scene).
+        let dynamic_cull = || {
+            let t = std::time::Instant::now();
+            let mut joints: Vec<[[f32; 4]; 4]> = Vec::new();
+            let mut main: Vec<(u32, InstanceRaw)> = Vec::new();
+            let mut shadow: [Vec<(u32, InstanceRaw)>; 4 + lights::MAX_SPOT_SHADOWS] = Default::default();
+            let mut culled = 0u32;
+            // Object motion: last frame's transform of each `motion_id`.
+            let mut motion_now: std::collections::HashMap<u64, Mat4> = std::collections::HashMap::with_capacity(self.prev_motion.len());
+            let mut object_motion = false;
+            for inst in &frame.instances {
+                let Some(model) = self.models.get(inst.model.0 as usize) else { continue };
+                // Whole-instance tests first: frustum, sub-pixel detail and
+                // distant small shadow casters are rejected without touching
+                // their parts.
+                let ib = if inst.joints.is_some() || inst.nodes.is_some() { model.bounds.expanded(0.5) } else { model.bounds };
+                let wbi = transform_aabb(&ib, &inst.transform);
+                let radius = wbi.half_extents().length();
+                let dist = (wbi.center() - cam.position).length().max(0.1);
+                let px_radius = radius / (dist * tan_half_fov) * height as f32 * 0.5;
+                let in_main = px_radius > 0.6 && frustum.intersects_aabb(&wbi);
+                let mut cmask = 0u8;
+                if inst.cast_shadows {
+                    for (c, (planes, min_r)) in cascade_planes.iter().enumerate() {
+                        if drawn(c) && radius >= *min_r && aabb_in_planes(&wbi, planes) {
+                            cmask |= 1 << c;
+                        }
+                    }
+                }
+                if !in_main && cmask == 0 {
+                    culled += model.parts.len() as u32;
+                    continue;
+                }
+                // Large multi-part models (buildings, whole levels) still get
+                // per-part culling; small modules take the instance result.
+                let per_part = radius > 12.0 && model.parts.len() > 1;
+                let joint_offset = if let Some(j) = &inst.joints {
+                    let off = joints.len() as u32;
+                    joints.extend(j.iter().map(|m| m.to_cols_array_2d()));
+                    off
+                } else {
+                    0
+                };
+                let inst_pixels = std::f32::consts::PI * px_radius * px_radius;
+                let prev_inst = if inst.motion_id != 0 {
+                    motion_now.insert(inst.motion_id, inst.transform);
+                    self.prev_motion.get(&inst.motion_id).copied().filter(|p| *p != inst.transform)
+                } else {
+                    None
+                };
+                for part in &model.parts {
+                    let mesh = &self.meshes[part.mesh as usize];
+                    let skinned = mesh.skin.is_some() && inst.joints.is_some();
+                    let node_m = inst.nodes.as_ref().and_then(|n| n.get(part.node).copied()).unwrap_or(model.rest[part.node]);
+                    let world = if skinned { inst.transform } else { inst.transform * node_m };
+                    let (visible, pixels, wb) = if per_part {
+                        let wb = transform_aabb(&mesh.lod_bounds, &world);
+                        let cov = wb.half_extents().length() / ((wb.center() - cam.position).length().max(0.1) * tan_half_fov);
+                        (in_main && frustum.intersects_aabb(&wb), std::f32::consts::PI * (cov * height as f32 * 0.5).powi(2), Some(wb))
+                    } else {
+                        (in_main, inst_pixels, None)
+                    };
+                    let lod = Self::lod_for(&self.meshes, part.mesh, pixels * 0.5 * s.lod_detail, 0);
+                    // extra.w: 1 + index of last frame's model matrix in the
+                    // joint buffer (prepass velocity), 0 when it did not move.
+                    let prev_slot = match prev_inst {
+                        Some(p) if visible => {
+                            object_motion = true;
+                            joints.push((if skinned { p } else { p * node_m }).to_cols_array_2d());
+                            joints.len() as u32
+                        }
+                        _ => 0,
+                    };
+                    let raw = InstanceRaw { model: world.to_cols_array_2d(), tint: inst.tint.to_array(), extra: [joint_offset, skinned as u32, lod, prev_slot] };
+                    let role = mesh.shadow;
+                    if visible && role != ShadowRole::Proxy {
+                        main.push((part.mesh, raw));
+                    } else {
+                        culled += 1;
+                    }
+                    if cmask != 0 && !self.materials[mesh.material as usize].blend {
+                        let mut sraw = raw;
+                        // One level coarser than the camera, and no finer than one
+                        // triangle per two texels of the finest sun cascade it
+                        // falls in (spot views: the camera rule only).
+                        let c0 = cmask.trailing_zeros() as usize;
+                        let texel_lod = if c0 < 4 && cascade_texel[c0] > 0.0 {
+                            let r = wb.as_ref().map_or(radius, |b| b.half_extents().length()) / cascade_texel[c0];
+                            Self::lod_for(&self.meshes, part.mesh, std::f32::consts::PI * 0.5 * s.lod_detail * r * r, 0)
+                        } else {
+                            0
+                        };
+                        sraw.extra[2] = if s.stable_shadows && c0 < 4 { texel_lod } else { (lod + 1).max(texel_lod) }.min(mesh.lods.len() as u32);
+                        for (c, (planes, _)) in cascade_planes.iter().enumerate() {
+                            let wanted = Self::shadow_skip(c, &s) & static_scene::role_bit(role) == 0;
+                            if wanted && cmask & (1 << c) != 0 && wb.as_ref().is_none_or(|wb| aabb_in_planes(wb, planes)) {
+                                shadow[c].push((part.mesh, sraw));
+                            }
+                        }
+                    }
+                }
+            }
+            (joints, main, shadow, culled, motion_now, object_motion, t.elapsed().as_secs_f32() * 1000.0)
+        };
+        let dyn_out;
         // The views are gathered in parallel, each into its own list; the
         // lists are written to the instance buffer one after the other
         // (static views first, the dynamic instances after them).
@@ -3205,14 +3599,18 @@ impl Renderer {
                 views.push(Some((v, bias)));
             }
             views.resize_with(VIEWS + 1, || None);
-            static_lists.par_iter_mut().zip(views.par_iter()).for_each(|(list, view)| {
+            let gather = || static_lists.par_iter_mut().zip(views.par_iter()).for_each(|(list, view)| {
+                let t = std::time::Instant::now();
                 list.out.clear();
                 list.batches.clear();
+                list.ms = 0.0;
                 if let Some((v, bias)) = view {
                     let bias = *bias;
                     statics.gather_into(&mut list.scratch, v, &|m, b| Self::lod_for(meshes, m, b, bias), &mut list.out, &mut list.batches);
+                    list.ms = t.elapsed().as_secs_f32() * 1000.0;
                 }
             });
+            dyn_out = rayon::join(gather, dynamic_cull).1;
             // Instance offsets: each list after the previous ones.
             let mut base = 0u32;
             for (k, list) in static_lists.iter_mut().enumerate() {
@@ -3225,106 +3623,12 @@ impl Renderer {
         }
         let static_ms = t_cull.elapsed().as_secs_f32() * 1000.0;
         self.cpu.add("cull static", static_ms);
+        // Worker time of the camera view and the slowest shadow view.
+        self.cpu.add("cull cam view", static_lists[0].ms);
+        self.cpu.add("cull max shadow view", static_lists[1..].iter().map(|l| l.ms).fold(0.0, f32::max));
         let t_dyn = std::time::Instant::now();
-        let mut joints: Vec<[[f32; 4]; 4]> = Vec::new();
-        let mut main: Vec<(u32, InstanceRaw)> = Vec::new();
-        let mut shadow: [Vec<(u32, InstanceRaw)>; 4 + lights::MAX_SPOT_SHADOWS] = Default::default();
-        let mut culled = 0u32;
-        // Object motion: last frame's transform of each `motion_id`.
-        let mut motion_now: std::collections::HashMap<u64, Mat4> = std::collections::HashMap::with_capacity(self.prev_motion.len());
-        let mut object_motion = false;
-        for inst in &frame.instances {
-            let Some(model) = self.models.get(inst.model.0 as usize) else { continue };
-            // Whole-instance tests first: frustum, sub-pixel detail and
-            // distant small shadow casters are rejected without touching
-            // their parts.
-            let ib = if inst.joints.is_some() || inst.nodes.is_some() { model.bounds.expanded(0.5) } else { model.bounds };
-            let wbi = transform_aabb(&ib, &inst.transform);
-            let radius = wbi.half_extents().length();
-            let dist = (wbi.center() - cam.position).length().max(0.1);
-            let px_radius = radius / (dist * tan_half_fov) * height as f32 * 0.5;
-            let in_main = px_radius > 0.6 && frustum.intersects_aabb(&wbi);
-            let mut cmask = 0u8;
-            if inst.cast_shadows {
-                for (c, (planes, min_r)) in cascade_planes.iter().enumerate() {
-                    if drawn(c) && radius >= *min_r && aabb_in_planes(&wbi, planes) {
-                        cmask |= 1 << c;
-                    }
-                }
-            }
-            if !in_main && cmask == 0 {
-                culled += model.parts.len() as u32;
-                continue;
-            }
-            // Large multi-part models (buildings, whole levels) still get
-            // per-part culling; small modules take the instance result.
-            let per_part = radius > 12.0 && model.parts.len() > 1;
-            let joint_offset = if let Some(j) = &inst.joints {
-                let off = joints.len() as u32;
-                joints.extend(j.iter().map(|m| m.to_cols_array_2d()));
-                off
-            } else {
-                0
-            };
-            let inst_pixels = std::f32::consts::PI * px_radius * px_radius;
-            let prev_inst = if inst.motion_id != 0 {
-                motion_now.insert(inst.motion_id, inst.transform);
-                self.prev_motion.get(&inst.motion_id).copied().filter(|p| *p != inst.transform)
-            } else {
-                None
-            };
-            for part in &model.parts {
-                let mesh = &self.meshes[part.mesh as usize];
-                let skinned = mesh.skin.is_some() && inst.joints.is_some();
-                let node_m = inst.nodes.as_ref().and_then(|n| n.get(part.node).copied()).unwrap_or(model.rest[part.node]);
-                let world = if skinned { inst.transform } else { inst.transform * node_m };
-                let (visible, pixels, wb) = if per_part {
-                    let wb = transform_aabb(&mesh.lod_bounds, &world);
-                    let cov = wb.half_extents().length() / ((wb.center() - cam.position).length().max(0.1) * tan_half_fov);
-                    (in_main && frustum.intersects_aabb(&wb), std::f32::consts::PI * (cov * height as f32 * 0.5).powi(2), Some(wb))
-                } else {
-                    (in_main, inst_pixels, None)
-                };
-                let lod = Self::lod_for(&self.meshes, part.mesh, pixels * 0.5 * s.lod_detail, 0);
-                // extra.w: 1 + index of last frame's model matrix in the
-                // joint buffer (prepass velocity), 0 when it did not move.
-                let prev_slot = match prev_inst {
-                    Some(p) if visible => {
-                        object_motion = true;
-                        joints.push((if skinned { p } else { p * node_m }).to_cols_array_2d());
-                        joints.len() as u32
-                    }
-                    _ => 0,
-                };
-                let raw = InstanceRaw { model: world.to_cols_array_2d(), tint: inst.tint.to_array(), extra: [joint_offset, skinned as u32, lod, prev_slot] };
-                let role = mesh.shadow;
-                if visible && role != ShadowRole::Proxy {
-                    main.push((part.mesh, raw));
-                } else {
-                    culled += 1;
-                }
-                if cmask != 0 && !self.materials[mesh.material as usize].blend {
-                    let mut sraw = raw;
-                    // One level coarser than the camera, and no finer than one
-                    // triangle per two texels of the finest sun cascade it
-                    // falls in (spot views: the camera rule only).
-                    let c0 = cmask.trailing_zeros() as usize;
-                    let texel_lod = if c0 < 4 && cascade_texel[c0] > 0.0 {
-                        let r = wb.as_ref().map_or(radius, |b| b.half_extents().length()) / cascade_texel[c0];
-                        Self::lod_for(&self.meshes, part.mesh, std::f32::consts::PI * 0.5 * s.lod_detail * r * r, 0)
-                    } else {
-                        0
-                    };
-                    sraw.extra[2] = if s.stable_shadows && c0 < 4 { texel_lod } else { (lod + 1).max(texel_lod) }.min(mesh.lods.len() as u32);
-                    for (c, (planes, _)) in cascade_planes.iter().enumerate() {
-                        let wanted = Self::shadow_skip(c, &s) & static_scene::role_bit(role) == 0;
-                        if wanted && cmask & (1 << c) != 0 && wb.as_ref().is_none_or(|wb| aabb_in_planes(wb, planes)) {
-                            shadow[c].push((part.mesh, sraw));
-                        }
-                    }
-                }
-            }
-        }
+        let (mut joints, mut main, mut shadow, culled, motion_now, object_motion, dyn_ms) = dyn_out;
+        self.cpu.add("cull dynamic", dyn_ms);
         self.prev_motion = motion_now;
         // Dynamic lists -> batches (skinned meshes without joints fall back
         // to the static pipeline, i.e. the bind pose).
@@ -3367,7 +3671,7 @@ impl Renderer {
                 (masked, b.skinned, if masked { b.material } else { 0 }, b.mesh, b.lod)
             });
         }
-        self.cpu.add("cull dynamic", t_dyn.elapsed().as_secs_f32() * 1000.0);
+        self.cpu.add("batch dynamic", t_dyn.elapsed().as_secs_f32() * 1000.0);
 
         let t_up = std::time::Instant::now();
         let raw_size = std::mem::size_of::<InstanceRaw>() as u64;
@@ -3376,13 +3680,19 @@ impl Renderer {
             self.instance_cap = bytes.next_power_of_two();
             self.instance_buf = self.device.create_buffer(&wgpu::BufferDescriptor { label: Some("instances"), size: self.instance_cap, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         }
-        for list in &static_lists {
-            if !list.out.is_empty() {
-                self.queue.write_buffer(&self.instance_buf, list.base as u64 * raw_size, bytemuck::cast_slice(&list.out));
+        // All views' instances in one staging copy (each write_buffer
+        // allocates and frees its own staging buffer in wgpu).
+        if let Some(size) = wgpu::BufferSize::new(bytes)
+            && let Some(mut view) = self.queue.write_buffer_with(&self.instance_buf, 0, size)
+        {
+            for list in &static_lists {
+                let at = list.base as usize * raw_size as usize;
+                let src: &[u8] = bytemuck::cast_slice(&list.out);
+                view.slice(at..at + src.len()).copy_from_slice(src);
             }
-        }
-        if !all.is_empty() {
-            self.queue.write_buffer(&self.instance_buf, static_total as u64 * raw_size, bytemuck::cast_slice(&all));
+            let at = static_total as usize * raw_size as usize;
+            let src: &[u8] = bytemuck::cast_slice(&all);
+            view.slice(at..at + src.len()).copy_from_slice(src);
         }
         self.view_lists = static_lists;
         if joints.is_empty() {
@@ -3497,12 +3807,7 @@ impl Renderer {
             self.indirect_cap = (max_args * args_size).next_power_of_two().max(4096);
             self.indirect_buf = Some(self.device.create_buffer(&wgpu::BufferDescriptor { label: Some("indirect draws"), size: self.indirect_cap, usage: wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false }));
         }
-        let mut indirect_args = std::mem::take(&mut self.indirect_args);
-        indirect_args.clear();
-        let indirect = if mdi { self.indirect_buf.as_ref() } else { None };
         let t_enc = std::time::Instant::now();
-        let prof = &self.profiler;
-        let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("frame") });
         let ev100 = env.ev100.unwrap_or_else(|| exposure::incident_ev100(meter_illuminance)) - env.exposure_compensation;
         let mut stats = RenderStats {
             instances_culled: culled,
@@ -3516,133 +3821,43 @@ impl Renderer {
             hlod_tiles: self.statics.far_groups() as u32,
             ..Default::default()
         };
+        for c in 0..4 {
+            if drawn(c) {
+                stats.cascades_updated |= 1 << c;
+            }
+        }
+        // The frame is recorded into several command buffers, submitted in
+        // this order: the shadow views, the prepass, AO + fog (`mid`), the
+        // main pass, then post. wgpu validates and translates a pass into
+        // backend commands in `CommandEncoder::finish`, on the calling
+        // thread, so the heavy passes (thousands of draws) are recorded and
+        // finished in parallel; the cheap full-screen passes stay here.
+        // Each parallel pass writes its multi-draw arguments into its own
+        // region of the indirect buffer (at most one per batch).
+        let mut arg_base = 0usize;
+        let mut region = |n: usize| {
+            let b = arg_base;
+            arg_base += n;
+            b
+        };
+        // Timestamp slots are taken here, in submission order (the profiler
+        // is not shared with the workers).
+        const SHADOW_NAMES: [&str; 5] = ["shadow c0", "shadow c1", "shadow c2", "shadow c3", "shadow spots"];
+        let mut jobs: Vec<PassJob<'_>> = Vec::new();
+        for c in 0..4 + n_spot {
+            if drawn(c) {
+                jobs.push(PassJob::Shadow { c, base: region(shadow_batches[c].len()), tw: self.profiler.pass(SHADOW_NAMES[c.min(4)]) });
+            }
+        }
+        jobs.push(PassJob::Prepass { base: region(main_batches.len()), tw: self.profiler.pass("prepass") });
+        let t = self.targets.as_ref().expect("resized");
+        let prof = &self.profiler;
         let compute = |enc: &mut wgpu::CommandEncoder, pipe: &wgpu::ComputePipeline, bind: &wgpu::BindGroup, groups: (u32, u32), name: &'static str| {
             let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some(name), timestamp_writes: prof.compute_pass(name) });
             pass.set_pipeline(pipe);
             pass.set_bind_group(0, bind, &[]);
             pass.dispatch_workgroups(groups.0, groups.1, 1);
         };
-        // 0. Eye adaptation: this frame is pre-exposed by the last exposure.
-        if auto.is_some() {
-            compute(&mut enc, &self.pipelines.exposure_begin, &t.exposure_bind, (1, 1), "exposure");
-        }
-        // Per-pass CPU encode time ("enc ..." scopes inside "encode").
-        let mut t_pass = std::time::Instant::now();
-        let mut enc_scopes: [(&'static str, f32); 5] = [("enc shadows", 0.0), ("enc prepass", 0.0), ("enc ao+fog", 0.0), ("enc main", 0.0), ("enc post", 0.0)];
-        let mut lap = |k: usize| {
-            enc_scopes[k].1 += t_pass.elapsed().as_secs_f32() * 1000.0;
-            t_pass = std::time::Instant::now();
-        };
-        const SHADOW_NAMES: [&str; 5] = ["shadow c0", "shadow c1", "shadow c2", "shadow c3", "shadow spots"];
-        // 1. Shadows (alpha-masked casters are alpha tested): sun cascades
-        // (the cached far ones skipped), then the shadowed spot lights.
-        for c in 0..4 + n_spot {
-            if !drawn(c) {
-                continue;
-            }
-            if c < 4 {
-                stats.cascades_updated |= 1 << c;
-            }
-            let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("shadow"),
-                color_attachments: &[],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: if c < 4 { &self.shadow_layers[c] } else { &self.spot_shadow_layers[c - 4] },
-                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: prof.pass(SHADOW_NAMES[c.min(4)]),
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_vertex_buffer(1, self.instance_buf.slice(..));
-            let mut bound: Option<(bool, bool)> = None;
-            let mut bound_mat = u32::MAX;
-            let mut ds = DrawStream::new(&self.vertex_pool, &self.index_pool, indirect, &mut indirect_args);
-            for b in &shadow_batches[c] {
-                let masked = self.materials[b.material as usize].masked;
-                let mesh = &self.meshes[b.mesh as usize];
-                let Some(r) = mesh.draw_range(b.lod) else { continue };
-                if bound != Some((masked, b.skinned)) || (masked && b.material != bound_mat) {
-                    ds.flush(&mut pass);
-                }
-                if bound != Some((masked, b.skinned)) {
-                    pass.set_pipeline(match (masked, b.skinned) {
-                        (false, false) => &self.pipelines.shadow,
-                        (false, true) => &self.pipelines.shadow_skinned,
-                        (true, false) => &self.pipelines.shadow_masked,
-                        (true, true) => &self.pipelines.shadow_skinned_masked,
-                    });
-                    pass.set_bind_group(0, &self.cascade_binds[c], &[]);
-                    pass.set_bind_group(1, &self.joint_bind, &[]);
-                    bound = Some((masked, b.skinned));
-                    bound_mat = u32::MAX;
-                }
-                if masked && b.material != bound_mat {
-                    pass.set_bind_group(2, &self.materials[b.material as usize].bind_group, &[]);
-                    bound_mat = b.material;
-                }
-                ds.draw(&mut pass, &r, if b.skinned { mesh.skin.as_ref().map(|sk| (b.mesh, sk)) } else { None }, b.first..b.first + b.count);
-                stats.shadow_draws += 1;
-                stats.shadow_instances += b.count;
-                stats.shadow_triangles += (r.count / 3) as u64 * b.count as u64;
-            }
-            ds.flush(&mut pass);
-            stats.api_draws += ds.calls;
-        }
-        lap(0);
-        // 2. Depth + normal prepass of the opaque surfaces (blended ones are
-        // sorted last and skipped). Opaque materials keep whatever material
-        // group is bound: their prepass shader reads no texture.
-        {
-            let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("prepass"),
-                color_attachments: &[
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: &t.normal,
-                        depth_slice: None,
-                        resolve_target: None,
-                        ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.0, g: 1.0, b: 0.0, a: 0.0 }), store: wgpu::StoreOp::Store },
-                    }),
-                    Some(wgpu::RenderPassColorAttachment { view: &t.velocity, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store } }),
-                ],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &t.depth,
-                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(0.0), store: wgpu::StoreOp::Store }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: prof.pass("prepass"),
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_vertex_buffer(1, self.instance_buf.slice(..));
-            let mut bound_pipe = usize::MAX;
-            let mut bound_mat = u32::MAX;
-            let mut ds = DrawStream::new(&self.vertex_pool, &self.index_pool, indirect, &mut indirect_args);
-            for b in main_batches.iter().take_while(|b| b.pipe < 3) {
-                let Some(r) = self.meshes[b.mesh as usize].draw_range(b.lod) else { continue };
-                let pipe = b.pipe as usize;
-                let masked = self.materials[b.material as usize].masked;
-                let pp = pipe * 2 + masked as usize;
-                if pp != bound_pipe || ((masked || bound_mat == u32::MAX) && b.material != bound_mat) {
-                    ds.flush(&mut pass);
-                }
-                if pp != bound_pipe {
-                    pass.set_pipeline(&self.pipelines.prepass[pipe][masked as usize]);
-                    pass.set_bind_group(0, &self.frame_bind, &[]);
-                    pass.set_bind_group(2, &self.joint_bind, &[]);
-                    bound_pipe = pp;
-                }
-                if (masked || bound_mat == u32::MAX) && b.material != bound_mat {
-                    pass.set_bind_group(1, &self.materials[b.material as usize].bind_group, &[]);
-                    bound_mat = b.material;
-                }
-                let mesh = &self.meshes[b.mesh as usize];
-                ds.draw(&mut pass, &r, if pipe == 2 { mesh.skin.as_ref().map(|sk| (b.mesh, sk)) } else { None }, b.first..b.first + b.count);
-            }
-            ds.flush(&mut pass);
-            stats.api_draws += ds.calls;
-        }
         let screen_pass = |enc: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, pipe: &wgpu::RenderPipeline, bind: &wgpu::BindGroup, name: &'static str| {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some(name),
@@ -3662,113 +3877,86 @@ impl Renderer {
             pass.set_bind_group(1, bind, &[]);
             pass.draw(0..3, 0..1);
         };
-        lap(1);
-        // 3. Ambient occlusion: GTAO + bilateral denoise, at half resolution
+        let mut t_pass = std::time::Instant::now();
+        let mut mid = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("ao+fog") });
+        // Eye adaptation: this frame is pre-exposed by the last exposure
+        // (read first by the main pass).
+        if auto.is_some() {
+            compute(&mut mid, &self.pipelines.exposure_begin, &t.exposure_bind, (1, 1), "exposure");
+        }
+        // Ambient occlusion: GTAO + bilateral denoise, at half resolution
         // with a depth-aware upsample, or at full resolution.
         if s.ssao {
             if half_ao {
-                screen_pass(&mut enc, &t.ao_half_raw, &self.pipelines.gtao, &t.gtao_half_bind, "gtao");
-                screen_pass(&mut enc, &t.ao_half, &self.pipelines.ao_blur, &t.blur_half_bind, "gtao");
-                screen_pass(&mut enc, &t.ao, &self.pipelines.ao_upsample, &t.upsample_bind, "gtao");
+                screen_pass(&mut mid, &t.ao_half_raw, &self.pipelines.gtao, &t.gtao_half_bind, "gtao");
+                screen_pass(&mut mid, &t.ao_half, &self.pipelines.ao_blur, &t.blur_half_bind, "gtao");
+                screen_pass(&mut mid, &t.ao, &self.pipelines.ao_upsample, &t.upsample_bind, "gtao");
             } else {
-                screen_pass(&mut enc, &t.ao_raw, &self.pipelines.gtao, &t.gtao_bind, "gtao");
-                screen_pass(&mut enc, &t.ao, &self.pipelines.ao_blur, &t.blur_bind, "gtao");
+                screen_pass(&mut mid, &t.ao_raw, &self.pipelines.gtao, &t.gtao_bind, "gtao");
+                screen_pass(&mut mid, &t.ao, &self.pipelines.ao_blur, &t.blur_bind, "gtao");
             }
         }
-        // 3b. Light clusters (froxel light lists).
+        // Light clusters (froxel light lists).
         if n_lights > 0 {
             let clusters = tiles_x * tiles_y * (lights::CLUSTER_SLICES + 1);
-            compute(&mut enc, &self.pipelines.cluster, &self.cluster_bind, (clusters.div_ceil(64), 1), "light clusters");
+            compute(&mut mid, &self.pipelines.cluster, &self.cluster_bind, (clusters.div_ceil(64), 1), "light clusters");
         }
-        // 3c. Sky-view LUT (and the transmittance LUT once), then the froxel
+        // Sky-view LUT (and the transmittance LUT once), then the froxel
         // fog: lit by this frame's shadow maps and light clusters.
-        self.fog.encode_sky(&self.device, &mut enc, &self.frame_bind, prof);
-        self.fog.encode_volume(&self.queue, &mut enc, &self.frame_bind, prof);
-        lap(2);
-        // 4. Main HDR pass + sky + lines, depth-tested against the prepass
-        // (read-only, so the shaders can also sample it).
+        self.fog.encode_sky(&self.device, &mut mid, &self.frame_bind, prof);
+        self.fog.encode_volume(&self.queue, &mut mid, &self.frame_bind, prof);
+        let ao_fog_ms = t_pass.elapsed().as_secs_f32() * 1000.0;
+        jobs.push(PassJob::Finish(mid));
+        // The main pass (one bind group change per material: the costliest
+        // to record) is split into consecutive render passes recorded in
+        // parallel; the first clears, the others load.
         {
+            let n = main_batches.len();
+            let chunks = match main_chunks_override() {
+                Some(c) => c.clamp(1, n.max(1)),
+                None => (n / MAIN_CHUNK_BATCHES).clamp(1, rayon::current_num_threads().max(1)),
+            };
+            let tw = prof.pass("main+sky");
+            for k in 0..chunks {
+                let (lo, hi) = (n * k / chunks, n * (k + 1) / chunks);
+                // The first chunk writes the begin timestamp, the last the end.
+                let tw = tw.as_ref().filter(|_| k == 0 || k + 1 == chunks).map(|w| wgpu::RenderPassTimestampWrites {
+                    query_set: w.query_set,
+                    beginning_of_pass_write_index: if k == 0 { w.beginning_of_pass_write_index } else { None },
+                    end_of_pass_write_index: if k + 1 == chunks { w.end_of_pass_write_index } else { None },
+                });
+                jobs.push(PassJob::Main { base: region(hi - lo), tw, lo, hi, first: k == 0, last: k + 1 == chunks });
+            }
+        }
+        // ---- Post (encoded here, finished in parallel): TAA, motion blur, DOF,
+        // exposure, bloom, tonemap; the timestamps are resolved last.
+        t_pass = std::time::Instant::now();
+        let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("post") });
+        let screen_pass = |enc: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, pipe: &wgpu::RenderPipeline, bind: &wgpu::BindGroup, name: &'static str| {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("main"),
+                label: Some(name),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &t.hdr,
+                    view,
                     depth_slice: None,
                     resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store },
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::WHITE), store: wgpu::StoreOp::Store },
                 })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &t.depth, depth_ops: None, stencil_ops: None }),
-                timestamp_writes: prof.pass("main+sky"),
+                depth_stencil_attachment: None,
+                timestamp_writes: prof.pass(name),
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            pass.set_vertex_buffer(1, self.instance_buf.slice(..));
-            let mut bound_pipe = u8::MAX;
-            let mut bound_mat = u32::MAX;
-            let mut ds = DrawStream::new(&self.vertex_pool, &self.index_pool, indirect, &mut indirect_args);
-            // Opaque first; the sky goes after opaque and before blended.
-            let mut sky_drawn = false;
-            for i in 0..=main_batches.len() {
-                let blend_start = i == main_batches.len() || main_batches[i].pipe >= 3;
-                if blend_start && !sky_drawn {
-                    ds.flush(&mut pass);
-                    pass.set_pipeline(&self.pipelines.sky);
-                    pass.set_bind_group(0, &self.frame_bind, &[]);
-                    pass.set_bind_group(1, self.sky_bind.as_ref().expect("sky bind"), &[]);
-                    pass.draw(0..3, 0..1);
-                    if env.light_sprites > 0.0 && n_lights > 0 {
-                        pass.set_pipeline(&self.pipelines.sprites);
-                        pass.draw(0..4, 0..n_lights);
-                    }
-                    bound_pipe = u8::MAX;
-                    sky_drawn = true;
-                }
-                let Some(b) = main_batches.get(i) else { break };
-                let Some(r) = self.meshes[b.mesh as usize].draw_range(b.lod) else { continue };
-                if b.pipe != bound_pipe || b.material != bound_mat {
-                    ds.flush(&mut pass);
-                }
-                if b.pipe != bound_pipe {
-                    pass.set_pipeline(match b.pipe {
-                        0 => &self.pipelines.opaque,
-                        1 => &self.pipelines.double_sided,
-                        2 => &self.pipelines.skinned,
-                        4 => &self.pipelines.skinned_blend,
-                        _ => &self.pipelines.blend,
-                    });
-                    pass.set_bind_group(0, &self.frame_bind, &[]);
-                    pass.set_bind_group(2, &self.joint_bind, &[]);
-                    pass.set_bind_group(3, &t.screen_bind, &[]);
-                    bound_pipe = b.pipe;
-                    bound_mat = u32::MAX;
-                }
-                if b.material != bound_mat {
-                    pass.set_bind_group(1, &self.materials[b.material as usize].bind_group, &[]);
-                    bound_mat = b.material;
-                }
-                let mesh = &self.meshes[b.mesh as usize];
-                ds.draw(&mut pass, &r, if b.skinned { mesh.skin.as_ref().map(|sk| (b.mesh, sk)) } else { None }, b.first..b.first + b.count);
-                stats.draw_calls += 1;
-                stats.instances_drawn += b.count;
-                stats.triangles += (r.count / 3) as u64 * b.count as u64;
-            }
-            ds.flush(&mut pass);
-            stats.api_draws += ds.calls;
-            if !frame.lines.is_empty() {
-                pass.set_pipeline(&self.pipelines.lines);
-                pass.set_bind_group(0, &self.frame_bind, &[]);
-                pass.set_vertex_buffer(0, self.line_buf.slice(..));
-                pass.draw(0..frame.lines.len() as u32, 0..1);
-            }
-        }
-        lap(3);
-        // The merged draws read their arguments from here (written before
-        // the submit, so before the passes run).
-        if let Some(buf) = indirect
-            && !indirect_args.is_empty()
-        {
-            self.queue.write_buffer(buf, 0, bytemuck::cast_slice(&indirect_args));
-        }
-        self.indirect_args = indirect_args;
+            pass.set_pipeline(pipe);
+            pass.set_bind_group(0, &self.frame_bind, &[]);
+            pass.set_bind_group(1, bind, &[]);
+            pass.draw(0..3, 0..1);
+        };
+        let compute = |enc: &mut wgpu::CommandEncoder, pipe: &wgpu::ComputePipeline, bind: &wgpu::BindGroup, groups: (u32, u32), name: &'static str| {
+            let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some(name), timestamp_writes: prof.compute_pass(name) });
+            pass.set_pipeline(pipe);
+            pass.set_bind_group(0, bind, &[]);
+            pass.dispatch_workgroups(groups.0, groups.1, 1);
+        };
         // 5. TAA resolve into `resolved`, which becomes next frame's history.
         screen_pass(&mut enc, &t.resolved, &self.pipelines.taa, &t.taa_bind, "taa");
         enc.copy_texture_to_texture(
@@ -3843,16 +4031,79 @@ impl Renderer {
             self.camera_fx.camera_pass(&mut enc, target, &t.camera, prof.pass("camera fx"));
         }
         self.profiler.resolve(&mut enc);
-        lap(4);
-        self.cpu.add("encode", t_enc.elapsed().as_secs_f32() * 1000.0);
-        for (name, ms) in enc_scopes {
-            self.cpu.add(name, ms);
+        let post_ms = t_pass.elapsed().as_secs_f32() * 1000.0;
+        jobs.push(PassJob::Finish(enc));
+        // ---- Parallel: record + finish the shadow, prepass and main passes.
+        t_pass = std::time::Instant::now();
+        let ctx = PassCtx {
+            device: &self.device,
+            pipelines: &self.pipelines,
+            materials: &self.materials,
+            meshes: &self.meshes,
+            vpool: &self.vertex_pool,
+            ipool: &self.index_pool,
+            indirect: if mdi { self.indirect_buf.as_ref() } else { None },
+            instances: &self.instance_buf,
+            cascade_binds: &self.cascade_binds,
+            shadow_layers: &self.shadow_layers,
+            spot_shadow_layers: &self.spot_shadow_layers,
+            joint_bind: &self.joint_bind,
+            frame_bind: &self.frame_bind,
+            sky_bind: self.sky_bind.as_ref().expect("sky bind"),
+            line_buf: &self.line_buf,
+            targets: t,
+            main_batches: &main_batches,
+            shadow_batches: &shadow_batches,
+            lines: frame.lines.len() as u32,
+            sprites: if env.light_sprites > 0.0 { n_lights } else { 0 },
+        };
+        let outs: Vec<PassOut> = {
+            use rayon::prelude::*;
+            jobs.into_par_iter().with_max_len(1).map(|job| ctx.run(job)).collect()
+        };
+        let parallel_ms = t_pass.elapsed().as_secs_f32() * 1000.0;
+        let mut indirect_args = std::mem::take(&mut self.indirect_args);
+        indirect_args.clear();
+        let mut cmds: Vec<wgpu::CommandBuffer> = Vec::with_capacity(outs.len());
+        let mut enc_ms = [0.0f32; 4];
+        for o in outs {
+            cmds.push(o.cmd);
+            enc_ms[o.kind] += o.ms;
+            stats.api_draws += o.stats.api_draws;
+            stats.shadow_draws += o.stats.shadow_draws;
+            stats.shadow_instances += o.stats.shadow_instances;
+            stats.shadow_triangles += o.stats.shadow_triangles;
+            stats.draw_calls += o.stats.draw_calls;
+            stats.instances_drawn += o.stats.instances_drawn;
+            stats.triangles += o.stats.triangles;
+            if !o.args.is_empty() {
+                if indirect_args.len() < o.base + o.args.len() {
+                    indirect_args.resize(o.base + o.args.len(), IndirectArgs::zeroed());
+                }
+                indirect_args[o.base..o.base + o.args.len()].copy_from_slice(&o.args);
+            }
         }
-        let t_fin = std::time::Instant::now();
-        let cmd = enc.finish();
-        self.cpu.add("finish", t_fin.elapsed().as_secs_f32() * 1000.0);
+        // The merged draws read their arguments from here (written before
+        // the submit, so before the passes run).
+        if let Some(buf) = ctx.indirect
+            && !indirect_args.is_empty()
+        {
+            self.queue.write_buffer(buf, 0, bytemuck::cast_slice(&indirect_args));
+        }
+        self.indirect_args = indirect_args;
+        self.cpu.add("encode", ao_fog_ms + post_ms);
+        self.cpu.add("enc ao+fog", ao_fog_ms);
+        self.cpu.add("enc post", post_ms);
+        // Worker CPU time of each parallel pass (encode + finish), and the
+        // main thread's wait for all of them.
+        self.cpu.add("enc shadows", enc_ms[0]);
+        self.cpu.add("enc prepass", enc_ms[1]);
+        self.cpu.add("enc main", enc_ms[2]);
+        self.cpu.add("parallel passes", parallel_ms);
+        self.cpu.add("finish", enc_ms[3]);
+        let _ = t_enc;
         let t_sub = std::time::Instant::now();
-        self.queue.submit([cmd]);
+        self.queue.submit(cmds);
         // The frame's submit carries every staged upload with it: their
         // staging memory is released once the GPU is past this frame.
         self.pending_upload = 0;

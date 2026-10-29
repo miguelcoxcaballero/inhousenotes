@@ -22,7 +22,7 @@ const FAILED: u8 = 3;
 struct Slot {
     buf: wgpu::Buffer,
     state: Arc<AtomicU8>,
-    names: Vec<&'static str>,
+    names: RefCell<Vec<&'static str>>,
 }
 
 pub struct GpuProfiler {
@@ -30,7 +30,7 @@ pub struct GpuProfiler {
     resolve: Option<wgpu::Buffer>,
     ring: Vec<Slot>,
     /// Ring slot recording this frame (None: profiling skipped this frame).
-    current: Option<usize>,
+    current: Cell<Option<usize>>,
     next: Cell<u32>,
     names: RefCell<Vec<&'static str>>,
     period_ns: f32,
@@ -68,7 +68,7 @@ impl GpuProfiler {
                         mapped_at_creation: false,
                     }),
                     state: Arc::new(AtomicU8::new(FREE)),
-                    names: Vec::new(),
+                    names: RefCell::new(Vec::new()),
                 })
                 .collect();
             (Some(qs), Some(resolve), ring)
@@ -79,7 +79,7 @@ impl GpuProfiler {
             query_set,
             resolve,
             ring,
-            current: None,
+            current: Cell::new(None),
             next: Cell::new(0),
             names: RefCell::new(Vec::new()),
             period_ns: queue.get_timestamp_period(),
@@ -97,7 +97,7 @@ impl GpuProfiler {
     /// Starts recording a frame: collects finished readbacks and picks a
     /// free slot (none free: this frame is not timed).
     pub fn begin_frame(&mut self, device: &wgpu::Device) {
-        self.current = None;
+        self.current.set(None);
         self.next.set(0);
         self.names.borrow_mut().clear();
         if self.query_set.is_none() {
@@ -110,8 +110,9 @@ impl GpuProfiler {
                 READY => {
                     let mut out: Vec<(&'static str, f32)> = Vec::new();
                     if let Ok(data) = slot.buf.slice(..).get_mapped_range() {
-                        let ts: &[u64] = bytemuck::cast_slice(&data[..slot.names.len() * 16]);
-                        for (i, name) in slot.names.iter().enumerate() {
+                        let names = slot.names.borrow();
+                        let ts: &[u64] = bytemuck::cast_slice(&data[..names.len() * 16]);
+                        for (i, name) in names.iter().enumerate() {
                             let (a, b) = (ts[i * 2], ts[i * 2 + 1]);
                             let ms = b.saturating_sub(a) as f32 * self.period_ns * 1e-6;
                             match out.iter_mut().find(|e| e.0 == *name) {
@@ -136,7 +137,7 @@ impl GpuProfiler {
             self.last = out;
         }
         if self.enabled {
-            self.current = self.ring.iter().position(|s| s.state.load(Ordering::Acquire) == FREE);
+            self.current.set(self.ring.iter().position(|s| s.state.load(Ordering::Acquire) == FREE));
         }
     }
 
@@ -153,7 +154,7 @@ impl GpuProfiler {
     }
 
     fn slot(&self, name: &'static str) -> Option<(&wgpu::QuerySet, u32)> {
-        self.current?;
+        self.current.get()?;
         let qs = self.query_set.as_ref()?;
         let i = self.next.get();
         if i >= MAX_PASSES {
@@ -164,18 +165,21 @@ impl GpuProfiler {
         Some((qs, i))
     }
 
-    /// Resolves this frame's queries into its readback slot (record before
-    /// finishing the encoder).
-    pub fn resolve(&mut self, enc: &mut wgpu::CommandEncoder) {
-        let (Some(slot), Some(qs), Some(resolve)) = (self.current, &self.query_set, &self.resolve) else { return };
+    /// Resolves this frame's queries into its readback slot: record it in
+    /// the frame's last command buffer, after every timed pass has taken
+    /// its slot (no slot is handed out after this).
+    pub fn resolve(&self, enc: &mut wgpu::CommandEncoder) {
+        let (Some(slot), Some(qs), Some(resolve)) = (self.current.get(), &self.query_set, &self.resolve) else { return };
         let n = self.next.get();
         if n == 0 {
-            self.current = None;
+            self.current.set(None);
             return;
         }
         enc.resolve_query_set(qs, 0..n * 2, resolve, 0);
         enc.copy_buffer_to_buffer(resolve, 0, &self.ring[slot].buf, 0, n as u64 * 16);
-        self.ring[slot].names = self.names.borrow().clone();
+        *self.ring[slot].names.borrow_mut() = self.names.borrow().clone();
+        // Later passes are not timed (their queries would not be resolved).
+        self.next.set(MAX_PASSES);
     }
 
     /// Maps this frame's slot after the submit that contains it.
