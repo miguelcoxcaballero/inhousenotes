@@ -1592,7 +1592,13 @@ impl ApplicationHandler for Sandbox {
         } else {
             monitor.as_ref().map_or(winit::dpi::PhysicalSize::new(self.args.width, self.args.height), |m| {
                 let s = m.size();
-                winit::dpi::PhysicalSize::new((s.width * 3 / 4).max(640), (s.height * 3 / 4).max(360))
+                if display == DisplayMode::Windowed {
+                    winit::dpi::PhysicalSize::new((s.width * 3 / 4).max(640), (s.height * 3 / 4).max(360))
+                } else {
+                    // The full panel, also where the platform ignores the
+                    // fullscreen request (X11 without a window manager).
+                    s
+                }
             })
         };
         let attrs = Window::default_attributes().with_title("Forja").with_inner_size(size).with_fullscreen(fullscreen_for(monitor.as_ref(), display));
