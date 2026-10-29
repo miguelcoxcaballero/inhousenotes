@@ -1957,6 +1957,20 @@
         let isGestureInteracting = false;
         let penWritingIdleTimer = null;
         let penWritingIdleDeadline = 0;
+        // Writing bursts: consecutive pen strokes with short pauses (letters,
+        // words). Whole-document background work (Drive PDF build/upload,
+        // offline library copy) started in such a pause is aborted by the next
+        // stroke and its main-thread slices land right at pen-down, so while a
+        // burst continues it waits for a longer quiet period. Durable local
+        // stroke operations are unaffected: they still flush at pen idle.
+        const PEN_BURST_WINDOW_MS = 3000;
+        const PEN_BURST_QUIET_MS = 1200;
+        let penBurstLastStrokeAt = 0;
+        let penBurstPreviousStrokeAt = 0;
+        let lastPenActivityAt = 0;
+        // Deferred view maintenance (visible pages, canvas resolution) that
+        // waits for the pen to lift instead of polling while ink is drawn.
+        const afterPenWritingTasks = new Map();
         let lastPenEventTime = 0;
         let lastUserInteractionAt = 0;
         let documentSessionId = 1;
@@ -2616,7 +2630,10 @@
             canvasResolutionSyncHandle = setTimeout(() => {
                 canvasResolutionSyncHandle = null;
                 if (isViewportInteracting()) {
-                    scheduleCanvasResolutionSync();
+                    // Writing does not change zoom; resync after the pen lifts
+                    // instead of waking every 90 ms for the whole burst.
+                    if (isPenWriting) runAfterPenWriting('canvas-resolution', () => scheduleCanvasResolutionSync());
+                    else scheduleCanvasResolutionSync();
                     return;
                 }
                 warmTemplateBackgroundUrlsForDoc();
@@ -3545,10 +3562,17 @@
         // viewport, activates their canvases, and unloads pages that moved
         // far enough away (to stay within the MAX_ACTIVE_PAGES memory limit).
         function updateVisiblePages(force = false) {
+            const deferHeavy = !force && isViewportInteracting();
+            // Ink never moves the viewport: while the pen writes there are no
+            // new pages to show and no thumbnails to queue. Reconcile once when
+            // the pen lifts instead of re-reading the layout every 140 ms.
+            if (deferHeavy && isPenWriting) {
+                runAfterPenWriting('visible-pages', () => scheduleVisiblePageUpdate());
+                return;
+            }
             queueScrollPagePreviews();
             const pageCount = state.pages.length;
             if (!pageCount) return;
-            const deferHeavy = !force && isViewportInteracting();
 
             // During active interaction (scroll/pinch), skip all DOM work
             if (deferHeavy) {
@@ -4409,6 +4433,7 @@
                     interruptDocumentBackgroundWork();
                     window.InhouseOfflineLibrary?.pauseForEditing?.();
                 }
+                notePenStrokeStart();
                 notePenActivity();
 
                 if (state.currentTool === 'eraser-stroke') {
@@ -23386,7 +23411,11 @@
         }
         async function processScrollPagePreview() {
             if(scrollPreviewBusy||!scrollPreviewQueue.size)return;
-            if(isViewportInteracting()){scrollPreviewTimer=setTimeout(()=>{scrollPreviewTimer=null;void processScrollPagePreview();},240);return;}
+            // A thumbnail rebuild redraws every stroke of the page and encodes a
+            // JPEG; between the strokes of a writing burst it only competes with
+            // the pen (the page being written on shows its live canvas anyway).
+            const penBurstQuiet=getPenBurstQuietRemaining();
+            if(isViewportInteracting()||penBurstQuiet>0){scrollPreviewTimer=setTimeout(()=>{scrollPreviewTimer=null;void processScrollPagePreview();},Math.max(240,penBurstQuiet+40));return;}
             let pageIndex=-1,priority=Infinity;
             for(const [index,value] of scrollPreviewQueue)if(value<priority){pageIndex=index;priority=value;}
             scrollPreviewQueue.delete(pageIndex);scrollPreviewBusy=true;
@@ -25031,6 +25060,11 @@
                 armPausedSaveWatchdog(360);
                 return;
             }
+            const penBurstQuiet = getPenBurstQuietRemaining();
+            if (penBurstQuiet > 0) {
+                armPausedSaveWatchdog(Math.max(360, penBurstQuiet + 40));
+                return;
+            }
             recordSaveDebug(`Resuming paused save (${reason})`, { phase: 'building' });
             showStatus('Changes pending...', { phase: 'building' });
             if (saveQueued || pageDirty.size > 0 || strokeOpsQueue.length > 0) {
@@ -25130,6 +25164,7 @@
             }
             isPenWriting = false;
             flushStrokeOpsQueue();
+            flushAfterPenWritingTasks();
             pendingStrokeOps.forEach((ops, pageIndex) => {
                 if (ops.length >= STROKE_OP_COMPACT_THRESHOLD) {
                     markPageDirty(pageIndex, 'full');
@@ -25160,9 +25195,67 @@
         }
 
         let penWritingIdleDelay = DOCUMENT_SAVE_IDLE_MS;
+        function notePenStrokeStart(now = Date.now()) {
+            penBurstPreviousStrokeAt = penBurstLastStrokeAt;
+            penBurstLastStrokeAt = now;
+            lastPenActivityAt = now;
+        }
+
+        // Remaining quiet time before whole-document work may start. Zero for
+        // an isolated stroke, when leaving the editor, or in the background.
+        function getPenBurstQuietRemaining(now = Date.now()) {
+            if (forceFlushingForExit || document.hidden) return 0;
+            if (!penBurstPreviousStrokeAt
+                || penBurstLastStrokeAt - penBurstPreviousStrokeAt > PEN_BURST_WINDOW_MS) return 0;
+            return Math.max(0, lastPenActivityAt + PEN_BURST_QUIET_MS - now);
+        }
+
+        function runAfterPenWriting(key, task) {
+            afterPenWritingTasks.set(key, task);
+        }
+
+        function flushAfterPenWritingTasks() {
+            if (!afterPenWritingTasks.size) return;
+            const tasks = Array.from(afterPenWritingTasks.values());
+            afterPenWritingTasks.clear();
+            tasks.forEach(task => {
+                try { task(); } catch (error) { console.warn('Deferred pen-idle task failed:', error); }
+            });
+        }
+
+        // The offline library copies the whole document into IndexedDB (a
+        // full structured clone read + write). Request it once the writing
+        // burst pauses; leaving the editor or hiding the app captures at once.
+        let penBurstOfflineCaptureTimer = null;
+        function scheduleOfflineCaptureAfterPenBurst() {
+            const library = window.InhouseOfflineLibrary;
+            if (!library?.scheduleCapture) return;
+            const remaining = getPenBurstQuietRemaining();
+            if (remaining <= 0) {
+                if (penBurstOfflineCaptureTimer) {
+                    clearTimeout(penBurstOfflineCaptureTimer);
+                    penBurstOfflineCaptureTimer = null;
+                }
+                library.scheduleCapture();
+                return;
+            }
+            if (penBurstOfflineCaptureTimer) return;
+            const tick = () => {
+                const left = getPenBurstQuietRemaining();
+                if (left > 0) {
+                    penBurstOfflineCaptureTimer = setTimeout(tick, left);
+                    return;
+                }
+                penBurstOfflineCaptureTimer = null;
+                window.InhouseOfflineLibrary?.scheduleCapture?.();
+            };
+            penBurstOfflineCaptureTimer = setTimeout(tick, remaining);
+        }
+
         function notePenActivity() {
             const wasWriting = isPenWriting;
             noteRecentUserActivity();
+            lastPenActivityAt = lastUserInteractionAt;
             isPenWriting = true;
             // Only update status indicator on the first pen event of a stroke,
             // not on every pointermove — avoids DOM thrashing during drawing.
@@ -25266,8 +25359,9 @@
                 preparedDrivePdfTimer = null;
                 if (!state.driveAutosave || state.isReadOnly || !driveAccessToken
                     || driveContentVersion === driveUploadedContentVersion) return;
-                if (hasSmoothInteraction() || hasRecentUserActivity()) {
-                    schedulePreparedDrivePdf(Math.max(60, getRecentUserActivityRemaining() + 24));
+                if (hasSmoothInteraction() || hasRecentUserActivity() || getPenBurstQuietRemaining() > 0) {
+                    schedulePreparedDrivePdf(Math.max(60, getRecentUserActivityRemaining() + 24,
+                        getPenBurstQuietRemaining() + 24));
                     return;
                 }
                 prepareDrivePdfBlob().catch(err => {
@@ -25368,7 +25462,7 @@
 
         function bumpDriveContentVersion() {
             window.InhouseDriveInk?.change();
-            window.InhouseOfflineLibrary?.scheduleCapture();
+            scheduleOfflineCaptureAfterPenBurst();
             clearDriveSaveBlocked();
             driveContentVersion += 1;
             invalidatePreparedDrivePdf();
@@ -26082,9 +26176,10 @@
                     scheduleDeferredDriveSaveRetry(Math.max(INTERACTION_IDLE_MS + 120, 260));
                     return;
                 }
-                if (hasRecentUserActivity()) {
+                if (hasRecentUserActivity() || getPenBurstQuietRemaining() > 0) {
                     deferredDriveSave = true;
-                    scheduleDeferredDriveSaveRetry(Math.max(180, getRecentUserActivityRemaining() + 90));
+                    scheduleDeferredDriveSaveRetry(Math.max(180, getRecentUserActivityRemaining() + 90,
+                        getPenBurstQuietRemaining() + 90));
                     return;
                 }
                 if (!driveAccessToken) {
@@ -26124,9 +26219,10 @@
                 scheduleDeferredDriveSaveRetry();
                 return;
             }
-            if (hasRecentUserActivity()) {
+            if (hasRecentUserActivity() || getPenBurstQuietRemaining() > 0) {
                 deferredDriveSave = true;
-                scheduleDeferredDriveSaveRetry(Math.max(180, getRecentUserActivityRemaining() + 90));
+                scheduleDeferredDriveSaveRetry(Math.max(180, getRecentUserActivityRemaining() + 90,
+                    getPenBurstQuietRemaining() + 90));
                 return;
             }
             if (!driveAccessToken) {
@@ -26151,6 +26247,16 @@
             }, DRIVE_SYNC_IDLE_DELAY);
             if (!driveSyncMaxTimeout) {
                 driveSyncMaxTimeout = setTimeout(() => {
+                    // A forced save in the middle of a writing burst would be
+                    // aborted by the next stroke; save when the burst pauses.
+                    const penBurstQuiet = getPenBurstQuietRemaining();
+                    if (penBurstQuiet > 0) {
+                        driveSyncMaxTimeout = null;
+                        driveDirty = true;
+                        deferredDriveSave = true;
+                        scheduleDeferredDriveSaveRetry(penBurstQuiet + 90);
+                        return;
+                    }
                     queueDriveSave(true);
                 }, DRIVE_SYNC_MAX_DELAY);
             }
@@ -26517,6 +26623,20 @@
                     forceUpload: !!(previous.options.forceUpload || next.options.forceUpload) } })
         );
         async function queueDriveSave(force = false, options = {}) {
+            // Every queued Drive save first copies the whole document into the
+            // offline library. A non-forced save during a writing burst would
+            // only be deferred afterwards, so defer it before that copy.
+            if (!force && state.driveAutosave && !state.isReadOnly && !driveSaveBlockedReason) {
+                const penBurstQuiet = getPenBurstQuietRemaining();
+                if (penBurstQuiet > 0) {
+                    if (driveContentVersion !== driveUploadedContentVersion) driveDirty = true;
+                    if (driveDirty) {
+                        deferredDriveSave = true;
+                        scheduleDeferredDriveSaveRetry(penBurstQuiet + 90);
+                    }
+                    return;
+                }
+            }
             const context = captureDocumentPersistenceContext();
             return driveCheckpointQueue.request(context.sessionToken, { context, force, options });
         }
@@ -26540,10 +26660,10 @@
             }
             if (!driveDirty && !force) return;
             const sessionToken = getDocumentSessionToken();
-            if ((hasSmoothInteraction() || hasRecentUserActivity()) && !force) {
+            if ((hasSmoothInteraction() || hasRecentUserActivity() || getPenBurstQuietRemaining() > 0) && !force) {
                 deferredDriveSave = true;
-                scheduleDeferredDriveSaveRetry(hasRecentUserActivity()
-                    ? Math.max(180, getRecentUserActivityRemaining() + 90)
+                scheduleDeferredDriveSaveRetry(hasRecentUserActivity() || getPenBurstQuietRemaining() > 0
+                    ? Math.max(180, getRecentUserActivityRemaining() + 90, getPenBurstQuietRemaining() + 90)
                     : undefined);
                 return;
             }
