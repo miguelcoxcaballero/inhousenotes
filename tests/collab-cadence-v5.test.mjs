@@ -67,6 +67,8 @@ function harness() {
     clearInterval: id => { timers.delete(id); },
     window: {},
     document: { visibilityState: 'visible' },
+    // Merged lifecycle guard (v5.17.22): the editor is open in these scenarios.
+    isDocumentEditorActive: () => true,
     state: { driveFileId: 'doc-1', collabEnabled: false, collabPollInterval: null },
     driveAccessToken: 'token',
     driveUserProfile: { email: 'me@example.test', name: 'Me' },
