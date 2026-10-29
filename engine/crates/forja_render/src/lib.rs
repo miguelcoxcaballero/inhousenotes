@@ -59,6 +59,7 @@ pub mod env;
 pub mod profiler;
 pub mod quality;
 mod static_scene;
+mod mesh_pool;
 mod texcomp;
 pub mod exposure;
 pub mod tonemap;
@@ -527,6 +528,9 @@ pub struct RenderSettings {
     /// FSR 1 EASU upscaling when the target is larger than the internal
     /// resolution (`-fsr`: bilinear + CAS).
     pub fsr: bool,
+    /// Merge consecutive draws with the same state into multi-draws
+    /// (`FORJA_NO_MULTI_DRAW=1` turns it off, for comparisons).
+    pub multi_draw: bool,
 }
 
 impl Default for RenderSettings {
@@ -569,6 +573,7 @@ impl Default for RenderSettings {
             bent_normals: true,
             sky_lut: true,
             fsr: true,
+            multi_draw: true,
         }
     }
 }
@@ -587,6 +592,9 @@ impl RenderSettings {
         let mut s = Self::default();
         if let Ok(fx) = std::env::var("FORJA_FX") {
             s.apply_fx(&fx);
+        }
+        if std::env::var_os("FORJA_NO_MULTI_DRAW").is_some() {
+            s.multi_draw = false;
         }
         if let Some(n) = std::env::var("FORJA_CAPTURE_FRAMES").ok().and_then(|v| v.parse().ok()) {
             s.capture_frames = n;
@@ -730,6 +738,9 @@ pub struct RenderStats {
     pub instances_culled: u32,
     pub triangles: u64,
     pub shadow_draws: u32,
+    /// Draw calls actually recorded (shadows, prepass, main): consecutive
+    /// draws with the same state are merged into one multi-draw.
+    pub api_draws: u32,
     /// Local lights after frustum culling (uploaded to the clusters).
     pub lights: u32,
     pub spot_shadows: u32,
@@ -756,12 +767,14 @@ pub struct RenderStats {
 }
 
 struct GpuMesh {
-    vertex: wgpu::Buffer,
+    /// Vertices in the shared vertex pool (`None`: released).
+    vertex: Option<mesh_pool::Alloc>,
     skin: Option<wgpu::Buffer>,
-    index: wgpu::Buffer,
+    /// All index levels in the shared index pool, LOD 0 first.
+    index: Option<mesh_pool::Alloc>,
     index_count: u32,
-    /// Simplified index buffers (LOD 1..).
-    lods: Vec<(wgpu::Buffer, u32)>,
+    /// Simplified levels (LOD 1..): `(first index in the page, count)`.
+    lods: Vec<(u32, u32)>,
     material: u32,
     aabb: Aabb,
     /// `MeshData::lod_sync` groups: triangles per level of the whole group
@@ -774,11 +787,164 @@ struct GpuMesh {
 }
 
 impl GpuMesh {
-    fn indices(&self, lod: u32) -> (&wgpu::Buffer, u32) {
+    /// First index (in its pool page) and index count of level `lod`.
+    fn indices(&self, lod: u32) -> (u32, u32) {
+        let first = self.index.map_or(0, |a| a.first);
         match lod {
-            0 => (&self.index, self.index_count),
-            l => self.lods.get(l as usize - 1).map(|(b, c)| (b, *c)).unwrap_or((&self.index, self.index_count)),
+            0 => (first, self.index_count),
+            l => self.lods.get(l as usize - 1).copied().unwrap_or((first, self.index_count)),
         }
+    }
+
+    /// Draw range of level `lod`: index page, first index, index count,
+    /// base vertex and vertex page (`None` when released or empty).
+    fn draw_range(&self, lod: u32) -> Option<DrawRange> {
+        let (v, i) = (self.vertex?, self.index?);
+        let (first, count) = self.indices(lod);
+        (count > 0).then_some(DrawRange { vpage: v.page, ipage: i.page, first, count, base_vertex: v.first as i32 })
+    }
+}
+
+/// One view's static instances and batches (see [`Renderer::render`]).
+#[derive(Default)]
+struct ViewList {
+    out: Vec<InstanceRaw>,
+    batches: Vec<Batch>,
+    scratch: static_scene::GatherScratch,
+    /// First instance of `out` in the frame's instance buffer.
+    base: u32,
+}
+
+#[derive(Clone, Copy)]
+struct DrawRange {
+    vpage: u32,
+    ipage: u32,
+    first: u32,
+    count: u32,
+    base_vertex: i32,
+}
+
+/// `DrawIndexedIndirectArgs` as the GPU reads them.
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct IndirectArgs {
+    index_count: u32,
+    instance_count: u32,
+    first_index: u32,
+    base_vertex: i32,
+    first_instance: u32,
+}
+
+/// Draw submission of one pass: binds the pool pages (and skin streams)
+/// only when they change, and merges consecutive draws that share all
+/// bound state into one `multi_draw_indexed_indirect` (shadow and depth
+/// passes become a handful of calls instead of one per mesh). The
+/// arguments are collected in a frame-wide list written to `indirect`
+/// before the submit. The caller must [`DrawStream::flush`] before it
+/// changes pipeline or bind groups, and at the end of the pass.
+struct DrawStream<'a> {
+    vpool: &'a mesh_pool::MeshPool,
+    ipool: &'a mesh_pool::MeshPool,
+    /// `None`: every draw is direct (no `INDIRECT_FIRST_INSTANCE`).
+    indirect: Option<&'a wgpu::Buffer>,
+    args: &'a mut Vec<IndirectArgs>,
+    start: usize,
+    vpage: Option<u32>,
+    ipage: Option<u32>,
+    skin: Option<u32>,
+    /// Draw calls issued (direct or multi).
+    pub calls: u32,
+}
+
+impl<'a> DrawStream<'a> {
+    fn new(vpool: &'a mesh_pool::MeshPool, ipool: &'a mesh_pool::MeshPool, indirect: Option<&'a wgpu::Buffer>, args: &'a mut Vec<IndirectArgs>) -> Self {
+        let start = args.len();
+        Self { vpool, ipool, indirect, args, start, vpage: None, ipage: None, skin: None, calls: 0 }
+    }
+
+    /// Issues the merged draws collected since the last flush.
+    fn flush(&mut self, pass: &mut wgpu::RenderPass<'_>) {
+        let n = self.args.len() - self.start;
+        if n == 1 {
+            // A single draw goes direct (no indirect validation).
+            let a = self.args.pop().expect("one draw");
+            pass.draw_indexed(a.first_index..a.first_index + a.index_count, a.base_vertex, a.first_instance..a.first_instance + a.instance_count);
+            self.calls += 1;
+        } else if n > 1 {
+            let buf = self.indirect.expect("indirect buffer");
+            pass.multi_draw_indexed_indirect(buf, (self.start * std::mem::size_of::<IndirectArgs>()) as u64, n as u32);
+            self.calls += 1;
+        }
+        self.start = self.args.len();
+    }
+
+    /// Draws `instances` of `r` (with the skin stream of mesh `skin.0`).
+    fn draw(&mut self, pass: &mut wgpu::RenderPass<'_>, r: &DrawRange, skin: Option<(u32, &wgpu::Buffer)>, instances: std::ops::Range<u32>) {
+        let skin_change = skin.is_some_and(|(id, _)| self.skin != Some(id));
+        if self.vpage != Some(r.vpage) || self.ipage != Some(r.ipage) || skin_change {
+            self.flush(pass);
+            if self.vpage != Some(r.vpage) {
+                pass.set_vertex_buffer(0, self.vpool.buffer(r.vpage).slice(..));
+                self.vpage = Some(r.vpage);
+            }
+            if self.ipage != Some(r.ipage) {
+                pass.set_index_buffer(self.ipool.buffer(r.ipage).slice(..), wgpu::IndexFormat::Uint32);
+                self.ipage = Some(r.ipage);
+            }
+            if let Some((id, sk)) = skin
+                && skin_change
+            {
+                pass.set_vertex_buffer(2, sk.slice(..));
+                self.skin = Some(id);
+            }
+        }
+        if self.indirect.is_none() {
+            pass.draw_indexed(r.first..r.first + r.count, r.base_vertex, instances);
+            self.calls += 1;
+            return;
+        }
+        self.args.push(IndirectArgs { index_count: r.count, instance_count: instances.end - instances.start, first_index: r.first, base_vertex: r.base_vertex, first_instance: instances.start });
+    }
+}
+
+/// Vertex data of a scene's primitives in the renderer's layout, ready to
+/// be copied to the GPU ([`Renderer::reload_prepared`]). Building it is
+/// the CPU-heavy part of a re-upload and needs no renderer, so it can run
+/// on a worker thread.
+pub struct MeshUpload {
+    prims: Vec<Option<PrimUpload>>,
+}
+
+struct PrimUpload {
+    vertices: Vec<Vertex>,
+    indices: Vec<u32>,
+    lods: Vec<Vec<u32>>,
+}
+
+impl MeshUpload {
+    /// Converts every primitive of `scene` (in upload order). Skinned or
+    /// malformed primitives are skipped (they are never streamed).
+    pub fn prepare(scene: &SceneData) -> Self {
+        let prims = scene
+            .meshes
+            .iter()
+            .flatten()
+            .map(|p| {
+                if p.is_skinned() || p.positions.len() != p.normals.len() {
+                    return None;
+                }
+                let vertices = (0..p.positions.len())
+                    .map(|i| Vertex { pos: p.positions[i].to_array(), normal: p.normals[i].to_array(), uv: p.uvs.get(i).copied().unwrap_or_default().to_array(), tangent: p.tangents.get(i).copied().unwrap_or(Vec4::X).to_array() })
+                    .collect();
+                Some(PrimUpload { vertices, indices: p.indices.clone(), lods: p.lods.clone() })
+            })
+            .collect();
+        Self { prims }
+    }
+
+    /// Bytes this upload writes.
+    pub fn bytes(&self) -> u64 {
+        self.prims.iter().flatten().map(|p| (p.vertices.len() * std::mem::size_of::<Vertex>() + (p.indices.len() + p.lods.iter().map(|l| l.len()).sum::<usize>()) * 4) as u64).sum()
     }
 }
 
@@ -936,6 +1102,9 @@ pub struct Renderer {
     dfg_view: wgpu::TextureView,
     env: Option<EnvInfo>,
     meshes: Vec<GpuMesh>,
+    /// Shared vertex and index buffers of every mesh (see [`mesh_pool`]).
+    vertex_pool: mesh_pool::MeshPool,
+    index_pool: mesh_pool::MeshPool,
     texture_cache: std::collections::HashMap<(usize, bool), (std::sync::Arc<[u8]>, wgpu::TextureView)>,
     default_textures: Option<[wgpu::TextureView; 3]>,
     materials: Vec<GpuMaterial>,
@@ -989,10 +1158,20 @@ pub struct Renderer {
     /// Bytes written since the last flush of the upload queue (see
     /// [`Renderer::flush_uploads`]).
     pending_upload: u64,
+    /// Bytes written since the last frame or blocking flush.
+    unflushed_upload: u64,
     /// Blocking upload flushes so far: `(count, total ms)` waited in
     /// [`Renderer::flush_uploads`] (the sandbox's `--frame-trace` reads it).
     pub upload_waits: (u32, f64),
+    /// Non-blocking upload submits ([`Renderer::submit_uploads`]).
+    pub upload_submits: u32,
     scratch: Vec<InstanceRaw>,
+    /// Per-view instance lists of the static set (gathered in parallel).
+    view_lists: Vec<ViewList>,
+    /// Arguments of the merged draws ([`DrawStream`]) and their buffer.
+    indirect_args: Vec<IndirectArgs>,
+    indirect_buf: Option<wgpu::Buffer>,
+    indirect_cap: u64,
     /// Batches of the last frame: camera, then every shadow view.
     last_batches: (Vec<Batch>, Vec<Batch>),
     sky_bgl: wgpu::BindGroupLayout,
@@ -1692,6 +1871,8 @@ impl Renderer {
             dfg_view,
             env: None,
             meshes: Vec::new(),
+            vertex_pool: mesh_pool::MeshPool::new("vertex pool", wgpu::BufferUsages::VERTEX, std::mem::size_of::<Vertex>() as u32, 64 << 20),
+            index_pool: mesh_pool::MeshPool::new("index pool", wgpu::BufferUsages::INDEX, 4, 32 << 20),
             texture_cache: Default::default(),
             default_textures: None,
             materials: Vec::new(),
@@ -1732,8 +1913,14 @@ impl Renderer {
             mesh_bytes: 0,
             target_bytes: 0,
             pending_upload: 0,
+            unflushed_upload: 0,
             upload_waits: (0, 0.0),
+            upload_submits: 0,
             scratch: Vec::new(),
+            view_lists: Vec::new(),
+            indirect_args: Vec::new(),
+            indirect_buf: None,
+            indirect_cap: 0,
             last_batches: Default::default(),
             sky_bgl,
             fog,
@@ -1752,6 +1939,30 @@ impl Renderer {
             }
         }
         r
+    }
+
+    /// Drops every uploaded scene (meshes, materials, textures, the static
+    /// set) and keeps the device objects: pipelines, render targets,
+    /// shadow maps and settings. Replacing a world this way costs only the
+    /// new upload, not a recompile of every shader (seconds with FXC).
+    /// Every [`ModelHandle`] becomes invalid.
+    pub fn clear_scene(&mut self) {
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        self.meshes = Vec::new();
+        self.materials = Vec::new();
+        self.models = Vec::new();
+        self.texture_cache = Default::default();
+        self.vertex_pool = mesh_pool::MeshPool::new("vertex pool", wgpu::BufferUsages::VERTEX, std::mem::size_of::<Vertex>() as u32, 64 << 20);
+        self.index_pool = mesh_pool::MeshPool::new("index pool", wgpu::BufferUsages::INDEX, 4, 32 << 20);
+        self.statics = StaticScene::default();
+        self.scratch = Vec::new();
+        self.last_batches = Default::default();
+        self.mesh_bytes = 0;
+        self.texture_bytes = 0;
+        self.pending_upload = 0;
+        self.unflushed_upload = 0;
+        self.env = None;
+        self.reset_history();
     }
 
     /// Forgets the temporal history (camera cut, new scene): the next frame
@@ -2337,11 +2548,10 @@ impl Renderer {
                 let verts: Vec<Vertex> = (0..p.positions.len())
                     .map(|i| Vertex { pos: p.positions[i].to_array(), normal: p.normals[i].to_array(), uv: p.uvs[i].to_array(), tangent: p.tangents[i].to_array() })
                     .collect();
-                let vertex = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("vb"), contents: bytemuck::cast_slice(&verts), usage: wgpu::BufferUsages::VERTEX });
+                let (vertex, index, lods) = self.pool_upload(&verts, &p.indices, &p.lods, p.is_skinned());
                 let bytes = (verts.len() * std::mem::size_of::<Vertex>() + p.indices.len() * 4 + p.lods.iter().map(|l| l.len() * 4).sum::<usize>()) as u64;
                 self.mesh_bytes += bytes;
                 self.note_upload(bytes);
-                let index = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("ib"), contents: bytemuck::cast_slice(&p.indices), usage: wgpu::BufferUsages::INDEX });
                 let skin = p.is_skinned().then(|| {
                     let sv: Vec<SkinVertex> = (0..p.positions.len())
                         .map(|i| {
@@ -2353,11 +2563,6 @@ impl Renderer {
                     self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("skin"), contents: bytemuck::cast_slice(&sv), usage: wgpu::BufferUsages::VERTEX })
                 });
                 let material = mat_base + if scene.materials.is_empty() { 0 } else { p.material as u32 };
-                let lods = p
-                    .lods
-                    .iter()
-                    .map(|l| (self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("lod"), contents: bytemuck::cast_slice(l), usage: wgpu::BufferUsages::INDEX }), l.len() as u32))
-                    .collect();
                 ids.push(self.meshes.len() as u32);
                 self.meshes.push(GpuMesh { vertex, skin, index, index_count: p.indices.len() as u32, lods, material, aabb: p.aabb, lod_tris: None, lod_bounds: p.aabb, name: name.clone(), shadow: p.shadow });
             }
@@ -2397,7 +2602,25 @@ impl Renderer {
 
     fn mesh_buffer_bytes(&self, m: u32) -> u64 {
         let g = &self.meshes[m as usize];
-        g.vertex.size() + g.index.size() + g.skin.as_ref().map_or(0, |b| b.size()) + g.lods.iter().map(|l| l.0.size()).sum::<u64>()
+        g.vertex.map_or(0, |a| a.units as u64 * self.vertex_pool.unit() as u64) + g.index.map_or(0, |a| a.units as u64 * 4) + g.skin.as_ref().map_or(0, |b| b.size())
+    }
+
+    /// Places a primitive's vertices and all its index levels (LOD 0
+    /// first) in the shared pools: `(vertices, indices, LOD ranges)`.
+    fn pool_upload(&mut self, verts: &[Vertex], indices: &[u32], lods: &[Vec<u32>], dedicated: bool) -> (Option<mesh_pool::Alloc>, Option<mesh_pool::Alloc>, Vec<(u32, u32)>) {
+        let vertex = self.vertex_pool.alloc(&self.device, verts.len() as u32, dedicated);
+        self.vertex_pool.write(&self.queue, vertex, bytemuck::cast_slice(verts));
+        let total = indices.len() + lods.iter().map(|l| l.len()).sum::<usize>();
+        let index = self.index_pool.alloc(&self.device, total as u32, false);
+        let mut all: Vec<u32> = Vec::with_capacity(total);
+        all.extend_from_slice(indices);
+        let mut ranges = Vec::with_capacity(lods.len());
+        for l in lods {
+            ranges.push((index.first + all.len() as u32, l.len() as u32));
+            all.extend_from_slice(l);
+        }
+        self.index_pool.write(&self.queue, index, bytemuck::cast_slice(&all));
+        (Some(vertex), Some(index), ranges)
     }
 
     /// Frees the vertex and index buffers of a model (streaming: a city
@@ -2408,12 +2631,14 @@ impl Renderer {
         let Some(model) = self.models.get_mut(h.0 as usize) else { return 0 };
         let Some(bytes) = model.resident.take() else { return 0 };
         let prims = model.prims.clone();
-        let empty = |usage| self.device.create_buffer(&wgpu::BufferDescriptor { label: Some("released"), size: 4, usage, mapped_at_creation: false });
         for m in prims {
-            let (v, i) = (empty(wgpu::BufferUsages::VERTEX), empty(wgpu::BufferUsages::INDEX));
             let g = &mut self.meshes[m as usize];
-            g.vertex = v;
-            g.index = i;
+            if let Some(a) = g.vertex.take() {
+                self.vertex_pool.free(a);
+            }
+            if let Some(a) = g.index.take() {
+                self.index_pool.free(a);
+            }
             g.index_count = 0;
             g.skin = None;
             g.lods.clear();
@@ -2425,22 +2650,22 @@ impl Renderer {
     /// Uploads the meshes of a released model again from `scene` (the
     /// scene it was uploaded from). Returns the bytes uploaded.
     pub fn reload_model(&mut self, h: ModelHandle, scene: &SceneData) -> u64 {
+        self.reload_prepared(h, &MeshUpload::prepare(scene))
+    }
+
+    /// [`Renderer::reload_model`] from vertex data converted beforehand
+    /// ([`MeshUpload::prepare`], e.g. on a loader thread): only copies
+    /// into the shared pools (no GPU resource is created, nothing waits).
+    pub fn reload_prepared(&mut self, h: ModelHandle, up: &MeshUpload) -> u64 {
         let Some(model) = self.models.get(h.0 as usize) else { return 0 };
         if model.resident.is_some() {
             return 0;
         }
         let prims = model.prims.clone();
         let mut bytes = 0;
-        for (&m, p) in prims.iter().zip(scene.meshes.iter().flatten()) {
-            if p.is_skinned() || p.positions.len() != p.normals.len() {
-                continue;
-            }
-            let verts: Vec<Vertex> = (0..p.positions.len())
-                .map(|i| Vertex { pos: p.positions[i].to_array(), normal: p.normals[i].to_array(), uv: p.uvs.get(i).copied().unwrap_or_default().to_array(), tangent: p.tangents.get(i).copied().unwrap_or(Vec4::X).to_array() })
-                .collect();
-            let vertex = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("vb"), contents: bytemuck::cast_slice(&verts), usage: wgpu::BufferUsages::VERTEX });
-            let index = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("ib"), contents: bytemuck::cast_slice(&p.indices), usage: wgpu::BufferUsages::INDEX });
-            let lods = p.lods.iter().map(|l| (self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("lod"), contents: bytemuck::cast_slice(l), usage: wgpu::BufferUsages::INDEX }), l.len() as u32)).collect();
+        for (&m, p) in prims.iter().zip(&up.prims) {
+            let Some(p) = p else { continue };
+            let (vertex, index, lods) = self.pool_upload(&p.vertices, &p.indices, &p.lods, false);
             let g = &mut self.meshes[m as usize];
             g.vertex = vertex;
             g.index = index;
@@ -2573,25 +2798,46 @@ impl Renderer {
         self.shadow_size
     }
 
-    /// Counts `bytes` written to the GPU and flushes the upload queue every
-    /// ~64 MB. `create_buffer_init` and `write_texture` stage their data in
-    /// host memory until the next submit; a whole city uploaded in one go
-    /// would otherwise hold a second copy of every mesh and texture (GBs of
-    /// RAM) until the first frame.
+    /// Counts `bytes` written to the GPU and submits the upload queue every
+    /// ~64 MB. `write_buffer` and `write_texture` stage their data in host
+    /// memory until the next submit; a whole city uploaded in one go would
+    /// otherwise hold a second copy of every mesh and texture (GBs of RAM)
+    /// until the first frame. The submit does not wait: the staging memory
+    /// is released as the GPU gets through the copies (the loading screen
+    /// bounds it further with [`Renderer::flush_uploads`] between slices).
+    /// A rendered frame's own submit also counts as a flush.
+    /// Only a bulk upload of more than 512 MB without a frame in between
+    /// (a headless load) waits, to bound the staging memory.
     fn note_upload(&mut self, bytes: u64) {
         self.pending_upload += bytes;
-        if self.pending_upload > 64 << 20 {
+        self.unflushed_upload += bytes;
+        if self.unflushed_upload > 512 << 20 {
             self.flush_uploads();
+        } else if self.pending_upload > 64 << 20 {
+            self.submit_uploads();
         }
     }
 
-    /// Submits the staged uploads and waits for them, releasing the staging
-    /// memory.
-    pub fn flush_uploads(&mut self) {
+    /// Submits the staged uploads without waiting for them.
+    pub fn submit_uploads(&mut self) {
         if self.pending_upload == 0 {
             return;
         }
         self.pending_upload = 0;
+        self.queue.submit([]);
+        let _ = self.device.poll(wgpu::PollType::Poll);
+        self.upload_submits += 1;
+    }
+
+    /// Submits the staged uploads and waits for them, releasing the staging
+    /// memory. Blocks until the GPU is idle: for loading screens only (the
+    /// frame loop uses [`Renderer::submit_uploads`]).
+    pub fn flush_uploads(&mut self) {
+        if self.unflushed_upload == 0 {
+            return;
+        }
+        self.pending_upload = 0;
+        self.unflushed_upload = 0;
         let t = std::time::Instant::now();
         self.queue.submit([]);
         let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
@@ -2925,13 +3171,22 @@ impl Renderer {
         let focal = height as f32 * 0.5 / tan_half_fov;
         let lod_scale = std::f32::consts::PI * focal * focal * 0.5 * s.lod_detail;
         self.statics.update_groups(cam.position, s.hlod_distance);
+        // The views are gathered in parallel, each into its own list; the
+        // lists are written to the instance buffer one after the other
+        // (static views first, the dynamic instances after them).
+        let mut static_lists = std::mem::take(&mut self.view_lists);
+        static_lists.resize_with(VIEWS + 1, Default::default);
+        let static_total;
         {
+            use rayon::prelude::*;
             let meshes = &self.meshes;
-            let statics = &mut self.statics;
+            let statics = &self.statics;
             let main_view = static_scene::View { planes: &frustum.planes, eye: cam.position, min_radius_per_m: 0.6 / focal, min_radius: 0.0, lod_scale, texel_lod_scale: 0.0, shadow: false, skip: static_scene::role_bit(ShadowRole::Proxy), stable_lod: false };
-            statics.gather(&main_view, &|m, b| Self::lod_for(meshes, m, b, 0), &mut all, &mut main_batches);
+            // (view, LOD bias) per list: the camera, then each shadow view.
+            let mut views: Vec<Option<(static_scene::View, u32)>> = vec![Some((main_view, 0))];
             for (c, (planes, min_r)) in cascade_planes.iter().enumerate() {
                 if !drawn(c) {
+                    views.push(None);
                     continue;
                 }
                 // Casters are culled by their size in shadow texels, not by
@@ -2947,8 +3202,26 @@ impl Renderer {
                 // the camera in the near cascades and spots, two in the far
                 // cascades.
                 let bias = if (2..4).contains(&c) { 2 } else { 1 };
-                statics.gather(&v, &|m, b| Self::lod_for(meshes, m, b, bias), &mut all, &mut shadow_batches[c]);
+                views.push(Some((v, bias)));
             }
+            views.resize_with(VIEWS + 1, || None);
+            static_lists.par_iter_mut().zip(views.par_iter()).for_each(|(list, view)| {
+                list.out.clear();
+                list.batches.clear();
+                if let Some((v, bias)) = view {
+                    let bias = *bias;
+                    statics.gather_into(&mut list.scratch, v, &|m, b| Self::lod_for(meshes, m, b, bias), &mut list.out, &mut list.batches);
+                }
+            });
+            // Instance offsets: each list after the previous ones.
+            let mut base = 0u32;
+            for (k, list) in static_lists.iter_mut().enumerate() {
+                list.base = base;
+                let dst = if k == 0 { &mut main_batches } else { &mut shadow_batches[k - 1] };
+                dst.extend(list.batches.iter().map(|b| Batch { first: b.first + base, ..*b }));
+                base += list.out.len() as u32;
+            }
+            static_total = base;
         }
         let static_ms = t_cull.elapsed().as_secs_f32() * 1000.0;
         self.cpu.add("cull static", static_ms);
@@ -3065,25 +3338,25 @@ impl Renderer {
         let mut i = 0;
         while i < main.len() {
             let k = main_key(self, main[i].0, &main[i].1);
-            let first = all.len() as u32;
+            let first = static_total + all.len() as u32;
             while i < main.len() && main_key(self, main[i].0, &main[i].1) == k {
                 all.push(main[i].1);
                 i += 1;
             }
-            main_batches.push(Batch { pipe: k.0, material: k.1, mesh: k.2, lod: k.3, skinned: k.0 == 2 || k.0 == 4, first, count: all.len() as u32 - first });
+            main_batches.push(Batch { pipe: k.0, material: k.1, mesh: k.2, lod: k.3, skinned: k.0 == 2 || k.0 == 4, first, count: static_total + all.len() as u32 - first });
         }
         for (c, list) in shadow.iter_mut().enumerate() {
             list.sort_by_key(|(m, raw)| (raw.extra[1], *m, raw.extra[2]));
             let mut i = 0;
             while i < list.len() {
                 let k = (list[i].1.extra[1], list[i].0, list[i].1.extra[2]);
-                let first = all.len() as u32;
+                let first = static_total + all.len() as u32;
                 while i < list.len() && (list[i].1.extra[1], list[i].0, list[i].1.extra[2]) == k {
                     all.push(list[i].1);
                     i += 1;
                 }
                 let material = self.meshes[k.1 as usize].material;
-                shadow_batches[c].push(Batch { pipe: 0, material, mesh: k.1, lod: k.2, skinned: k.0 == 1, first, count: all.len() as u32 - first });
+                shadow_batches[c].push(Batch { pipe: 0, material, mesh: k.1, lod: k.2, skinned: k.0 == 1, first, count: static_total + all.len() as u32 - first });
             }
         }
         // Submission order: pipeline, then material, then mesh.
@@ -3097,14 +3370,21 @@ impl Renderer {
         self.cpu.add("cull dynamic", t_dyn.elapsed().as_secs_f32() * 1000.0);
 
         let t_up = std::time::Instant::now();
-        let bytes = (all.len() * std::mem::size_of::<InstanceRaw>()) as u64;
+        let raw_size = std::mem::size_of::<InstanceRaw>() as u64;
+        let bytes = (static_total as u64 + all.len() as u64) * raw_size;
         if bytes > self.instance_cap {
             self.instance_cap = bytes.next_power_of_two();
             self.instance_buf = self.device.create_buffer(&wgpu::BufferDescriptor { label: Some("instances"), size: self.instance_cap, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         }
-        if !all.is_empty() {
-            self.queue.write_buffer(&self.instance_buf, 0, bytemuck::cast_slice(&all));
+        for list in &static_lists {
+            if !list.out.is_empty() {
+                self.queue.write_buffer(&self.instance_buf, list.base as u64 * raw_size, bytemuck::cast_slice(&list.out));
+            }
         }
+        if !all.is_empty() {
+            self.queue.write_buffer(&self.instance_buf, static_total as u64 * raw_size, bytemuck::cast_slice(&all));
+        }
+        self.view_lists = static_lists;
         if joints.is_empty() {
             joints.push(Mat4::IDENTITY.to_cols_array_2d());
         }
@@ -3209,6 +3489,17 @@ impl Renderer {
             // encoding for a plain UNORM surface; FXAA must stay linear.
             self.queue.write_buffer(&t.post_bind.uniforms[t.post_bind.uniforms.len() - 1], 0, bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0], params: [(!self.settings.taa) as u32 as f32, sharpen, 0.0, 0.0], ..Default::default() }));
         }
+        // Multi-draw arguments: at most one per batch of each pass.
+        let mdi = self.settings.multi_draw && self.device.features().contains(wgpu::Features::INDIRECT_FIRST_INSTANCE);
+        let max_args = (main_batches.len() * 2 + shadow_batches.iter().map(Vec::len).sum::<usize>()) as u64;
+        let args_size = std::mem::size_of::<IndirectArgs>() as u64;
+        if mdi && max_args * args_size > self.indirect_cap {
+            self.indirect_cap = (max_args * args_size).next_power_of_two().max(4096);
+            self.indirect_buf = Some(self.device.create_buffer(&wgpu::BufferDescriptor { label: Some("indirect draws"), size: self.indirect_cap, usage: wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false }));
+        }
+        let mut indirect_args = std::mem::take(&mut self.indirect_args);
+        indirect_args.clear();
+        let indirect = if mdi { self.indirect_buf.as_ref() } else { None };
         let t_enc = std::time::Instant::now();
         let prof = &self.profiler;
         let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("frame") });
@@ -3267,9 +3558,14 @@ impl Renderer {
             pass.set_vertex_buffer(1, self.instance_buf.slice(..));
             let mut bound: Option<(bool, bool)> = None;
             let mut bound_mat = u32::MAX;
+            let mut ds = DrawStream::new(&self.vertex_pool, &self.index_pool, indirect, &mut indirect_args);
             for b in &shadow_batches[c] {
                 let masked = self.materials[b.material as usize].masked;
                 let mesh = &self.meshes[b.mesh as usize];
+                let Some(r) = mesh.draw_range(b.lod) else { continue };
+                if bound != Some((masked, b.skinned)) || (masked && b.material != bound_mat) {
+                    ds.flush(&mut pass);
+                }
                 if bound != Some((masked, b.skinned)) {
                     pass.set_pipeline(match (masked, b.skinned) {
                         (false, false) => &self.pipelines.shadow,
@@ -3286,17 +3582,13 @@ impl Renderer {
                     pass.set_bind_group(2, &self.materials[b.material as usize].bind_group, &[]);
                     bound_mat = b.material;
                 }
-                pass.set_vertex_buffer(0, mesh.vertex.slice(..));
-                if b.skinned && let Some(sk) = &mesh.skin {
-                    pass.set_vertex_buffer(2, sk.slice(..));
-                }
-                let (ib, count) = mesh.indices(b.lod);
-                pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..count, 0, b.first..b.first + b.count);
+                ds.draw(&mut pass, &r, if b.skinned { mesh.skin.as_ref().map(|sk| (b.mesh, sk)) } else { None }, b.first..b.first + b.count);
                 stats.shadow_draws += 1;
                 stats.shadow_instances += b.count;
-                stats.shadow_triangles += (count / 3) as u64 * b.count as u64;
+                stats.shadow_triangles += (r.count / 3) as u64 * b.count as u64;
             }
+            ds.flush(&mut pass);
+            stats.api_draws += ds.calls;
         }
         lap(0);
         // 2. Depth + normal prepass of the opaque surfaces (blended ones are
@@ -3326,10 +3618,15 @@ impl Renderer {
             pass.set_vertex_buffer(1, self.instance_buf.slice(..));
             let mut bound_pipe = usize::MAX;
             let mut bound_mat = u32::MAX;
+            let mut ds = DrawStream::new(&self.vertex_pool, &self.index_pool, indirect, &mut indirect_args);
             for b in main_batches.iter().take_while(|b| b.pipe < 3) {
+                let Some(r) = self.meshes[b.mesh as usize].draw_range(b.lod) else { continue };
                 let pipe = b.pipe as usize;
                 let masked = self.materials[b.material as usize].masked;
                 let pp = pipe * 2 + masked as usize;
+                if pp != bound_pipe || ((masked || bound_mat == u32::MAX) && b.material != bound_mat) {
+                    ds.flush(&mut pass);
+                }
                 if pp != bound_pipe {
                     pass.set_pipeline(&self.pipelines.prepass[pipe][masked as usize]);
                     pass.set_bind_group(0, &self.frame_bind, &[]);
@@ -3341,14 +3638,10 @@ impl Renderer {
                     bound_mat = b.material;
                 }
                 let mesh = &self.meshes[b.mesh as usize];
-                pass.set_vertex_buffer(0, mesh.vertex.slice(..));
-                if pipe == 2 && let Some(sk) = &mesh.skin {
-                    pass.set_vertex_buffer(2, sk.slice(..));
-                }
-                let (ib, count) = mesh.indices(b.lod);
-                pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..count, 0, b.first..b.first + b.count);
+                ds.draw(&mut pass, &r, if pipe == 2 { mesh.skin.as_ref().map(|sk| (b.mesh, sk)) } else { None }, b.first..b.first + b.count);
             }
+            ds.flush(&mut pass);
+            stats.api_draws += ds.calls;
         }
         let screen_pass = |enc: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, pipe: &wgpu::RenderPipeline, bind: &wgpu::BindGroup, name: &'static str| {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -3411,11 +3704,13 @@ impl Renderer {
             pass.set_vertex_buffer(1, self.instance_buf.slice(..));
             let mut bound_pipe = u8::MAX;
             let mut bound_mat = u32::MAX;
+            let mut ds = DrawStream::new(&self.vertex_pool, &self.index_pool, indirect, &mut indirect_args);
             // Opaque first; the sky goes after opaque and before blended.
             let mut sky_drawn = false;
             for i in 0..=main_batches.len() {
                 let blend_start = i == main_batches.len() || main_batches[i].pipe >= 3;
                 if blend_start && !sky_drawn {
+                    ds.flush(&mut pass);
                     pass.set_pipeline(&self.pipelines.sky);
                     pass.set_bind_group(0, &self.frame_bind, &[]);
                     pass.set_bind_group(1, self.sky_bind.as_ref().expect("sky bind"), &[]);
@@ -3428,6 +3723,10 @@ impl Renderer {
                     sky_drawn = true;
                 }
                 let Some(b) = main_batches.get(i) else { break };
+                let Some(r) = self.meshes[b.mesh as usize].draw_range(b.lod) else { continue };
+                if b.pipe != bound_pipe || b.material != bound_mat {
+                    ds.flush(&mut pass);
+                }
                 if b.pipe != bound_pipe {
                     pass.set_pipeline(match b.pipe {
                         0 => &self.pipelines.opaque,
@@ -3447,17 +3746,13 @@ impl Renderer {
                     bound_mat = b.material;
                 }
                 let mesh = &self.meshes[b.mesh as usize];
-                pass.set_vertex_buffer(0, mesh.vertex.slice(..));
-                if b.skinned && let Some(sk) = &mesh.skin {
-                    pass.set_vertex_buffer(2, sk.slice(..));
-                }
-                let (ib, count) = mesh.indices(b.lod);
-                pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..count, 0, b.first..b.first + b.count);
+                ds.draw(&mut pass, &r, if b.skinned { mesh.skin.as_ref().map(|sk| (b.mesh, sk)) } else { None }, b.first..b.first + b.count);
                 stats.draw_calls += 1;
                 stats.instances_drawn += b.count;
-                stats.triangles += (count / 3) as u64 * b.count as u64;
+                stats.triangles += (r.count / 3) as u64 * b.count as u64;
             }
+            ds.flush(&mut pass);
+            stats.api_draws += ds.calls;
             if !frame.lines.is_empty() {
                 pass.set_pipeline(&self.pipelines.lines);
                 pass.set_bind_group(0, &self.frame_bind, &[]);
@@ -3466,6 +3761,14 @@ impl Renderer {
             }
         }
         lap(3);
+        // The merged draws read their arguments from here (written before
+        // the submit, so before the passes run).
+        if let Some(buf) = indirect
+            && !indirect_args.is_empty()
+        {
+            self.queue.write_buffer(buf, 0, bytemuck::cast_slice(&indirect_args));
+        }
+        self.indirect_args = indirect_args;
         // 5. TAA resolve into `resolved`, which becomes next frame's history.
         screen_pass(&mut enc, &t.resolved, &self.pipelines.taa, &t.taa_bind, "taa");
         enc.copy_texture_to_texture(
@@ -3550,6 +3853,10 @@ impl Renderer {
         self.cpu.add("finish", t_fin.elapsed().as_secs_f32() * 1000.0);
         let t_sub = std::time::Instant::now();
         self.queue.submit([cmd]);
+        // The frame's submit carries every staged upload with it: their
+        // staging memory is released once the GPU is past this frame.
+        self.pending_upload = 0;
+        self.unflushed_upload = 0;
         self.profiler.after_submit();
         self.cpu.add("submit", t_sub.elapsed().as_secs_f32() * 1000.0);
         stats.cpu_ms = t0.elapsed().as_secs_f32() * 1000.0;

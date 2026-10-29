@@ -5,5 +5,6 @@
 pub mod game;
 pub mod perf;
 pub mod stream;
+pub mod threads;
 pub mod trace;
 pub mod ui;

@@ -132,6 +132,14 @@ struct Segment {
     src: Source,
 }
 
+/// Working memory of one [`StaticScene::gather_into`] (one per view when
+/// views are gathered in parallel).
+#[derive(Default)]
+pub(crate) struct GatherScratch {
+    segments: Vec<Segment>,
+    picked: Vec<u32>,
+}
+
 #[derive(Default)]
 pub(crate) struct StaticScene {
     keys: Vec<DrawKey>,
@@ -141,8 +149,6 @@ pub(crate) struct StaticScene {
     /// center xyz, radius (same order as `raws`).
     spheres: Vec<Vec4>,
     pub items: usize,
-    segments: Vec<Segment>,
-    picked: Vec<u32>,
     /// Bounds of each far-distance group (index = group - 1) and whether
     /// it currently shows its HLOD.
     groups: Vec<(Aabb, bool)>,
@@ -316,9 +322,17 @@ impl StaticScene {
     /// and its draws to `batches`. `lod_for(mesh, pixels)` picks a LOD from
     /// the covered pixel area (infinite for shadow views; the closure
     /// applies any bias and clamps to the mesh's levels). Returns the number of instances emitted.
-    pub fn gather(&mut self, view: &View, lod_for: &dyn Fn(u32, f32) -> u32, out: &mut Vec<InstanceRaw>, batches: &mut Vec<Batch>) -> u32 {
-        self.segments.clear();
-        self.picked.clear();
+    #[cfg(test)]
+    pub fn gather(&mut self, view: &View, lod_for: &(dyn Fn(u32, f32) -> u32 + Sync), out: &mut Vec<InstanceRaw>, batches: &mut Vec<Batch>) -> u32 {
+        self.gather_into(&mut GatherScratch::default(), view, lod_for, out, batches)
+    }
+
+    /// [`StaticScene::gather`] with caller-owned working memory, so
+    /// several views can be gathered at once (the scene is only read).
+    pub fn gather_into(&self, sc: &mut GatherScratch, view: &View, lod_for: &(dyn Fn(u32, f32) -> u32 + Sync), out: &mut Vec<InstanceRaw>, batches: &mut Vec<Batch>) -> u32 {
+        let GatherScratch { segments, picked } = sc;
+        segments.clear();
+        picked.clear();
         for cell in &self.cells {
             let class = classify(view.planes, &cell.bounds);
             if class == 0 {
@@ -359,42 +373,42 @@ impl StaticScene {
                         let r = s.w.abs();
                         if class == 2 || sphere_in(view.planes, s.truncate(), r) {
                             let di = ((s.truncate() - view.eye).length() - r).max(0.1);
-                            let p0 = self.picked.len() as u32;
-                            self.picked.push(run.start + k as u32);
-                            self.segments.push(Segment { key: run.key, lod: lod_for(mesh, budget(r, di)), src: Source::Picked(p0, 1) });
+                            let p0 = picked.len() as u32;
+                            picked.push(run.start + k as u32);
+                            segments.push(Segment { key: run.key, lod: lod_for(mesh, budget(r, di)), src: Source::Picked(p0, 1) });
                         }
                     }
                     continue;
                 }
                 if class == 2 && (!view.shadow || range[..n as usize].iter().all(|s| s.w >= 0.0)) {
-                    self.segments.push(Segment { key: run.key, lod, src: Source::Range(run.start, n) });
+                    segments.push(Segment { key: run.key, lod, src: Source::Range(run.start, n) });
                 } else {
-                    let p0 = self.picked.len() as u32;
+                    let p0 = picked.len() as u32;
                     for (k, s) in range[..n as usize].iter().enumerate() {
                         if view.shadow && s.w < 0.0 {
                             continue;
                         }
                         if class == 2 || sphere_in(view.planes, s.truncate(), s.w.abs()) {
-                            self.picked.push(run.start + k as u32);
+                            picked.push(run.start + k as u32);
                         }
                     }
-                    let pn = self.picked.len() as u32 - p0;
+                    let pn = picked.len() as u32 - p0;
                     if pn > 0 {
-                        self.segments.push(Segment { key: run.key, lod, src: Source::Picked(p0, pn) });
+                        segments.push(Segment { key: run.key, lod, src: Source::Picked(p0, pn) });
                     }
                 }
             }
         }
-        self.segments.sort_unstable_by_key(|s| (s.key, s.lod));
+        segments.sort_unstable_by_key(|s| (s.key, s.lod));
         let mut emitted = 0;
         let mut i = 0;
-        while i < self.segments.len() {
-            let (key, lod) = (self.segments[i].key, self.segments[i].lod);
+        while i < segments.len() {
+            let (key, lod) = (segments[i].key, segments[i].lod);
             let first = out.len() as u32;
-            while i < self.segments.len() && self.segments[i].key == key && self.segments[i].lod == lod {
-                match self.segments[i].src {
+            while i < segments.len() && segments[i].key == key && segments[i].lod == lod {
+                match segments[i].src {
                     Source::Range(s, n) => out.extend_from_slice(&self.raws[s as usize..(s + n) as usize]),
-                    Source::Picked(s, n) => out.extend(self.picked[s as usize..(s + n) as usize].iter().map(|&k| self.raws[k as usize])),
+                    Source::Picked(s, n) => out.extend(picked[s as usize..(s + n) as usize].iter().map(|&k| self.raws[k as usize])),
                 }
                 i += 1;
             }
