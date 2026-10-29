@@ -1,81 +1,4 @@
 <!-- Shared updater: users default to B; A requires warning acknowledgement and slide confirmation. Automatic releases go to A; B publication or promotion requires an explicit user request. A includes A+B and offers the highest global versionCode; B includes only B. Edit canonical inhouse-services-updater and sync all five apps. -->
-<!--
-================================================================================
-  INHOUSE NOTES — Static modular web application
-================================================================================
-
-  MASTER TABLE OF CONTENTS
-  ─────────────────────────────────────────────────────────────────────────────
-  1. HEAD
-     1.1  Meta tags & viewport
-     1.2  External libraries (PDF.js, pdf-lib, jsPDF, Google Identity)
-     1.3  External fonts (Google Fonts)
-
-  2. CSS  <style>  (lines ~15 – 6200)
-     2.1  Global reset & utility classes
-     2.2  App-mode detection rules  (Android WebView / inhouse-app flag)
-     2.3  CSS custom properties  (design tokens: colours, radii, shadows)
-     2.4  Welcome / sign-in screen
-     2.5  Drive home  (file grid, cards, toolbar, breadcrumbs, search)
-     2.6  Drive profile & account menu
-     2.7  Drive modals  (folder picker, trash/bin, confirm dialogs)
-     2.8  Editor chrome  (toolbar, pen tools, eraser, zoom)
-     2.9  Canvas & page layout  (page-row, page-wrapper, previews)
-     2.10 Manage-Pages panel & Timeline panel
-     2.11 Calendar widget  (month grid, events, "Add to pages" modal)
-     2.12 Page side-panel  (daily/weekly calendar cards beside each page)
-     2.13 Event editor modal  (create / edit calendar events)
-     2.14 Shared modals  (overlays used by multiple features)
-     2.15 Share / collaboration modal
-     2.16 App download modal
-     2.17 Miscellaneous & responsive overrides
-
-  3. BODY HTML  <body>  (lines ~6200 – 7225)
-     3.1  Welcome / sign-in view
-     3.2  Drive home view  (header, toolbar, file sections, folder contents)
-     3.3  Editor view  (toolbar, canvas viewport, loading overlay)
-     3.4  Calendar modals  (month view, day-detail, add-to-pages)
-     3.5  Event editor modal
-     3.6  Page side-panel event modal
-     3.7  Utility modals  (delete page, reset doc, export, cover image, …)
-     3.8  Drive modals  (folder picker, confirm, trash, bin browser)
-     3.9  App download modal
-     3.10 Timeline (version history) panel
-     3.11 Manage-Pages panel
-     3.12 Share / collaboration modal
-     3.13 Hidden file inputs & misc DOM elements
-
-  4. JAVASCRIPT RUNTIME  (app-v5.js plus focused core modules)
-     4.1  Boot & app-mode detection
-     4.2  Constants  (storage keys, limits, UI sizes, PDF params)
-     4.3  Application state  (single mutable `state` object)
-     4.4  DOM element references
-     4.5  Theme & appearance helpers
-     4.6  Drawing engine  (strokes, highlighter, eraser, lasso)
-     4.7  Canvas & page rendering  (redraw, backgrounds, PDF pages)
-     4.8  Page lifecycle  (add, remove, unload, lazy-load, activation)
-     4.9  Viewport transform  (pan, zoom, inertia, clamp)
-     4.10 Visible-page tracking  (which pages load / unload as you scroll)
-     4.11 Undo / redo history
-     4.12 Selection & lasso tool
-     4.13 Image handling  (paste, resize, cache)
-     4.14 Cover image & page templates
-     4.15 Drive sync  (auth, upload, download, collab polling)
-     4.16 Version timeline  (history snapshots, restore, preview)
-     4.17 Manage-Pages panel  (reorder, delete, add pages)
-     4.18 Share / collaboration  (presence, real-time merge)
-     4.19 Google Calendar integration  (auth, fetch, event CRUD)
-     4.20 Page side-panels  (calendar cards rendered beside pages)
-     4.21 Calendar modal  (month picker, day view)
-     4.22 "Add calendar to pages" flow
-     4.23 Auto-sync  (5-second poll, rebuild panels without flicker)
-     4.24 Save & storage  (IndexedDB, localStorage backup, PDF export)
-     4.25 Drive home  (file listing, cards, navigation, auto-refresh)
-     4.26 Welcome / sign-in flow
-     4.27 Event listeners & UI wiring  (all addEventListener calls)
-     4.28 App initialisation  (init function called at page load)
-  ─────────────────────────────────────────────────────────────────────────────
--->
 <!DOCTYPE html>
 <html lang="en">
 
@@ -283,10 +206,6 @@
 
         @media (max-width: 720px) {
 
-            :root {
-                --header-btn-size: 34px;
-            }
-
             header,
             .drive-topbar {
                 padding: 10px 14px;
@@ -308,26 +227,12 @@
                 flex: 0 0 auto;
             }
 
-            #editor-view .brand-name {
-                display: none;
-            }
-
             .doc-title {
-                margin-left: 6px;
-                padding: 3px 6px;
-                font-size: 0.86rem;
-                max-width: clamp(72px, 26vw, 128px);
                 min-width: 0;
                 flex: 1 1 auto;
             }
 
-            .doc-title.editing,
-            .doc-title:focus {
-                max-width: min(52vw, 180px);
-            }
-
             .header-actions {
-                gap: 6px;
                 flex: 0 0 auto;
             }
 
@@ -336,52 +241,26 @@
             }
 
             .drive-actions {
-                gap: 6px;
-                flex-wrap: nowrap;
                 flex: 0 0 auto;
             }
 
             #btn-drive-new,
             #btn-drive-login {
-                min-height: var(--header-btn-size);
                 padding: 8px 10px;
                 font-size: 0.8rem;
             }
 
-            .drive-main {
-                padding: 14px 12px 72px;
-            }
-
-            .drive-toolbar {
-                margin-bottom: 14px;
-                gap: 10px;
-            }
-
             .drive-search {
-                min-width: 0;
-                max-width: none;
                 width: 100%;
-            }
-
-            .drive-profile-btn {
-                width: 32px;
-                height: 32px;
-            }
-
-            .drive-profile-avatar {
-                width: 32px;
-                height: 32px;
             }
 
             .drive-profile-menu {
                 max-width: min(92vw, 280px);
-                right: 0;
                 left: auto;
             }
 
             /* Move mode toggle to fixed bottom bar on mobile */
             .mode-toggle-group {
-                position: fixed;
                 bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
                 left: 50%;
                 transform: translateX(-50%);
@@ -408,20 +287,6 @@
                 transform: none;
             }
 
-            /* Don't shrink/shift toggle on mobile — it's already floating */
-            .mode-toggle-btn.is-editing {
-                transform: none;
-                min-height: var(--header-btn-size);
-                height: var(--header-btn-size);
-            }
-
-            #readonly-banner {
-                gap: 8px;
-                min-height: 34px;
-                padding: 4px 8px;
-                font-size: clamp(0.68rem, 3vw, 0.76rem);
-            }
-
             .readonly-banner-copy {
                 min-width: 0;
                 overflow: hidden;
@@ -429,16 +294,7 @@
                 white-space: nowrap;
             }
 
-            .readonly-banner-actions {
-                flex: 0 0 auto;
-                gap: 6px;
-            }
-
             #readonly-banner button {
-                min-width: 0;
-                min-height: 28px;
-                padding: 4px 9px;
-                font-size: 0.72rem;
                 white-space: nowrap;
             }
 
@@ -1235,34 +1091,6 @@
             transition: opacity 0.25s ease;
         }
 
-        .save-indicator.flash {
-            animation: save-indicator-flash 0.45s ease;
-        }
-
-        .save-timestamp.flash {
-            animation: save-text-fade 0.45s ease;
-        }
-
-        @keyframes save-indicator-flash {
-            0% {
-                opacity: 0.45;
-            }
-
-            100% {
-                opacity: 1;
-            }
-        }
-
-        @keyframes save-text-fade {
-            0% {
-                opacity: 0.35;
-            }
-
-            100% {
-                opacity: 0.75;
-            }
-        }
-
         #editor-view.read-only #toolbar {
             opacity: 0;
             pointer-events: none;
@@ -1338,17 +1166,8 @@
 
         /* ┄ § 2.3d  Shared button base styles & editor read-only overrides ──
            Base .btn rules (used across all views) plus the rules that disable
-           toolbar buttons and hide the add-page indicator when the doc is
-           in read-only mode.
+           toolbar buttons when the doc is in read-only mode.
         ┄ */
-
-        #status-bar {
-            display: none;
-        }
-
-        #btn-add-page {
-            display: none;
-        }
 
         .btn {
             display: flex;
@@ -1389,12 +1208,6 @@
             cursor: not-allowed;
         }
 
-        .btn-icon {
-            padding: 10px;
-            min-width: 44px;
-            min-height: 44px;
-        }
-
         .btn-icon-square {
             width: var(--header-btn-size);
             height: var(--header-btn-size);
@@ -1408,15 +1221,6 @@
 
         .btn-primary:hover {
             background: #333;
-        }
-
-        .btn-warning {
-            background: var(--accent-orange);
-            color: white;
-        }
-
-        .btn-warning:hover {
-            background: #d36f33;
         }
 
         .btn-secondary {
@@ -1653,12 +1457,6 @@
         ┄ */
 
         /* Page row: page + optional calendar panel stacked vertically */
-        .page-row {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 14px;
-        }
 
         /* ── § 2.12  Page side-panels ────────────────────────────────────────
            Each notebook page can have an optional calendar card panel on its
@@ -2726,7 +2524,7 @@
             height: calc(var(--tool-size) * 0.7);
         }
 
-        #toolbar .size-dot, .eraser-menu .size-dot {
+        .eraser-menu .size-dot {
             display: inline-block;
             border-radius: 50%;
             background: var(--toolbar-ink);
@@ -2751,17 +2549,6 @@
         .size-dot.lg {
             width: 14px;
             height: 14px;
-        }
-
-        .color-dot {
-            width: 28px;
-            height: 28px;
-            border-radius: 50%;
-            border: 3px solid transparent;
-        }
-
-        #toolbar .tool-btn.active .color-dot {
-            border-color: var(--toolbar-ink);
         }
 
         .tool-btn:disabled {
@@ -2910,67 +2697,12 @@
             transform: translateX(18px);
         }
 
-        #status-bar {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: var(--bg-secondary);
-            border-radius: var(--radius-lg);
-            box-shadow: var(--shadow-medium);
-            padding: 8px 16px;
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-            z-index: 1000;
-            display: flex;
-            align-items: center;
-            gap: clamp(4px, 1.2vw, 8px);
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-
-        #status-bar.visible {
-            opacity: 1;
-        }
-
-        #status-bar .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--accent-green);
-        }
-
         /* ── § 2.14  Shared modals ───────────────────────────────────────────
            The .modal-overlay backdrop + .modal card used by multiple features:
            delete page, export PDF, reset doc, cover image, folder picker, etc.
            svh (small viewport height) is used so the overlay never bleeds
            behind the mobile address bar.
         ── */
-
-        .modal-overlay {
-            position: fixed;
-            inset: 0;
-            /* Use svh (small viewport height) so the overlay is always
-               constrained to the actual visible area. `100vh` on mobile
-               Chrome/Android reports the "large" viewport (address bar
-               scrolled away), which makes modals slide up under the
-               address bar. `100svh` is always the visible area. */
-            height: 100vh;   /* fallback for older engines */
-            height: 100svh;
-            background: rgba(0, 0, 0, 0.4);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 2000;
-            opacity: 0;
-            visibility: hidden;
-            transition: all 0.3s ease;
-        }
-
-        .modal-overlay.visible {
-            opacity: 1;
-            visibility: visible;
-        }
 
         .modal {
             background: var(--bg-secondary);
@@ -3089,36 +2821,14 @@
             flex: 1;
         }
 
-        #file-input,
         #pdf-input,
         #cover-image-input {
             display: none;
         }
 
-        /* ── § 2.10  Manage-Pages & Timeline panels ──────────────────────────
-           Two slide-in panels that share the same overlay style:
-           • #pages-panel   — thumbnails + reorder / delete pages
-           • #timeline-panel — version history snapshots (see § 2.10b below)
-           Both panels slide in from the right on desktop and rise from the
-           bottom as a sheet on narrow screens (≤ 720 px).
-        ── */
-
         #pages-panel {
-            position: fixed;
-            top: 0;
-            right: -390px;
-            width: min(380px, 100vw);
-            height: 100%;
-            background: var(--bg-secondary);
-            box-shadow: -4px 0 30px rgba(0, 0, 0, 0.15);
-            z-index: 1500;
-            transition: right 0.3s ease;
             display: flex;
             flex-direction: column;
-        }
-
-        #pages-panel.visible {
-            right: 0;
         }
 
         .panel-header {
@@ -3160,48 +2870,6 @@
             width: 20px;
             height: 20px;
             stroke: currentColor;
-        }
-
-        .panel-timeline-row {
-            display: flex;
-            gap: 10px;
-            padding: 12px 20px 0 20px;
-        }
-
-        .panel-timeline-row .btn {
-            flex: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            height: 40px;
-            font-size: 0.95rem;
-        }
-
-        .panel-timeline-row .btn svg {
-            width: 18px;
-            height: 18px;
-        }
-
-        .panel-cover-row {
-            display: grid;
-            gap: 10px;
-            padding: 12px 20px 0 20px;
-        }
-
-        .panel-cover-row .btn {
-            width: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            height: 40px;
-            font-size: 0.95rem;
-        }
-
-        .panel-cover-row .btn svg {
-            width: 18px;
-            height: 18px;
         }
 
         #btn-scan-page {
@@ -3277,27 +2945,6 @@
 
         [data-theme="dark"] .pages-default-size {
             border-color: rgba(255, 255, 255, 0.08);
-        }
-
-        .pages-panel-actions {
-            display: flex;
-            gap: 12px;
-            padding: 16px 20px 0 20px;
-        }
-
-        .pages-panel-actions .btn {
-            flex: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            height: 40px;
-            font-size: 0.95rem;
-        }
-
-        .pages-panel-actions .btn svg {
-            width: 18px;
-            height: 18px;
         }
 
         .calendar-modal {
@@ -4210,31 +3857,6 @@
 
         .modal-danger .btn-primary:hover {
             background: #e6352b;
-        }
-
-        .modal-warning .btn-primary {
-            background: var(--accent-orange);
-        }
-
-        .modal-warning .btn-primary:hover {
-            background: #d36f33;
-        }
-
-        .saving .status-dot {
-            animation: pulse 1s infinite;
-            background: var(--accent-yellow);
-        }
-
-        @keyframes pulse {
-
-            0%,
-            100% {
-                opacity: 1;
-            }
-
-            50% {
-                opacity: 0.5;
-            }
         }
 
         @media (max-width: 768px) {
@@ -5316,10 +4938,6 @@
             color: rgba(0, 0, 0, 0.4);
         }
 
-        .drive-card-icon.folder {
-            color: var(--accent-orange);
-        }
-
         .drive-card-menu {
             position: absolute;
             top: 8px;
@@ -5438,13 +5056,6 @@
 
         .drive-card-dropdown button.danger:hover {
             background: rgba(255, 59, 48, 0.1);
-        }
-
-        .drive-color-picker-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-            padding: 6px 10px 8px;
         }
 
         .drive-color-popup {
@@ -5719,15 +5330,6 @@
             box-shadow: 0 6px 20px rgba(0, 0, 0, 0.09);
         }
 
-        .drive-folder-icon {
-            width: 36px;
-            min-width: 36px;
-            height: 28px;
-            min-height: 28px;
-            flex: 0 0 auto;
-            color: var(--accent-orange);
-        }
-
         .drive-card-title {
             font-weight: 600;
             font-size: 0.84rem;
@@ -5760,12 +5362,6 @@
             height: 15px;
             color: currentColor;
             flex: 0 0 auto;
-        }
-
-        .drive-card-meta {
-            font-size: 0.72rem;
-            color: var(--text-secondary);
-            opacity: 0.8;
         }
 
         .drive-empty {
@@ -5818,7 +5414,6 @@
         }
 
         .timeline-preview-col {
-            flex: 1 1 auto;
             min-width: 0;
             display: flex;
             flex-direction: column;
@@ -5870,16 +5465,6 @@
         .timeline-preview-page-label {
             font-size: 0.72rem;
             color: var(--text-secondary);
-        }
-
-        /* Empty/single-canvas legacy styling — kept harmless for backward compat. */
-        .timeline-preview-canvas-wrap > canvas {
-            display: block;
-            max-width: 100%;
-            max-height: 100%;
-            background: white;
-            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
-            border-radius: 4px;
         }
 
         .timeline-preview-empty {
@@ -6109,28 +5694,6 @@
             display: none !important;
         }
 
-        .timeline-list-footer {
-            border-top: 1px solid rgba(0, 0, 0, 0.08);
-            padding: 12px 14px;
-        }
-
-        [data-theme="dark"] .timeline-list-footer {
-            border-top-color: rgba(255, 255, 255, 0.08);
-        }
-
-        .timeline-revert-original-btn {
-            width: 100%;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-        }
-
-        .timeline-revert-original-btn svg {
-            width: 16px;
-            height: 16px;
-        }
-
         /* ── § 2.17  Responsive overrides (≤ 720 px and touch devices) ──────
            On narrow screens the side panels become bottom sheets, the toolbar
            adapts, font sizes shrink, and card grids collapse to fewer columns.
@@ -6173,23 +5736,6 @@
             .timeline-list-col {
                 width: 100%;
                 flex: 1 1 auto;
-            }
-            /* Manage Pages panel: also slide up from bottom on narrow screens. */
-            #pages-panel {
-                top: auto;
-                bottom: -100%;
-                right: 0;
-                width: 100%;
-                max-width: 100%;
-                height: 92vh;
-                height: 92svh;
-                border-radius: 16px 16px 0 0;
-                transition: bottom 0.3s ease;
-                box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.2);
-            }
-            #pages-panel.visible {
-                bottom: 0;
-                right: 0;
             }
             .calendar-modal {
                 width: 94vw;
@@ -6317,40 +5863,6 @@
             line-height: 1.35;
         }
 
-        .timeline-entry-actions {
-            display: flex;
-            gap: 6px;
-            flex: 0 0 auto;
-            align-items: center;
-        }
-
-        .timeline-entry-restore {
-            padding: 6px 10px;
-            font-size: 0.8rem;
-        }
-
-        .timeline-footer {
-            border-top: 1px solid rgba(0, 0, 0, 0.08);
-            padding-top: 14px;
-            display: flex;
-            justify-content: center;
-        }
-
-        [data-theme="dark"] .timeline-footer {
-            border-top-color: rgba(255, 255, 255, 0.08);
-        }
-
-        #btn-revert-original {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        #btn-revert-original svg {
-            width: 16px;
-            height: 16px;
-        }
-
         /* ┄ § 2.5e  Card skeletons (shimmer placeholders while loading) ───── */
         /* Skeleton placeholders shown while Drive content is loading.
 
@@ -6374,7 +5886,6 @@
             100% { transform: translateX(240px); }
         }
 
-        .drive-skeleton-shimmer,
         .drive-card-skeleton .skeleton-bar,
         .drive-card-skeleton .skeleton-preview,
         .drive-folder-card-skeleton .skeleton-bar,
@@ -6384,7 +5895,6 @@
             border-radius: 6px;
         }
 
-        .drive-skeleton-shimmer::after,
         .drive-card-skeleton .skeleton-bar::after,
         .drive-card-skeleton .skeleton-preview::after,
         .drive-folder-card-skeleton .skeleton-bar::after,
@@ -6415,7 +5925,6 @@
         }
 
         @media (prefers-reduced-motion: reduce) {
-            .drive-skeleton-shimmer::after,
             .drive-card-skeleton .skeleton-bar::after,
             .drive-card-skeleton .skeleton-preview::after,
             .drive-folder-card-skeleton .skeleton-bar::after,
@@ -6500,31 +6009,6 @@
             border-radius: 6px;
         }
 
-        /* Mirror the mobile sizing applied to real Drive cards on narrow screens */
-        @media (max-width: 720px) {
-            #drive-home .drive-card-skeleton {
-                padding: 10px;
-                gap: 8px;
-                border-radius: 12px;
-                min-height: 110px;
-            }
-
-            #drive-home .drive-card-skeleton .skeleton-preview {
-                border-radius: 8px;
-            }
-
-            #drive-home .drive-recents .drive-card-skeleton {
-                min-width: 156px;
-                flex: 0 0 156px;
-            }
-
-            #drive-home .drive-folder-card-skeleton {
-                padding: 10px 38px 10px 12px;
-                gap: 10px;
-                border-radius: 10px;
-            }
-        }
-
         #editor-view.hidden {
             display: none;
         }
@@ -6560,7 +6044,6 @@
             text-overflow: clip;
         }
 
-        /* Legacy Modals Overrides */
         .modal-overlay {
             position: fixed;
             top: 0;
@@ -6575,12 +6058,14 @@
             justify-content: center;
             z-index: 3000;
             opacity: 0;
+            visibility: hidden;
             pointer-events: none;
             transition: opacity 0.2s ease;
         }
 
         .modal-overlay.visible {
             opacity: 1;
+            visibility: visible;
             pointer-events: auto;
         }
 
@@ -6814,36 +6299,6 @@
 
         .share-owner-info.hidden {
             display: none;
-        }
-
-        .share-owner-info img {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            object-fit: cover;
-        }
-
-        .share-owner-details {
-            display: flex;
-            flex-direction: column;
-            line-height: 1.3;
-        }
-
-        #share-owner-name {
-            font-weight: 500;
-            font-size: 0.95rem;
-            color: var(--text-primary);
-        }
-
-        #share-owner-email {
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-        }
-
-        .share-owner-label {
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-            margin-top: 2px;
         }
 
         .modal-content {
@@ -7496,8 +6951,6 @@
             }
 
             #editor-view .mode-toggle-group {
-                border-radius: 999px;
-                padding: 4px;
                 width: max-content;
             }
 
@@ -7620,51 +7073,9 @@
                 left: auto;
             }
 
-            /* Mobile home grid: 2 columns, smaller cards */
-            #drive-home .drive-folder-grid,
-            #drive-home .drive-file-grid {
-                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-                gap: 10px;
-            }
-
-            #drive-home .drive-recents {
-                gap: 10px;
-            }
-
-            #drive-home .drive-recents .drive-card {
-                min-width: 156px;
-                flex: 0 0 156px;
-            }
-
             #drive-home .drive-section {
                 margin-bottom: 24px;
             }
-
-            #drive-home .drive-card {
-                padding: 10px;
-                gap: 8px;
-                border-radius: 12px;
-                min-height: 110px;
-            }
-
-            #drive-home .drive-card-preview {
-                border-radius: 8px;
-            }
-
-            #drive-home .drive-folder-card {
-                padding: 10px 38px 10px 12px;
-                gap: 10px;
-                border-radius: 10px;
-            }
-
-            #drive-home .drive-folder-icon {
-                width: 30px;
-                min-width: 30px;
-                height: 23px;
-                min-height: 23px;
-            }
-
-
 
             #editor-view .mode-toggle-group {
                 position: fixed;
@@ -7757,10 +7168,6 @@
 
             [data-theme="dark"] .btn-primary:hover {
                 background: #f5f5f5;
-            }
-
-            .btn-warning:hover {
-                background: var(--accent-orange);
             }
 
             .tool-btn:hover {
@@ -8520,7 +7927,6 @@
            running strip would still be one more moving layer rasterised at
            zoom scale. Hold them still until the folder has landed. */
         #drive-home .drive-folder-transition .drive-card-preview.is-loading::after,
-        #drive-home .drive-folder-transition .drive-skeleton-shimmer::after,
         #drive-home .drive-folder-transition .skeleton-bar::after,
         #drive-home .drive-folder-transition .skeleton-preview::after,
         #drive-home .drive-folder-transition .skeleton-icon::after {
@@ -9751,11 +9157,6 @@
                     <input type="checkbox" id="eraser-stroke-toggle">
                 </label>
             </div>
-
-            <div id="status-bar">
-                <div class="status-dot"></div>
-                <span id="status-text">Saved</span>
-            </div>
         </div>
     </div>
 
@@ -10310,7 +9711,6 @@
         <div class="timeline-body">
             <div class="timeline-preview-col">
                 <div class="timeline-preview-canvas-wrap" id="timeline-preview-wrap">
-                    <canvas id="timeline-preview-canvas" hidden></canvas>
                     <div class="timeline-preview-empty" id="timeline-preview-empty">
                         Select a version on the right to preview it.
                     </div>
