@@ -14,13 +14,7 @@ expected = {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
             for name in ('app-v5.js', 'runtime-core-v5.js', 'peer-transport-v5.js', 'document-processing-v5.js', 'document-processing-worker-v5.js', 'timeline-core-v5.js', 'live-collaboration-v5.js', 'service-worker.js', 'updates/A.json', 'updates/B.json',
                          'drive-ink-journal-v5.js', 'drive-ink-app-v5.js', 'drive-live-preview-v5.js', 'offline-store-v5.js', 'offline-library-v5.js', 'offline-app-v5.js', 'offline-media-v5.js',
                          'offline-assets.js', 'vendor/fonts/ui.css', 'boot-v5.js', 'native-assets.json',
-                         'rust-core-v5.js', 'wasm/inhouse_notes_core.wasm', 'ink-palette.js',
-                         'scanner/processing/ink-vectorizer.js',
-                         'scanner/index.html', 'scanner/configLoader.js', 'scanner/live-camera.js', 'scanner/live-camera.css',
-                         'scanner/processing/detection-worker.js', 'scanner/processing/liveDetection.js',
-                         'scanner/processing/capture-quality.js', 'scanner/processing/capture-quality-worker.js',
-                         'scanner/processing/lightweight.js',
-                         'scanner/processing/metric-surface.js')}
+                         'rust-core-v5.js', 'wasm/inhouse_notes_core.wasm', 'ink-palette.js')}
 deadline = time.monotonic() + 180
 attempt = 0
 while True:
@@ -38,7 +32,7 @@ while True:
         for name, digest in expected.items():
             if hashlib.sha256(fetch(name)).hexdigest() != digest:
                 raise RuntimeError(f'Pages still serves a different {name}')
-        print(f'PUBLIC RELEASE VERIFIED: https://inhousenotes.com/ v{version}; commit {revision}; app, scanner, Rust, service worker and A/B catalogs match.', flush=True)
+        print(f'PUBLIC RELEASE VERIFIED: https://inhousenotes.com/ v{version}; commit {revision}; app, Rust, service worker and A/B catalogs match.', flush=True)
         break
     except Exception as error:
         if time.monotonic() >= deadline:

@@ -20,7 +20,7 @@ test('hidden page edits defer thumbnail work until the panel opens', async ({ pa
     let mutations = 0;
     const observer = new MutationObserver(records => { mutations += records.length; });
     observer.observe(list, { childList: true, subtree: true });
-    const insertion = await window.__IHN_TEST_API__.addScannedPagesForTest(1);
+    const insertion = await window.__IHN_TEST_API__.addPhotoPageForTest();
     mutations += observer.takeRecords().length;
     observer.disconnect();
     return { inserted: insertion.inserted, pageCount: insertion.snapshot.pages.length, mutations };

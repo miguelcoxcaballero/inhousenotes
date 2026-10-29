@@ -35,7 +35,7 @@ jobs:
           rustup toolchain install 1.90.0 --profile minimal --target wasm32-unknown-unknown
           npm run build:rust
           npm run build:offline
-          git diff --exit-code -- wasm/inhouse_notes_core.wasm offline-assets.js native-assets.json index.html scanner/index.html vendor/fonts/ui.css
+          git diff --exit-code -- wasm/inhouse_notes_core.wasm offline-assets.js native-assets.json index.html vendor/fonts/ui.css
 
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
