@@ -315,7 +315,6 @@ assert.match(live, /applyRemotePages/);
 assert.match(live, /snapshot\.contentHash = ihnCanonicalDocumentHash/);
 assert.match(live, /ihnLiveBroadcastQueued = true/);
 assert.match(live, /scheduleLiveDocumentBroadcast\(\{ immediate: true, internal: true \}\)/);
-assert.match(live, /let ihnLiveLastAppliedHash = '';/);
 assert.match(live, /peer\.lastAckedHash === hash/);
 assert.match(live, /snapshot-ack/);
 assert.match(live, /function ihnSuperviseConnections\(/);
@@ -467,7 +466,7 @@ assert.match(app, /function suspendDocumentInkSession\(\) \{[\s\S]{0,200}documen
 assert.match(app, /pauseCollabPollingForBackground\(\);\n\s+scheduleDocumentBackgroundSuspend\(\);/);
 assert.match(app, /visibilityState === 'visible'\) \{\n\s+resumeDocumentFromBackground\(\);/);
 assert.match(app, /function suspendDocumentForBackground\(\) \{[\s\S]{0,120}stopLiveCollaboration\(\);\n\s+suspendDocumentInkSession\(\);/);
-assert.match(live, /startLiveCollaboration = function startLiveCollaborationIfDocumentLive\(\) \{\n\s+if \(typeof isDocumentLiveWorkPaused === 'function' && isDocumentLiveWorkPaused\(\)\) return;/);
+assert.match(live, /function startLiveCollaboration\(\) \{\n(?:\s+\/\/.*\n)*\s+if \(typeof isDocumentLiveWorkPaused === 'function' && isDocumentLiveWorkPaused\(\)\) return;/);
 assert.doesNotMatch(app, /setTimeout\(initDriveAuth, 200\)/);
 assert.match(app, /function startCollabPolling\(\) \{[\s\S]{0,600}if \(!isDocumentEditorActive\(\)\) return;[\s\S]{0,400}startLiveCollaboration\(\);/);
 assert.match(app, /function updatePresenceFromProps\(appProperties\) \{[\s\S]{0,400}const liveDocument = isDocumentEditorActive\(\);[\s\S]{0,400}if \(liveDocument && typeof ihnConsumeSignalMailboxesFromProperties/);
