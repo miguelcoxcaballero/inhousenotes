@@ -5917,6 +5917,31 @@
         // ── § 4.26  Welcome / sign-in & view switching ───────────────────────
         // Functions that show/hide the three top-level views: welcome screen,
         // Drive home, and the editor. Also handles the sign-in / sign-out flow.
+        // A Drive document is "active" only while its editor is on screen.
+        // Home keeps the closed document in memory so a pending exit upload
+        // can still finish from it, but nothing document-scoped (Drive
+        // revision polling, presence, P2P signalling, ink journal discovery,
+        // live previews, calendar side-panel sync) may keep running for it.
+        function isDocumentEditorActive() {
+            return !!state.driveFileId && !!editorView && !editorView.classList.contains('hidden');
+        }
+
+        // Stops every recurring loop owned by the open document. Durable work
+        // is not affected: the offline outbox, the account-wide ink outbox
+        // (drained by the document-less journal) and startLifecycleExitSave
+        // keep uploading anything that was left pending.
+        function closeDocumentScopedWork() {
+            stopCollabPolling();
+            spStopAutoSync();
+            // The ink adapter follows documentSessionActivated: the document
+            // session ends here and restarts in beginDocumentSession(). Its
+            // journal is then rebuilt without a document, which keeps
+            // uploading committed strokes but stops discovery/receive polls
+            // and the live-preview loop of the closed document.
+            documentSessionActivated = false;
+            window.InhouseDriveInk?.start();
+        }
+
         function showDriveHome() {
             closeScannerEditor({ force: true });
             const welcomeView = document.getElementById('welcome-view');
@@ -5932,7 +5957,7 @@
             closeDriveProfileMenus();
             clearPublicInlinePreview();
             clearSharedEditorSignInGate();
-            stopCollabPolling();
+            closeDocumentScopedWork();
             clearDriveSyncTimers();
             saveViewMode('drive');
             startDriveHomeAutoRefresh();
@@ -5983,7 +6008,7 @@
             closeSaveDebugPopup();
             closePresencePopup();
             closeDriveProfileMenus();
-            stopCollabPolling();
+            closeDocumentScopedWork();
             clearDriveSyncTimers();
             stopDriveHomeAutoRefresh();
             updateCalendarFeatureAvailability();
@@ -6041,6 +6066,7 @@
             if (driveHome) driveHome.classList.add('hidden');
             if (editorView) editorView.classList.remove('hidden');
             stopDriveHomeAutoRefresh();
+            if (document.visibilityState !== 'hidden') spStartAutoSync();
             updateCalendarFeatureAvailability();
             requestAnimationFrame(() => {
                 clampToolbarPosition();
@@ -16326,6 +16352,8 @@
                     Promise.resolve(hiddenCheckpoint)
                         .catch(() => false)
                         .finally(() => releaseMemoryOnHide());
+                    // Calendar side panels are refreshed on return.
+                    spStopAutoSync();
                     // Pause collab polling when tab is not visible
                     if (publicSharedPreviewFileId && !driveAccessToken) {
                         pausePublicSharedPolling();
@@ -16335,10 +16363,12 @@
                 } else if (document.visibilityState === 'visible') {
                     // Resume collab polling when tab becomes visible again
                     if (state.driveFileId && driveAccessToken) {
-                        startCollabPolling();
-                        // Immediately poll once to catch up on changes
-                        pollDriveRevision();
-                        scheduleCollabFastCatchup();
+                        if (isDocumentEditorActive()) {
+                            startCollabPolling();
+                            // Immediately poll once to catch up on changes
+                            pollDriveRevision();
+                            scheduleCollabFastCatchup();
+                        }
                         resumePendingExitUploadIfNeeded();
                     } else if (publicSharedPreviewFileId) {
                         startPublicSharedPolling(
@@ -16353,7 +16383,7 @@
                             }
                         );
                     }
-                    spStartAutoSync();
+                    if (isDocumentEditorActive()) spStartAutoSync();
                 } else {
                     spStopAutoSync();
                 }
@@ -19050,6 +19080,7 @@
                 // Sync runs in both viewer and edit mode (Google Calendar changes
                 // should always be reflected). Only skipped when not signed in.
                 if (driveSignedOut || !driveAccessToken) return;
+                if (document.visibilityState === 'hidden' || !isDocumentEditorActive()) return;
                 if (!shouldRenderPageCalendarPanels()) return;
                 const hasAnyPanel = state.pages.some(p => p && p.sidePanel && Array.isArray(p.sidePanel.dateKeys) && p.sidePanel.dateKeys.length > 0);
                 if (!hasAnyPanel) return;
@@ -27021,6 +27052,10 @@
         function startCollabPolling() {
             window.InhouseDriveInk?.start();
             if (!state.driveFileId) return;
+            // Saves that finish on Home (exit uploads) and sign-in/visibility
+            // resumes used to restart the whole collaboration stack for a
+            // document nobody was looking at (~400 Drive requests/min).
+            if (!isDocumentEditorActive()) return;
             // The P2P supervisor is independent from Drive's interval. Reassert
             // it even when fallback polling is already alive so a recovered
             // network path upgrades immediately without reopening the document.
@@ -27753,10 +27788,14 @@
 
         function updatePresenceFromProps(appProperties) {
             if (!appProperties) return;
+            // Exit uploads finishing on Home still read the file metadata.
+            // A closed document must not consume P2P mailboxes or restart
+            // live collaboration from it.
+            const liveDocument = isDocumentEditorActive();
             // The same 600 ms metadata response also carries the directed P2P
             // mailbox. Reuse it instead of issuing another Drive request, so
             // discovery stays fast even when the connection or API is busy.
-            if (typeof ihnConsumeSignalMailboxesFromProperties === 'function') {
+            if (liveDocument && typeof ihnConsumeSignalMailboxesFromProperties === 'function') {
                 ihnConsumeSignalMailboxesFromProperties(appProperties).catch(() => {});
             }
             const now = Date.now();
@@ -27845,7 +27884,7 @@
                 return (Number(b.t) || 0) - (Number(a.t) || 0);
             });
             latestPresenceUsers = deduped;
-            liveCollabUpdatePeers(deduped);
+            if (liveDocument) liveCollabUpdatePeers(deduped);
             renderPresenceAvatars(deduped);
             if (presencePopupEl && !presencePopupEl.classList.contains('hidden')) {
                 renderPresencePopup(deduped);

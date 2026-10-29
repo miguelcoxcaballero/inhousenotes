@@ -4085,3 +4085,13 @@ async function ihnApplyLiveEnvelope(
         }
     }
 }
+
+// Page lifecycle (owned by app-v5.js): resume/focus/network events only wake a
+// live session that is running or still owns peers. A document closed to Home
+// keeps its lifecycle listeners installed, and each app resume used to publish
+// a rendezvous comment and poll signals for a file nobody was editing.
+const ihnWakeOpenLiveCollaboration = ihnWakeLiveCollaboration;
+ihnWakeLiveCollaboration = function ihnWakeLiveCollaborationIfOpen(reason) {
+    if (!ihnLiveSupervisorTimer && !ihnLivePeers.size) return;
+    return ihnWakeOpenLiveCollaboration(reason);
+};

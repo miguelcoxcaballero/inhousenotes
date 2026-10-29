@@ -3359,3 +3359,19 @@ test('confirmed Drive writes notify peers and tabs; hints only request a throttl
   api.publishCommit('another-file');
   assert.equal(channel.sent.length, count);
 });
+
+test('app resume and network events do not revive a stopped live session', async () => {
+  let requests = 0;
+  const harness = createHarness({ driveFetch: async () => { requests++; return { ok: true, json: async () => ({ comments: [] }) }; } });
+  harness.api.start();
+  harness.api.stop();
+  harness.pendingTimers.clear();
+  const before = requests;
+  for (const reason of ['app visible', 'window focused', 'page resumed', 'app resumed', 'network changed', 'browser online']) {
+    harness.api.wake(reason);
+  }
+  await Promise.resolve();
+  assert.equal(requests, before, 'a document closed to Home must not publish a rendezvous or poll signals');
+  assert.equal(harness.pendingTimers.size, 0, 'no follow-up supervisor or signal poll is scheduled');
+  assert.equal(harness.api.rendezvousCommentId(), '');
+});
