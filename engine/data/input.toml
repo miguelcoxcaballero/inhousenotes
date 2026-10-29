@@ -28,4 +28,5 @@ debug_physics = ["F1"]
 screenshot = ["F12"]
 next_map = ["F2"]
 time_of_day = ["F3"]
-quit = ["Escape"]
+# Esc opens the pause menu (resume, options, help, quit).
+pause = ["Escape"]

@@ -2960,6 +2960,8 @@ dependencies = [
  "mimalloc",
  "pollster",
  "rayon",
+ "serde",
+ "toml",
  "winit",
 ]
 
