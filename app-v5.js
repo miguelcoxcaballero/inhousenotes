@@ -26889,7 +26889,23 @@
         // ============================================================
         // Collaborative sync: polling, pulling, and merging
         // ============================================================
-        const COLLAB_POLL_INTERVAL = 600; // 0.6s for faster cross-device detection
+        // Revision polling is adaptive. The 0.6 s cadence only runs while it
+        // can matter: another device is online without a direct peer link, or
+        // a remote revision was seen recently. With every online device linked
+        // peer-to-peer, its 'drive-committed' hints trigger an immediate poll,
+        // so Drive is only a 3 s safety net. Alone, nobody else can produce a
+        // revision we would miss: poll every 20 s (worst-case latency for a
+        // device that has not appeared in presence yet) and speed up as soon
+        // as a remote presence or revision is seen.
+        const COLLAB_POLL_INTERVAL = 600; // 0.6s while another device is present
+        const COLLAB_LINKED_POLL_INTERVAL = 3000; // peers linked: commit hints drive polls
+        const COLLAB_IDLE_POLL_INTERVAL = 20000; // alone in the document
+        const COLLAB_RECENT_REMOTE_FAST_MS = 60000; // stay fast after a remote revision
+        const COLLAB_SOLO_SAVE_CATCHUP_DELAYS = [1800];
+        const COLLAB_SHARED_SAVE_CATCHUP_DELAYS = [900, 1800, 3500];
+        let collabPollDueAt = 0;
+        let collabPollLoopGeneration = 0;
+        let collabFastPollUntil = 0;
         let collabPollInProgress = false;
         let collabPullInProgress = false;
         let collabFastCatchupTimers = [];
@@ -26948,11 +26964,105 @@
             collabFastCatchupTimers = [];
         }
 
+        // Presence-derived collaboration mode. 'shared' = another device is
+        // online without an open peer channel (Drive is the only path), 'linked'
+        // = every online device has an open peer channel, 'solo' = nobody else.
+        // The P2P layer can learn about a device (signalling, an open or
+        // connecting channel) before its presence reaches our next metadata
+        // poll, so its overview counts as presence too.
+        function getCollabPresenceMode() {
+            let linked = false;
+            for (const user of latestPresenceUsers || []) {
+                if (!user || isOwnPresenceRecord(user)) continue;
+                if (!user.isOnline && !hasRecentPresenceSaveSignal(user)) continue;
+                const connection = getPresenceConnectionInfo(user);
+                if (!connection?.directConnected) return 'shared';
+                linked = true;
+            }
+            let overview = null;
+            try {
+                if (typeof getLiveCollaborationOverview === 'function') overview = getLiveCollaborationOverview();
+            } catch (error) { overview = null; }
+            if (overview) {
+                if (Number(overview.connectingPeerCount) > 0) return 'shared';
+                if (Number(overview.openPeerCount) > 0) linked = true;
+            }
+            return linked ? 'linked' : 'solo';
+        }
+
+        // Re-evaluates the mode after presence or P2P state changed and only
+        // retunes timers on an actual transition.
+        function noteCollabPresenceModeChange() {
+            const collabMode = getCollabPresenceMode();
+            if (collabMode === _lastCollabPresenceMode) return collabMode;
+            _lastCollabPresenceMode = collabMode;
+            retuneCollabCadence();
+            return collabMode;
+        }
+
+        function getCollabPollDelay(now = Date.now()) {
+            const mode = getCollabPresenceMode();
+            if (mode === 'shared') return COLLAB_POLL_INTERVAL;
+            if (mode === 'linked') return COLLAB_LINKED_POLL_INTERVAL;
+            if (now < collabFastPollUntil) return COLLAB_POLL_INTERVAL;
+            return COLLAB_IDLE_POLL_INTERVAL;
+        }
+
+        function scheduleNextCollabPoll(delay = getCollabPollDelay()) {
+            if (!state.collabEnabled) return;
+            const dueAt = Date.now() + Math.max(0, delay);
+            // Never postpone a poll that is already due sooner.
+            if (state.collabPollInterval && collabPollDueAt && collabPollDueAt <= dueAt) return;
+            if (state.collabPollInterval) clearTimeout(state.collabPollInterval);
+            const generation = collabPollLoopGeneration;
+            collabPollDueAt = dueAt;
+            state.collabPollInterval = setTimeout(async () => {
+                if (generation !== collabPollLoopGeneration) return;
+                state.collabPollInterval = null;
+                collabPollDueAt = 0;
+                try {
+                    await pollDriveRevision();
+                } finally {
+                    if (generation === collabPollLoopGeneration
+                        && state.collabEnabled
+                        && !state.collabPollInterval) {
+                        scheduleNextCollabPoll();
+                    }
+                }
+            }, Math.max(0, delay));
+        }
+
+        function stopCollabPollLoop() {
+            collabPollLoopGeneration += 1;
+            if (state.collabPollInterval) {
+                clearTimeout(state.collabPollInterval);
+                state.collabPollInterval = null;
+            }
+            collabPollDueAt = 0;
+        }
+
+        // Called whenever presence or remote activity changes: bring the next
+        // poll and heartbeat forward if the new mode needs a faster cadence.
+        function retuneCollabCadence() {
+            if (!state.collabEnabled) return;
+            scheduleNextCollabPoll();
+            retunePresenceHeartbeat();
+        }
+
+        function noteRemoteRevisionActivity() {
+            collabFastPollUntil = Date.now() + COLLAB_RECENT_REMOTE_FAST_MS;
+            retuneCollabCadence();
+        }
+
         function scheduleCollabFastCatchup() {
             if (!state.driveFileId || !driveAccessToken) return;
             if (document.visibilityState === 'hidden') return;
             clearCollabFastCatchup();
-            const delays = [900, 1800, 3500];
+            // A solo device only needs one confirmation read after its own
+            // save; the burst is for racing writes from a present device.
+            const delays = getCollabPresenceMode() === 'solo' && Date.now() >= collabFastPollUntil
+                ? COLLAB_SOLO_SAVE_CATCHUP_DELAYS
+                : COLLAB_SHARED_SAVE_CATCHUP_DELAYS;
             delays.forEach(delay => {
                 const timer = setTimeout(() => {
                     if (!state.driveFileId || !driveAccessToken) return;
@@ -26989,6 +27099,7 @@
                     || isRemoteMetaNewerThanTracked(data);
 
                 if (hasChanged) {
+                    if (isDriveHydratedForCurrentFile()) noteRemoteRevisionActivity();
                     if (hasUnsyncedLocalDriveChanges()) {
                         deferRemotePull(data);
                         return false;
@@ -27026,20 +27137,18 @@
             // network path upgrades immediately without reopening the document.
             startLiveCollaboration();
             if (document.visibilityState === 'hidden') return;
-            if (state.collabPollInterval) return; // Drive polling already active
+            if (state.collabEnabled) return; // Drive polling already active
             state.collabEnabled = true;
             clearCollabFastCatchup();
-            state.collabPollInterval = setInterval(pollDriveRevision, COLLAB_POLL_INTERVAL);
+            stopCollabPollLoop();
             startPresencePing();
             pollDriveRevision();
-            console.log('Collab polling started (interval:', COLLAB_POLL_INTERVAL, 'ms)');
+            scheduleNextCollabPoll();
+            console.log('Collab polling started (adaptive interval:', getCollabPollDelay(), 'ms)');
         }
 
         function pauseCollabPollingForBackground() {
-            if (state.collabPollInterval) {
-                clearInterval(state.collabPollInterval);
-                state.collabPollInterval = null;
-            }
+            stopCollabPollLoop();
             state.collabEnabled = false;
             clearCollabFastCatchup();
             stopPresencePing();
@@ -27053,11 +27162,9 @@
         function stopCollabPolling() {
             stopPublicSharedPolling();
             stopLiveCollaboration();
-            if (state.collabPollInterval) {
-                clearInterval(state.collabPollInterval);
-                state.collabPollInterval = null;
-            }
+            stopCollabPollLoop();
             state.collabEnabled = false;
+            collabFastPollUntil = 0;
             collabPollInProgress = false;
             clearCollabFastCatchup();
             clearCollabPullRetry();
@@ -27110,6 +27217,7 @@
 
                 if (hasChanged) {
                     console.log('Remote change detected:', data.headRevisionId || data.modifiedTime);
+                    if (isDriveHydratedForCurrentFile()) noteRemoteRevisionActivity();
                     if (driveSaveInProgress) {
                         restartDriveSaveForRemoteChange(data);
                         return;
@@ -27170,11 +27278,24 @@
         let _presenceHeartbeatInterval = null;
         let _presenceHeartbeatInFlight = false;
         let _presenceCanHeartbeat = false;
+        let _presenceHeartbeatDueAt = 0;
+        let _presenceHeartbeatGeneration = 0;
         const PRESENCE_PING_INTERVAL = 120000; // 2 minutes
         const PRESENCE_STALE_MS = 600000; // 10 minutes
-        const PRESENCE_HEARTBEAT_INTERVAL = 2000; // 2 seconds
+        // Heartbeats are adaptive like revision polling. Each heartbeat
+        // advertises its own interval in the packed runtime field ('r', 4th
+        // slot) so readers widen their online window to match. Records without
+        // it (older apps) keep the original 2 s × 6 misses window.
+        const PRESENCE_HEARTBEAT_INTERVAL = 2000; // 2 seconds: Drive-only collaborator present
+        const PRESENCE_LINKED_HEARTBEAT_INTERVAL = 6000; // collaborators linked peer-to-peer
+        const PRESENCE_IDLE_HEARTBEAT_INTERVAL = 30000; // alone in the document
         const PRESENCE_HEARTBEAT_MISS_LIMIT = 6;
+        const PRESENCE_RELAXED_HEARTBEAT_MISS_LIMIT = 2; // for advertised intervals > 2 s
+        const PRESENCE_MAX_ADVERTISED_HEARTBEAT_MS = 120000;
+        const PRESENCE_HEARTBEAT_RETRY_MS = 4000; // after a skipped or failed beat
         const PRESENCE_ONLINE_STICKY_MISS_LIMIT = 3; // extra polls before turning gray
+        let presenceAdvertisedHeartbeatMs = PRESENCE_HEARTBEAT_INTERVAL;
+        let _lastCollabPresenceMode = '';
         let _presenceOnlineStability = new Map();
 
         function detectDeviceType() {
@@ -27289,14 +27410,31 @@
             ].join('|');
         }
 
-        function packPresenceRuntime(now = Date.now()) {
+        function packPresenceRuntime(now = Date.now(), heartbeatMs = presenceAdvertisedHeartbeatMs) {
             const phaseCode = presenceSavePhase === 'processing' ? 'p'
                 : (presenceSavePhase === 'uploading' ? 'u' : (presenceSavePhase === 'saved' ? 's' : ''));
-            return [
+            const fields = [
                 Math.max(0, Math.floor(now)).toString(36),
                 phaseCode,
                 presenceSavePhaseAt ? Math.floor(presenceSavePhaseAt).toString(36) : ''
-            ].join('|');
+            ];
+            // Older readers split on '|' and ignore the extra slot.
+            if (heartbeatMs > PRESENCE_HEARTBEAT_INTERVAL) fields.push(Math.floor(heartbeatMs).toString(36));
+            return fields.join('|');
+        }
+
+        function normalizePresenceHeartbeatMs(value) {
+            const ms = Number(value);
+            if (!Number.isFinite(ms) || ms <= PRESENCE_HEARTBEAT_INTERVAL) return PRESENCE_HEARTBEAT_INTERVAL;
+            return Math.min(PRESENCE_MAX_ADVERTISED_HEARTBEAT_MS, Math.floor(ms));
+        }
+
+        // How long after its last heartbeat a record still counts as online.
+        function getPresenceOnlineWindowMs(record) {
+            const fastWindow = (PRESENCE_HEARTBEAT_INTERVAL * PRESENCE_HEARTBEAT_MISS_LIMIT) + 1200;
+            const interval = normalizePresenceHeartbeatMs(record?.i);
+            if (interval <= PRESENCE_HEARTBEAT_INTERVAL) return fastWindow;
+            return Math.max(fastWindow, (interval * PRESENCE_RELAXED_HEARTBEAT_MISS_LIMIT) + 1200);
         }
 
         function parsePackedPresence(chunk) {
@@ -27307,6 +27445,7 @@
             const phase = runtime[1] === 'p' ? 'processing'
                 : (runtime[1] === 'u' ? 'uploading' : (runtime[1] === 's' ? 'saved' : ''));
             const phaseAt = runtime[2] ? parseInt(runtime[2], 36) : 0;
+            const heartbeatMs = runtime[3] ? parseInt(runtime[3], 36) : 0;
             const deviceType = identity[4] === 'm' ? 'mobile' : (identity[4] === 't' ? 'tablet' : 'pc');
             return {
                 a: identity[0] || '',
@@ -27319,7 +27458,8 @@
                 t: heartbeat,
                 h: heartbeat,
                 s: phase,
-                m: Number.isFinite(phaseAt) ? phaseAt : 0
+                m: Number.isFinite(phaseAt) ? phaseAt : 0,
+                i: normalizePresenceHeartbeatMs(heartbeatMs)
             };
         }
 
@@ -27446,6 +27586,8 @@
         }
 
         function refreshPresenceViews() {
+            // The P2P layer calls this when a channel opens or closes.
+            noteCollabPresenceModeChange();
             renderPresenceAvatars(latestPresenceUsers);
             if (presencePopupEl && !presencePopupEl.classList.contains('hidden')) {
                 renderPresencePopup(latestPresenceUsers);
@@ -27524,6 +27666,7 @@
                 c: primary.c || secondary.c || '',
                 s: primary.s || secondary.s || '',
                 m: Math.max(Number(baseRecord.m) || 0, Number(incomingRecord.m) || 0),
+                i: primary.i || secondary.i || PRESENCE_HEARTBEAT_INTERVAL,
                 t: Math.max(Number(baseRecord.t) || 0, Number(incomingRecord.t) || 0),
                 h: Math.max(Number(baseRecord.h) || 0, Number(incomingRecord.h) || 0)
             };
@@ -27629,12 +27772,59 @@
             }
         }
 
-        async function pulsePresenceHeartbeat() {
-            if (driveSaveInProgress) return;
-            if (!state.driveFileId || !driveAccessToken || !driveUserProfile) return;
-            if (!_presenceCanHeartbeat) return;
-            if (_presenceHeartbeatInFlight) return;
+        // Heartbeat cadence for the current collaboration mode. A save phase
+        // ring is refreshed at the fast cadence while someone can see it.
+        function getPresenceHeartbeatDelay() {
+            const mode = getCollabPresenceMode();
+            if (mode === 'solo') return PRESENCE_IDLE_HEARTBEAT_INTERVAL;
+            if (mode === 'shared' || PRESENCE_ACTIVE_PHASES.has(presenceSavePhase)) return PRESENCE_HEARTBEAT_INTERVAL;
+            return PRESENCE_LINKED_HEARTBEAT_INTERVAL;
+        }
+
+        function schedulePresenceHeartbeat(delay) {
+            if (!_presencePingInterval) return;
+            const dueAt = Date.now() + Math.max(0, delay);
+            if (_presenceHeartbeatInterval && _presenceHeartbeatDueAt && _presenceHeartbeatDueAt <= dueAt) return;
+            if (_presenceHeartbeatInterval) clearTimeout(_presenceHeartbeatInterval);
+            const generation = _presenceHeartbeatGeneration;
+            _presenceHeartbeatDueAt = dueAt;
+            _presenceHeartbeatInterval = setTimeout(async () => {
+                if (generation !== _presenceHeartbeatGeneration) return;
+                _presenceHeartbeatInterval = null;
+                _presenceHeartbeatDueAt = 0;
+                const interval = getPresenceHeartbeatDelay();
+                let sent = false;
+                try {
+                    sent = await pulsePresenceHeartbeat(interval);
+                } finally {
+                    if (generation === _presenceHeartbeatGeneration && !_presenceHeartbeatInterval) {
+                        // Never wait longer than the interval others were told
+                        // to expect. A beat skipped (save in flight, profile
+                        // not ready) or failed retries soon, so a slow cadence
+                        // never doubles into an apparent disconnect.
+                        const next = Math.min(interval, presenceAdvertisedHeartbeatMs);
+                        schedulePresenceHeartbeat(sent ? next : Math.min(next, PRESENCE_HEARTBEAT_RETRY_MS));
+                    }
+                }
+            }, Math.max(0, delay));
+        }
+
+        function retunePresenceHeartbeat() {
+            if (!_presencePingInterval) return;
+            const desired = getPresenceHeartbeatDelay();
+            // Others judge us by the interval we last advertised: when a
+            // faster cadence is needed, beat now so they see us online at once.
+            schedulePresenceHeartbeat(desired < presenceAdvertisedHeartbeatMs ? 0 : desired);
+        }
+
+        // Resolves true only when the heartbeat PATCH reached Drive.
+        async function pulsePresenceHeartbeat(intervalMs = getPresenceHeartbeatDelay()) {
+            if (driveSaveInProgress) return false;
+            if (!state.driveFileId || !driveAccessToken || !driveUserProfile) return false;
+            if (!_presenceCanHeartbeat) return false;
+            if (_presenceHeartbeatInFlight) return false;
             _presenceHeartbeatInFlight = true;
+            let sent = false;
             try {
                 const keyPrefix = getPresenceKey();
                 const now = Date.now();
@@ -27645,8 +27835,9 @@
                     presenceSavePhase = '';
                     presenceSavePhaseAt = 0;
                 }
+                const advertised = normalizePresenceHeartbeatMs(intervalMs);
                 const patch = {
-                    [getPresenceFieldKey(keyPrefix, 'r')]: packPresenceRuntime(now)
+                    [getPresenceFieldKey(keyPrefix, 'r')]: packPresenceRuntime(now, advertised)
                 };
                 await driveFetch(
                     `https://www.googleapis.com/drive/v3/files/${state.driveFileId}`,
@@ -27656,11 +27847,14 @@
                         body: JSON.stringify({ properties: patch })
                     }
                 );
+                presenceAdvertisedHeartbeatMs = advertised;
+                sent = true;
             } catch (err) {
                 // Best-effort heartbeat; ignore transient errors.
             } finally {
                 _presenceHeartbeatInFlight = false;
             }
+            return sent;
         }
 
         function startPresencePing() {
@@ -27697,7 +27891,8 @@
             };
             setTimeout(tryFirstPing, 100);
             _presencePingInterval = setInterval(pingPresence, PRESENCE_PING_INTERVAL);
-            _presenceHeartbeatInterval = setInterval(pulsePresenceHeartbeat, PRESENCE_HEARTBEAT_INTERVAL);
+            _presenceHeartbeatGeneration += 1;
+            schedulePresenceHeartbeat(Math.min(getPresenceHeartbeatDelay(), presenceAdvertisedHeartbeatMs));
         }
 
         function stopPresencePing() {
@@ -27705,10 +27900,14 @@
                 clearInterval(_presencePingInterval);
                 _presencePingInterval = null;
             }
+            _presenceHeartbeatGeneration += 1;
             if (_presenceHeartbeatInterval) {
-                clearInterval(_presenceHeartbeatInterval);
+                clearTimeout(_presenceHeartbeatInterval);
                 _presenceHeartbeatInterval = null;
             }
+            _presenceHeartbeatDueAt = 0;
+            presenceAdvertisedHeartbeatMs = PRESENCE_HEARTBEAT_INTERVAL;
+            _lastCollabPresenceMode = '';
             _presenceHeartbeatInFlight = false;
             _presenceCanHeartbeat = false;
             _presenceOnlineStability.clear();
@@ -27722,6 +27921,9 @@
             presenceSavePhaseAt = normalized ? now : 0;
             if (driveSaveInProgress) return;
             if (!state.driveFileId || !driveAccessToken || !driveUserProfile) return;
+            // Alone, nobody can see the save ring: the next heartbeat carries
+            // the phase if another device joins, so skip the extra PATCH.
+            if (getCollabPresenceMode() === 'solo') return;
             presenceSavePhasePushInFlight = true;
             try {
                 const keyPrefix = getPresenceKey();
@@ -27747,8 +27949,7 @@
         function isPresenceCurrentlyOnline(record, now = Date.now()) {
             const hb = Number(record?.h);
             if (!Number.isFinite(hb) || hb <= 0) return false;
-            const maxOnlineAge = (PRESENCE_HEARTBEAT_INTERVAL * PRESENCE_HEARTBEAT_MISS_LIMIT) + 1200;
-            return (now - hb) <= maxOnlineAge;
+            return (now - hb) <= getPresenceOnlineWindowMs(record);
         }
 
         function updatePresenceFromProps(appProperties) {
@@ -27832,7 +28033,7 @@
                 user.savePhase = getPresenceVisibleSavePhase(user, now);
             });
 
-            const forgetAfterMs = PRESENCE_STALE_MS + (PRESENCE_HEARTBEAT_INTERVAL * (PRESENCE_HEARTBEAT_MISS_LIMIT + PRESENCE_ONLINE_STICKY_MISS_LIMIT));
+            const forgetAfterMs = PRESENCE_STALE_MS + (PRESENCE_IDLE_HEARTBEAT_INTERVAL * (PRESENCE_HEARTBEAT_MISS_LIMIT + PRESENCE_ONLINE_STICKY_MISS_LIMIT));
             _presenceOnlineStability.forEach((value, key) => {
                 if (seenKeys.has(key)) return;
                 if (!value || !Number.isFinite(value.lastSeen) || (now - value.lastSeen) > forgetAfterMs) {
@@ -27850,6 +28051,7 @@
             if (presencePopupEl && !presencePopupEl.classList.contains('hidden')) {
                 renderPresencePopup(deduped);
             }
+            noteCollabPresenceModeChange();
         }
 
         function renderPresenceAvatars(users) {
