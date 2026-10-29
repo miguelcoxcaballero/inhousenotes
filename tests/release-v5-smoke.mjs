@@ -460,7 +460,15 @@ assert.doesNotMatch(html, /Finishing (the )?previous (Drive )?save/i);
 // Home closes the document's recurring work; nothing may revive it there.
 assert.match(app, /function showDriveHome\(\)[\s\S]{0,1200}closeDocumentScopedWork\(\);/);
 assert.match(app, /function showWelcomeView\(\)[\s\S]{0,1200}closeDocumentScopedWork\(\);/);
-assert.match(app, /function closeDocumentScopedWork\(\) \{[\s\S]{0,900}stopCollabPolling\(\);[\s\S]{0,200}spStopAutoSync\(\);[\s\S]{0,700}documentSessionActivated = false;/);
+assert.match(app, /function closeDocumentScopedWork\(\) \{\n\s+stopCollabPolling\(\);\n\s+spStopAutoSync\(\);[\s\S]{0,700}documentClosedToHome = !!state\.driveFileId;\n\s+suspendDocumentInkSession\(\);/);
+assert.match(app, /function suspendDocumentInkSession\(\) \{[\s\S]{0,200}documentSessionActivated = false;\n\s+window\.InhouseDriveInk\?\.start\(\);/);
+// A long background stops the document's remaining live loops; becoming
+// visible restores them before polling restarts.
+assert.match(app, /pauseCollabPollingForBackground\(\);\n\s+scheduleDocumentBackgroundSuspend\(\);/);
+assert.match(app, /visibilityState === 'visible'\) \{\n\s+resumeDocumentFromBackground\(\);/);
+assert.match(app, /function suspendDocumentForBackground\(\) \{[\s\S]{0,120}stopLiveCollaboration\(\);\n\s+suspendDocumentInkSession\(\);/);
+assert.match(live, /startLiveCollaboration = function startLiveCollaborationIfDocumentLive\(\) \{\n\s+if \(typeof isDocumentLiveWorkPaused === 'function' && isDocumentLiveWorkPaused\(\)\) return;/);
+assert.doesNotMatch(app, /setTimeout\(initDriveAuth, 200\)/);
 assert.match(app, /function startCollabPolling\(\) \{[\s\S]{0,600}if \(!isDocumentEditorActive\(\)\) return;[\s\S]{0,400}startLiveCollaboration\(\);/);
 assert.match(app, /function updatePresenceFromProps\(appProperties\) \{[\s\S]{0,400}const liveDocument = isDocumentEditorActive\(\);[\s\S]{0,400}if \(liveDocument && typeof ihnConsumeSignalMailboxesFromProperties/);
 assert.match(app, /latestPresenceUsers = deduped;\n\s+if \(liveDocument\) liveCollabUpdatePeers\(deduped\);/);

@@ -1931,6 +1931,16 @@
         let documentSessionId = 1;
         const offlineCheckpointLaunchId = crypto.randomUUID();
         let documentSessionActivated = false;
+        // Document-scoped live work (P2P session, ink journal receive and live
+        // previews) is paused while the document is closed to Home or the app
+        // has stayed in the background; see closeDocumentScopedWork() and
+        // suspendDocumentForBackground().
+        let documentClosedToHome = false;
+        let documentBackgroundSuspended = false;
+        let documentBackgroundSuspendTimer = null;
+        // Session whose ink adapter activation was paused, restored when the
+        // same session's editor is shown again.
+        let documentInkSuspendedSession = null;
         let touchDrawEnabled = false;
 
         function shouldAcceptDrawInput(e) {
@@ -5922,8 +5932,88 @@
         // can still finish from it, but nothing document-scoped (Drive
         // revision polling, presence, P2P signalling, ink journal discovery,
         // live previews, calendar side-panel sync) may keep running for it.
+        // A document suspended after a long time in the background is not
+        // active either, until the app is visible again.
         function isDocumentEditorActive() {
-            return !!state.driveFileId && !!editorView && !editorView.classList.contains('hidden');
+            return !!state.driveFileId && !!editorView && !editorView.classList.contains('hidden')
+                && !documentBackgroundSuspended;
+        }
+
+        // Read by live-collaboration-v5.js before (re)starting a P2P session:
+        // local edits, tab-sync requests and exit-save merges must not revive
+        // it for a document closed to Home or suspended in the background.
+        // An open in progress may show Home as its loading backdrop (shared
+        // links) and starts its own session.
+        function isDocumentLiveWorkPaused() {
+            if (documentBackgroundSuspended) return true;
+            return documentClosedToHome && !driveOpenInProgress && !offlineOpenInProgress;
+        }
+
+        // The ink adapter follows documentSessionActivated. Clearing it
+        // rebuilds the journal without a document, which keeps uploading
+        // committed strokes (the durable ink outbox) but stops remote journal
+        // discovery/reads and the live-preview loop of this document.
+        function suspendDocumentInkSession() {
+            if (documentSessionActivated) documentInkSuspendedSession = getDocumentSessionToken();
+            documentSessionActivated = false;
+            window.InhouseDriveInk?.start();
+        }
+
+        function restoreDocumentInkSession() {
+            const sessionToken = documentInkSuspendedSession;
+            documentInkSuspendedSession = null;
+            if (sessionToken === null || documentSessionActivated || !isDocumentSessionTokenValid(sessionToken)) return;
+            documentSessionActivated = true;
+            window.InhouseDriveInk?.start();
+        }
+
+        function clearDocumentLiveWorkPause() {
+            clearTimeout(documentBackgroundSuspendTimer);
+            documentBackgroundSuspendTimer = null;
+            documentBackgroundSuspended = false;
+            documentClosedToHome = false;
+        }
+
+        // Short app switches only pause Drive polling and presence (see
+        // pauseCollabPollingForBackground): the P2P session and the ink
+        // journal stay warm so returning is instant. Once the app has stayed
+        // hidden this long (screen off, another app in front), the open
+        // document's remaining network loops stop as well: the P2P supervisor,
+        // signalling and leader lease, ink journal discovery/reads and the
+        // live-preview frame polls. The document stays open and nothing is
+        // dropped: committed strokes keep uploading through the
+        // document-less ink journal (as on Home), local and Drive saves are
+        // untouched, and becoming visible restarts everything and catches up.
+        const DOCUMENT_BACKGROUND_SUSPEND_MS = 60000;
+
+        function scheduleDocumentBackgroundSuspend() {
+            clearTimeout(documentBackgroundSuspendTimer);
+            documentBackgroundSuspendTimer = null;
+            if (!isDocumentEditorActive()) return;
+            const sessionToken = getDocumentSessionToken();
+            const fileId = state.driveFileId;
+            documentBackgroundSuspendTimer = setTimeout(() => {
+                documentBackgroundSuspendTimer = null;
+                if (document.visibilityState !== 'hidden' || !isDocumentEditorActive()
+                    || !isDocumentSessionTokenValid(sessionToken) || state.driveFileId !== fileId) return;
+                suspendDocumentForBackground();
+            }, DOCUMENT_BACKGROUND_SUSPEND_MS);
+        }
+
+        function suspendDocumentForBackground() {
+            documentBackgroundSuspended = true;
+            stopLiveCollaboration();
+            suspendDocumentInkSession();
+            console.log('Document live work suspended in background');
+        }
+
+        // Called when the app becomes visible again, before polling restarts.
+        function resumeDocumentFromBackground() {
+            clearTimeout(documentBackgroundSuspendTimer);
+            documentBackgroundSuspendTimer = null;
+            if (!documentBackgroundSuspended) return;
+            documentBackgroundSuspended = false;
+            if (isDocumentEditorActive()) restoreDocumentInkSession();
         }
 
         // Stops every recurring loop owned by the open document. Durable work
@@ -5933,13 +6023,14 @@
         function closeDocumentScopedWork() {
             stopCollabPolling();
             spStopAutoSync();
-            // The ink adapter follows documentSessionActivated: the document
-            // session ends here and restarts in beginDocumentSession(). Its
-            // journal is then rebuilt without a document, which keeps
-            // uploading committed strokes but stops discovery/receive polls
-            // and the live-preview loop of the closed document.
-            documentSessionActivated = false;
-            window.InhouseDriveInk?.start();
+            clearTimeout(documentBackgroundSuspendTimer);
+            documentBackgroundSuspendTimer = null;
+            documentBackgroundSuspended = false;
+            // showEditorView() restores the ink session if this same document
+            // session is shown again (an open that uses Home as its loading
+            // backdrop, a sign-in gate); a new open begins its own session.
+            documentClosedToHome = !!state.driveFileId;
+            suspendDocumentInkSession();
         }
 
         function showDriveHome() {
@@ -6065,6 +6156,10 @@
             if (welcomeView) welcomeView.classList.add('hidden');
             if (driveHome) driveHome.classList.add('hidden');
             if (editorView) editorView.classList.remove('hidden');
+            // The editor is back for this document session (a newly opened
+            // document already began its own in beginDocumentSession()).
+            documentClosedToHome = false;
+            restoreDocumentInkSession();
             stopDriveHomeAutoRefresh();
             if (document.visibilityState !== 'hidden') spStartAutoSync();
             updateCalendarFeatureAvailability();
@@ -6079,6 +6174,34 @@
         // initTheme sets light/dark mode. initDriveAuth wires Google Identity
         // Services (GIS) to get OAuth tokens for Drive + Calendar access.
         let initialDriveListingStarted=false;
+        // Google Identity Services loads asynchronously (index.html). It is
+        // retried every 200 ms while the app starts; when the script is
+        // blocked or the device is offline, that retry (which also re-reads the
+        // stored token) used to run five times a second for the whole session.
+        // After 30 s it slows to every 2 s, and the script's load event
+        // retries at once, so sign-in is never delayed by the slower cadence.
+        let driveAuthRetryTimer = null;
+        let driveAuthRetryStartedAt = 0;
+        let driveAuthScriptListening = false;
+        function scheduleDriveAuthRetry() {
+            if (!driveAuthScriptListening) {
+                driveAuthScriptListening = true;
+                document.querySelector('script[src*="accounts.google.com/gsi/client"]')
+                    ?.addEventListener('load', () => {
+                        if (!driveAuthRetryTimer) return;
+                        clearTimeout(driveAuthRetryTimer);
+                        driveAuthRetryTimer = null;
+                        initDriveAuth();
+                    }, { once: true });
+            }
+            if (driveAuthRetryTimer) return;
+            if (!driveAuthRetryStartedAt) driveAuthRetryStartedAt = Date.now();
+            const delay = Date.now() - driveAuthRetryStartedAt < 30000 ? 200 : 2000;
+            driveAuthRetryTimer = setTimeout(() => {
+                driveAuthRetryTimer = null;
+                initDriveAuth();
+            }, delay);
+        }
         function initDriveAuth() {
             const hadRedirectToken = processDriveOAuthRedirect();
             const hasStoredToken = loadDriveTokenFromStorage();
@@ -6107,7 +6230,7 @@
                 initialDriveListingStarted=true;updateDriveAuthUI();void refreshDriveFiles();
             }
             if (!window.google || !google.accounts || !google.accounts.oauth2) {
-                setTimeout(initDriveAuth, 200);
+                scheduleDriveAuthRetry();
                 return;
             }
             driveTokenClient = google.accounts.oauth2.initTokenClient({
@@ -16359,8 +16482,10 @@
                         pausePublicSharedPolling();
                     } else {
                         pauseCollabPollingForBackground();
+                        scheduleDocumentBackgroundSuspend();
                     }
                 } else if (document.visibilityState === 'visible') {
+                    resumeDocumentFromBackground();
                     // Resume collab polling when tab becomes visible again
                     if (state.driveFileId && driveAccessToken) {
                         if (isDocumentEditorActive()) {
@@ -24778,6 +24903,8 @@
             documentSessionId += 1;
             remoteMergeCheckpointPending = null;
             wakeDocumentBackgroundWork();
+            clearDocumentLiveWorkPause();
+            documentInkSuspendedSession = null;
             documentSessionActivated = true;
             clearTimeout(localSaveRetryTimer);
             localSaveRetryTimer = null;

@@ -94,6 +94,10 @@ test('Home stops every document-scoped loop and nothing restarts it', async ({ p
     window.dispatchEvent(new Event('pageshow'));
     document.dispatchEvent(new Event('resume'));
     updatePresenceFromProps({ p_other: JSON.stringify({ n: 'Other', c: 'other-device', t: Date.now(), h: Date.now() }) });
+    // Exit-save merges and tab-sync requests restart the P2P session through
+    // these entry points.
+    scheduleLiveDocumentBroadcast({ immediate: true, force: true });
+    startLiveCollaboration();
   });
   await page.waitForTimeout(6000);
   const idle = net.calls.slice(before).filter(documentScoped);
@@ -133,7 +137,8 @@ test('a document left before its Drive save finished is still uploaded from Home
     clearDriveSyncTimers();
   });
   await page.locator('#btn-drive-home').click();
-  await expect(page.locator('#drive-home')).toBeVisible({ timeout: 4000 });
+  // Home waits for the local exit checkpoint first (slow on a loaded CPU).
+  await expect(page.locator('#drive-home')).toBeVisible({ timeout: 15000 });
   await expect.poll(() => net.calls.filter(c => isPdfUpload(c)).length, { timeout: 20000 }).toBeGreaterThan(uploadsBefore);
   await expect.poll(() => page.evaluate(() => readPendingExitUpload()), { timeout: 20000 }).toBeNull();
   expect(net.pdf.toString('latin1').length).toBeGreaterThan(1000);
@@ -159,4 +164,79 @@ test('a hidden editor pauses Drive polling and calendar sync, then resumes when 
   await setVisibility('visible');
   expect(await page.evaluate(() => ({ poll: !!state.collabPollInterval, heartbeat: !!_presenceHeartbeatInterval, calendar: !!spSyncInterval })))
     .toEqual({ poll: true, heartbeat: true, calendar: true });
+});
+
+async function setVisibility(page, value) {
+  await page.evaluate(v => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => v });
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => v === 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  }, value);
+}
+
+const liveState = page => page.evaluate(() => ({
+  live: !!ihnLiveSupervisorTimer, leader: !!ihnLiveLeaderTimer, ink: documentSessionActivated,
+  suspended: documentBackgroundSuspended, timer: !!documentBackgroundSuspendTimer, poll: !!state.collabPollInterval
+}));
+
+test('a short app switch keeps the P2P session and ink journal warm', async ({ page }) => {
+  const net = await installFakeDrive(page);
+  await openSignedIn(page, net);
+  await expect.poll(() => page.evaluate(() => !!ihnLiveSupervisorTimer)).toBe(true);
+  await setVisibility(page, 'hidden');
+  expect(await liveState(page)).toEqual({ live: true, leader: true, ink: true, suspended: false, timer: true, poll: false });
+  await page.waitForTimeout(500);
+  await setVisibility(page, 'visible');
+  expect(await liveState(page)).toEqual({ live: true, leader: true, ink: true, suspended: false, timer: false, poll: true });
+});
+
+test('a long background suspends the document live work and returning restores it', async ({ page }) => {
+  await page.clock.install();
+  const net = await installFakeDrive(page);
+  await openSignedIn(page, net);
+  await expect.poll(() => page.evaluate(() => !!ihnLiveSupervisorTimer)).toBe(true);
+  await setVisibility(page, 'hidden');
+  await page.clock.fastForward(61000);
+  await expect.poll(() => liveState(page)).toEqual({ live: false, leader: false, ink: false, suspended: true, timer: false, poll: false });
+  // Nothing revives it while hidden: a save completing, presence reads,
+  // edits broadcast to peers, network/resume events.
+  await page.evaluate(() => {
+    startCollabPolling();
+    updatePresenceFromProps({ p_other: JSON.stringify({ n: 'Other', c: 'other-device', t: Date.now(), h: Date.now() }) });
+    scheduleLiveDocumentBroadcast({ immediate: true, force: true });
+    window.dispatchEvent(new Event('online'));
+    document.dispatchEvent(new Event('resume'));
+  });
+  await page.waitForTimeout(800);
+  const before = net.calls.length;
+  await page.clock.fastForward(10000);
+  await page.waitForTimeout(1500);
+  const idle = net.calls.slice(before).filter(documentScoped);
+  expect(idle.map(c => `${c.method} ${c.path}${c.media ? '?alt=media' : ''}${c.q ? '?q' : ''}`)).toEqual([]);
+  expect(await liveState(page)).toMatchObject({ live: false, ink: false, suspended: true });
+  // The document stayed open with its content.
+  expect(await page.evaluate(() => ({ file: state.driveFileId, ink: state.pages[0].strokes.map(s => s.id) })))
+    .toEqual({ file: DOC, ink: expect.arrayContaining(['kept-ink']) });
+  const resumedAt = net.calls.length;
+  await setVisibility(page, 'visible');
+  expect(await liveState(page)).toEqual({ live: true, leader: true, ink: true, suspended: false, timer: false, poll: true });
+  await expect.poll(() => net.calls.slice(resumedAt).some(c => c.method === 'GET' && c.path.endsWith(`/files/${DOC}`)), { timeout: 5000 }).toBe(true);
+});
+
+test('Home cancels a pending background suspension and reopening is fully live', async ({ page }) => {
+  const net = await installFakeDrive(page);
+  await openSignedIn(page, net);
+  await setVisibility(page, 'hidden');
+  await setVisibility(page, 'visible');
+  await setVisibility(page, 'hidden');
+  expect((await liveState(page)).timer).toBe(true);
+  await setVisibility(page, 'visible');
+  await page.locator('#btn-drive-home').click();
+  await expect(page.locator('#drive-home')).toBeVisible({ timeout: 4000 });
+  expect(await liveState(page)).toEqual({ live: false, leader: false, ink: false, suspended: false, timer: false, poll: false });
+  expect(await page.evaluate(() => isDocumentLiveWorkPaused())).toBe(true);
+  await page.evaluate(id => openDriveFile({ id, name: 'Lifecycle.pdf' }), DOC);
+  await expect(page.locator('#editor-view')).toBeVisible();
+  await expect.poll(() => liveState(page)).toEqual({ live: true, leader: true, ink: true, suspended: false, timer: false, poll: true });
+  expect(await page.evaluate(() => isDocumentLiveWorkPaused())).toBe(false);
 });

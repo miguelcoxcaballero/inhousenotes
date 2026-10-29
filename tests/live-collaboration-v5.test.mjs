@@ -3375,3 +3375,25 @@ test('app resume and network events do not revive a stopped live session', async
   assert.equal(harness.pendingTimers.size, 0, 'no follow-up supervisor or signal poll is scheduled');
   assert.equal(harness.api.rendezvousCommentId(), '');
 });
+
+test('a document closed to Home or suspended in background is not revived by starts, edits or tab requests', async () => {
+  let requests = 0;
+  let paused = true;
+  const harness = createHarness({
+    isDocumentLiveWorkPaused: () => paused,
+    driveFetch: async () => { requests++; return { ok: true, json: async () => ({ id: 'rendezvous', comments: [] }) }; }
+  });
+  harness.api.start();
+  harness.api.schedule();
+  for (const reason of ['app visible', 'window focused', 'browser online']) harness.api.wake(reason);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(requests, 0, 'no rendezvous or signalling for a paused document');
+  assert.equal(vm.runInContext('ihnLiveSupervisorTimer', harness.context), null);
+  assert.equal(vm.runInContext('ihnLiveLeaderTimer', harness.context), null);
+  // Showing the document again lifts the pause and the session starts.
+  paused = false;
+  harness.api.start();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.notEqual(vm.runInContext('ihnLiveSupervisorTimer', harness.context), null);
+  assert.ok(requests > 0, 'the resumed document publishes its rendezvous');
+});
