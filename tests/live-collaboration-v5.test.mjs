@@ -306,6 +306,26 @@ globalThis.__liveTest = {
   invalidateSignalKey: ihnInvalidateSignalKey,
   ensureTabChannel: ihnEnsureTabChannel,
   tabChannel() { return ihnLiveBroadcastChannel; },
+  // Another tab of the document answers on the BroadcastChannel, which makes
+  // it an audience for full snapshots and pen frames.
+  markOtherTab(tabId = 'other-tab') {
+    ihnEnsureTabChannel();
+    ihnLiveBroadcastChannel?.onmessage?.({ data: { type: 'tab-present', fileId: state.driveFileId, tabId } });
+  },
+  otherTabSeen() { return ihnLiveOtherTabSeen; },
+  snapshotHasAudience: ihnLiveSnapshotHasAudience,
+  feedFast() {
+    // Two metadata deliveries in a row: the app's fast (0.6 s) metadata poll.
+    ihnConsumeSignalMailboxesFromProperties({});
+    return ihnConsumeSignalMailboxesFromProperties({});
+  },
+  feedGap() { return ihnLivePropertyFeedGap; },
+  stoppedFileId() { return ihnLiveStoppedFileId; },
+  running() { return !!ihnLiveSupervisorTimer; },
+  departed(id) { return ihnLiveDepartedPeers.get(id); },
+  retired(id) { return ihnLiveRetiredRendezvous.get(id); },
+  nextSignalAttemptAt() { return ihnLiveNextSignalAttemptAt; },
+  deferredStartPending() { return !!ihnLiveDeferredStartTimer; },
   flushFanOut: ihnFlushLiveFanOutTasks,
   publishStroke: publishLiveStrokePreview,
   receiveStroke: ihnHandleRealtimeStrokePacket,
@@ -888,6 +908,8 @@ test('a stroke arriving during hydration aborts the stale snapshot and retries a
     },
     hasPendingRemoteLiveStrokeCommits: () => pendingCommit
   });
+  // Snapshots are only built for an audience (another tab here).
+  harness.api.markOtherTab();
   harness.api.queue({ force: true });
 
   await assert.rejects(
@@ -976,6 +998,8 @@ test('the merged content hash never assumes the advertised hash is the current d
     changed: true, hasLocalMerges: false, contentHash: 'actual-full-document'
   }) });
   harness.context.driveAccessToken = null;
+  // A WebRTC envelope arrives over an open channel to its sender.
+  harness.api.addPeer('peer-remote', peerWithChannel(createChannel()));
   await harness.api.envelope(liveEnvelope(harness.state, { contentHash: 'incoming-document' }), 'webrtc', 'peer-remote');
   assert.equal(harness.api.lastApplied(), 'actual-full-document');
   assert.equal(harness.api.queued(), true);
@@ -1430,7 +1454,9 @@ test('discovery polls rapidly on join, remains attentive for a third device, and
   api.addPeer('connected-peer', { channel: createChannel() });
   assert.equal(api.nextSignalPollDelay(), 3000, 'an open pair must still discover newcomers');
   api.consumeMailboxes({});
-  assert.equal(api.nextSignalPollDelay(), 10_000, 'presence and mailboxes already arrive with app metadata');
+  assert.equal(api.nextSignalPollDelay(), 3000, 'one metadata delivery says nothing about the feed cadence');
+  api.feedFast();
+  assert.equal(api.nextSignalPollDelay(), 10_000, 'presence and mailboxes already arrive with fast app metadata');
   api.setDiscoveryState(Date.now(), 1);
   assert.equal(api.nextSignalPollDelay(), 1000);
   api.setDiscoveryState(Date.now(), 8);
@@ -2012,6 +2038,7 @@ test('UI Read mode preserves editable local changes while a true viewer remains 
   });
   editable.context.driveAccessToken = null;
   editable.state.isReadOnly = true;
+  editable.api.addPeer('peer-read-mode', peerWithChannel(createChannel()));
   const editableEnvelope = liveEnvelope(editable.state, {
     actorId: 'read-mode-peer',
     sequence: 1,
@@ -2037,6 +2064,7 @@ test('UI Read mode preserves editable local changes while a true viewer remains 
   viewer.state.isReadOnly = true;
   viewer.state.driveCanEdit = false;
   viewer.state.driveAutosave = false;
+  viewer.api.addPeer('peer-viewer', peerWithChannel(createChannel()));
   const viewerEnvelope = liveEnvelope(viewer.state, {
     actorId: 'viewer-peer',
     sequence: 1,
@@ -2291,6 +2319,7 @@ test('an in-flight snapshot build cannot publish into a later document session',
     releaseRemotePageMerge() { releaseCount += 1; }
   });
   harness.context.driveAccessToken = null;
+  harness.api.markOtherTab();
   harness.api.queue({ force: true, targetPeerId: 'peer-next' });
   const staleBroadcast = harness.api.broadcast();
   await acquireStarted;
@@ -2336,6 +2365,7 @@ test('an old broadcast finally cannot clear the busy owner of a new document bui
     releaseRemotePageMerge() {}
   });
   harness.context.driveAccessToken = null;
+  harness.api.markOtherTab();
   harness.api.queue();
   const oldBroadcast = harness.api.broadcast();
   const oldRejected = assert.rejects(oldBroadcast, /document changed/);
@@ -2344,6 +2374,7 @@ test('an old broadcast finally cannot clear the busy owner of a new document bui
   harness.api.stop();
   harness.state.driveFileId = 'file-2';
   harness.advanceDocumentSession();
+  harness.api.markOtherTab();
   harness.api.queue();
   const currentBroadcast = harness.api.broadcast();
   await currentStarted;
@@ -3342,6 +3373,7 @@ test('one slow or broken handshake does not hide other devices or later comment 
 test('full snapshots wait across short pen lifts without delaying live stroke packets', async () => {
   let copies=0;
   const harness=createHarness({hasRecentUserActivity:()=>true,cloneSanitizedPageForStorage:async page=>{copies++;return JSON.parse(JSON.stringify(page));}});
+  harness.api.markOtherTab();
   harness.api.queue();
   await harness.api.broadcast();
   assert.equal(copies,0);
@@ -3418,7 +3450,7 @@ test('a lone editor scans comments rarely and rewrites its beacon only once a mi
   assert.equal(h.api.signalMode(), 'hot', 'a short start window catches simultaneous openers');
 
   clock.advance(7000);
-  h.api.consumeMailboxes({}); // the app's metadata poll is feeding presence/mailboxes
+  h.api.feedFast(); // the app's fast metadata poll is feeding presence/mailboxes
   h.api.supervise();
   assert.equal(h.api.signalMode(), 'solo');
   assert.equal(h.api.nextSignalPollDelay(), 30_000);
@@ -3495,7 +3527,7 @@ test('a newly present device switches signalling to fast immediately and back to
   h.api.start();
   await settle(h);
   clock.advance(7000);
-  h.api.consumeMailboxes({});
+  h.api.feedFast();
   h.api.supervise();
   await settle(h);
   assert.equal(h.api.signalMode(), 'solo');
@@ -3518,7 +3550,7 @@ test('a newly present device switches signalling to fast immediately and back to
   // fast window ends.
   clock.advance(11_000);
   const steadyScans = h.scans();
-  h.api.consumeMailboxes({});
+  h.api.feedFast();
   h.api.updatePeers([record]);
   await settle(h);
   assert.equal(h.scans(), steadyScans);
@@ -3528,7 +3560,7 @@ test('a newly present device switches signalling to fast immediately and back to
 
   // It leaves: presence expires and the editor falls back to solo cadence.
   clock.advance(95_000);
-  h.api.consumeMailboxes({});
+  h.api.feedFast();
   h.api.updatePeers([]);
   h.api.supervise();
   assert.equal(h.api.signalMode(), 'solo');
@@ -3677,7 +3709,7 @@ test('a remembered device gets one warm-start offer, without fast scans or repea
   // The offer is outstanding (the remote device is not running).
   h.api.addPeer(remoteId, { channel: null, status: 'connecting', createdAt: clock.t, fileId: 'file-1', generation: h.api.generation() });
   clock.advance(4000);
-  h.api.consumeMailboxes({});
+  h.api.feedFast();
   h.api.supervise();
   assert.equal(h.api.signalMode(), 'solo', 'a hint is not company: no 300 ms comment scans for its handshake');
   assert.equal(h.api.nextSignalPollDelay(), 30_000);
@@ -3908,4 +3940,483 @@ test('a document closed to Home or suspended in background is not revived by sta
   await new Promise(resolve => setImmediate(resolve));
   assert.notEqual(vm.runInContext('ihnLiveSupervisorTimer', harness.context), null);
   assert.ok(requests > 0, 'the resumed document publishes its rendezvous');
+});
+
+// ---- Review fixes (adaptive signalling follow-up) ------------------------
+
+function createEditorView(hidden = false) {
+  const view = { hidden, classList: { contains: name => name === 'hidden' && view.hidden } };
+  return view;
+}
+
+function documentWithEditor(view, home = null) {
+  return {
+    visibilityState: 'visible',
+    addEventListener() {},
+    getElementById(id) { return id === 'editor-view' ? view : id === 'drive-home' ? home : null; }
+  };
+}
+
+test('a lone editor whose app polls metadata slowly still notices a newcomer within seconds', async () => {
+  const clock = createClock();
+  const h = createSignallingHarness(clock);
+  h.api.start();
+  await settle(h);
+  clock.advance(7000);
+  h.api.feedFast(); // the app's 0.6 s metadata poll
+  h.api.supervise();
+  assert.equal(await h.runTimerMatching(timer => timer.ms === 300), true, 'the start-window scan');
+  await settle(h);
+  assert.equal(h.api.signalTimerDueAt() - clock.t, 30_000, 'a fast feed finds newcomers itself');
+
+  // The app goes to its idle metadata cadence (one poll every 20 s). The
+  // comment scan is now how a newcomer's beacon or offer is noticed, so the
+  // far-away fallback scan is pulled forward at once.
+  clock.advance(20_000);
+  h.api.consumeMailboxes({});
+  assert.equal(h.api.feedGap(), 20_000);
+  assert.equal(h.api.signalMode(), 'solo');
+  assert.equal(h.api.nextSignalPollDelay(), 4000);
+  assert.ok(h.api.signalTimerDueAt() - clock.t <= 4000, 'the next scan is at most 4 s away');
+
+  // Steady state: at most one comments read every 4 s (15/min), not 3/s.
+  const scansBefore = h.scans();
+  for (let elapsed = 0; elapsed < 60_000; elapsed += 4000) {
+    clock.advance(4000);
+    h.api.claimLeader(); // the 5 s lease heartbeat does not run in this harness
+    if ((elapsed + 4000) % 20_000 === 0) h.api.consumeMailboxes({}); // every 20 s
+    assert.equal(await h.runTimerMatching(timer => timer.ms === 4000), true, `scan due at ${elapsed + 4000} ms`);
+    await settle(h);
+  }
+  assert.equal(h.scans() - scansBefore, 15);
+  assert.equal(h.beaconWrites() <= 3, true, 'the lone beacon is still refreshed about once a minute');
+});
+
+test('a metadata feed that stops pulls the fallback scan forward on the next supervisor tick', async () => {
+  const clock = createClock();
+  const h = createSignallingHarness(clock);
+  h.api.start();
+  await settle(h);
+  clock.advance(7000);
+  h.api.feedFast();
+  h.api.supervise();
+  assert.equal(await h.runTimerMatching(timer => timer.ms === 300), true);
+  await settle(h);
+  assert.equal(h.api.signalTimerDueAt() - clock.t, 30_000);
+  // No delivery for 6 s (the app slowed down or paused its poll).
+  clock.advance(6000);
+  h.api.supervise();
+  assert.ok(h.api.signalTimerDueAt() - clock.t <= 4000);
+  // Without any feed for 45 s the original 2.5 s fallback cadence applies.
+  clock.advance(45_000);
+  assert.equal(h.api.nextSignalPollDelay(), 2500);
+});
+
+test("this module's own mailbox reads do not pass for the app's fast metadata feed", async () => {
+  const clock = createClock();
+  const h = createSignallingHarness(clock);
+  h.api.start();
+  await settle(h);
+  clock.advance(7000);
+  h.api.consumeMailboxes({}); // the app's idle (20 s) metadata poll
+  clock.advance(20_000);
+  h.api.consumeMailboxes({});
+  h.api.claimLeader();
+  h.api.supervise();
+  assert.equal(h.api.signalMode(), 'solo');
+  assert.equal(h.api.nextSignalPollDelay(), 4000);
+  // A mailbox burst (11 reads in 5 s after a discovery) carries no presence:
+  // the comment scan must stay the discovery path at its 4 s cadence.
+  for (const step of [70, 80, 110, 160, 230]) {
+    clock.advance(step);
+    await h.api.pollMailbox();
+  }
+  assert.equal(h.api.feedGap(), 20_000, 'only the app feed is measured');
+  assert.equal(h.api.nextSignalPollDelay(), 4000);
+});
+
+test('a failed comments scan while alone backs off briefly instead of blocking scans for 30 s', async () => {
+  const clock = createClock();
+  const h = createSignallingHarness(clock);
+  const baseFetch = h.context.driveFetch;
+  let failNextScan = false;
+  h.context.driveFetch = async (url, options = {}) => {
+    if (failNextScan && (options.method || 'GET') === 'GET' && String(url).includes('/comments?')) {
+      failNextScan = false;
+      h.requests.push({ method: 'GET', url: String(url), at: clock.t });
+      throw new Error('503 backend error');
+    }
+    return baseFetch(url, options);
+  };
+  h.api.start();
+  await settle(h);
+  clock.advance(7000);
+  h.api.feedFast();
+  h.api.supervise();
+  failNextScan = true;
+  assert.equal(await h.runTimerMatching(timer => timer.ms === 300), true);
+  await settle(h);
+  assert.equal(failNextScan, false, 'the scan failed');
+  assert.equal(h.api.nextSignalAttemptAt() - clock.t, 1000, 'only the failure backoff gates the next attempt');
+  assert.equal(h.api.nextSignalPollDelay(), 30_000, 'the scheduled cadence is still the solo one');
+
+  // Two seconds later a device appears in presence: its fast window scans now.
+  clock.advance(2000);
+  h.api.feedFast();
+  const scansBefore = h.scans();
+  h.api.updatePeers([{ isOnline: true, a: 'remote-account', c: 'remote-client', e: 'remote@example.com' }]);
+  await settle(h);
+  assert.equal(h.api.signalMode(), 'hot');
+  assert.equal(h.scans(), scansBefore + 1, 'the discovery scan runs at once, not 30 s later');
+});
+
+test('a leftover beacon of a device whose expected window ran out does not revive it', async () => {
+  const clock = createClock();
+  const h = createSignallingHarness(clock);
+  const offers = [];
+  h.context.ihnCreateOffer = async peerId => { offers.push(peerId); };
+  h.api.claimLeader();
+  h.api.feedFast();
+  const beacon = { v: 1, type: 'rendezvous', fileId: 'file-1', from: 'peer-crashed',
+    to: '*', epoch: 'route-a', announcedAt: clock.t, expiresAt: clock.t + 100_000 };
+  assert.equal(h.api.applyRendezvous(beacon), true);
+  assert.deepEqual(offers, ['peer-crashed'], 'a fresh beacon is offered to once');
+
+  // The device crashed: no answer, no presence. 92 s later its record expires.
+  clock.advance(92_000);
+  h.api.supervise();
+  assert.equal(h.api.known('peer-crashed'), undefined);
+  assert.equal(h.api.retired('peer-crashed').epoch, 'route-a');
+
+  // Its comment is still there (TTL 100 s): later scans read it again.
+  const offersBefore = offers.length;
+  assert.equal(h.api.applyRendezvous(beacon), false);
+  assert.equal(h.api.known('peer-crashed'), undefined, 'not expected again');
+  assert.equal(h.api.signalMode(), 'solo', 'no fast window for a leftover');
+  h.api.supervise();
+  clock.advance(80_000);
+  h.api.feedFast();
+  h.api.supervise();
+  assert.equal(offers.length, offersBefore, 'no offers to the crashed device');
+  assert.equal(h.api.signalMode(), 'solo');
+
+  // A device that really comes back announces again (new epoch or time).
+  h.api.applyRendezvous({ ...beacon, epoch: 'route-b', announcedAt: clock.t, expiresAt: clock.t + 100_000 });
+  assert.ok(h.api.known('peer-crashed'));
+  assert.equal(h.api.retired('peer-crashed'), undefined);
+});
+
+test('the app restarting collaboration on Home does not revive a closed document', async () => {
+  const clock = createClock();
+  const view = createEditorView(false);
+  const h = createSignallingHarness(clock, { document: documentWithEditor(view) });
+  h.api.start();
+  await settle(h);
+  assert.equal(h.api.running(), true);
+
+  // goHome: the editor is hidden first, then collaboration is stopped.
+  view.hidden = true;
+  h.api.stop();
+  await settle(h);
+  const requests = h.requests.length;
+  // updateDriveAuthUI -> startCollabPolling -> startLiveCollaboration, 34 ms
+  // later, plus presence, an exit save's edit hook and a repeated stop.
+  h.api.start();
+  h.api.updatePeers([{ isOnline: true, a: 'remote-account', c: 'remote-client', e: 'remote@example.com' }]);
+  h.api.schedule();
+  h.api.stop();
+  h.api.start();
+  h.api.wake('window focused');
+  await settle(h);
+  assert.equal(h.api.running(), false, 'no live timers on Home');
+  assert.equal(h.api.tabChannel(), null, 'no BroadcastChannel for the closed document');
+  assert.equal(h.requests.length, requests, 'no beacon, scan or mailbox request on Home');
+  assert.equal(h.api.stoppedFileId(), 'file-1');
+
+  // Opening the document shows the editor first, then starts collaboration.
+  view.hidden = false;
+  h.api.start();
+  await settle(h);
+  assert.equal(h.api.running(), true);
+  assert.ok(h.beaconWrites() >= 2, 'the reopened document announces itself again');
+});
+
+test('booting to Home with the last document restored does not run its live session', async () => {
+  const clock = createClock();
+  const editor = createEditorView(true);
+  const home = createEditorView(true);
+  const h = createSignallingHarness(clock, { document: documentWithEditor(editor, home) });
+  // Cold boot: loadDriveSession() restores the last document id, then
+  // showDriveHome() stops collaboration and updateDriveAuthUI() restarts it.
+  home.hidden = false;
+  h.api.stop();
+  h.api.start();
+  h.api.updatePeers([{ isOnline: true, a: 'remote-account', c: 'remote-client', e: 'remote@example.com' }]);
+  h.api.schedule();
+  await h.runTimerMatching(timer => timer.ms === 0);
+  await settle(h);
+  assert.equal(h.api.running(), false, 'no beacon, scans or peers for a document that is not open');
+  assert.equal(h.requests.length, 0);
+
+  // The user opens it from Home: the editor is shown, then collaboration starts.
+  home.hidden = true;
+  editor.hidden = false;
+  h.api.start();
+  await settle(h);
+  assert.equal(h.api.running(), true);
+  assert.equal(h.beaconWrites(), 1);
+});
+
+test('a session started without its editor is not treated as a closed document on welcome or Home', async () => {
+  // e2e and background flows start sessions on the welcome screen.
+  const clock = createClock();
+  const editor = createEditorView(true);
+  const home = createEditorView(true);
+  const h = createSignallingHarness(clock, { document: documentWithEditor(editor, home) });
+  h.api.stop();
+  h.api.start();
+  await settle(h);
+  assert.equal(h.api.running(), true);
+
+  // That session (never shown in the editor) is stopped when the app moves
+  // from the welcome screen to Home after sign-in; the app's restart that
+  // follows still works, as before.
+  home.hidden = false;
+  h.api.stop();
+  h.api.start();
+  await settle(h);
+  assert.equal(h.api.running(), true);
+});
+
+test('a reopen that starts collaboration just before showing the editor is not lost', async () => {
+  const clock = createClock();
+  const view = createEditorView(false);
+  const h = createSignallingHarness(clock, { document: documentWithEditor(view) });
+  h.api.start();
+  await settle(h);
+  view.hidden = true;
+  h.api.stop();
+  await settle(h);
+
+  // Home: the app's restart is refused, and the single re-check after the
+  // current task finds the editor still hidden and schedules nothing more.
+  h.api.start();
+  assert.equal(h.api.running(), false);
+  assert.equal(h.api.deferredStartPending(), true);
+  assert.equal(await h.runTimerMatching(timer => timer.ms === 0), true);
+  assert.equal(h.api.running(), false, 'still on Home: nothing restarts');
+  assert.equal(h.api.deferredStartPending(), false, 'no polling loop on Home');
+
+  // The public/shared reopen path calls startLiveCollaboration() a few
+  // synchronous steps before showEditorView(): it starts right after.
+  h.api.start();
+  view.hidden = false;
+  assert.equal(h.api.running(), false);
+  assert.equal(await h.runTimerMatching(timer => timer.ms === 0), true);
+  assert.equal(h.api.running(), true, 'the reopened document collaborates');
+  assert.equal(h.api.stoppedFileId(), '');
+
+  // A stop cancels a re-check that has not run yet.
+  view.hidden = true;
+  h.api.stop();
+  h.api.start();
+  assert.equal(h.api.deferredStartPending(), true);
+  h.api.stop();
+  assert.equal(h.api.deferredStartPending(), false);
+});
+
+test('a session that never showed its editor can still be restarted explicitly', async () => {
+  const clock = createClock();
+  const view = createEditorView(true);
+  const h = createSignallingHarness(clock, { document: documentWithEditor(view) });
+  h.api.start();
+  await settle(h);
+  h.api.stop();
+  h.api.updatePeers([{ isOnline: true, a: 'remote-account', c: 'remote-client', e: 'remote@example.com' }]);
+  assert.equal(h.api.running(), false, 'presence alone does not restart a stopped session');
+  h.api.start();
+  assert.equal(h.api.running(), true, 'an explicit start (tests, background tools) still works');
+});
+
+test('a closing device tells its peers, which stop expecting it until it really returns', async () => {
+  // Closing side: the notice goes out before the channel closes, and the peer
+  // connection is closed only after the channel had a chance to flush it.
+  const closing = createHarness();
+  const channel = createChannel();
+  let pcClosed = false;
+  closing.api.addPeer('peer-b', peerWithChannel(channel, { pc: { close() { pcClosed = true; }, getStats: async () => new Map() } }));
+  closing.api.stop();
+  const leaving = channel.sent.map(raw => JSON.parse(raw)).find(message => message.t === 'leaving');
+  assert.ok(leaving, 'a leaving notice was sent');
+  assert.equal(channel.readyState, 'closed');
+  assert.equal(pcClosed, false, 'the peer connection outlives the channel flush');
+  assert.equal(await closing.runTimerMatching(timer => timer.ms === 250), true);
+  assert.equal(pcClosed, true);
+
+  // Receiving side.
+  const clock = createClock();
+  const h = createSignallingHarness(clock);
+  const offers = [];
+  h.context.ihnCreateOffer = async peerId => { offers.push(peerId); };
+  h.api.claimLeader();
+  h.api.feedFast();
+  const record = { isOnline: true, a: 'remote-account', c: 'remote-client', e: 'remote@example.com' };
+  const remoteId = h.api.presencePeerId(record);
+  h.api.updatePeers([record]);
+  h.api.applyRendezvous({ v: 1, type: 'rendezvous', fileId: 'file-1', from: remoteId, to: '*',
+    epoch: 'route-a', announcedAt: clock.t, expiresAt: clock.t + 100_000 });
+  const remoteChannel = createChannel();
+  h.api.addPeer(remoteId, peerWithChannel(remoteChannel));
+  assert.notEqual(h.api.signalMode(), 'solo');
+
+  await h.api.wire(JSON.stringify({ t: 'leaving', at: clock.t, epoch: 'route-a' }), remoteId);
+  assert.equal(h.api.getPeer(remoteId), undefined, 'the link is closed without a retry');
+  assert.equal(h.api.known(remoteId), undefined);
+  assert.equal(h.api.retry(remoteId), undefined);
+  assert.equal(h.api.departed(remoteId).epoch, 'route-a');
+  assert.equal(h.api.signalMode(), 'solo');
+
+  // Its presence keeps arriving (an older build keeps pinging from Home) and
+  // its old beacon is still listed: neither makes it expected again.
+  const offersBefore = offers.length;
+  for (let elapsed = 0; elapsed < 60_000; elapsed += 2000) {
+    clock.advance(2000);
+    h.api.feedFast();
+    h.api.updatePeers([record]);
+    h.api.supervise();
+  }
+  assert.equal(h.api.applyRendezvous({ v: 1, type: 'rendezvous', fileId: 'file-1', from: remoteId, to: '*',
+    epoch: 'route-a', announcedAt: clock.t - 60_000, expiresAt: clock.t + 40_000 }), false);
+  assert.equal(offers.length, offersBefore, 'no offers to a device that closed the document');
+  assert.equal(h.api.signalMode(), 'solo');
+
+  // It reopens the document: a new session announces a new epoch.
+  h.api.applyRendezvous({ v: 1, type: 'rendezvous', fileId: 'file-1', from: remoteId, to: '*',
+    epoch: 'route-b', announcedAt: clock.t, expiresAt: clock.t + 100_000 });
+  assert.equal(h.api.departed(remoteId), undefined);
+  assert.ok(h.api.known(remoteId));
+  h.api.updatePeers([record]);
+  assert.notEqual(h.api.signalMode(), 'solo', 'a returning device is discovered as usual');
+});
+
+test('an offer from a device that left is answered and its connection survives supervision', async () => {
+  // The device reopens the document and its warm-start offer is read before
+  // its new beacon: the answering connection must not be closed as an
+  // unexpected device (that also deleted the offer comment with the answer).
+  const keyEncoded = bytesToBase64Url(new Uint8Array(32).fill(0x31));
+  class AcceptingPeerConnection {
+    constructor() { this.connectionState = 'new'; this.iceConnectionState = 'new'; this.iceGatheringState = 'complete'; this.signalingState = 'stable'; }
+    createDataChannel() { return { readyState: 'connecting', close() {}, addEventListener() {} }; }
+    async setRemoteDescription(description) { this.remoteDescription = description; }
+    async setLocalDescription(description) { this.localDescription = description; }
+    async createAnswer() { return { type: 'answer', sdp: 'answer' }; }
+    close() { this.connectionState = 'closed'; }
+    addEventListener() {}
+    removeEventListener() {}
+    getStats() { return Promise.resolve(new Map()); }
+  }
+  const deleted = [];
+  let answers = 0;
+  const harness = createHarness({
+    RTCPeerConnection: AcceptingPeerConnection,
+    driveFetch: async (url, options = {}) => {
+      const requestUrl = String(url);
+      const method = options.method || 'GET';
+      if (requestUrl.includes('fields=properties')) return { json: async () => ({ properties: { ihn_live_key_v1: keyEncoded } }) };
+      if (method === 'POST' && requestUrl.includes('/replies?')) { answers += 1; return { json: async () => ({ id: 'answer-1' }) }; }
+      if (method === 'DELETE') { deleted.push(requestUrl); return { json: async () => ({}) }; }
+      return { json: async () => ({}) };
+    }
+  });
+  const { api } = harness;
+  api.claimLeader();
+  const remoteId = `${api.ownId()}z`;
+  api.addPeer(remoteId, peerWithChannel(createChannel()));
+  await api.wire(JSON.stringify({ t: 'leaving', at: Date.now(), epoch: 'old-session' }), remoteId);
+  assert.ok(api.departed(remoteId));
+  assert.equal(api.known(remoteId), undefined);
+
+  const accepted = await api.acceptOffer({ id: 'reopen-offer' }, {
+    v: 1, type: 'offer', from: remoteId, to: api.ownId(), fileId: 'file-1', sessionId: 'reopened',
+    expiresAt: Date.now() + 60_000, description: { type: 'offer', sdp: 'offer' }
+  });
+  assert.equal(accepted, true);
+  assert.equal(answers, 1);
+  assert.equal(api.departed(remoteId), undefined, 'a fresh offer is a new session');
+  assert.ok(api.known(remoteId), 'the device is expected again');
+  const answering = api.getPeer(remoteId);
+  assert.equal(answering?.initiator, false);
+  api.supervise();
+  assert.equal(api.getPeer(remoteId), answering, 'supervision keeps the answering connection');
+  assert.equal(deleted.some(url => url.includes('/comments/reopen-offer')), false, 'the offer and its answer stay readable');
+});
+
+test('a beacon announced after a device left counts as its return even with the same epoch', async () => {
+  // Another tab of the same device (same peer id) takes the document over
+  // and announces itself; the departure must not hide it.
+  const clock = createClock();
+  const h = createSignallingHarness(clock);
+  const offers = [];
+  h.context.ihnCreateOffer = async peerId => { offers.push(peerId); };
+  h.api.claimLeader();
+  h.api.feedFast();
+  const remoteId = 'peer-two-tabs';
+  h.api.applyRendezvous({ v: 1, type: 'rendezvous', fileId: 'file-1', from: remoteId, to: '*',
+    epoch: 'tab-epoch', announcedAt: clock.t, expiresAt: clock.t + 100_000 });
+  h.api.addPeer(remoteId, peerWithChannel(createChannel()));
+  const leftAt = clock.t + 1000;
+  clock.advance(1000);
+  await h.api.wire(JSON.stringify({ t: 'leaving', at: leftAt, epoch: '' }), remoteId);
+  assert.equal(h.api.departed(remoteId).epoch, 'tab-epoch', 'the last known beacon epoch stands in');
+  assert.equal(h.api.departed(remoteId).remoteAt, leftAt);
+  // The leftover beacon (announced before leaving) is still no news.
+  assert.equal(h.api.applyRendezvous({ v: 1, type: 'rendezvous', fileId: 'file-1', from: remoteId, to: '*',
+    epoch: 'tab-epoch', announcedAt: leftAt - 1000, expiresAt: clock.t + 99_000 }), false);
+  const offersBefore = offers.length;
+  clock.advance(3000);
+  assert.equal(h.api.applyRendezvous({ v: 1, type: 'rendezvous', fileId: 'file-1', from: remoteId, to: '*',
+    epoch: 'tab-epoch', announcedAt: clock.t, expiresAt: clock.t + 100_000 }), true);
+  assert.equal(h.api.departed(remoteId), undefined);
+  assert.ok(h.api.known(remoteId));
+  await settle(h);
+  assert.ok(offers.length > offersBefore, 'the device is contacted again');
+});
+
+test('edits build no document snapshot while no peer or other tab could receive it', async () => {
+  let copies = 0;
+  const harness = createHarness({
+    cloneSanitizedPageForStorage: async page => { copies += 1; return JSON.parse(JSON.stringify(page)); }
+  });
+  const isBroadcastTimer = timer => timer.ms === 40 || timer.ms === 60 || timer.ms === 0;
+  // A pen-up (bumpDriveContentVersion) with nobody else in the document.
+  harness.api.schedule();
+  assert.equal(harness.api.snapshotHasAudience(), false);
+  assert.equal(harness.api.queued(), false);
+  assert.equal([...harness.pendingTimers.values()].some(isBroadcastTimer), false, 'no snapshot timer');
+  await harness.api.broadcast();
+  assert.equal(copies, 0, 'the notebook is neither cloned nor hashed');
+  assert.equal(harness.api.currentHash(), '', 'the stale digest is retired');
+  assert.equal(await harness.context.flushLiveCollaborationBeforeExit(200), true, 'exit flush has nothing to wait for');
+
+  // A second tab opens the document: it asks for the current state.
+  const tab = harness.api.tabChannel();
+  tab.onmessage({ data: { type: 'tab-state-request', fileId: 'file-1', tabId: 'late-tab' } });
+  assert.equal(harness.api.otherTabSeen(), true);
+  assert.equal(harness.api.queued(), true);
+  await harness.api.broadcast();
+  assert.ok(copies > 0, 'the tab receives a fresh snapshot');
+  assert.ok(tab.messages.some(message => message?.type === 'document-snapshot'));
+
+  // A peer whose channel is open is an audience too.
+  const solo = createHarness({
+    cloneSanitizedPageForStorage: async page => { copies += 1; return JSON.parse(JSON.stringify(page)); }
+  });
+  const channel = createChannel();
+  solo.api.addPeer('peer-open', peerWithChannel(channel));
+  solo.api.schedule();
+  assert.equal(solo.api.queued(), true);
+  const before = copies;
+  await solo.api.broadcast();
+  assert.ok(copies > before);
+  assert.ok(solo.api.currentHash(), 'the digest peers compare against is current');
 });
