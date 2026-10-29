@@ -31170,12 +31170,24 @@
         }
 
         let homeSaveLoadingCleanupTimer = null;
+        let loadingFadeOutTimer = null;
+
+        // The spinner only animates while the overlay is visible or fading out
+        // (see #loading-overlay:not(.visible):not(.fading-out) in the CSS).
+        function cancelLoadingFadeOut() {
+            if (loadingFadeOutTimer) {
+                clearTimeout(loadingFadeOutTimer);
+                loadingFadeOutTimer = null;
+            }
+            loadingOverlay.classList.remove('fading-out');
+        }
 
         function showLoading(text) {
             if (homeSaveLoadingCleanupTimer) {
                 clearTimeout(homeSaveLoadingCleanupTimer);
                 homeSaveLoadingCleanupTimer = null;
             }
+            cancelLoadingFadeOut();
             loadingOverlay.classList.remove('home-save-transition');
             loadingText.textContent = text;
             loadingOverlay.setAttribute('aria-busy', 'true');
@@ -31187,6 +31199,7 @@
                 clearTimeout(homeSaveLoadingCleanupTimer);
                 homeSaveLoadingCleanupTimer = null;
             }
+            cancelLoadingFadeOut();
             loadingText.textContent = text;
             loadingOverlay.setAttribute('aria-busy', 'true');
             loadingOverlay.classList.add('home-save-transition', 'visible');
@@ -31194,6 +31207,15 @@
 
         function hideLoading() {
             const wasHomeTransition = loadingOverlay.classList.contains('home-save-transition');
+            if (loadingOverlay.classList.contains('visible')) {
+                cancelLoadingFadeOut();
+                loadingOverlay.classList.add('fading-out');
+                // Matches the overlay's 0.3s opacity/visibility transition.
+                loadingFadeOutTimer = setTimeout(() => {
+                    loadingFadeOutTimer = null;
+                    loadingOverlay.classList.remove('fading-out');
+                }, 360);
+            }
             loadingOverlay.classList.remove('visible');
             loadingOverlay.setAttribute('aria-busy', 'false');
             if (!wasHomeTransition) {
