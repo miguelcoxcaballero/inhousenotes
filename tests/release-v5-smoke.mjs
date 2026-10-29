@@ -457,6 +457,13 @@ assert.match(goHomeSource, /Could not finish saving\. The document is still open
 assert.doesNotMatch(goHomeSource, /showDriveHome\(\);[\s\S]{0,500}Saving the last document to Drive/);
 assert.doesNotMatch(goHomeSource, /await backgroundExitSavePromise|await ensureDriveToken/);
 assert.doesNotMatch(html, /Finishing (the )?previous (Drive )?save/i);
+// Home closes the document's recurring work; nothing may revive it there.
+assert.match(app, /function showDriveHome\(\)[\s\S]{0,1200}closeDocumentScopedWork\(\);/);
+assert.match(app, /function showWelcomeView\(\)[\s\S]{0,1200}closeDocumentScopedWork\(\);/);
+assert.match(app, /function closeDocumentScopedWork\(\) \{[\s\S]{0,900}stopCollabPolling\(\);[\s\S]{0,200}spStopAutoSync\(\);[\s\S]{0,700}documentSessionActivated = false;/);
+assert.match(app, /function startCollabPolling\(\) \{[\s\S]{0,600}if \(!isDocumentEditorActive\(\)\) return;[\s\S]{0,400}startLiveCollaboration\(\);/);
+assert.match(app, /function updatePresenceFromProps\(appProperties\) \{[\s\S]{0,400}const liveDocument = isDocumentEditorActive\(\);[\s\S]{0,400}if \(liveDocument && typeof ihnConsumeSignalMailboxesFromProperties/);
+assert.match(app, /latestPresenceUsers = deduped;\n\s+if \(liveDocument\) liveCollabUpdatePeers\(deduped\);/);
 const openDriveStart = html.indexOf('async function openDriveFile(file)');
 const openDriveEnd = html.indexOf('function updateViewerModeUI()', openDriveStart);
 const openDriveSource = html.slice(openDriveStart, openDriveEnd);
