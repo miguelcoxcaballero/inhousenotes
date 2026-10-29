@@ -42,3 +42,19 @@ Set by the user. Every design decision, work unit and review must satisfy these.
 ## 5. Release
 - Version 6.0.0 (APP_VERSION and every [data-app-version] label), released to main only after it
   passes the full v5 test batteries adapted to v6, the screenshot parity gate and two-device sync tests.
+
+## 6. Known v5 bugs — policy
+The specs (docs/v6/spec/*.md, "quirks" sections) found defects in v5. Policy: keep every intended look and
+behaviour identical, but do not reproduce evident bugs. Each fixed bug is recorded in
+docs/v6/BEHAVIOUR-CHANGES.md (what v5 did, what v6 does, why) and shown to the user before release; the
+screenshot parity gate lists them as the only allowed differences. Intentional-looking oddities are kept
+unless the user decides otherwise. Collected so far:
+- Public share links never download the PDF (fetchWithDeadline argument mix-up), so signed-out
+  recipients always get the embedded Drive preview, recreated every ~7.5 s (spec/home.md §8.3, §12).
+- The signalling key property `ihn_live_key_v1` matches the `ihn_live_` preview-hint prefix and is fetched
+  as a preview file, a 404 every 3 s (spec/collaboration.md §16).
+- Editor (spec/editor.md §11 Q1–Q10): selection move / image placement / cross-page drag assume A4 page
+  size; a single-tap pen dot vanishes on the next repaint; undoing an area erase restores strokes on top
+  of later ink; others listed there.
+- Security: the live signalling key is readable by viewers through file properties and peers are not
+  checked for edit rights (spec/collaboration.md §8) — v6 must not keep this.
