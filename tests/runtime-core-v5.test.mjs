@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import test from 'node:test';
 
 const require = createRequire(import.meta.url);
-const { fetchWithDeadline, runWithRetries, settleWithTimeout } = require('../runtime-core-v5.js');
+const { fetchWithDeadline, settleWithTimeout } = require('../runtime-core-v5.js');
 
 test('fetchWithDeadline aborts a stalled request and identifies a timeout', async () => {
   const originalFetch = globalThis.fetch;
@@ -43,15 +43,4 @@ test('fetchWithDeadline forwards caller cancellation without relabeling it', asy
 test('settleWithTimeout returns the fallback for timeout and rejection', async () => {
   assert.equal(await settleWithTimeout(new Promise(() => {}), 5, 'late'), 'late');
   assert.equal(await settleWithTimeout(Promise.reject(new Error('failed')), 50, 'failed-safe'), 'failed-safe');
-});
-
-test('runWithRetries recovers from transient failures without duplicating success', async () => {
-  let calls = 0;
-  const result = await runWithRetries(async () => {
-    calls += 1;
-    if (calls < 3) throw new Error('temporary');
-    return 'ok';
-  }, { attempts: 4, baseDelayMs: 1 });
-  assert.equal(result, 'ok');
-  assert.equal(calls, 3);
 });

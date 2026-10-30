@@ -1,6 +1,5 @@
 //! Editor kernels and folder scene planning. Rendering, cancellation and
 //! persistence remain with the host. Buffers are supplied by the private JS adapter.
-mod folder;
 mod checkpoint;
 mod editor;
 mod document_work;

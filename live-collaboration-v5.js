@@ -69,7 +69,6 @@ const IHN_LIVE_HEALTH_TIMEOUT = 30_000;
 const IHN_LIVE_ACK_TIMEOUT = 20_000;
 const IHN_LIVE_RECEIPT_TIMEOUT = 4000;
 const IHN_LIVE_APPLY_ACK_TIMEOUT = 120_000;
-const IHN_LIVE_LEGACY_PROBE_TIMEOUT = 90_000;
 const IHN_LIVE_PEER_EXPIRY = 90_000;
 // A device remembered from an earlier session is only a hint: it gets one
 // warm-start attempt when the document opens. Without live evidence (Drive
@@ -181,11 +180,9 @@ let ihnLiveBroadcastRetryAttempt = 0;
 const ihnLiveBroadcastTargets = new Set();
 const ihnLiveBroadcastExclusions = new Set();
 let ihnLiveApplying = false;
-let ihnLiveApplyQueue = Promise.resolve();
 let ihnLiveApplyDrainPromise = null;
 let ihnLiveActiveApply = null;
 let ihnLiveSequence = Date.now();
-let ihnLiveLastAppliedHash = '';
 let ihnLiveCurrentHash = '';
 let ihnLiveLastTabSentHash = '';
 let ihnLiveMergeUploadGuard = null;
@@ -249,10 +246,7 @@ function ihnGetLiveTabId() {
     // sessionStorage can be cloned when a tab is duplicated. A per-JS-realm
     // identity prevents two tabs from sharing one actor/sequence stream and
     // accidentally suppressing each other's simultaneous edits.
-    const randomPart = typeof crypto?.randomUUID === 'function'
-        ? crypto.randomUUID().replace(/-/g, '')
-        : Math.random().toString(36).slice(2);
-    ihnLiveTabId = `t${Date.now().toString(36)}${randomPart.slice(0, 14)}`;
+    ihnLiveTabId = `t${Date.now().toString(36)}${crypto.randomUUID().replace(/-/g, '').slice(0, 14)}`;
     return ihnLiveTabId;
 }
 
@@ -276,9 +270,7 @@ function ihnDocumentIsVisible() {
 }
 
 function ihnLeaderStaleAfter(record) {
-    // Older builds renew every second and omit `hb`; keep their 2.5 s rule.
-    const cadence = Math.min(IHN_LIVE_LEADER_TTL, Math.max(0, Number(record?.hb) || 0));
-    return Math.max(IHN_LIVE_LEADER_STALE_MS, cadence + IHN_LIVE_LEADER_STALE_MS);
+    return Math.min(IHN_LIVE_LEADER_TTL, Math.max(0, Number(record?.hb) || 0)) + IHN_LIVE_LEADER_STALE_MS;
 }
 
 function ihnReleaseLiveLeader() {
@@ -844,10 +836,7 @@ async function ihnDecodeSignal(content) {
 }
 
 function ihnNewRendezvousEpoch() {
-    const randomPart = typeof crypto?.randomUUID === 'function'
-        ? crypto.randomUUID().replace(/-/g, '').slice(0, 12)
-        : Math.random().toString(36).slice(2, 14);
-    return `r${Date.now().toString(36)}${randomPart}`;
+    return `r${Date.now().toString(36)}${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
 }
 
 function ihnHasOpenLivePeer() {
@@ -1675,8 +1664,7 @@ function ihnResetPeerRetry(peerId) {
 function ihnPeerChannelIsHealthy(peer, now = Date.now()) {
     if (peer?.channel?.readyState !== 'open') return false;
     const lastReceivedAt = Number(peer.lastReceivedAt || peer.openedAt || 0);
-    const timeout = peer.protocolV2 ? IHN_LIVE_HEALTH_TIMEOUT : IHN_LIVE_LEGACY_PROBE_TIMEOUT;
-    return lastReceivedAt > 0 && now - lastReceivedAt <= timeout;
+    return lastReceivedAt > 0 && now - lastReceivedAt <= IHN_LIVE_HEALTH_TIMEOUT;
 }
 
 function ihnMarkPeerHealthy(peerId, peer, reason = '') {
@@ -2191,21 +2179,15 @@ function ihnHandleRealtimeStrokePacket(packet, transport = '', sourcePeerId = ''
             { length: receive.finalTotal },
             (_, index) => !!receive.finalSlots[index]
         ).every(Boolean);
-    const legacyFinalComplete = !finalBatch
-        && sanitizedPacket.final
-        && safeOffset === 0
-        && safePoints.length > 0;
     if (!receive.committed
-        && (finalComplete || legacyFinalComplete)
+        && finalComplete
         && typeof commitRemoteLiveStroke === 'function') {
         receive.committed = true;
         const completePacket = {
             ...sanitizedPacket,
             offset: 0,
-            points: finalComplete
-                ? receive.finalSlots.slice(0, receive.finalTotal)
-                : safePoints,
-            totalPoints: finalComplete ? receive.finalTotal : safePoints.length,
+            points: receive.finalSlots.slice(0, receive.finalTotal),
+            totalPoints: receive.finalTotal,
             finalBatch: true,
             final: true
         };
@@ -3041,7 +3023,7 @@ function ihnSuperviseConnectionsOnce(options = {}) {
         );
         const hasRecentVerifiedPong = Number(peer.lastPongAt || 0) > Number(peer.openedAt || 0)
             && now - Number(peer.lastPongAt || 0) <= IHN_LIVE_HEALTH_TIMEOUT;
-        if (peer.protocolV2 && peer.pendingAckHash && !peer.snapshotSendInProgress
+        if (peer.pendingAckHash && !peer.snapshotSendInProgress
             && !peer.channel.bufferedAmount && !resumeGraceActive
             && !applyReceiptMatches && pendingAckAge > IHN_LIVE_RECEIPT_TIMEOUT && hasRecentVerifiedPong) {
             // The route works but the complete transfer was never received.
@@ -3055,15 +3037,13 @@ function ihnSuperviseConnectionsOnce(options = {}) {
         const remoteApplyInProgress = pendingAckAge > IHN_LIVE_ACK_TIMEOUT
             && pendingAckAge <= IHN_LIVE_APPLY_ACK_TIMEOUT
             && applyReceiptMatches;
-        if (peer.protocolV2
-            && !resumeGraceActive
+        if (!resumeGraceActive
             && now - Number(peer.lastReceivedAt || peer.openedAt || 0) > IHN_LIVE_HEALTH_TIMEOUT
             && !remoteApplyInProgress) {
             ihnClosePeer(peerId, 'health check timeout', { retry: true });
             return;
         }
-        if (peer.protocolV2
-            && peer.pendingAckHash
+        if (peer.pendingAckHash
             && !peer.snapshotSendInProgress
             && pendingAckAge > IHN_LIVE_ACK_TIMEOUT) {
             if (pendingAckAge > IHN_LIVE_APPLY_ACK_TIMEOUT && hasRecentVerifiedPong) {
@@ -3087,18 +3067,12 @@ function ihnSuperviseConnectionsOnce(options = {}) {
                 return;
             }
         }
-        if (!peer.protocolV2
-            && now - Number(peer.lastReceivedAt || peer.openedAt || 0) > IHN_LIVE_LEGACY_PROBE_TIMEOUT) {
-            ihnClosePeer(peerId, 'legacy peer health probe', { retry: true });
-            return;
-        }
         const routeLastSeenAt = Math.max(
             Number(peer.lastPongAt || 0),
             Number(peer.lastReceivedAt || 0),
             Number(peer.openedAt || 0)
         );
-        if (peer.protocolV2
-            && ihnDocumentIsVisible()
+        if (ihnDocumentIsVisible()
             && !resumeGraceActive
             && now - routeLastSeenAt > IHN_LIVE_ROUTE_STALE_MS) {
             // A busy WebView can miss one heartbeat even though its route is
@@ -3606,6 +3580,11 @@ function ihnDeferLiveStartUntilEditorShown() {
 }
 
 function startLiveCollaboration() {
+    // Page lifecycle (owned by app-v5.js): local edits, tab-sync requests and
+    // exit-save merges call this. None of them may revive the P2P session of a
+    // document closed to Home or suspended in the background; app-v5.js
+    // restarts it when the document is shown again.
+    if (typeof isDocumentLiveWorkPaused === 'function' && isDocumentLiveWorkPaused()) return;
     if (!state?.driveFileId) return;
     if (ihnLiveDocumentClosedToHome()) {
         ihnDeferLiveStartUntilEditorShown();
@@ -3751,7 +3730,7 @@ function stopLiveCollaboration() {
     ihnInvalidateSignalKey();
     ihnLiveCryptoKeyLoad = null; ihnLiveCryptoKeyLoadFileId = '';
     ihnLiveCryptoKeyRefresh = null; ihnLiveCryptoKeyRefreshFileId = '';
-    ihnLiveLastAppliedHash = ''; ihnLiveCurrentHash = ''; ihnLiveLastTabSentHash = '';
+    ihnLiveCurrentHash = ''; ihnLiveLastTabSentHash = '';
     ihnLiveMergeUploadGuard = null; ihnLiveMainPeerId = '';
     ihnLiveNetworkSignature = ''; ihnLiveNetworkWakeAt = 0;
     ihnLiveRendezvousCommentId = ''; ihnLiveRendezvousFileId = '';
@@ -4116,7 +4095,6 @@ async function ihnHandleWireMessage(
     }
     ihnTouchKnownPeerFromChannel(peerId);
     if (message?.t === 'ping') {
-        if (peer) peer.protocolV2 = true;
         ihnSendControl(peer, { t: 'pong', at: Number(message.at) || Date.now(), receivedAt: Date.now(),
             documentHash: ihnLiveCurrentHash });
         ihnReconcilePeerDocumentHash(peerId, message.documentHash);
@@ -4124,7 +4102,6 @@ async function ihnHandleWireMessage(
     }
     if (message?.t === 'pong') {
         if (peer) {
-            peer.protocolV2 = true;
             const receivedAt = Date.now();
             const sentAt = Number(message.at) || 0;
             const expectedAt = Number(peer.lastPingAt) || 0;
@@ -4154,7 +4131,6 @@ async function ihnHandleWireMessage(
         return;
     }
     if (message?.t === 'hello' || message?.t === 'state-request') {
-        if (peer) peer.protocolV2 = true;
         // Only negotiate the extra stream after explicit capability exchange:
         // older releases treat any second channel as their primary channel.
         if (message?.t === 'hello' && message.interactiveChannel === 1
@@ -4169,7 +4145,6 @@ async function ihnHandleWireMessage(
     }
     if (message?.t === 'snapshot-received') {
         if (!peer) return;
-        peer.protocolV2 = true;
         const receivedHash = String(message.hash || '');
         if (!receivedHash || !peer.pendingAckHash || peer.pendingAckHash !== receivedHash) return;
         peer.pendingAckReceivedHash = receivedHash;
@@ -4178,13 +4153,10 @@ async function ihnHandleWireMessage(
     }
     if (message?.t === 'snapshot-ack') {
         if (!peer) return;
-        peer.protocolV2 = true;
         const acknowledgedHash = String(message.hash || '');
         if (!acknowledgedHash || !peer.pendingAckHash || peer.pendingAckHash !== acknowledgedHash) return;
         // Receipt and convergence differ when the receiver merged its own edits.
-        // Old clients omit currentHash; retain compatibility with their ACKs.
-        const currentHash = Object.prototype.hasOwnProperty.call(message, 'currentHash')
-            ? String(message.currentHash || '') : acknowledgedHash;
+        const currentHash = String(message.currentHash || '');
         peer.lastAckedHash = currentHash === acknowledgedHash ? acknowledgedHash : '';
         peer.remoteCurrentHash = currentHash;
         peer.pendingAckHash = '';
@@ -4202,7 +4174,6 @@ async function ihnHandleWireMessage(
     }
     if (message?.t === 'snapshot-nack') {
         if (!peer) return;
-        peer.protocolV2 = true;
         const rejectedHash = String(message.hash || '');
         if (rejectedHash && peer.pendingAckHash === rejectedHash) {
             peer.pendingAckHash = '';
@@ -4318,11 +4289,9 @@ function ihnStartLiveApplyDrain() {
         }
     })();
     ihnLiveApplyDrainPromise = drain;
-    ihnLiveApplyQueue = drain;
     drain.then(() => {
         if (ihnLiveApplyDrainPromise !== drain) return;
         ihnLiveApplyDrainPromise = null;
-        ihnLiveApplyQueue = Promise.resolve();
         if (ihnLivePendingApplies.size) ihnStartLiveApplyDrain();
     });
     return drain;
@@ -4487,10 +4456,6 @@ function ihnScheduleLiveFanOut(envelope, transport, sourcePeerId, operation) {
     task.finally(() => ihnLiveFanOutTasks.delete(task));
 }
 
-function ihnFlushLiveFanOutTasks() {
-    return Promise.all([...ihnLiveFanOutTasks]);
-}
-
 async function ihnApplyLiveEnvelope(
     envelope,
     transport = '',
@@ -4626,7 +4591,6 @@ async function ihnApplyLiveEnvelope(
         ihnLiveSeen.set(envelope.actorId, sequence);
         if (envelope.contentHash) ihnLiveAppliedHashes.set(envelope.contentHash, Date.now());
         const resolvedCurrentHash = mergedHash;
-        ihnLiveLastAppliedHash = resolvedCurrentHash;
         ihnLiveCurrentHash = resolvedCurrentHash;
         ihnTrackMergeCurrentState(resolvedCurrentHash);
         const needsConvergenceBroadcast = canEditDocument && (
@@ -4662,23 +4626,3 @@ async function ihnApplyLiveEnvelope(
         }
     }
 }
-
-// Page lifecycle (owned by app-v5.js): resume/focus/network events only wake a
-// live session that is running or still owns peers. A document closed to Home
-// keeps its lifecycle listeners installed, and each app resume used to publish
-// a rendezvous comment and poll signals for a file nobody was editing.
-const ihnWakeOpenLiveCollaboration = ihnWakeLiveCollaboration;
-ihnWakeLiveCollaboration = function ihnWakeLiveCollaborationIfOpen(reason) {
-    if (!ihnLiveSupervisorTimer && !ihnLivePeers.size) return;
-    return ihnWakeOpenLiveCollaboration(reason);
-};
-
-// Page lifecycle (owned by app-v5.js): local edits, tab-sync requests and
-// exit-save merges call startLiveCollaboration(). None of them may revive the
-// P2P session of a document closed to Home or suspended in the background;
-// app-v5.js restarts it when the document is shown again.
-const ihnStartLiveCollaborationUnlessPaused = startLiveCollaboration;
-startLiveCollaboration = function startLiveCollaborationIfDocumentLive() {
-    if (typeof isDocumentLiveWorkPaused === 'function' && isDocumentLiveWorkPaused()) return;
-    return ihnStartLiveCollaborationUnlessPaused();
-};

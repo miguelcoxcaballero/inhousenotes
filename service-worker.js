@@ -26,7 +26,7 @@ self.addEventListener('fetch',event=>{
     }
     // Never cache authenticated Drive responses, OAuth, arbitrary external URLs or mutations.
     if(event.request.method!=='GET'||url.origin!==self.location.origin)return;
-    if(url.pathname.startsWith('/oauth-callback')||url.searchParams.has('oauth_callback'))return;
+    if(url.pathname.startsWith('/oauth-callback'))return;
     const path=url.pathname==='/'?'/index.html':url.pathname;
     if(!self.INHOUSE_OFFLINE_ASSETS.includes(path))return;
     const requestedVersion=url.searchParams.get('v');

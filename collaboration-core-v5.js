@@ -485,17 +485,6 @@
         return normalized;
     }
 
-    function ihnSeedFieldValue(meta, key, value) {
-        const normalized = ihnNormalizeFieldMeta(meta);
-        const fieldKey = String(key || '');
-        if (!fieldKey || normalized.fields[fieldKey]) return normalized;
-        normalized.fields[fieldKey] = {
-            value: ihnCloneFieldValue(value),
-            stamp: { clock: 0, actor: '' }
-        };
-        return normalized;
-    }
-
     function ihnRecordFieldValue(meta, key, value, actor, now = Date.now()) {
         const normalized = ihnNormalizeFieldMeta(meta);
         const fieldKey = String(key || '');
@@ -684,7 +673,6 @@
         ihnMergeDeletionStamps,
         ihnDeletionWinsItem,
         ihnNormalizeFieldMeta,
-        ihnSeedFieldValue,
         ihnRecordFieldValue,
         ihnMergeFieldMeta,
         ihnResolveFieldValue,
