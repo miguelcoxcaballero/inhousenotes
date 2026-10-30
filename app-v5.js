@@ -416,6 +416,8 @@
         // Android OAuth client (type "Android", APK package + SHA-1) for PKCE + offline refresh tokens.
         const ANDROID_OAUTH_CLIENT_ID = '435784295430-9ta7t92s33r25bamvrnbmgt65iihqpfo.apps.googleusercontent.com';
         const ANDROID_PKCE_REDIRECT_URI = 'com.local.inhousenotes:/oauth2redirect';
+        // The app always signs in with PKCE (read by offline-app-v5.js).
+        const useAndroidPkceFlow = () => isInhouseApp;
         const THEME_KEY = 'inhouse-theme';
         const DATA_STORAGE_KEY = (OFFLINE_WORKER ? 'background-' : '') + 'notebook-data-v3';
         const DB_NAME = (OFFLINE_WORKER ? 'background-' : '') + 'notebook-data-db-v1';
