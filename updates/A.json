@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "channel": "A",
+  "latest": {
+    "version": "1.0.28",
+    "versionCode": 29,
+    "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.28/inhouse-notes-release-v1.0.28.apk",
+    "apkSha256": "ac3e141b753b8eb17ed56627bfdbb0c577d626158c9817a60b251f833b89cec7",
+    "apkSizeBytes": 6815752,
+    "changelog": "Test the in-app updater.",
+    "releasedAt": "2026-10-20T14:36:40+00:00"
+  },
+  "releases": [
+    {
+      "version": "1.0.28",
+      "versionCode": 29,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.28/inhouse-notes-release-v1.0.28.apk",
+      "apkSha256": "ac3e141b753b8eb17ed56627bfdbb0c577d626158c9817a60b251f833b89cec7",
+      "apkSizeBytes": 6815752,
+      "changelog": "Test the in-app updater.",
+      "releasedAt": "2026-10-20T14:36:40+00:00"
+    },
+    {
+      "version": "1.0.27",
+      "versionCode": 28,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.27/inhouse-notes-release-v1.0.27.apk",
+      "apkSha256": "1bbb32b4d90152972b68f5ef41b3a0b9f3ee7e8ae556907c8238a1a0b0e318f3",
+      "apkSizeBytes": 6815752,
+      "changelog": "Fix in-app update installation.",
+      "releasedAt": "2026-10-20T12:51:35+00:00"
+    },
+    {
+      "version": "1.0.26",
+      "versionCode": 27,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.26/inhouse-notes-release-v1.0.26.apk",
+      "apkSha256": "6321dfc8b02fef4f82ec107c82adb8834db0cb42c6baa0f9ce7be7d5d8276c4d",
+      "apkSizeBytes": 6816204,
+      "changelog": "Test the in-app updater.",
+      "releasedAt": "2026-10-20T12:16:23+00:00"
+    },
+    {
+      "version": "1.0.25",
+      "versionCode": 26,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.25/inhouse-notes-release-v1.0.25.apk",
+      "apkSha256": "c4fd960e3398d5d414a6b54e43d612bbb6eef1def2fde6a6428eb73020f37bdf",
+      "apkSizeBytes": 6815988,
+      "changelog": "New Inhouse Notes logo inside the app.",
+      "releasedAt": "2026-10-20T11:32:43+00:00"
+    },
+    {
+      "version": "1.0.24",
+      "versionCode": 25,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.24/inhouse-notes-release-v1.0.24.apk",
+      "apkSha256": "878a450607df8695dc71b9dc9ec2a00e870a850a935f8ca1bd25911e22522fd6",
+      "apkSizeBytes": 6815896,
+      "changelog": "Fix in-app update installation.",
+      "releasedAt": "2026-10-20T11:07:48+00:00"
+    },
+    {
+      "version": "1.0.23",
+      "versionCode": 24,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.23/inhouse-notes-release-v1.0.23.apk",
+      "apkSha256": "a6d0394588ad98a068d008294ab976c849ac521c6b1b70d25e76ee21760a707c",
+      "apkSizeBytes": 6815876,
+      "changelog": "New Inhouse Notes app icon.",
+      "releasedAt": "2026-10-20T00:38:01+00:00"
+    },
+    {
+      "version": "1.0.21",
+      "versionCode": 22,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.21/inhouse-notes-release-v1.0.21.apk",
+      "apkSha256": "190ef811a74cafee4041b34a30cacb406258b29c2939be31e744a29bd1d63509",
+      "apkSizeBytes": 6798264,
+      "changelog": "Reliable in-app Android installation.",
+      "releasedAt": "2026-10-16T12:44:26+00:00"
+    },
+    {
+      "version": "1.0.19",
+      "versionCode": 20,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.19/inhouse-notes-release-v1.0.19.apk",
+      "apkSha256": "02297827f49af1dd9ada88359cba8e318a38cc23bd2a6abe63e27391d70ebbdb",
+      "apkSizeBytes": 6793608,
+      "changelog": "Local resources and smoother previews.",
+      "releasedAt": "2026-10-16T12:06:23+00:00"
+    },
+    {
+      "version": "1.0.18",
+      "versionCode": 19,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.18/inhouse-notes-release-v1.0.18.apk",
+      "apkSha256": "f3ee11a515d00b76277a64965caf4444f3edf81e3c641e025d0597be65621ad4",
+      "apkSizeBytes": 3501180,
+      "changelog": "Reliable installer and APK recovery.",
+      "releasedAt": "2026-10-14T12:53:37+00:00"
+    },
+    {
+      "version": "1.0.17",
+      "versionCode": 18,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.17/inhouse-notes-release-v1.0.17.apk",
+      "apkSha256": "91384a7ab7a377fe44f3dbb7991a915efa13f533236801efff74c21b98bcab35",
+      "apkSizeBytes": 3500244,
+      "changelog": "Offline documents and background sync.",
+      "releasedAt": "2026-10-14T11:59:09+00:00"
+    },
+    {
+      "version": "1.0.16",
+      "versionCode": 17,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.16/inhouse-notes-release-v1.0.16.apk",
+      "apkSha256": "3e43caf063905f7e7473d6b70d6939f96d5e01c1f5511c6df504543d4eaffa85",
+      "apkSizeBytes": 3175615,
+      "changelog": "Reliable Android update results.",
+      "releasedAt": "2026-10-11T22:04:02+00:00"
+    },
+    {
+      "version": "1.0.15",
+      "versionCode": 16,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.15/inhouse-notes-release-v1.0.15.apk",
+      "apkSha256": "1793fa2144867fe1aaa510390ea029bac53510319ce1a2249ab0e51873dcced8",
+      "apkSizeBytes": 3171863,
+      "changelog": "Neutral updater colors.",
+      "releasedAt": "2026-10-11T21:56:26+00:00"
+    },
+    {
+      "version": "1.0.14",
+      "versionCode": 15,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.14/inhouse-notes-release-v1.0.14.apk",
+      "apkSha256": "5ae9c0d0b98440a650b7f40f9906acf59e8d3b62eb14f62ede1c8a3b4b26345c",
+      "apkSizeBytes": 3171863,
+      "changelog": "Live camera and simpler save status.",
+      "releasedAt": "2026-10-11T21:37:17+00:00"
+    },
+    {
+      "version": "1.0.13",
+      "versionCode": 14,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.13/inhouse-notes-release-v1.0.13.apk",
+      "apkSha256": "f8e667c3c9c5fa5009c0f2f31e6b35107ad1ab3334b6c6b71d9fd43c68874686",
+      "apkSizeBytes": 3171735,
+      "changelog": "Updated Inhouse services updater.",
+      "releasedAt": "2026-10-11T21:16:03+00:00"
+    },
+    {
+      "version": "1.0.12",
+      "versionCode": 13,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.12/inhouse-notes-release-v1.0.12.apk",
+      "apkSha256": "f1b649180f59a1fde142d6255cb91b7385bfc7ae0a878600370be9fc1da76546",
+      "apkSizeBytes": 3171735,
+      "changelog": "Reviewed default and safer development opt-in.",
+      "releasedAt": "2026-10-11T16:51:38+00:00"
+    },
+    {
+      "version": "1.0.11",
+      "versionCode": 12,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.11/inhouse-notes-release-v1.0.11.apk",
+      "apkSha256": "72fa07c65cfaaaf24665029cba0a1a5971c74e466645eaeaeca55166fa8fec26",
+      "apkSizeBytes": 3171655,
+      "changelog": "Canales A/B y recordatorio opcional.",
+      "releasedAt": "2026-10-11T15:27:38+00:00"
+    }
+  ]
+}
