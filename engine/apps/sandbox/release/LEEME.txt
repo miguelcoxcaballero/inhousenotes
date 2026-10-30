@@ -4,6 +4,18 @@ FORJA - version jugable (Windows)
 Mundo abierto en una ciudad procedural de Madrid y Valencia: camina, corre,
 conduce coches y usa armas e inventario.
 
+NOVEDADES DE LA v0.1.4
+  - Resolucion nativa completa de tu pantalla por defecto (sin reescalado);
+    escala y resolucion dinamica opcionales en Opciones.
+  - Esc abre un menu de pausa: Reanudar, Opciones, Controles y Salir.
+  - Ruedas del coche por defecto corregidas.
+  - Rendimiento: el procesador prepara cada fotograma unas 10 veces mas rapido
+    (dibujo agrupado, pases en paralelo, sin esperas al cargar zonas, fisica
+    sin repeticiones, construcciones de fondo con prioridad baja).
+  - MEDIR EL RENDIMIENTO: abre Medir.bat, juega 1-2 minutos (plaza, callejon,
+    avenida, conducir) y cierra el juego. Se abre forja_trace.txt: pega su
+    contenido en el chat para que podamos ajustar el juego a tu ordenador.
+
 NOVEDADES DE LA v0.1.3
   - Portatiles y graficos integrados (Intel Arc / Iris Xe, AMD Radeon): perfil
     propio que mantiene el aspecto de Medio, renderiza a ~1,2 MP internos y
