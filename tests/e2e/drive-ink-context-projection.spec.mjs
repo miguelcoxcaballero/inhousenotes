@@ -49,7 +49,7 @@ async function setup(page,pageCount=128){
    };
    projectionJournal.enqueue=function(op,version){
     const captured=captures.at(-1).metadata,pageId=op.pages?.[0]?.pageId;
-    const allowed=new Set(pageId?['background','template','size'].map(field=>`page:${pageId}:${field}`):[]);
+    const allowed=new Set(pageId?['background','template','size','sidePanel'].map(field=>`page:${pageId}:${field}`):[]);
     // The exact previous projection remains the wire-format oracle. Bypass
     // the instrumented enumeration so measuring it does not inflate work.
     const fields=Object.fromEntries(entries(captured.fields).filter(([key])=>!key.startsWith('page:')||allowed.has(key)));
@@ -79,7 +79,7 @@ function expectExactProjection(result){
  for(const raw of result.raw){
   const op=JSON.parse(raw),pageId=op.pages[0]?.pageId,fields=Object.keys(op.fields.fields);
   expect(fields.filter(key=>key.startsWith('page:'))).toEqual(pageId?
-   ['background','size','template'].map(field=>`page:${pageId}:${field}`):[]);
+   ['background','sidePanel','size','template'].map(field=>`page:${pageId}:${field}`):[]);
   expect(fields).toEqual(expect.arrayContaining(['2','10','a:future','z:future']));
   expect(fields).not.toContain('page:projection-0:future');
  }

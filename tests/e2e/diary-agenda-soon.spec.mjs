@@ -37,7 +37,7 @@ for (const width of [390, 1280]) {
   });
 }
 
-test('Pages-panel Calendar stays as a Soon button only for agenda documents', async ({ page }) => {
+test('Pages-panel Calendar stays as a Soon button only for agenda documents in the Agenda folder', async ({ page }) => {
   await page.goto('/?e2e=1');
   await page.evaluate(() => __IHN_TEST_API__.ready());
   await page.evaluate(async () => {
@@ -47,13 +47,45 @@ test('Pages-panel Calendar stays as a Soon button only for agenda documents', as
   });
   const calendar = page.locator('#btn-open-calendar');
   await expect(calendar).toBeHidden();
+  // A local agenda document never showed the Calendar entry point.
   await page.evaluate(() => {
     closePagesPanel();
     state.pages[1].templateKind = 'agenda';
+    openPagesPanel();
+  });
+  await page.waitForTimeout(100);
+  await expect(calendar).toBeHidden();
+  // The same document opened from Drive's Agenda folder keeps it, as "Soon".
+  await page.evaluate(() => {
+    closePagesPanel();
+    state.driveFileId = 'agenda-file';
+    state.driveParentIds = ['agenda-folder'];
+    driveFolderStack.push({ id: 'agenda-folder', name: 'Agenda' });
     openPagesPanel();
   });
   await expect(calendar).toBeVisible();
   await expect(calendar.locator('.soon-badge')).toHaveText('Soon');
   await calendar.click();
   await expect(page.locator('#soon-toast')).toHaveText('Soon');
+});
+
+test('stored agenda side panels are kept as opaque page data', async ({ page }) => {
+  await page.goto('/?e2e=1');
+  await page.evaluate(() => __IHN_TEST_API__.ready());
+  const result = await page.evaluate(async () => {
+    await __IHN_TEST_API__.resetLocalDocument(1, 'Agenda');
+    const panel = { title: 'Week', dateKeys: ['2026-10-26'], html: '<p>my notes</p>' };
+    state.pages[0].sidePanel = panel;
+    return {
+      stored: sanitizePageForStorage(state.pages[0]).sidePanel,
+      meta: buildPageMeta(state.pages[0], 0).sidePanel,
+      snapshot: buildTimelineSnapshotFromPages(state.pages)[0].sidePanel,
+      field: getCollabPageFieldValue(state.pages[0], 'sidePanel')
+    };
+  });
+  const panel = { title: 'Week', dateKeys: ['2026-10-26'], html: '<p>my notes</p>' };
+  expect(result.stored).toEqual(panel);
+  expect(result.meta).toEqual(panel);
+  expect(result.snapshot).toEqual(panel);
+  expect(result.field).toEqual({ title: 'Week', dateKeys: ['2026-10-26'] });
 });

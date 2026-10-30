@@ -1151,7 +1151,7 @@
             const normalized = ihnNormalizeFieldMeta(metadata);
             remapped.clock = normalized.clock;
             Object.entries(normalized.fields).forEach(([key, record]) => {
-                const match = /^page:([^:]+):(background|template|size)$/.exec(key);
+                const match = /^page:([^:]+):(background|template|size|sidePanel)$/.exec(key);
                 const nextKey = match && pageIdMap.has(match[1])
                     ? getCollabPageFieldKey(pageIdMap.get(match[1]), match[2])
                     : key;
@@ -1287,10 +1287,24 @@
             };
         }
 
+        // Agenda calendar side panels are kept as opaque page data: they are
+        // no longer rendered or edited, but stored panels must survive saves
+        // and collaboration with older clients.
+        function getCollabSidePanelValue(page) {
+            if (!page?.sidePanel) return null;
+            return {
+                title: String(page.sidePanel.title || ''),
+                dateKeys: Array.isArray(page.sidePanel.dateKeys)
+                    ? [...new Set(page.sidePanel.dateKeys.filter(Boolean).map(String))]
+                    : null
+            };
+        }
+
         function getCollabPageFieldValue(page, field) {
             if (field === 'background') return getCollabBackgroundValue(page);
             if (field === 'template') return getCollabTemplateValue(page);
             if (field === 'size') return getCollabSizeValue(page);
+            if (field === 'sidePanel') return getCollabSidePanelValue(page);
             return null;
         }
 
@@ -1306,7 +1320,7 @@
             seed(COLLAB_DOC_NAME_KEY, exportName || '');
             (Array.isArray(pages) ? pages : []).forEach(page => {
                 if (!page?.pageId) return;
-                for (const field of ['background', 'template', 'size']) {
+                for (const field of ['background', 'template', 'size', 'sidePanel']) {
                     const key = getCollabPageFieldKey(page.pageId, field);
                     // seed() leaves existing registers untouched. Avoid
                     // computing discarded values (notably full photo hashes)
@@ -1365,7 +1379,7 @@
 
         function noteAllCollabPageFields(page) {
             if (!page?.pageId) return;
-            for (const field of ['background', 'template', 'size']) {
+            for (const field of ['background', 'template', 'size', 'sidePanel']) {
                 noteCollabPageFieldChanged(page, field);
             }
         }
@@ -7140,6 +7154,7 @@
                 legacyCoverStrokes,
                 pageWidth: normalizePageDimension(pageData.pageWidth || current.pageWidth, A4_WIDTH),
                 pageHeight: normalizePageDimension(pageData.pageHeight || current.pageHeight, A4_HEIGHT),
+                sidePanel: current.sidePanel || pageData.sidePanel || null,
                 strokeCount: restoredStrokes.length,
                 unloaded: false,
                 missingData: false,
@@ -13172,6 +13187,7 @@
                 pdfPageIndex: Number.isFinite(p?.pdfPageIndex) ? p.pdfPageIndex : null,
                 pageWidth: normalizePageDimension(p?.pageWidth, A4_WIDTH),
                 pageHeight: normalizePageDimension(p?.pageHeight, A4_HEIGHT),
+                sidePanel: cloneTimelineValue(p?.sidePanel || null, null),
                 legacyCoverStrokes: cloneTimelineValue(p?.legacyCoverStrokes || null, null),
                 needsRedraw: true
             }));
@@ -16524,11 +16540,29 @@
         // Opens/closes the panel, builds thumbnail rows, and wires drag-and-
         // drop reordering. Also handles page insertion and deletion from the
         // panel UI.
+        // Agenda documents in a Drive "Agenda" folder keep their Calendar
+        // entry point, now a "Soon" button (same gate as the old calendar).
+        async function isAgendaFolderDocument() {
+            const fileId = state.driveFileId;
+            if (!fileId) return false;
+            const fileName = String(state.driveFileName || state.exportName || '').trim().toLowerCase();
+            if (!fileName.startsWith('agenda')
+                && !state.pages.some(page => page?.templateKind === TEMPLATE_KINDS.AGENDA)) return false;
+            for (const folderId of state.driveParentIds || []) {
+                const crumb = driveFolderStack.find(entry => entry?.id === folderId);
+                const folderName = crumb ? crumb.name : (await getDriveFolderMeta(folderId))?.name;
+                if (String(folderName || '').trim().toLowerCase() === 'agenda') return state.driveFileId === fileId;
+            }
+            return false;
+        }
+
         function openPagesPanel() {
             renderPagesList({ force: true });
-            // Old agenda documents keep their Calendar entry point, now a "Soon" button.
-            document.getElementById('btn-open-calendar')?.classList.toggle('hidden',
-                !state.pages.some(page => page?.templateKind === TEMPLATE_KINDS.AGENDA));
+            const calendarBtn = document.getElementById('btn-open-calendar');
+            calendarBtn?.classList.add('hidden');
+            void isAgendaFolderDocument().then(show => {
+                if (show) calendarBtn?.classList.remove('hidden');
+            }).catch(() => {});
             if (setCoverBtn) setCoverBtn.disabled = !!state.isReadOnly;
             if (scanPageBtn) scanPageBtn.disabled = !!state.isReadOnly;
             const pagesPanel = document.getElementById('pages-panel');
@@ -18862,6 +18896,7 @@
                 legacyCoverStrokes: Array.isArray(page.legacyCoverStrokes) ? page.legacyCoverStrokes : null,
                 pageWidth,
                 pageHeight,
+                sidePanel: page.sidePanel || null
             };
         }
 
@@ -19012,6 +19047,7 @@
                 pageHeight,
                 strokeCount,
                 preview: page.preview || null,
+                sidePanel: page.sidePanel || null
             };
         }
 
@@ -20409,6 +20445,7 @@
                         pageHeight: normalizePageDimension(page?.pageHeight, kindDefaults.height),
                         preview: page?.preview || null,
                         strokeCount: typeof page?.strokeCount === 'number' ? page.strokeCount : 0,
+                        sidePanel: page?.sidePanel || null,
                         unloaded: true,
                         needsRedraw: true
                     };
@@ -20458,6 +20495,7 @@
                 legacyCoverStrokes: Array.isArray(page?.legacyCoverStrokes) ? page.legacyCoverStrokes : null,
                 pageWidth: normalizePageDimension(page?.pageWidth, kindDefaults.width),
                 pageHeight: normalizePageDimension(page?.pageHeight, kindDefaults.height),
+                sidePanel: page?.sidePanel || null,
                 needsRedraw: true,
                 unloaded: false
             };
@@ -20492,6 +20530,7 @@
                     pageHeight: meta.pageHeight,
                     preview: meta.preview || null,
                     strokeCount: meta.strokeCount || 0,
+                    sidePanel: meta.sidePanel || null,
                     unloaded: true,
                     needsRedraw: true
                 };
@@ -26762,13 +26801,22 @@
                     ? normalizePageDimension(resolvedSizeValue?.pageHeight, remoteHeight)
                     : currentHeight;
                 const dimensionChanged = nextPageWidth !== currentWidth || nextPageHeight !== currentHeight;
+                // Side panels are opaque: only the stamped semantic value
+                // (title + date keys) is resolved; HTML follows the winner.
+                const localPanelValue = getCollabSidePanelValue(currentPage);
+                const resolvedPanelValue = ihnResolveFieldValue(
+                    currentMergedFieldMetadata,
+                    getCollabPageFieldKey(currentPage.pageId, 'sidePanel'),
+                    localPanelValue
+                );
+                const sidePanelChanged = ihnStableStringify(resolvedPanelValue) !== ihnStableStringify(localPanelValue);
                 const remoteLegacyCoverStrokes = Array.isArray(remotePageData.legacyCoverStrokes)
                     ? remotePageData.legacyCoverStrokes
                     : null;
                 const legacyCoverChanged = remoteBackgroundWins
                     && JSON.stringify(remoteLegacyCoverStrokes) !== JSON.stringify(currentPage.legacyCoverStrokes || null);
 
-                if (strokeContentChanged || imageContentChanged || strokeIdsChanged || imageIdsChanged || deletedIdsChanged || deletionStampsChanged || dimensionChanged || sharedContentChanged || templateKindChanged || backgroundChanged || legacyCoverChanged) {
+                if (strokeContentChanged || imageContentChanged || strokeIdsChanged || imageIdsChanged || deletedIdsChanged || deletionStampsChanged || dimensionChanged || sharedContentChanged || templateKindChanged || backgroundChanged || legacyCoverChanged || sidePanelChanged) {
                     const pageCheckpoint = markRemotePageBodyForCheckpoint(i);
                     currentPage.strokes = mergedStrokes;
                     currentPage.images = mergedImages;
@@ -26779,6 +26827,15 @@
                         currentPage.pdfPageIndex = nextPdfPageIndex;
                     }
                     if (legacyCoverChanged) currentPage.legacyCoverStrokes = remoteLegacyCoverStrokes;
+                    if (sidePanelChanged) {
+                        const remoteHtmlMatches = ihnStableStringify(getCollabSidePanelValue(remotePageData))
+                            === ihnStableStringify(resolvedPanelValue);
+                        currentPage.sidePanel = resolvedPanelValue === null ? null : {
+                            title: String(resolvedPanelValue.title || ''),
+                            dateKeys: Array.isArray(resolvedPanelValue.dateKeys) ? [...resolvedPanelValue.dateKeys] : null,
+                            html: String((remoteHtmlMatches ? remotePageData.sidePanel?.html : currentPage.sidePanel?.html) || '')
+                        };
+                    }
                     // If identity changed, drop the stale local background — it belonged to
                     // the previous page at this position. The PDF render pass below refills it.
                     if (structuralIdentityChanged) {
@@ -28590,6 +28647,7 @@
                                 pageHeight: normalizePageDimension(pageData.pageHeight, pageSizeFallback.height),
                                 images: useLegacyRaster ? [] : restoredImages,
                                 legacyCoverStrokes: legacyCovers,
+                                sidePanel: pageData.sidePanel || null,
                                 needsRedraw: true
                             });
                         } else {
@@ -28608,6 +28666,7 @@
                                 pageWidth: normalizePageDimension(pageData.pageWidth, A4_WIDTH),
                                 pageHeight: normalizePageDimension(pageData.pageHeight, A4_HEIGHT),
                                 images: restoredImages,
+                                sidePanel: pageData.sidePanel || null,
                                 needsRedraw: true
                             });
                         }
@@ -29210,8 +29269,8 @@
                     if (ns > ps) strokeAdded += ns - ps;
                     if (ps > ns) strokeRemoved += ps - ns;
                     if (JSON.stringify(before?.images || []) !== JSON.stringify(page?.images || [])) imageChanges += 1;
-                    const beforeLayout = `${before?.pageWidth}|${before?.pageHeight}|${before?.backgroundSource}|${before?.templateKind}`;
-                    const afterLayout = `${page?.pageWidth}|${page?.pageHeight}|${page?.backgroundSource}|${page?.templateKind}`;
+                    const beforeLayout = `${before?.pageWidth}|${before?.pageHeight}|${before?.backgroundSource}|${before?.templateKind}|${JSON.stringify(before?.sidePanel || null)}`;
+                    const afterLayout = `${page?.pageWidth}|${page?.pageHeight}|${page?.backgroundSource}|${page?.templateKind}|${JSON.stringify(page?.sidePanel || null)}`;
                     if (beforeLayout !== afterLayout) pageChanges += 1;
                 });
                 prevById.forEach((page, key) => {
@@ -29258,8 +29317,7 @@
                     pdfPageIndex: Number.isFinite(page?.pdfPageIndex) ? page.pdfPageIndex : null,
                     pageWidth: normalizePageDimension(page?.pageWidth, A4_WIDTH),
                     pageHeight: normalizePageDimension(page?.pageHeight, A4_HEIGHT),
-                    // Frozen key kept so timeline hashes match v5.
-                    sidePanel: null,
+                    sidePanel: cloneTimelineValue(page?.sidePanel || null, null),
                     legacyCoverStrokes: cloneTimelineValue(page?.legacyCoverStrokes || null, null)
                 };
             });
@@ -30140,6 +30198,7 @@
                     pdfPageIndex: (pageData.backgroundSource === 'pdf' || !!pageData.backgroundImage) ? (i + 1) : null,
                     pageWidth: logicalPageWidthPx,
                     pageHeight: logicalPageHeightPx,
+                    sidePanel: cloneTimelineValue(pageData.sidePanel || null)
                 };
                 metadataParts.push(JSON.stringify(pageStrokeEntry));
                 metadataPages.push(pageStrokeEntry);
@@ -30712,6 +30771,7 @@
                     pdfPageIndex: (backgroundSource === 'pdf' || !!backgroundImage) ? (i + 1) : null,
                     pageWidth: resolvedPageWidth,
                     pageHeight: resolvedPageHeight,
+                    sidePanel: pageData.sidePanel || null
                 };
                 const metaJson = JSON.stringify(pageStrokeEntry);
                 metadataParts.push(metaJson);
@@ -31029,10 +31089,7 @@
                         ? new Date(state.driveLastKnownModified).toISOString()
                         : ''
                 } : null,
-                {
-                    resourceKey: state.driveResourceKey || '',
-                    onProgress: updateLoadingProgress
-                }
+                { resourceKey: state.driveResourceKey || '' }
             );
             const blob = snapshot?.blob;
             if (!blob || blob.size === 0) throw new Error('Drive returned an empty PDF');
