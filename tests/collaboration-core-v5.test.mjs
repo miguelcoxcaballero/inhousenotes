@@ -262,8 +262,13 @@ test('canonical document hash ignores arrival order and derived panel HTML', () 
   };
   const structure = ihnNormalizeStructureMeta(null, ['p1']);
   assert.equal(
-    ihnCanonicalDocumentHash([first], structure, null, 'Doc'),
-    ihnCanonicalDocumentHash([second], structure, null, 'Doc')
+    ihnCanonicalDocumentHash([first], structure, 'Doc'),
+    ihnCanonicalDocumentHash([second], structure, 'Doc')
+  );
+  // Stored agenda panels stay part of the page identity, as in 5.17.
+  assert.notEqual(
+    ihnCanonicalDocumentHash([first], structure, 'Doc'),
+    ihnCanonicalDocumentHash([{ ...first, sidePanel: null }], structure, 'Doc')
   );
   const customOnDeviceA = {
     ...first,
@@ -277,8 +282,8 @@ test('canonical document hash ignores arrival order and derived panel HTML', () 
     pdfPageIndex: 7
   };
   assert.equal(
-    ihnCanonicalDocumentHash([customOnDeviceA], structure, null, 'Doc'),
-    ihnCanonicalDocumentHash([customOnDeviceB], structure, null, 'Doc'),
+    ihnCanonicalDocumentHash([customOnDeviceA], structure, 'Doc'),
+    ihnCanonicalDocumentHash([customOnDeviceB], structure, 'Doc'),
     'local blob URLs and physical PDF locators must not create convergence loops'
   );
   const causallyDeleted = {
@@ -289,8 +294,8 @@ test('canonical document hash ignores arrival order and derived panel HTML', () 
     }
   };
   assert.notEqual(
-    ihnCanonicalDocumentHash([first], structure, null, 'Doc'),
-    ihnCanonicalDocumentHash([causallyDeleted], structure, null, 'Doc'),
+    ihnCanonicalDocumentHash([first], structure, 'Doc'),
+    ihnCanonicalDocumentHash([causallyDeleted], structure, 'Doc'),
     'deletion clocks are semantic state and must trigger live delivery'
   );
 });
@@ -456,8 +461,8 @@ test('field and document hashes track semantic records but ignore the allocator 
   const pages = [{ pageId: 'p1', strokes: [], images: [] }];
   const structure = ihnNormalizeStructureMeta(null, ['p1']);
   assert.notEqual(
-    ihnCanonicalDocumentHash(pages, structure, null, 'Alpha', base),
-    ihnCanonicalDocumentHash(pages, structure, null, 'Alpha', changedValue)
+    ihnCanonicalDocumentHash(pages, structure, 'Alpha', base),
+    ihnCanonicalDocumentHash(pages, structure, 'Alpha', changedValue)
   );
 
   const left = ihnRecordFieldValue(base, 'page:p1:template', 'blank', actorA, 200);

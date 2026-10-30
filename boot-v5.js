@@ -25,44 +25,18 @@
         documentRef.getElementById('app-theme-color')?.setAttribute('content', color);
     }
 
-    function handleOAuthCallback() {
-        const search = root.location.search || '';
-        const hash = root.location.hash || '';
-        if (!search.includes('oauth_callback=1')) return;
-        const hasToken = hash.includes('access_token=');
-        const errorMatch = search.match(/[?&]error=([^&]*)/);
-        if (hasToken) {
-            root.location.replace(`inhousenotes://oauth2callback${hash}`);
-        } else if (errorMatch) {
-            root.location.replace(`inhousenotes://oauth2callback#error=${errorMatch[1]}`);
-        }
-        setTimeout(() => {
-            const target = new URL('/', root.location.origin);
-            target.searchParams.set('inhouse_app', '1');
-            target.hash = hash || '';
-            root.location.replace(target.toString());
-        }, 500);
-    }
-
     function selectBootDestination() {
         try {
             const raw = localStorage.getItem('drive-token-v1');
-            const hasCurrentScopes = localStorage.getItem('google-scope-version-v1') === 'drive-calendar-v2';
-            const grantedScopes = localStorage.getItem('google-granted-scopes-v1') || '';
-            const hasCalendarScope = grantedScopes.split(/\s+/)
-                .includes('https://www.googleapis.com/auth/calendar.events');
             let hasToken = false;
             if (raw) {
                 const parsed = JSON.parse(raw);
-                hasToken = !!(hasCurrentScopes && parsed?.token && parsed?.expiry
-                    && parsed.scopeVersion === 'drive-calendar-v2'
+                hasToken = !!(parsed?.token && parsed?.expiry
                     && String(parsed.grantedScopes || '').split(/\s+/)
-                        .includes('https://www.googleapis.com/auth/calendar.events')
+                        .includes('https://www.googleapis.com/auth/drive')
                     && Date.now() < parsed.expiry - 60000);
             }
-            const hasRefresh = hasCurrentScopes
-                && hasCalendarScope
-                && !!localStorage.getItem('drive-refresh-token-v1');
+            const hasRefresh = !!localStorage.getItem('drive-refresh-token-v1');
             const returning = localStorage.getItem('drive-remember-v1') === '1' || !!localStorage.getItem('drive-hint-email');
             root.__INHOUSE_BOOT_SIGNED_IN__ = hasToken || hasRefresh || returning;
         } catch (error) {
@@ -130,7 +104,6 @@
     function watchPublishedVersion() {
         const running = readAppVersion();
         if (!running || typeof root.fetch !== 'function') return;
-        if ((root.location.search || '').includes('oauth_callback')) return;
         // A hidden document processor finishes its run with the code it
         // loaded; the visible app owns release checks and reloads.
         if (new URLSearchParams(root.location.search || '').has('offline-worker')) return;
@@ -159,7 +132,6 @@
                     if (!key.startsWith('inhouse-shell-') || key === `inhouse-shell-${published}`) continue;
                     const cache = await root.caches.open(key);
                     await cache.delete('/index.html');
-                    await cache.delete('/scanner/index.html');
                 }
             } catch (error) { /* no Cache Storage: nothing stale to drop */ }
             root.location.reload();
@@ -197,7 +169,6 @@
         root.InhouseBackground = Object.freeze({schedule:()=>send('schedule'),cancel:()=>send('cancel'),complete:value=>send('complete',JSON.parse(value))});
     }
     applySavedTheme();
-    handleOAuthCallback();
     selectBootDestination();
     watchPublishedVersion();
     if (documentRef.readyState === 'loading') {

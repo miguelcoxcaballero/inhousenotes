@@ -95,7 +95,7 @@ test('a corrupt clean copy falls back to Drive without waiting for folder classi
   if(url.pathname.endsWith('/files'))return route.fulfill({json:{files:[]}});
   return route.fulfill({json:{id:'broken',name:'Fresh.pdf',version:'1',headRevisionId:'h1',parents:['root'],capabilities:{canEdit:true},ownedByMe:true}});
  });
- await page.evaluate(()=>{window.resolveDriveQuickAccessKindForFile=()=>new Promise(()=>{});window.openingFresh=openDriveFile({id:'broken',name:'Fresh.pdf'});});
+ await page.evaluate(()=>{window.openingFresh=openDriveFile({id:'broken',name:'Fresh.pdf'});});
  await page.waitForFunction(()=>!driveOpenInProgress&&!offlineOpenInProgress,{},{timeout:4000});
  await page.evaluate(()=>window.openingFresh);
  await expect(page.locator('#editor-view')).toBeVisible();

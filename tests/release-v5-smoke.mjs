@@ -19,15 +19,8 @@ const timelineCore = readText('../timeline-core-v5.js');
 const html = [indexHtml, app, boot, runtimeCore, securityCore, timelineCore].join('\n');
 const live = readText('../live-collaboration-v5.js');
 const collaborationCore = readText('../collaboration-core-v5.js');
-const scannerHtml = readText('../scanner/index.html');
-const scannerStyles = readText('../scanner/styles.css');
-const scanner = readText('../scanner/script.js');
-const scannerConfig = readText('../scanner/configLoader.js');
-const scannerLightweight = readText('../scanner/processing/lightweight.js');
-const scannerLive = readText('../scanner/live-camera.js');
-const scannerLiveDetection = readText('../scanner/processing/liveDetection.js');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = readText('../RELEASE_NOTES_v5.17.22.md');
+const notes = readText('../RELEASE_NOTES_v5.18.0.md');
 const oauthCallback = readText('../oauth-callback/index.html');
 const androidLoader = readText('../.github/android/app-loader.html');
 const androidBuilder = readText('../android app/html_to_apk_builder.py');
@@ -37,7 +30,7 @@ const androidManifestPublisher = readText('../.github/scripts/update_services_ma
 const androidWorkflow = readText('../.github/workflows/build-android.yml');
 const pagesWorkflow = readText('../.github/workflows/deploy-pages.yml');
 
-assert.match(indexHtml, /const APP_VERSION = '5.17.22';/);
+assert.match(indexHtml, /const APP_VERSION = '5.18.0';/);
 assert.match(app, /initialPages: 1/);
 assert.match(app, /renderAllPages\(\{ deferVisibleUpdate: true \}\)/);
 assert.match(app, /cleanOriginalRecoveryPromise/);
@@ -61,10 +54,10 @@ assert.doesNotMatch(
 );
 assert.match(app, /const APP_VERSION = appVersionMatch\[1\];/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.17.22/);
-assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.17.22/);
-assert.match(indexHtml, /app-v5\.js\?v=5.17.22/);
-assert.match(indexHtml, /timeline-core-v5\.js\?v=5.17.22/);
+assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.18.0/);
+assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.18.0/);
+assert.match(indexHtml, /app-v5\.js\?v=5.18.0/);
+assert.match(indexHtml, /timeline-core-v5\.js\?v=5.18.0/);
 assert.match(indexHtml, /Content-Security-Policy/);
 assert.match(indexHtml, /script-src-attr 'none'/);
 assert.match(indexHtml, /frame-src 'self'/);
@@ -72,65 +65,9 @@ assert.ok(
   indexHtml.indexOf('id="btn-scan-page"') > indexHtml.indexOf('id="btn-set-cover"'),
   'Scan Page must be directly available below Photo'
 );
-assert.match(indexHtml, /id="scanner-editor-overlay"/);
-assert.match(indexHtml, /id="scanner-editor-frame"[^>]*allow="camera"/);
-assert.match(app, /function openScannerEditor\(/);
-assert.match(app, /function handleScannerBridgeMessage\(/);
-assert.match(app, /function insertScannedPagesAt\(/);
-assert.match(app, /reindexPagesAfterInsert\(insertAt, state\.pages\.length, scannedPages\.length\)/);
-assert.match(app, /noteCollabPageAdded\(page\.pageId, pageIndex\)/);
+assert.match(indexHtml, /id="btn-scan-page"[\s\S]{0,1200}<span class="soon-badge">Soon<\/span><\/button>/);
+assert.match(app, /scanPageBtn\.addEventListener\('click', showSoonNotice\)/);
 assert.match(app, /markAllPagesDirty\('full'\);[\s\S]{0,100}scheduleSave\(true\);/);
-assert.match(scannerHtml, /window\.__scannerEmbedMode/);
-assert.match(scannerHtml, /id="closeEmbedBtn"/);
-assert.match(scannerHtml, /id="addToDocumentBtn"/);
-assert.match(scannerHtml, /id="downloadEmbedStencilBtn"/);
-assert.match(scannerStyles, /html\[data-embed="true"\] #appContainer/);
-assert.match(scanner, /postEmbeddedMessage\("ihn-scanner-ready"\)/);
-assert.match(scanner, /postEmbeddedMessage\("ihn-scanner-pages"/);
-assert.match(scanner, /async function addScannedPagesToDocument\(/);
-assert.match(scanner, /await applyStencilToContext\(/);
-assert.doesNotMatch(scannerHtml, /opencv\.js|__cvReady|Loading Core/);
-assert.match(scannerHtml, /processing\/lightweight\.js\?v=5.17.22/);
-assert.match(scannerLightweight, /function estimateCalibrationStrip\(/);
-assert.match(scannerLightweight, /function detectMarkerGuidedStencil\(/);
-assert.match(scannerLightweight, /function traceYellowFrame\(/);
-assert.match(scannerLightweight, /function traceLowerStencilRails\(/);
-assert.match(scannerLightweight, /const boxTopExpected = 1 - 1 \/ 27/);
-assert.match(scannerLightweight, /const boxBottomExpected = 1 - 0\.5 \/ 27/);
-assert.match(scannerLightweight, /const ANALYSIS_FAST_MAX = 608/);
-assert.match(scannerLightweight, /sideMatchesAnchor/);
-assert.match(scannerLightweight, /function mapFramePoint\(/);
-assert.match(scannerLightweight, /const curved = !!frame\?\.paths/);
-assert.match(scanner, /await SP\.Lightweight\.detectPageAsync\(srcCanvas\)/);
-assert.match(scannerLightweight, /method: "marker-guided"/);
-assert.match(scanner, /detection\.method === "marker-guided"/);
-assert.match(scannerHtml, /id="processAnimationLayer"/);
-assert.match(scannerStyles, /\.processing-animation-layer\.active/);
-assert.match(scanner, /const PROCESSING_PHASES = Object\.freeze/);
-assert.match(scanner, /yellow: "Finding yellow marks"/);
-assert.match(scanner, /frame: "Forming page frame"/);
-assert.match(scanner, /corners: "Confirming 4 corners"/);
-assert.match(scanner, /function createProcessingAnimator\(/);
-assert.match(scanner, /drawPreviewTriangle\(pctx, source/);
-assert.match(scanner, /scanner-processing-phase/);
-assert.match(scanner, /const yellowBox = "#ffea00"/);
-assert.match(scanner, /paintEvidenceCloud/);
-assert.match(scanner, /drawYellowBoxCanonical/);
-assert.match(scannerLightweight, /function localStencilEvidence/);
-assert.match(scannerLightweight, /function calibrateFromReference/);
-assert.match(scannerHtml, /id="liveScanner"/);
-assert.match(scannerHtml, /<video[^>]*id="liveVideo"[^>]*autoplay[^>]*muted[^>]*playsinline/);
-assert.match(scannerHtml, /id="liveOverlay"/);
-assert.match(scannerHtml, /id="liveReview"/);
-assert.match(scannerHtml, /id="liveAddBtn"/);
-assert.match(scannerHtml, /processing\/liveDetection\.js/);
-assert.match(scannerHtml, /live-camera\.js/);
-assert.match(scannerLive, /navigator\.mediaDevices\.getUserMedia/);
-assert.match(scannerLive, /audio: false/);
-assert.match(scannerLive, /scanner-live-detection/);
-assert.match(scannerLive, /track\.stop\(\)/);
-assert.match(scannerLive, /ihn-scanner-pages/);
-assert.match(scannerLiveDetection, /SP\.LiveDetection = \{ detect, normalizeIllumination, normalizeIlluminationAsync, findColourReferences \}/);
 assert.match(androidBuilder, /android\.permission\.CAMERA/);
 // Publishes straight to the gh-pages branch (Settings -> Pages -> Source),
 // replacing the Actions "workflow" deployment API (configure-pages /
@@ -225,8 +162,7 @@ assert.match(html, /#toolbar, \.eraser-menu \{[\s\S]{0,500}--toolbar-ink: #1a1a1
 assert.match(html, /#toolbar \{[\s\S]{0,900}color: var\(--toolbar-ink\);/);
 assert.match(html, /\.tool-btn \{[\s\S]{0,300}color: var\(--toolbar-ink, var\(--text-primary\)\);/);
 assert.match(html, /#toolbar-handle \{[\s\S]{0,400}color: var\(--toolbar-muted-ink\);/);
-assert.match(html, /#toolbar \.size-dot, \.eraser-menu \.size-dot \{[\s\S]{0,180}background: var\(--toolbar-ink\);/);
-assert.match(html, /#toolbar \.tool-btn\.active \.color-dot \{\s*border-color: var\(--toolbar-ink\);/);
+assert.match(html, /\.eraser-menu \.size-dot \{[\s\S]{0,180}background: var\(--toolbar-ink\);/);
 assert.doesNotMatch(androidWorkflow, /Publish APK as app v4\.4\.24/);
 assert.match(app, /InhouseServicesUpdater\.create/);
 assert.match(indexHtml, /shared\/inhouse-services-updater\/updater\.js/);
@@ -245,7 +181,6 @@ assert.match(html, /async function persistTimelineHistory\(/);
 assert.match(html, /async function captureTimelineRecoveryPoint\(/);
 assert.match(html, /Before restoring \$\{whenStr\}/);
 assert.match(html, /backgroundImage: page\.backgroundImage/);
-assert.match(html, /calendarPageConfig:/);
 assert.match(html, /legacyCoverStrokes:/);
 
 assert.match(html, /const DRIVE_BUILD_IDLE_WINDOW_MS = 180;/);
@@ -315,7 +250,6 @@ assert.match(live, /applyRemotePages/);
 assert.match(live, /snapshot\.contentHash = ihnCanonicalDocumentHash/);
 assert.match(live, /ihnLiveBroadcastQueued = true/);
 assert.match(live, /scheduleLiveDocumentBroadcast\(\{ immediate: true, internal: true \}\)/);
-assert.match(live, /let ihnLiveLastAppliedHash = '';/);
 assert.match(live, /peer\.lastAckedHash === hash/);
 assert.match(live, /snapshot-ack/);
 assert.match(live, /function ihnSuperviseConnections\(/);
@@ -440,11 +374,6 @@ assert.match(
   /const itemLocationResolution = await reconcileDuplicateItemsAcrossPages\(\{[\s\S]{0,700}hasLocalMerges = true;/,
   'remote merges must publish deterministic item-location reconciliation'
 );
-assert.match(
-  html,
-  /function removeCalendarImportedImages[\s\S]{0,900}trackDeletedStrokeIds\(page, removed\)/,
-  'clearing legacy calendar cards must persist causal tombstones'
-);
 assert.doesNotMatch(html, /Saving the last document to Drive in the background/);
 assert.match(html, /#loading-overlay\.home-save-transition/);
 assert.match(html, /function showHomeSaveLoading\(/);
@@ -460,14 +389,14 @@ assert.doesNotMatch(html, /Finishing (the )?previous (Drive )?save/i);
 // Home closes the document's recurring work; nothing may revive it there.
 assert.match(app, /function showDriveHome\(\)[\s\S]{0,1200}closeDocumentScopedWork\(\);/);
 assert.match(app, /function showWelcomeView\(\)[\s\S]{0,1200}closeDocumentScopedWork\(\);/);
-assert.match(app, /function closeDocumentScopedWork\(\) \{\n\s+stopCollabPolling\(\);\n\s+spStopAutoSync\(\);[\s\S]{0,700}documentClosedToHome = !!state\.driveFileId;\n\s+suspendDocumentInkSession\(\);/);
+assert.match(app, /function closeDocumentScopedWork\(\) \{\n\s+stopCollabPolling\(\);[\s\S]{0,700}documentClosedToHome = !!state\.driveFileId;\n\s+suspendDocumentInkSession\(\);/);
 assert.match(app, /function suspendDocumentInkSession\(\) \{[\s\S]{0,200}documentSessionActivated = false;\n\s+window\.InhouseDriveInk\?\.start\(\);/);
 // A long background stops the document's remaining live loops; becoming
 // visible restores them before polling restarts.
 assert.match(app, /pauseCollabPollingForBackground\(\);\n\s+scheduleDocumentBackgroundSuspend\(\);/);
 assert.match(app, /visibilityState === 'visible'\) \{\n\s+resumeDocumentFromBackground\(\);/);
 assert.match(app, /function suspendDocumentForBackground\(\) \{[\s\S]{0,120}stopLiveCollaboration\(\);\n\s+suspendDocumentInkSession\(\);/);
-assert.match(live, /startLiveCollaboration = function startLiveCollaborationIfDocumentLive\(\) \{\n\s+if \(typeof isDocumentLiveWorkPaused === 'function' && isDocumentLiveWorkPaused\(\)\) return;/);
+assert.match(live, /function startLiveCollaboration\(\) \{\n(?:\s+\/\/.*\n)*\s+if \(typeof isDocumentLiveWorkPaused === 'function' && isDocumentLiveWorkPaused\(\)\) return;/);
 assert.doesNotMatch(app, /setTimeout\(initDriveAuth, 200\)/);
 assert.match(app, /function startCollabPolling\(\) \{[\s\S]{0,600}if \(!isDocumentEditorActive\(\)\) return;[\s\S]{0,400}startLiveCollaboration\(\);/);
 assert.match(app, /function updatePresenceFromProps\(appProperties\) \{[\s\S]{0,400}const liveDocument = isDocumentEditorActive\(\);[\s\S]{0,400}if \(liveDocument && typeof ihnConsumeSignalMailboxesFromProperties/);
@@ -483,7 +412,6 @@ assert.match(html, /connection\?\.transport/);
 assert.doesNotMatch(html, />Admin mode</);
 assert.doesNotMatch(html, /save-state-glyph/);
 assert.match(html, /\.mode-toggle-status \.save-indicator::after \{\s*content: "";\s*width: 9px;\s*height: 9px;/);
-assert.match(html, /function getSaveIndicatorSemanticState\(/);
 assert.match(html, /function refreshSaveIndicatorState\(/);
 assert.doesNotMatch(app.slice(app.indexOf('function renderSaveDebugPopup()'), app.indexOf('function openSaveDebugPopup()')), /row\('Live connection'|Other devices|save-debug-orb/);
 assert.match(html, /driveContentVersion !== driveUploadedContentVersion/);
@@ -567,9 +495,6 @@ new vm.Script(runtimeCore, { filename: 'runtime-core-v5.js' });
 new vm.Script(securityCore, { filename: 'security-core-v5.js' });
 new vm.Script(timelineCore, { filename: 'timeline-core-v5.js' });
 new vm.Script(live, { filename: 'live-collaboration-v5.js' });
-new vm.Script(scanner, { filename: 'scanner/script.js' });
-new vm.Script(scannerLive, { filename: 'scanner/live-camera.js' });
-new vm.Script(scannerLiveDetection, { filename: 'scanner/processing/liveDetection.js' });
 assert.match(live, /actorId: `\$\{ihnGetLivePeerId\(\)\}:\$\{ihnGetLiveTabId\(\)\}`/);
 assert.match(live, /let ihnLiveSequence = Date\.now\(\)/);
 new vm.Script(collaborationCore, { filename: 'collaboration-core-v5.js' });
@@ -625,7 +550,6 @@ assert.match(html, /ihnDeletionWinsItem\(mergedDeletionStamps, candidate\)/);
 assert.match(html, /function acquireLocalPageStructureMutation\(/);
 assert.match(html, /function acquireRemotePageMerge\(/);
 assert.match(html, /releaseRemotePageMerge\(mergeToken\)/);
-assert.match(html, /reconcileConcurrentCalendarPanels\(\{/);
 assert.match(html, /const activePageStoreTransactions = new Set\(\);/);
 assert.match(html, /let strokeOpsFlushPromise = null;/);
 assert.match(html, /let activeStrokeOpsTransaction = null;/);
@@ -750,7 +674,7 @@ const sampleFields = {
   clock: 42,
   fields: {
     'doc:exportName': { value: 'Diseño · 東京', stamp: { clock: 41, actor: 'peer-a' } },
-    'page:p1:sidePanel': { value: null, stamp: { clock: 42, actor: 'peer-b' } }
+    'page:p1:template': { value: 'default', stamp: { clock: 42, actor: 'peer-b' } }
   }
 };
 const fieldsCodecContext = vm.createContext({
@@ -784,7 +708,7 @@ const timelineContext = vm.createContext({
   console,
   A4_WIDTH: 210,
   A4_HEIGHT: 297,
-  state: { versionHistory: [], calendarPageConfig: null, exportName: 'Document' },
+  state: { versionHistory: [], exportName: 'Document' },
   simpleHash(value) {
     let hash = 0;
     for (let index = 0; index < value.length; index += 1) hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
@@ -811,8 +735,8 @@ const timelineContext = vm.createContext({
 vm.runInContext(html.slice(timelineStart, timelineEnd), timelineContext, { filename: 'timeline-v5.js' });
 const basePage = [{ pageId: 'page-a', strokes: [], images: [], backgroundSource: 'template', pageWidth: 210, pageHeight: 297 }];
 assert.notEqual(
-  timelineContext.timelineSnapshotHash(basePage, null, 'First name'),
-  timelineContext.timelineSnapshotHash(basePage, null, 'Second name'),
+  timelineContext.timelineSnapshotHash(basePage, 'First name'),
+  timelineContext.timelineSnapshotHash(basePage, 'Second name'),
   'document name changes must be tracked'
 );
 const mergedTimeline = timelineContext.mergeVersionHistories([
@@ -880,9 +804,8 @@ assert.equal(
 const localStructureAcquireStart = html.indexOf('async function acquireLocalPageStructureMutation');
 const localStructureAcquireEnd = html.indexOf('function assertLocalPageStructureContext', localStructureAcquireStart);
 const localStructureAcquireSource = html.slice(localStructureAcquireStart, localStructureAcquireEnd);
-assert.match(localStructureAcquireSource, /expectedContext = captureLocalPageStructureDocumentContext\(\)/);
-assert.match(localStructureAcquireSource, /isLocalPageStructureDocumentContextCurrent\(expectedContext\)/);
-assert.match(html, /beginDocumentSession\(\{ preserveLocalStructureToken: structureToken \}\)/);
+assert.match(localStructureAcquireSource, /expectedContext = captureDocumentPersistenceContext\(\)/);
+assert.match(localStructureAcquireSource, /isDocumentPersistenceContextCurrent\(expectedContext\)/);
 
 assert.match(
   remotePageApplySource,
@@ -913,7 +836,7 @@ assert.equal(
 );
 
 const pullStart = html.indexOf('async function pullRemoteChanges');
-const pullEnd = html.indexOf('async function updateLocalRevisionId', pullStart);
+const pullEnd = html.indexOf('function updateSyncBaseline', pullStart);
 const pullSource = html.slice(pullStart, pullEnd);
 assert.match(pullSource, /const metaAtApplyBoundary = await fetchDriveRevisionMeta\(fileIdAtStart\)/);
 assert.match(pullSource, /metaAfterApply = await fetchDriveRevisionMeta\(fileIdAtStart\)/);
@@ -932,11 +855,6 @@ assert.doesNotMatch(
 assert.match(exportFetchSource, /fetchStableDrivePdfSnapshot/);
 assert.match(html, /decodeCollabStructureFromKeywords\(keywords, pageIds = \[\], options = \{\}\)/);
 assert.match(html, /if \(options\.throwOnInvalid\) throw error;/);
-assert.match(
-  html,
-  /page\.sidePanel\.title = titleEl\.textContent;[\s\S]{0,180}markPageDirty\(pageIndex, 'full'\);/,
-  'side-panel title edits must be durable in PAGE_STORE'
-);
 
 const storageSaveStart = html.indexOf('async function saveToStorage');
 const storageSaveEnd = html.indexOf('async function loadFromStorage', storageSaveStart);
@@ -991,11 +909,11 @@ const queueSaveContext = vm.createContext({
   noteLocalSaveFailure: () => {},
   confirmLocalSave: () => {},
   scheduleLocalSaveRetry: () => {},
-  recordSaveDebug: () => {},
+  renderSaveDebugPopup: () => {},
   saveToStorage: async () => { throw new Error('simulated storage failure'); },
   showPendingSaveStatus: () => {},
   showStatus: message => queueStatuses.push(message),
-  isDriveSyncPending: () => false,
+  hasPendingDriveSave: () => false,
   hasSmoothInteraction: () => false,
   reconcileSavedIndicator: () => {}
 });
@@ -1085,28 +1003,10 @@ const driveBinSource = html.slice(
   html.indexOf('async function refreshDriveBin'),
   html.indexOf('function toggleBinItemMenu')
 );
-const scannerListSource = scanner.slice(
-  scanner.indexOf('function renderList'),
-  scanner.indexOf('function select', scanner.indexOf('function renderList'))
-);
 assert.doesNotMatch(folderPickerSource, /\$\{folder\.name/);
 assert.match(folderPickerSource, /textContent = folder\.name/);
 assert.doesNotMatch(driveBinSource, /\$\{file\.name/);
 assert.match(driveBinSource, /textContent = file\.name/);
-assert.doesNotMatch(scannerListSource, /\$\{p\.name/);
-assert.match(scannerListSource, /textContent = p\.name/);
-const sidePanelSanitizerStart = html.indexOf('const CALENDAR_ALLOWED_TAGS');
-const sidePanelSanitizerEnd = html.indexOf('function byteLengthOfPdfData', sidePanelSanitizerStart);
-const sidePanelSanitizerSource = html.slice(sidePanelSanitizerStart, sidePanelSanitizerEnd);
-assert.match(sidePanelSanitizerSource, /documentRef\.createElement\('template'\)/);
-assert.match(sidePanelSanitizerSource, /CALENDAR_ALLOWED_ATTRIBUTES/);
-assert.match(sidePanelSanitizerSource, /element\.removeAttribute\(attribute\.name\)/);
-assert.match(sidePanelSanitizerSource, /--sp-event-color/);
-assert.doesNotMatch(
-  html.slice(html.indexOf('function buildSidePanelElement'), html.indexOf('function refreshPageSidePanelLayout')),
-  /body\.innerHTML = panelData\.html/,
-  'persisted calendar HTML must be sanitized before it reaches the live DOM'
-);
 const driveTokenRequestSource = html.slice(
   html.indexOf('function ensureDriveToken'),
   html.indexOf('function signInDrive', html.indexOf('function ensureDriveToken'))
@@ -1127,12 +1027,6 @@ assert.match(html, /documentSessionId \+= 1;[\s\S]{0,800}embeddedMetadataCache\.
 assert.match(html, /if \(isDocumentSessionTokenValid\(cacheSessionToken\)\) \{\s*embeddedMetadataCache\.set/);
 assert.match(html, /if \(raw\.length > 16384\) return null;/);
 assert.match(html, /const COLLAB_KEYWORD_SECTION_MAX_CHARS = 8 \* 1024 \* 1024;/);
-assert.match(html, /const CALENDAR_KEYWORD_SECTION_MAX_CHARS = 64 \* 1024;/);
-assert.equal(
-  (html.match(/calB64\.length > CALENDAR_KEYWORD_SECTION_MAX_CHARS/g) || []).length,
-  2,
-  'both local-open and remote-merge calendar metadata parsers must be bounded'
-);
 // Must match securityCore.MAX_PDF_BYTES, not a smaller hardcoded value — a
 // stricter cap here would silently reject a clean-original attachment that
 // was legitimately captured and written under the real 64MB upload limit.
@@ -1143,13 +1037,6 @@ assert.match(html, /let pdfExportInProgress = false;/);
 assert.match(html, /Timed out preparing PDF for Android/);
 assert.match(html, /if \(inputObjectUrl && state\.activePdfObjectUrl !== inputObjectUrl\) \{\s*try \{ URL\.revokeObjectURL\(inputObjectUrl\);/);
 assert.match(html, /const timeoutMs = Number\.isFinite\(options\.timeoutMs\)[\s\S]{0,120}: 20000;/);
-assert.match(scanner, /Image decode timed out/);
-assert.match(scanner, /Stencil image decode timed out/);
-assert.match(scanner, /Canvas encoding failed/);
-assert.match(scanner, /Could not apply crop/);
-assert.match(scanner, /Scanner PDF export failed:/);
-assert.match(scanner, /if \(exportedPages === 0\) throw new Error\("No page could be decoded"\)/);
-assert.match(scannerConfig, /setTimeout\(\(\) => controller\.abort\(\), 1500\)/);
 const htmlLines = html.split(/\r?\n/);
 const unguardedTransactions = [];
 htmlLines.forEach((line, index) => {
@@ -1255,7 +1142,7 @@ assert.match(app, /card\.style\.setProperty\('--sheet-ratio', ratio\)/);
 assert.match(indexHtml, /--sheet-inset-block: max\(0%, \(141\.42% - 100% \/ var\(--sheet-ratio\)\) \/ 2\);/);
 assert.match(indexHtml, /width: min\(100%, 141\.42% \* var\(--sheet-ratio\)\);/);
 assert.match(indexHtml, /\.drive-folder-art \{\n\s+position: relative;\n\s+width: 100%;\n\s+aspect-ratio: 210 \/ 297;/);
-assert.match(indexHtml, /document-processing-v5\.js\?v=5.17.22/);
+assert.match(indexHtml, /document-processing-v5\.js\?v=5.18.0/);
 const interactionPause = app.slice(app.indexOf('function pauseSavesDuringInteraction'), app.indexOf('function clearPausedSaveWatchdog'));
 assert.doesNotMatch(interactionPause, /controller\.abort\(|activeDriveSaveController\.abort\(/);
 assert.match(app, /schedulePreparedDrivePdf\(delay = 40\)/);
@@ -1265,7 +1152,7 @@ assert.match(oauthCallback, /ihr-oauth-exchange/);
 assert.match(oauthCallback, /event\.source !== window\.opener/);
 assert.match(oauthCallback, /code_verifier: data\.verifier/);
 
-console.log('v5.17.22 smoke checks passed.');
+console.log('v5.18.0 smoke checks passed.');
 
 
 

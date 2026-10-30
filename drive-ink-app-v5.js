@@ -12,7 +12,7 @@
     const current=journal=>journal===engine&&journal.account===L.account()
         &&session===getDocumentSessionToken()&&journal.docId===(usable()?state.driveFileId:'');
     function context(){return {structure:getCollabStructureSnapshot(),fields:getCollabFieldSnapshot(),
-        name:state.exportName,calendar:state.calendarPageConfig||null};}
+        name:state.exportName};}
     function strokeOperation(pageId,item){
         return {v:1,kind:'stroke',pageId,stroke:{id:item.id,tool:item.tool,color:item.color,width:item.width,points:item.points,
             ...(item.syncStamp?{syncStamp:item.syncStamp}:{})}};
@@ -115,7 +115,7 @@
                     try{
                         const result=await applyRemotePages(op.pages,{sessionToken:token,fileId:docId,
                             additiveById:true,preserveLocalUnsynced:true,remoteStructure:op.structure,
-                            remoteFields:op.fields,remoteExportName:op.name,remoteCalendarPageConfig:op.calendar});
+                            remoteFields:op.fields,remoteExportName:op.name});
                         clearRemoteLiveStrokePreviews('',Infinity,op.pages);
                         if(result.changed){
                             // A journal receipt is not a PDF receipt. Keep PDF dirty
@@ -135,6 +135,9 @@
             },
             announce:async(fileId,id,actor,preview=false)=>{
                 root.publishDriveInkHint?.(fileId,id,preview);
+                // A confirmed live frame: read-only viewers (no P2P, never in
+                // presence) wake on this device's next presence heartbeat.
+                if(preview&&typeof notePresencePreviewFramePublished==='function')notePresencePreviewFramePublished(fileId);
                 if(driveSaveInProgress)return;
                 const device=getPresenceClientId().replace(/[^a-zA-Z0-9]/g,'').slice(-24);
                 const key=`${preview?'ihn_live_':'ihn_ink_'}${device}`,announcementKey=`${fileId}:${preview}`;

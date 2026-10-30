@@ -27,7 +27,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: rebuild-v2/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Set up Java
         uses: actions/setup-java@v5

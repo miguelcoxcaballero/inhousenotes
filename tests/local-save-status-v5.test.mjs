@@ -8,7 +8,7 @@ const runtime = createRequire(import.meta.url)('../runtime-core-v5.js');
 const app = readFileSync(new URL('../app-v5.js', import.meta.url), 'utf8');
 const section = (start, end) => app.slice(app.indexOf(start), app.indexOf(end, app.indexOf(start)));
 const source = [
-  section('        function getLocalSaveStatus()', '        function isDriveSyncPending()'),
+  section('        function getLocalSaveStatus()', '        function hasSmoothInteraction()'),
   section('        function hasPendingLocalSave(', '        function hasPendingDriveSave()'),
   section('        const localCheckpointQueue =', '        function flushOnClose()'),
   section('        async function runStrokeOpsQueueFlush(', '        async function flushStrokeOpsQueue(')
@@ -42,8 +42,8 @@ function harness() {
     hasPendingLegacyPageMigration: () => false,
     hasSmoothInteraction: () => false,
     waitForHotInteractionToSettle: async () => true,
-    isDriveSyncPending: () => false,
-    recordSaveDebug() {},
+    hasPendingDriveSave: () => false,
+    renderSaveDebugPopup() {},
     showPendingSaveStatus() {},
     showStatus() {},
     reconcileSavedIndicator() {},

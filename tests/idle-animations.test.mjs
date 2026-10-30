@@ -96,7 +96,7 @@ test('placeholder shimmers and the peer search pulse are bounded', () => {
     }
   }
   // Pulse (::before ring, ::after halo), the Home placeholders and the
-  // calendar/share placeholders all declare one.
+  // share placeholders all declare one.
   assert.ok(seen >= 8, `found ${seen} bounded shimmer/pulse declarations`);
   const pulse = rules.find(r => r.selector.includes('.presence-avatar-wrapper.p2p-connecting::before,') && !r.media);
   assert.ok(pulse, 'shared pulse timing rule');
@@ -154,7 +154,7 @@ test('Home placeholders slide one exact pattern period on the compositor', () =>
     assert.equal(d.get('background-size'), '480px 100%', r.selector);
   }
   // The strips are clipped by their placeholder, which no longer paints the gradient itself.
-  const boxes = rules.find(r => !r.media && r.selector.startsWith('.drive-skeleton-shimmer, .drive-card-skeleton .skeleton-bar,') && !r.selector.includes('::after'));
+  const boxes = rules.find(r => !r.media && r.selector.startsWith('.drive-card-skeleton .skeleton-bar, .drive-card-skeleton .skeleton-preview,') && !r.selector.includes('::after'));
   assert.equal(decls(boxes.body).get('overflow'), 'hidden');
   assert.equal(decls(boxes.body).get('background'), undefined);
   const preview = rules.find(r => r.selector === '.drive-card-preview' && !r.media);
