@@ -93,9 +93,7 @@
 
     const api = Object.freeze({
         MAX_PDF_BYTES,
-        MAX_PDF_PAGES,
         assertSafePdfBlob,
-        isTrustedPdfUrl,
         hardenPdfDocumentParams,
         loadPdfDocument
     });

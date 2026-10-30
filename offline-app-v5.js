@@ -64,7 +64,7 @@
             }
             const page=await loadPageDataForExport(i);assertCurrent();
             const copy=buildTimelineSnapshotFromPages([{...page,strokes:[],images:[],legacyCoverStrokes:null}])[0];
-            if(typeof structuredClone==='function' && window.InhouseDocumentProcessing){
+            if(window.InhouseDocumentProcessing){
                 const packed=await packInkPageForStorage({...copy,strokes:page.strokes||[],images:page.images||[],legacyCoverStrokes:page.legacyCoverStrokes||null},token,()=>{assertCurrent();return false;},true);
                 assertCurrent();
                 if (!packed) throw createAbortError('Page checkpoint interrupted');
@@ -133,7 +133,6 @@
         if(doc.originalBlob?.size) {
             const bytes=await doc.originalBlob.arrayBuffer();
             state.cleanOriginalPdfBytes=bytes;
-            state.activePdfBytes=bytes;state.activePdfBytesFileId=state.driveFileId;
             if(doc.snapshot?.pages.some(p=>p.pdfPageIndex)) {
                 if(activePdfDocument)await activePdfDocument.destroy().catch(()=>{});
                 activePdfDocument=await loadSecurePdfDocument({data:bytes.slice(0),cMapUrl:PDFJS_CMAP_URL,cMapPacked:true,standardFontDataUrl:PDFJS_STANDARD_FONT_URL});

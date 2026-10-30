@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
-const {CoalescingQueue, WorkerRpcClient, runWithRetries} = createRequire(import.meta.url)('../runtime-core-v5.js');
+const {CoalescingQueue, WorkerRpcClient} = createRequire(import.meta.url)('../runtime-core-v5.js');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((a,b) => {resolve=a;reject=b;}); return {promise,resolve,reject}; };
 
@@ -55,17 +55,4 @@ test('active timeout invalidates resources and permits a fresh worker',async()=>
 test('worker queue rejects overload without evicting accepted work',async()=>{
  const {client,workers}=processor({maxPending:1});const a=client.run('a',{}),b=client.run('b',{});
  await assert.rejects(client.run('c',{}),/queue is full/);workers[0].reply(1);await a;workers[0].reply(2);await b;client.reset();
-});
-test('retry cancellation never executes an already-cancelled operation',async()=>{
- const controller=new AbortController();controller.abort();let calls=0;
- await assert.rejects(runWithRetries(()=>++calls,{signal:controller.signal}),e=>e.name==='AbortError');assert.equal(calls,0);
-});
-test('permanent errors are not retried',async()=>{
- let calls=0;await assert.rejects(runWithRetries(()=>{calls++;throw Error('permission denied');},{shouldRetry:()=>false,baseDelayMs:0}),/permission denied/);assert.equal(calls,1);
-});
-
-test('retry delays remove cancellation listeners after success and abort',async()=>{
- const {getEventListeners}=await import('node:events');const signal=new AbortController().signal;let calls=0;
- await runWithRetries(()=>{if(++calls<4)throw Error('temporary');},{attempts:4,baseDelayMs:1,signal});
- assert.equal(getEventListeners(signal,'abort').length,0);
 });

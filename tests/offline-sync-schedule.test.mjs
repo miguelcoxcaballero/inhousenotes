@@ -43,6 +43,7 @@ function harness({ outbox = [], documents = [], visible = true, online = true, h
     const clone = value => value == null ? value : structuredClone(value);
     const store = {
         async read(name, account, id) { return clone(data.get(k(name, account, id)) || null); },
+        async activeLease(account, name) { return this.read('leases', account, name); },
         async list(name, account) { return [...data.entries()].filter(([key]) => key.startsWith(`${name}\u0000${account}\u0000`)).map(([, value]) => clone(value)); },
         async put(name, account, id, value) { writes.push(name); const record = { ...value, account, id }; data.set(k(name, account, id), record); return clone(record); },
         async patch(name, account, id, update) {

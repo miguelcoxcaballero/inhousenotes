@@ -297,7 +297,7 @@ globalThis.__liveTest = {
   seen(actor) { return ihnLiveSeen.get(actor); },
   queued() { return ihnLiveBroadcastQueued; },
   forced() { return ihnLiveBroadcastForce; },
-  lastApplied() { return ihnLiveLastAppliedHash; },
+  lastApplied() { return ihnLiveCurrentHash; },
   currentHash() { return ihnLiveCurrentHash; },
   ensureSignalKey: ihnEnsureSignalKey,
   encodeSignal: ihnEncodeSignal,
@@ -325,7 +325,7 @@ globalThis.__liveTest = {
   retired(id) { return ihnLiveRetiredRendezvous.get(id); },
   nextSignalAttemptAt() { return ihnLiveNextSignalAttemptAt; },
   deferredStartPending() { return !!ihnLiveDeferredStartTimer; },
-  flushFanOut: ihnFlushLiveFanOutTasks,
+  flushFanOut() { return Promise.all([...ihnLiveFanOutTasks]); },
   publishStroke: publishLiveStrokePreview,
   receiveStroke: ihnHandleRealtimeStrokePacket,
   publishErase: publishLiveErasePreview,
@@ -960,7 +960,7 @@ test('an immediate interactive ACK is not lost when the bulk-send promise comple
     const packet = JSON.parse(raw);
     if (packet.t === 'chunk') {
       const snapshot = JSON.parse(packet.data);
-      void api.wire(JSON.stringify({ t: 'snapshot-ack', hash: snapshot.contentHash }), 'peer-remote');
+      void api.wire(JSON.stringify({ t: 'snapshot-ack', hash: snapshot.contentHash, currentHash: snapshot.contentHash }), 'peer-remote');
     }
   };
   api.queue();
@@ -1059,7 +1059,7 @@ test('delivery bookkeeping is per peer, so a new peer gets current state without
   assert.ok(firstChannel.sent.length > 0);
 
   const firstPeer = api.getPeer('peer-first');
-  await api.wire(JSON.stringify({ t: 'snapshot-ack', hash: firstPeer.lastSentHash }), 'peer-first');
+  await api.wire(JSON.stringify({ t: 'snapshot-ack', hash: firstPeer.lastSentHash, currentHash: firstPeer.lastSentHash }), 'peer-first');
   const firstMessageCount = firstChannel.sent.length;
 
   const secondChannel = createChannel();
@@ -1185,7 +1185,6 @@ test('resuming verifies an apparently open peer with a sub-second probe', () => 
   const { api } = createHarness();
   const channel = createChannel();
   const peer = peerWithChannel(channel, {
-    protocolV2: true,
     openedAt: Date.now() - 60_000,
     lastReceivedAt: Date.now() - 60_000,
     lastPongAt: Date.now() - 60_000
@@ -1207,7 +1206,6 @@ test('a dead WebView route is replaced after two bounded checks on app resume', 
   api.addKnown(remoteId);
   const channel = createChannel();
   api.addPeer(remoteId, peerWithChannel(channel, {
-    protocolV2: true,
     generation: api.generation(),
     openedAt: Date.now() - 60_000,
     lastReceivedAt: Date.now() - 60_000,
@@ -1230,7 +1228,6 @@ test('a delayed first probe response cancels recovery without replacing a health
   const remoteId = 'peer-delayed-pong';
   const channel = createChannel();
   const peer = peerWithChannel(channel, {
-    protocolV2: true,
     openedAt: Date.now() - 60_000,
     lastReceivedAt: Date.now() - 60_000,
     lastPongAt: Date.now() - 60_000
@@ -1252,7 +1249,7 @@ test('a delayed first probe response cancels recovery without replacing a health
 test('resuming a recently responsive peer keeps the route without a destructive network probe', () => {
   const { api } = createHarness();
   const channel = createChannel();
-  const peer = peerWithChannel(channel, { protocolV2: true });
+  const peer = peerWithChannel(channel);
   api.addPeer('peer-recent', peer);
 
   api.wake('window focused');
@@ -1266,7 +1263,6 @@ test('a network change keeps a responsive route and immediately resends current 
   const { api, runNextTimer } = createHarness();
   const channel = createChannel();
   const peer = peerWithChannel(channel, {
-    protocolV2: true,
     pc: { close() {}, getStats: async () => new Map() }
   });
   api.addPeer('peer-remote', peer);
@@ -1287,7 +1283,6 @@ test('a dead route is replaced after two short network probes instead of one fal
   const { api, runTimerMatching } = createHarness();
   const channel = createChannel();
   const peer = peerWithChannel(channel, {
-    protocolV2: true,
     openedAt: Date.now() - 60_000,
     lastReceivedAt: Date.now() - 60_000,
     lastPongAt: Date.now() - 60_000
@@ -1321,7 +1316,6 @@ test('a confirmed Wi-Fi to cellular switch replaces the route without a probe de
     close() { closed = true; this.readyState = 'closed'; }
   };
   api.addPeer(remoteId, peerWithChannel(channel, {
-    protocolV2: true,
     generation: api.generation()
   }));
 
@@ -1337,7 +1331,7 @@ test('a network change event probes the route even when Android reports the same
   context.navigator.connection = { type: 'wifi', effectiveType: '4g', saveData: false };
   assert.equal(api.checkNetworkRoute(), false);
   const channel = createChannel();
-  const peer = peerWithChannel(channel, { protocolV2: true });
+  const peer = peerWithChannel(channel);
   api.addPeer('peer-same-signature', peer);
 
   assert.equal(api.handleNetworkRouteChange('network changed'), true);
@@ -1354,7 +1348,6 @@ test('a slow route gets an RTT-sized recovery window instead of the old 700 ms c
   const remoteId = 'peer-slow-route';
   const channel = createChannel();
   const peer = peerWithChannel(channel, {
-    protocolV2: true,
     openedAt: Date.now() - 60_000,
     lastReceivedAt: Date.now() - 60_000,
     lastPongAt: Date.now() - 60_000
@@ -1761,7 +1754,7 @@ test('a new remote rendezvous epoch wakes a stale route without reopening the do
     expiresAt: firstAt + 24_000
   }), true);
   const channel = createChannel();
-  api.addPeer(remoteId, peerWithChannel(channel, { protocolV2: true }));
+  api.addPeer(remoteId, peerWithChannel(channel));
 
   assert.equal(api.applyRendezvous({
     v: 1,
@@ -1935,7 +1928,6 @@ test('the heartbeat watchdog verifies twice before replacing a silent route', as
     close() { closed = true; this.readyState = 'closed'; }
   };
   api.addPeer(remoteId, peerWithChannel(channel, {
-    protocolV2: true,
     generation: api.generation(),
     openedAt: Date.now() - 5000,
     lastReceivedAt: Date.now() - 5000,
@@ -1962,7 +1954,7 @@ test('C to D to C sends C again instead of treating an old ACK as current state'
   await api.broadcast();
   const hashC = peer.pendingAckHash;
   assert.ok(hashC);
-  await api.wire(JSON.stringify({ t: 'snapshot-ack', hash: hashC }), 'peer-remote');
+  await api.wire(JSON.stringify({ t: 'snapshot-ack', hash: hashC, currentHash: hashC }), 'peer-remote');
   assert.equal(peer.lastAckedHash, hashC);
   const sentAfterFirstC = channel.sent.length;
 
@@ -2475,7 +2467,6 @@ test('supervisor replaces an apparently open but silent zombie channel', () => {
     close() { closed = true; this.readyState = 'closed'; }
   }, {
     generation: api.generation(),
-    protocolV2: true,
     openedAt: Date.now() - 31_000,
     lastReceivedAt: Date.now() - 31_000,
     lastPongAt: Date.now() - 31_000
@@ -2495,7 +2486,7 @@ test('missing receipts retry on the healthy route, but not while bytes are still
   channel.bufferedAmount = 5000;
   const now = Date.now();
   const peer = peerWithChannel(channel, {
-    generation: api.generation(), protocolV2: true, openedAt: now - 20_000,
+    generation: api.generation(), openedAt: now - 20_000,
     lastReceivedAt: now, lastPongAt: now, lastPingAt: now,
     pendingAckHash: 'missing-hash', pendingAckAt: now - 5000
   });
@@ -2518,7 +2509,6 @@ test('healthy pongs extend a slow snapshot apply and hard expiry resends without
   const now = Date.now();
   const peer = peerWithChannel(channel, {
     generation: api.generation(),
-    protocolV2: true,
     openedAt: now - 60_000,
     lastReceivedAt: now - 100,
     lastPongAt: now - 100,
@@ -2559,7 +2549,6 @@ test('a healthy peer survives stale Drive presence and stays eligible for autono
   const channel = createChannel();
   const peer = peerWithChannel(channel, {
     generation: api.generation(),
-    protocolV2: true,
     lastReceivedAt: Date.now()
   });
   api.addPeer(remoteId, peer);
@@ -2733,11 +2722,11 @@ test('backoff resets only after a valid ACK, not on open or mismatched ACK', asy
   retry.nextAttemptAt = Date.now() + 30_000;
   peer.pendingAckHash = 'expected-hash';
   peer.pendingAckAt = Date.now();
-  await api.wire(JSON.stringify({ t: 'snapshot-ack', hash: 'stale-hash' }), 'peer-flapping');
+  await api.wire(JSON.stringify({ t: 'snapshot-ack', hash: 'stale-hash', currentHash: 'stale-hash' }), 'peer-flapping');
   assert.equal(retry.failures, 4);
   assert.equal(peer.pendingAckHash, 'expected-hash');
 
-  await api.wire(JSON.stringify({ t: 'snapshot-ack', hash: 'expected-hash' }), 'peer-flapping');
+  await api.wire(JSON.stringify({ t: 'snapshot-ack', hash: 'expected-hash', currentHash: 'expected-hash' }), 'peer-flapping');
   assert.equal(retry.failures, 0);
   assert.equal(peer.pendingAckHash, '');
   assert.equal(peer.lastAckedHash, 'expected-hash');
@@ -3796,7 +3785,7 @@ test('a network estimate change while alone neither rotates the beacon nor burst
   // With a connected device the same event still repairs the route.
   const channel = createChannel();
   h.api.addKnown('peer-company', clock.t);
-  h.api.addPeer('peer-company', peerWithChannel(channel, { protocolV2: true, generation: h.api.generation() }));
+  h.api.addPeer('peer-company', peerWithChannel(channel, { generation: h.api.generation() }));
   clock.advance(1000);
   h.context.navigator.connection.effectiveType = '4g';
   assert.equal(h.api.checkNetworkRoute(), true);

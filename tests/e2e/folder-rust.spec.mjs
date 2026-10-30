@@ -45,12 +45,12 @@ async function setup(page, context, { folders = 0, files = 0, rust = true } = {}
         for (const method of ['folderMotion', 'folderRows', 'folderFade']) {
             window.InhouseRust[method] = (...args) => {
                 const result = original[method](...args);
-                folderRustCalls.push({ method, backend: result?.backend });
+                folderRustCalls.push({ method });
                 if (method === 'folderRows' && result) return {
                     ...result,
                     range(...args) {
                         const range = result.range(...args);
-                        folderRustCalls.push({ method: 'folderRange', backend: range?.backend });
+                        folderRustCalls.push({ method: 'folderRange' });
                         return range;
                     }
                 };
@@ -157,7 +157,7 @@ async function expectSnapshotGeometry(page) {
     }
 }
 
-test('Rust plans real folder motion and bounds layout reads independently of a thousand cards', async ({ page, context }) => {
+test('folder plans drive real folder motion and bound layout reads independently of a thousand cards', async ({ page, context }) => {
     test.setTimeout(45_000);
     await setup(page, context, { folders: 1000 });
     await openCollection(page);
@@ -165,7 +165,7 @@ test('Rust plans real folder motion and bounds layout reads independently of a t
     expect(await page.locator('#drive-view-folders .drive-card-deferred').count()).toBeGreaterThan(900);
     const calls = await page.evaluate(() => folderRustCalls);
     for (const method of ['folderMotion', 'folderRows', 'folderRange', 'folderFade']) {
-        expect(calls.some(call => call.method === method && call.backend === 'rust'), method).toBe(true);
+        expect(calls.some(call => call.method === method), method).toBe(true);
     }
     expect(await measureLayoutReads(page, 'hydrate')).toBeLessThan(40);
     expect(await measureLayoutReads(page, 'snapshot')).toBeLessThan(40);
@@ -309,6 +309,5 @@ test('unavailable WASM retains offline folder navigation and viewport hydration'
     const calls = await page.evaluate(() => folderRustCalls);
     expect(calls.some(call => call.method === 'folderMotion')).toBe(true);
     expect(calls.some(call => call.method === 'folderRange')).toBe(true);
-    expect(calls.every(call => call.backend !== 'rust')).toBe(true);
     expect(await measureLayoutReads(page, 'hydrate')).toBeLessThan(40);
 });
