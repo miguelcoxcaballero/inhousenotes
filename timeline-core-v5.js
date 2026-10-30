@@ -338,12 +338,9 @@
 
     const api = Object.freeze({
         ARCHIVE_SCHEMA_VERSION,
-        DEFAULT_CHECKPOINT_INTERVAL,
         createArchive,
         encodeArchiveJson,
-        materializeArchive,
-        stableStringify,
-        snapshotHash
+        materializeArchive
     });
 
     root.InhouseTimelineCore = api;
