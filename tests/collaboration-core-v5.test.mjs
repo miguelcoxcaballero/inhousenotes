@@ -244,26 +244,24 @@ test('structure merge stays associative when an all-deleted fallback meets a con
   assert.deepEqual(rightGrouped.orderedPageIds, ['p3']);
 });
 
-test('canonical document hash ignores arrival order and derived panel HTML', () => {
+test('canonical document hash ignores arrival order', () => {
   const first = {
     pageId: 'p1',
     strokes: [{ id: 's2', points: [{ x: 2, y: 2 }] }, { id: 's1', points: [{ x: 1, y: 1 }] }],
     images: [{ id: 'i2', src: 'b' }, { id: 'i1', src: 'a' }],
     deletedStrokeIds: ['gone-b', 'gone-a'],
-    backgroundSource: 'template',
-    sidePanel: { title: 'Today', dateKeys: ['2026-07-30'], html: '<p>device A cache</p>' }
+    backgroundSource: 'template'
   };
   const second = {
     ...first,
     strokes: [...first.strokes].reverse(),
     images: [...first.images].reverse(),
-    deletedStrokeIds: [...first.deletedStrokeIds].reverse(),
-    sidePanel: { ...first.sidePanel, html: '<p>device B cache</p>' }
+    deletedStrokeIds: [...first.deletedStrokeIds].reverse()
   };
   const structure = ihnNormalizeStructureMeta(null, ['p1']);
   assert.equal(
-    ihnCanonicalDocumentHash([first], structure, null, 'Doc'),
-    ihnCanonicalDocumentHash([second], structure, null, 'Doc')
+    ihnCanonicalDocumentHash([first], structure, 'Doc'),
+    ihnCanonicalDocumentHash([second], structure, 'Doc')
   );
   const customOnDeviceA = {
     ...first,
@@ -277,8 +275,8 @@ test('canonical document hash ignores arrival order and derived panel HTML', () 
     pdfPageIndex: 7
   };
   assert.equal(
-    ihnCanonicalDocumentHash([customOnDeviceA], structure, null, 'Doc'),
-    ihnCanonicalDocumentHash([customOnDeviceB], structure, null, 'Doc'),
+    ihnCanonicalDocumentHash([customOnDeviceA], structure, 'Doc'),
+    ihnCanonicalDocumentHash([customOnDeviceB], structure, 'Doc'),
     'local blob URLs and physical PDF locators must not create convergence loops'
   );
   const causallyDeleted = {
@@ -289,8 +287,8 @@ test('canonical document hash ignores arrival order and derived panel HTML', () 
     }
   };
   assert.notEqual(
-    ihnCanonicalDocumentHash([first], structure, null, 'Doc'),
-    ihnCanonicalDocumentHash([causallyDeleted], structure, null, 'Doc'),
+    ihnCanonicalDocumentHash([first], structure, 'Doc'),
+    ihnCanonicalDocumentHash([causallyDeleted], structure, 'Doc'),
     'deletion clocks are semantic state and must trigger live delivery'
   );
 });
@@ -456,8 +454,8 @@ test('field and document hashes track semantic records but ignore the allocator 
   const pages = [{ pageId: 'p1', strokes: [], images: [] }];
   const structure = ihnNormalizeStructureMeta(null, ['p1']);
   assert.notEqual(
-    ihnCanonicalDocumentHash(pages, structure, null, 'Alpha', base),
-    ihnCanonicalDocumentHash(pages, structure, null, 'Alpha', changedValue)
+    ihnCanonicalDocumentHash(pages, structure, 'Alpha', base),
+    ihnCanonicalDocumentHash(pages, structure, 'Alpha', changedValue)
   );
 
   const left = ihnRecordFieldValue(base, 'page:p1:template', 'blank', actorA, 200);

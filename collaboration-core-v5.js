@@ -605,14 +605,6 @@
                 const b = String(right?.id || ihnStableStringify(right));
                 return a < b ? -1 : (a > b ? 1 : 0);
             });
-        const sidePanel = page?.sidePanel
-            ? {
-                title: String(page.sidePanel.title || ''),
-                dateKeys: Array.isArray(page.sidePanel.dateKeys)
-                    ? [...page.sidePanel.dateKeys].map(String)
-                    : null
-            }
-            : null;
         return {
             pageId: String(page?.pageId || ''),
             strokes,
@@ -630,11 +622,12 @@
             templateKind: String(page?.templateKind || ''),
             pageWidth: Number(page?.pageWidth) || 0,
             pageHeight: Number(page?.pageHeight) || 0,
-            sidePanel
+            // Frozen key kept so page hashes match v5 clients.
+            sidePanel: null
         };
     }
 
-    function ihnCanonicalDocumentHash(pages, structure, calendarPageConfig, exportName, fieldMeta = null) {
+    function ihnCanonicalDocumentHash(pages, structure, exportName, fieldMeta = null) {
         const canonicalPages = (Array.isArray(pages) ? pages : []).map(ihnCanonicalLivePage);
         return ihnHashString(ihnStableStringify({
             pages: canonicalPages,
@@ -643,7 +636,8 @@
             // deleted page later.
             structure: ihnCanonicalStructurePayload(structure),
             fields: ihnNormalizeFieldMeta(fieldMeta).fields,
-            calendarPageConfig: calendarPageConfig || null,
+            // Frozen key kept so document hashes match v5 clients.
+            calendarPageConfig: null,
             exportName: String(exportName || '')
         }));
     }

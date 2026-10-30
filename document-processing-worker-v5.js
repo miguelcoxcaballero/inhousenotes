@@ -182,7 +182,7 @@ async function processTask(type, data) {
         const [compressed, hashed] = await Promise.allSettled([
             compress(data.json),
             Promise.resolve().then(() => ihnCanonicalDocumentHash(
-                JSON.parse(data.json), data.structure, data.calendar, data.name, data.fields
+                JSON.parse(data.json), data.structure, data.name, data.fields
             ))
         ]);
         return {
@@ -242,7 +242,7 @@ async function processTask(type, data) {
         return new Uint8Array(await blob.arrayBuffer());
     }
     if (type === 'contentHash') {
-        return ihnCanonicalDocumentHash(JSON.parse(data.json), data.structure, data.calendar, data.name, data.fields);
+        return ihnCanonicalDocumentHash(JSON.parse(data.json), data.structure, data.name, data.fields);
     }
     if (type.startsWith('pdf')) {
         if (!self.PDFLib) importScripts('vendor/pdf-lib/pdf-lib.min.js');

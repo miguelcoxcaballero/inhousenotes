@@ -3867,7 +3867,7 @@ async function ihnBuildLiveSnapshot(operation = ihnCaptureLiveOperationContext()
         const snapshot = { v: 1, type: 'document-snapshot', fileId: operation.fileId,
             actorId: `${ihnGetLivePeerId()}:${ihnGetLiveTabId()}`, deviceId: getPresenceClientId(), sequence: ++ihnLiveSequence,
             sentAt: Date.now(), baseRevision: state.driveHeadRevisionId || null,
-            exportName: state.exportName || '', calendarPageConfig: cloneTimelineValue(state.calendarPageConfig || null, null),
+            exportName: state.exportName || '',
             structure: getCollabStructureSnapshot(),
             fields: getCollabFieldSnapshot(),
             pages: [] };
@@ -3889,7 +3889,6 @@ async function ihnBuildLiveSnapshot(operation = ihnCaptureLiveOperationContext()
         snapshot.contentHash = ihnCanonicalDocumentHash(
             snapshot.pages,
             snapshot.structure,
-            snapshot.calendarPageConfig,
             snapshot.exportName,
             snapshot.fields
         );
@@ -4510,7 +4509,6 @@ async function ihnApplyLiveEnvelope(
         const currentHash = ihnLiveCurrentHash || ihnCanonicalDocumentHash(
                 state.pages.map(page => sanitizePageForStorage(page)),
                 getCollabStructureSnapshot(),
-                state.calendarPageConfig,
                 state.exportName,
                 getCollabFieldSnapshot()
             );
@@ -4548,7 +4546,6 @@ async function ihnApplyLiveEnvelope(
         const currentHash = ihnCanonicalDocumentHash(
             state.pages.map(page => sanitizePageForStorage(page)),
             getCollabStructureSnapshot(),
-            state.calendarPageConfig,
             state.exportName,
             getCollabFieldSnapshot()
         );
@@ -4596,7 +4593,6 @@ async function ihnApplyLiveEnvelope(
             additiveById: canEditDocument,
             remoteStructure: envelope.structure || null,
             remoteFields: envelope.fields || null,
-            remoteCalendarPageConfig: cloneTimelineValue(envelope.calendarPageConfig || null, null),
             remoteExportName: envelope.exportName || ''
         });
         ihnAssertLiveOperationContext(operation);
@@ -4622,7 +4618,6 @@ async function ihnApplyLiveEnvelope(
         const mergedHash = result?.contentHash || ihnCanonicalDocumentHash(
             state.pages.map(page => sanitizePageForStorage(page)),
             getCollabStructureSnapshot(),
-            state.calendarPageConfig,
             state.exportName,
             getCollabFieldSnapshot()
         );
