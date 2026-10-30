@@ -78,7 +78,6 @@ function harness() {
     deferredDriveSave: false,
     presenceSavePhase: '',
     presenceSavePhaseAt: 0,
-    presenceSavePhasePushInFlight: false,
     remotePresenceSyncActive: false,
     remotePresenceSyncDoneUntil: 0,
     remotePresenceSyncTimer: null,
