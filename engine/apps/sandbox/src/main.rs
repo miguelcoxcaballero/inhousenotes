@@ -312,6 +312,35 @@ impl Extract {
         true
     }
 
+    /// Gives the renderer the world's HDR environment. Decoding and
+    /// converting the photo costs ~300 ms, so the windowed game does it
+    /// under the loading screen, and the converted map is kept for the
+    /// process: a dusk/dawn swap to the same photo only uploads it again.
+    fn load_env(&mut self, renderer: &mut Renderer, app: &App) {
+        use std::sync::{Arc, Mutex};
+        static CACHE: Mutex<Option<(std::path::PathBuf, Arc<forja_render::env::EnvMap>)>> = Mutex::new(None);
+        if std::mem::replace(&mut self.env_loaded, true) {
+            return;
+        }
+        let Some(p) = app.world.res::<RenderScene>().hdri.clone() else { return };
+        let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        let env = match cache.as_ref() {
+            Some((q, env)) if *q == p => env.clone(),
+            _ => match forja_assets::load_hdr(&p) {
+                Ok(img) => {
+                    let env = Arc::new(forja_render::env::EnvMap::from_hdr(&img, 14.0));
+                    *cache = Some((p, env.clone()));
+                    env
+                }
+                Err(e) => {
+                    log::warn!("{e}");
+                    return;
+                }
+            },
+        };
+        renderer.set_environment(Some(&env));
+    }
+
     /// Builds the renderer's static grid when the world's static set
     /// changed (hundreds of ms for a city: the loading screen does it
     /// before the first frame of play).
@@ -332,16 +361,9 @@ impl Extract {
         self.upload(renderer, app);
         let t1 = Instant::now();
         self.timings[0].1 = (t1 - t0).as_secs_f32() * 1000.0;
-        let rs = app.world.res::<RenderScene>();
-        if !self.env_loaded {
-            self.env_loaded = true;
-            if let Some(p) = &rs.hdri {
-                match forja_assets::load_hdr(p) {
-                    Ok(img) => renderer.set_environment(Some(&forja_render::env::EnvMap::from_hdr(&img, 14.0))),
-                    Err(e) => log::warn!("{e}"),
-                }
-            }
-        }
+        // Done under the loading screen in the windowed game; here for the
+        // headless paths.
+        self.load_env(renderer, app);
         // The world never moves: it is uploaded once into the renderer's
         // static culling grid; only dynamic items are resubmitted per frame.
         // Items listed in `volatile_statics` (signal heads) change at run
@@ -907,10 +929,11 @@ fn night_switch(args: &Args, mut app: App, mut renderer: Renderer, mut extract: 
     let max = frames.last().copied().unwrap_or(0.0);
     let mean = frames.iter().sum::<f32>() / frames.len().max(1) as f32;
     println!(
-        "night switch ({}): built in the background in {built:.1}s while {} frames rendered (mean {mean:.0} ms, max {max:.0} ms); main-thread stall: upload {upload:.2}s, swap + first frame {swap:.2}s; resident {:.0} MB -> {}",
+        "night switch ({}): built in the background in {built:.1}s while {} frames rendered (mean {mean:.0} ms, max {max:.0} ms); main-thread stall: upload {upload:.2}s, swap + first frame {swap:.2}s; resident {:.0} MB (peak {:.0} MB) -> {}",
         if night { "dusk" } else { "dawn" },
         frames.len(),
         perf::resident_mb(),
+        perf::peak_resident_mb(),
         path.display()
     );
 }
@@ -979,7 +1002,7 @@ fn run_smoke(args: &Args) {
     }
     let mut perf_state = PerfState::load(&paths().data.join("graphics.toml"), &renderer);
     perf_state.cfg.apply_preset(args.preset.unwrap_or(forja_render::Preset::Low));
-    log::info!("graphics: smoke preset {} applied", perf_state.cfg.preset.label());
+    log::info!("graphics: smoke preset {} applied (replaces the graphics.toml/auto preset logged above)", perf_state.cfg.preset.label());
     renderer.apply_graphics(&perf_state.cfg);
     if let Ok(fx) = std::env::var("FORJA_FX") {
         renderer.settings.apply_fx(&fx);
@@ -1427,6 +1450,7 @@ impl Sandbox {
                 // The static grid too, so the first frame of play is not a
                 // half-second hitch.
                 self.extract.upload_statics(&mut gpu.renderer, &self.app);
+                self.extract.load_env(&mut gpu.renderer, &self.app);
                 self.loading = None;
                 self.last = Instant::now();
                 return false;
@@ -1976,6 +2000,10 @@ fn present_mode(modes: &[forja_render::wgpu::PresentMode], vsync: bool) -> forja
 fn main() {
     sandbox::trace::init_logger("info,wgpu_core=warn,wgpu_hal=warn,naga=warn");
     let args = parse_args();
+    // Rayon's global pool runs loads and builds only (the frame has its
+    // own pool, see forja_assets::threads): below normal priority, so a
+    // dusk/dawn build never competes with the main thread for a core.
+    let _ = rayon::ThreadPoolBuilder::new().thread_name(|i| format!("rayon {i}")).start_handler(|_| sandbox::threads::lower_priority()).build_global();
     if args.smoke > 0 && !args.window {
         run_smoke(&args);
         return;

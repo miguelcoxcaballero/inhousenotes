@@ -94,7 +94,7 @@ impl SpanishCity {
     /// grown.
     fn build_with<'s>(&'s self, scope: &'s std::thread::Scope<'s, '_>) -> Result<WorldDescription, WorldError> {
         let t0 = std::time::Instant::now();
-        let library = self.downloaded.as_deref().map(|dl| scope.spawn(move || ContentLibrary::load(dl)));
+        let library = self.downloaded.as_deref().map(|dl| scope.spawn(forja_assets::threads::inherit(move || ContentLibrary::load(dl))));
         let styles = StyleLibrary::load(self.styles.as_deref());
         let (_kit, city) = build_city_loading(
             || {

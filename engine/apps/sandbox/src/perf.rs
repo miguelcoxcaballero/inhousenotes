@@ -545,9 +545,56 @@ pub fn graphics_options(u: &mut egui::Ui, p: &mut PerfState) {
     }
 }
 
-/// Resident memory of this process in MB (Linux; 0 elsewhere).
+/// Resident memory of this process in MB (Linux: RSS; Windows: working
+/// set; 0 elsewhere).
 pub fn resident_mb() -> f64 {
-    std::fs::read_to_string("/proc/self/statm").ok().and_then(|s| s.split_whitespace().nth(1)?.parse::<f64>().ok()).map_or(0.0, |pages| pages * 4096.0 / 1048576.0)
+    memory_mb().0
+}
+
+/// Peak resident memory of this process in MB (Linux: VmHWM; Windows:
+/// peak working set; 0 elsewhere).
+pub fn peak_resident_mb() -> f64 {
+    memory_mb().1
+}
+
+/// `(current, peak)` resident memory in MB.
+#[cfg(windows)]
+fn memory_mb() -> (f64, f64) {
+    #[repr(C)]
+    #[derive(Default)]
+    #[allow(dead_code)] // filled by Windows
+    struct Counters {
+        cb: u32,
+        page_faults: u32,
+        peak_working_set: usize,
+        working_set: usize,
+        quota: [usize; 4],
+        pagefile: usize,
+        peak_pagefile: usize,
+    }
+    unsafe extern "system" {
+        fn GetCurrentProcess() -> isize;
+        fn K32GetProcessMemoryInfo(process: isize, counters: *mut Counters, cb: u32) -> i32;
+    }
+    let mut c = Counters { cb: std::mem::size_of::<Counters>() as u32, ..Default::default() };
+    // SAFETY: kernel32 call on this process's pseudo handle with a
+    // PROCESS_MEMORY_COUNTERS of the size it states.
+    let cb = c.cb;
+    if unsafe { K32GetProcessMemoryInfo(GetCurrentProcess(), &mut c, cb) } != 0 {
+        return (c.working_set as f64 / 1048576.0, c.peak_working_set as f64 / 1048576.0);
+    }
+    (0.0, 0.0)
+}
+
+/// `(current, peak)` resident memory in MB.
+#[cfg(not(windows))]
+fn memory_mb() -> (f64, f64) {
+    let current = std::fs::read_to_string("/proc/self/statm").ok().and_then(|s| s.split_whitespace().nth(1)?.parse::<f64>().ok()).map_or(0.0, |pages| pages * 4096.0 / 1048576.0);
+    let peak = std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| s.lines().find_map(|l| l.strip_prefix("VmHWM:").and_then(|v| v.trim().trim_end_matches("kB").trim().parse::<f64>().ok())))
+        .map_or(0.0, |kb| kb / 1024.0);
+    (current, peak)
 }
 
 /// GPU bytes the renderer will allocate for `models` (meshes with their

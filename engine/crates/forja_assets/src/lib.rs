@@ -15,6 +15,7 @@ pub mod manifest;
 mod obj;
 pub mod pbr;
 pub mod progress;
+pub mod threads;
 
 use std::path::Path;
 

@@ -16,7 +16,8 @@
 //! * within 1.2x a worker reads and decodes them and converts the
 //!   vertices to the renderer's layout; the main thread only copies them
 //!   into the renderer's shared mesh pools (no GPU resource is created and
-//!   nothing waits), at most [`RELOAD_BYTES_PER_FRAME`] per frame, and lets
+//!   nothing waits), model by model and at most [`RELOAD_BYTES_PER_FRAME`]
+//!   per frame (a single larger model goes alone in its frame), and lets
 //!   the tile show its detail again (the switch itself happens at 1.0x /
 //!   0.9x, so a tile is resident before it is needed and never flips at
 //!   the border).
@@ -33,14 +34,18 @@ use forja_assets::SceneData;
 use forja_math::Vec3;
 use forja_render::{MeshUpload, ModelHandle, Renderer};
 
-/// Re-upload budget per frame: a tile (~5 MB) at a time, so a tile
-/// becoming resident costs one memcpy of its meshes, not a hitch.
+/// Re-upload budget per frame: a typical tile (~5 MB) at a time; a larger
+/// tile is spread over several frames, so a tile becoming resident costs
+/// a few small memcpys, not a hitch.
 pub const RELOAD_BYTES_PER_FRAME: u64 = 8 << 20;
 
 enum State {
     Resident,
     Released,
     Loading(Receiver<Option<Vec<MeshUpload>>>),
+    /// Read back; its models are copied in from `next` on, within each
+    /// frame's budget. The tile shows its detail once all are in.
+    Uploading { scenes: Vec<MeshUpload>, next: usize, bytes: u64 },
 }
 
 struct Tile {
@@ -118,14 +123,6 @@ impl Streamer {
         }
     }
 
-    /// Waits for the writer (every scene on disk); at exit.
-    fn flush(&mut self) {
-        self.writer = None;
-        if let Some(h) = self.writer_done.take() {
-            let _ = h.join();
-        }
-    }
-
     /// Once the first upload is done the writer gets no more scenes;
     /// `true` once it has written them all (tiles may then be released).
     /// Never waits for it.
@@ -182,27 +179,61 @@ impl Streamer {
                             self.tiles[i].state = State::Released;
                             continue;
                         };
-                        budget = budget.saturating_sub(scenes.iter().map(MeshUpload::bytes).sum());
-                        let mut bytes = 0;
-                        for (&m, s) in self.tiles[i].models.iter().zip(&scenes) {
-                            bytes += renderer.reload_prepared(handles[m], s);
-                        }
-                        self.released_bytes = self.released_bytes.saturating_sub(bytes);
-                        self.released_tiles -= 1;
-                        self.loads += 1;
-                        renderer.set_static_group_ready(group, true);
-                        self.tiles[i].state = State::Resident;
+                        self.tiles[i].state = State::Uploading { scenes, next: 0, bytes: 0 };
+                        self.upload_tile(i, renderer, handles, &mut budget);
                     }
                 }
+                State::Uploading { .. } if budget > 0 => self.upload_tile(i, renderer, handles, &mut budget),
                 _ => {}
             }
         }
     }
+
+    /// Copies the models of tile `i` (in [`State::Uploading`]) into the
+    /// renderer while `budget` lasts; the tile is resident once all are in.
+    fn upload_tile(&mut self, i: usize, renderer: &mut Renderer, handles: &[ModelHandle], budget: &mut u64) {
+        let tile = &mut self.tiles[i];
+        let State::Uploading { scenes, next, bytes } = &mut tile.state else { return };
+        while *next < scenes.len().min(tile.models.len()) && *budget > 0 {
+            let s = &scenes[*next];
+            *budget = budget.saturating_sub(s.bytes());
+            *bytes += renderer.reload_prepared(handles[tile.models[*next]], s);
+            *next += 1;
+        }
+        if *next < scenes.len().min(tile.models.len()) {
+            return;
+        }
+        let bytes = *bytes;
+        self.released_bytes = self.released_bytes.saturating_sub(bytes);
+        self.released_tiles -= 1;
+        self.loads += 1;
+        renderer.set_static_group_ready(tile.group, true);
+        tile.state = State::Resident;
+    }
 }
 
 impl Drop for Streamer {
+    /// Deletes the session folder. A writer still at work (a world swapped
+    /// right after its upload) is waited for on a thread of its own, not on
+    /// the main thread; the folder of a process that exits first is
+    /// removed by a later session.
     fn drop(&mut self) {
-        self.flush();
-        let _ = std::fs::remove_dir_all(&self.dir);
+        self.writer = None;
+        let dir = std::mem::take(&mut self.dir);
+        match self.writer_done.take() {
+            Some(h) if !h.is_finished() => {
+                let _ = std::thread::Builder::new().name("stream cleanup".into()).spawn(move || {
+                    crate::threads::lower_priority();
+                    let _ = h.join();
+                    let _ = std::fs::remove_dir_all(dir);
+                });
+            }
+            h => {
+                if let Some(h) = h {
+                    let _ = h.join();
+                }
+                let _ = std::fs::remove_dir_all(dir);
+            }
+        }
     }
 }

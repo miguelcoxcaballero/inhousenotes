@@ -104,7 +104,7 @@ impl PeopleLibrary {
         let mut built: Vec<(PathBuf, Option<Prepared>)> = Vec::new();
         for chunk in todo.chunks(3) {
             built.extend(std::thread::scope(|s| {
-                let jobs: Vec<_> = chunk.iter().map(|f| s.spawn(|| ((*f).clone(), prepare(f, &mocap_dir, death.as_ref(), max_texture)))).collect();
+                let jobs: Vec<_> = chunk.iter().map(|f| s.spawn(crate::threads::inherit(|| ((*f).clone(), prepare(f, &mocap_dir, death.as_ref(), max_texture))))).collect();
                 jobs.into_iter().filter_map(|j| j.join().ok()).collect::<Vec<_>>()
             }));
         }

@@ -18,6 +18,7 @@ dynamic resolution are player options).
 | `sandbox --smoke N [--window] [--adapter warp] [--preset P]` | The real game loop for N frames (headless offscreen, or in a window through the swapchain); prints per-frame times and GPU passes, saves `--screenshot` (default `smoke.png`) and exits non-zero on any wgpu validation error, lost device or blank image. The Windows release workflow runs it on D3D12 WARP. |
 | `--adapter auto\|warp\|dx12\|vulkan\|<name>` / `FORJA_ADAPTER` | Adapter choice (see `forja_render::gpu`): best GPU first, falling back adapter by adapter. |
 | `FORJA_PROFILE_CSV=f.csv` | Game: log every frame to a CSV from startup. |
+| `sandbox --frame-trace N` / `FORJA_FRAME_TRACE=N` | Game, smoke or bench: every N frames, one line with the main thread's CPU timeline (sim per system, extract, renderer scopes, GPU wait per pass, present/acquire, loop wait), main-thread and process CPU, fixed steps per frame, log lines, upload flushes and streaming. `FORJA_TRACE_FILE=f` also writes the lines to a file. First thing to ask for when a machine is slow. |
 | `city` example: `CITY_STATIC=1`, `CITY_BENCH=N` | Static grid path and CPU timing per shot. |
 | `cargo run --release -p sandbox --example worldstats [map]` | Geometry and texture budget of a map without a GPU. |
 
@@ -551,6 +552,69 @@ in `RenderScene::volatile_statics`, so they stay out of the grid and are
 submitted every frame. Night lights (`FrameDesc::local_lights`, city
 content lights within 600 m) are capped per preset ("lights per frame",
 closest first) before clustering.
+
+## Frame-loop stalls (v0.1.3 at ~10 FPS)
+
+v0.1.2 and v0.1.3 ran at about 10 FPS on a Core Ultra 5 125H with an Arc
+iGPU (2880x1800) and just as slowly on a desktop RTX 3070, and a lower
+internal resolution did not help. A cost that does not move with the GPU
+or the resolution is CPU work or waiting on the frame path, so the frame
+loop was audited stage by stage with `--frame-trace` (Linux lavapipe and
+Windows D3D12 WARP in CI, at tiny resolutions such as 64x36 and 160x90 so
+the software rasteriser does not hide the CPU side).
+
+### What was found and fixed
+
+| Cost (before) | Fix |
+|---|---|
+| `CommandEncoder::finish` 9–10 ms and pass recording on the main thread | Shadow, prepass and main passes are recorded and finished in parallel on worker threads (the main pass split into chunks); indirect-draw validation off in release. |
+| Static culling 6–12 ms per frame (3.5 k cells, 270 k parts, per view) | Camera and shadow views culled in parallel, dynamic instances culled on a worker at the same time; all views' instances uploaded in one staging copy. |
+| One D3D12 staging resource created and freed per small `queue.write_buffer` (~20 per frame) | `FrameWrites`: the frame's small writes go through one staging buffer and one copy command buffer submitted first. |
+| `device.poll(wait)` on the frame path | Removed; uploads after a world swap run under the loading screen in 40 ms slices; 0 upload flushes during play. |
+| Fixed-step "spiral" (up to 8 steps per slow frame) | 10 ms budget for fixed steps per frame. |
+| 370–490 ms first frame of play (static grid build) | The grid is built under the loading screen. |
+| ~290 ms first frame after a load or a dusk/dawn swap (HDRI decode and conversion on the main thread) | The environment map is loaded under the loading screen and kept for the process: a swap to the same photo only uploads it. |
+| Pipelines recompiled at every dusk/dawn swap (seconds of FXC) | `clear_scene` keeps them. |
+| Dusk/dawn build competing with the frame | Builds and tile loaders run below normal priority on a pool of cores − 2. Threads they spawn inherit it (`forja_assets::threads::inherit`; Windows does not do it by itself), rayon's global pool runs below normal, and the frame's parallel work (culling, pass recording, texture preparation) runs on a pool of its own (`frame_pool`), so a frame job never queues behind a build job. |
+| Streaming reload of a large tile in one frame (the 8 MB budget accepted a whole tile) | Tiles are re-uploaded model by model within the 8 MB per-frame budget; the tile shows its detail when all are in. A dropped streamer no longer joins its writer thread on the main thread. |
+| Allocator and per-frame allocations | mimalloc; reused scratch lists. |
+
+Also checked and not a cost: the only sleep is the optional frame cap (off
+by default, high-resolution timer); present takes 0.1–0.2 ms; logging is
+2 lines per frame trace; there are no map_async readbacks or error-scope
+pops on the frame path (timestamps are read back a few frames late).
+
+### Measured (CPU of the main thread per frame, frames 40–59)
+
+| | Before 83453c6 | 83453c6 | 9d1e18a | Final |
+|---|---|---|---|---|
+| VM plaza High 160x90 (lavapipe): main thread | ~50 ms | 16.7–21 ms | 4.6–5.5 ms | 5.05 ms |
+| render CPU / `finish` | 49.7 / 31.9 ms | 15–17 / 10–11 ms | 7.6 / 1.0 ms | 6.5 / 0.9 ms |
+| sim | 7.4 ms | 1.0–1.3 ms | 1.0 ms | 0.95 ms |
+
+Windows WARP (CI, same runner A/B), CPU without WARP's own submit: 4.1 →
+2.6 ms headless and 4.1 → 3.3 ms windowed (Spain, Low, 64x36). Images are
+bit-identical before and after on the VM (plaza luma 0.414), 0 GPU errors.
+
+### What remains
+
+Wall-clock frame time on WARP and lavapipe did not change: those frames
+are limited by GPU work that does not depend on resolution, mostly the
+shadow cascades (WARP High: c2 and c3 ~1 s each of a 2.6 s frame; VM plaza
+High: c0–c3 ~430 of ~770 ms; 3.1 M shadow triangles vs 0.9 M for the
+camera). That matches "a lower resolution did not help". Shadow work is
+owned by the shadow-flicker and draw-call teams: caching static casters
+per cascade, refreshing far cascades every N frames on every preset, HLOD
+only in c3 and shadow-map size per preset are the candidates.
+
+Not confirmed on real hardware yet: run `sandbox.exe --frame-trace 60` on
+the slow machines and read the acquire/render/finish split and the GPU
+time per pass before calling it fixed. Other open items: each dynamic-
+resolution step recreates ~20 render targets (5–40 ms, only on GPU-bound
+frames); the dusk/dawn swap holds two worlds (>7 GB peak on the VM; the
+`ns` CI job logs the peak working set); the Low preset's upload takes
+37 s on the VM and ~105 s on WARP and is repeated at every swap
+(`clear_scene` drops the texture cache).
 
 ## Windows smoke test (D3D12 WARP)
 
