@@ -162,10 +162,8 @@
     const api = Object.freeze({
         MAX_CALENDAR_HTML_CHARS,
         MAX_PDF_BYTES,
-        MAX_PDF_PAGES,
         sanitizeCalendarPanelHtml,
         assertSafePdfBlob,
-        isTrustedPdfUrl,
         hardenPdfDocumentParams,
         loadPdfDocument
     });
