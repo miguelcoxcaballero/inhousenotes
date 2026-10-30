@@ -52,6 +52,9 @@ async function openControlledShell(page) {
   await page.evaluate(() => window.__IHN_TEST_API__.ready());
   await page.evaluate(() => navigator.serviceWorker.ready);
   await page.waitForFunction(() => !!navigator.serviceWorker.controller);
+  // Let this page's own start-up release check (1.2 s after load) finish
+  // first, so a version published below is seen by the reload, not by it.
+  await page.waitForTimeout(1500);
   const running = await page.evaluate(() => document.getElementById('inhouse-app-version').textContent.match(/'(\d+\.\d+\.\d+)'/)[1]);
   const html = await (await page.request.get('/index.html')).text();
   return { running, html };
