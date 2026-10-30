@@ -14849,7 +14849,6 @@
                     showSoonNotice();
                 });
             });
-            document.getElementById('btn-open-calendar')?.addEventListener('click', showSoonNotice);
             if (driveMenuRefreshBtn) {
                 driveMenuRefreshBtn.addEventListener('click', () => {
                     closeDriveProfileMenus();
@@ -16540,29 +16539,8 @@
         // Opens/closes the panel, builds thumbnail rows, and wires drag-and-
         // drop reordering. Also handles page insertion and deletion from the
         // panel UI.
-        // Agenda documents in a Drive "Agenda" folder keep their Calendar
-        // entry point, now a "Soon" button (same gate as the old calendar).
-        async function isAgendaFolderDocument() {
-            const fileId = state.driveFileId;
-            if (!fileId) return false;
-            const fileName = String(state.driveFileName || state.exportName || '').trim().toLowerCase();
-            if (!fileName.startsWith('agenda')
-                && !state.pages.some(page => page?.templateKind === TEMPLATE_KINDS.AGENDA)) return false;
-            for (const folderId of state.driveParentIds || []) {
-                const crumb = driveFolderStack.find(entry => entry?.id === folderId);
-                const folderName = crumb ? crumb.name : (await getDriveFolderMeta(folderId))?.name;
-                if (String(folderName || '').trim().toLowerCase() === 'agenda') return state.driveFileId === fileId;
-            }
-            return false;
-        }
-
         function openPagesPanel() {
             renderPagesList({ force: true });
-            const calendarBtn = document.getElementById('btn-open-calendar');
-            calendarBtn?.classList.add('hidden');
-            void isAgendaFolderDocument().then(show => {
-                if (show) calendarBtn?.classList.remove('hidden');
-            }).catch(() => {});
             if (setCoverBtn) setCoverBtn.disabled = !!state.isReadOnly;
             if (scanPageBtn) scanPageBtn.disabled = !!state.isReadOnly;
             const pagesPanel = document.getElementById('pages-panel');

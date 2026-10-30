@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "assets": {
     "/app-v5.js": {
-      "sha256": "574ad8ba19677da09f54e51046a19bf03df28afea02f6404d97783d38931fb81",
-      "size": 1716972,
+      "sha256": "9ed3e50dede6e0712413d972e6361dfd0282fbd982e730a46b7b6eba85b2f7a9",
+      "size": 1715623,
       "mime": "application/javascript"
     },
     "/boot-v5.js": {

@@ -37,38 +37,6 @@ for (const width of [390, 1280]) {
   });
 }
 
-test('Pages-panel Calendar stays as a Soon button only for agenda documents in the Agenda folder', async ({ page }) => {
-  await page.goto('/?e2e=1');
-  await page.evaluate(() => __IHN_TEST_API__.ready());
-  await page.evaluate(async () => {
-    await __IHN_TEST_API__.resetLocalDocument(2, 'Plain');
-    await __IHN_TEST_API__.showEditorForTest();
-    openPagesPanel();
-  });
-  const calendar = page.locator('#btn-open-calendar');
-  await expect(calendar).toBeHidden();
-  // A local agenda document never showed the Calendar entry point.
-  await page.evaluate(() => {
-    closePagesPanel();
-    state.pages[1].templateKind = 'agenda';
-    openPagesPanel();
-  });
-  await page.waitForTimeout(100);
-  await expect(calendar).toBeHidden();
-  // The same document opened from Drive's Agenda folder keeps it, as "Soon".
-  await page.evaluate(() => {
-    closePagesPanel();
-    state.driveFileId = 'agenda-file';
-    state.driveParentIds = ['agenda-folder'];
-    driveFolderStack.push({ id: 'agenda-folder', name: 'Agenda' });
-    openPagesPanel();
-  });
-  await expect(calendar).toBeVisible();
-  await expect(calendar.locator('.soon-badge')).toHaveText('Soon');
-  await calendar.click();
-  await expect(page.locator('#soon-toast')).toHaveText('Soon');
-});
-
 test('stored agenda side panels are kept as opaque page data', async ({ page }) => {
   await page.goto('/?e2e=1');
   await page.evaluate(() => __IHN_TEST_API__.ready());
