@@ -84,7 +84,6 @@
                 locationHref: window.location.href
             });
         }
-        const PDFJS_VERSION = '3.11.174';
         const PDFJS_WORKER_URL = window.InhouseAssetUrl('vendor/pdfjs/pdf.worker.min.js');
         const PDFJS_ASSETS_BASE_URL = new URL('vendor/pdfjs',location.href).href;
         const PDFJS_CMAP_URL = `${PDFJS_ASSETS_BASE_URL}/cmaps/`;
@@ -329,7 +328,6 @@
         const PAGE_CALENDAR_PANEL_HEIGHT = 184;
         const PAGE_CALENDAR_PANEL_GAP = 14;
         const VISIBLE_PAGE_BUFFER = 1;
-        const VISIBLE_PAGE_BUFFER_ACTIVE = 0;
         const MAX_ACTIVE_PAGES = 3;
         const MAX_PDF_BACKGROUND_CACHE = 6;
         const MAX_IMAGE_CACHE = 30;
@@ -541,16 +539,6 @@
             });
         }
 
-        async function deleteOriginalPdfBytes(key) {
-            if (!key) return;
-            const db = await openOriginalPdfDb();
-            if (!db) return;
-            try {
-                const tx = db.transaction(ORIG_PDF_STORE, 'readwrite');
-                tx.objectStore(ORIG_PDF_STORE).delete(key);
-            } catch (err) { /* ignore */ }
-        }
-
         function normalizeDriveOpenCacheMeta(meta = {}) {
             const modifiedValue = meta.modifiedTime ?? meta.driveLastKnownModified;
             const modifiedTime = typeof modifiedValue === 'number'
@@ -706,8 +694,6 @@
 
         const imageCache = new Map();
         const imageCacheUsage = new Map();
-        const highlighterMaskCanvas = document.createElement('canvas');
-        const highlighterMaskCtx = highlighterMaskCanvas.getContext('2d');
         const pageAccess = new Map();
         const pageDirty = new Set();
         const pageDirtyMode = new Map();
@@ -942,145 +928,6 @@
             return stroke;
         }
 
-        // Limit strokes array size by baking old strokes into background
-        const MAX_STROKES_PER_PAGE = 500;
-        const BAKE_THRESHOLD = 400;
-        let bakingInProgress = new Set();
-
-        function shouldBakeStrokes(pageIndex) {
-            // DISABLED: Baking optimization was causing data loss
-            return false;
-        }
-
-        function bakeOldStrokes(pageIndex) {
-            // DISABLED: This optimization was causing stroke data loss due to race conditions
-            // between async image loading callbacks and user input. The strokes array could
-            // change between when we start baking and when the async callback runs.
-            // User data integrity is more important than memory optimization.
-            return;
-
-            const page = state.pages[pageIndex];
-            if (!page || !Array.isArray(page.strokes) || bakingInProgress.has(pageIndex)) return;
-            if (page.strokes.length <= BAKE_THRESHOLD) return;
-
-            bakingInProgress.add(pageIndex);
-
-            const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
-            if (!canvas) {
-                bakingInProgress.delete(pageIndex);
-                return;
-            }
-
-            // Create offscreen canvas for baking
-            const offscreen = document.createElement('canvas');
-            offscreen.width = canvas.width;
-            offscreen.height = canvas.height;
-            const offCtx = offscreen.getContext('2d');
-            offCtx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
-
-            // Draw existing baked background first (if any), then template background
-            function drawBackgroundsAndBake() {
-                if (page.backgroundSource === 'template') {
-                    drawTemplateBackground(offCtx, A4_WIDTH, A4_HEIGHT, 1);
-                    finishBaking();
-                } else {
-                    finishBaking();
-                }
-            }
-
-            // If there's an existing baked background, load and draw it first
-            if (page.bakedBackground) {
-                const existingBaked = new Image();
-                existingBaked.onload = () => {
-                    offCtx.drawImage(existingBaked, 0, 0, A4_WIDTH, A4_HEIGHT);
-                    drawBackgroundsAndBake();
-                };
-                existingBaked.onerror = () => {
-                    // Existing baked background failed to load - abort to avoid data loss
-                    console.warn('Baking aborted: existing bakedBackground failed to load');
-                    bakingInProgress.delete(pageIndex);
-                    releaseOffscreenCanvas();
-                };
-                existingBaked.src = page.bakedBackground;
-            } else {
-                drawBackgroundsAndBake();
-            }
-
-            function finishBaking() {
-                // Draw old strokes to bake (keep last BAKE_THRESHOLD/2 strokes editable)
-                const keepCount = Math.floor(BAKE_THRESHOLD / 2);
-                const strokesToBake = page.strokes.slice(0, page.strokes.length - keepCount);
-
-                for (const stroke of strokesToBake) {
-                    if (stroke.tool === 'eraser-stroke') continue;
-                    drawSmoothStroke(offCtx, stroke);
-                }
-
-                // Convert baked strokes to background image
-                let bakedDataUrl;
-                try {
-                    bakedDataUrl = offscreen.toDataURL('image/jpeg', 0.7);
-                } catch (e) {
-                    console.warn('Baking failed: toDataURL error', e);
-                    bakingInProgress.delete(pageIndex);
-                    releaseOffscreenCanvas();
-                    return;
-                }
-
-                // Validate the baked image before removing strokes
-                // A valid PNG data URL should be at least ~100 chars (header + minimal data)
-                // and must start with the correct prefix
-                const minValidLength = 100;
-                if (!bakedDataUrl ||
-                    !bakedDataUrl.startsWith('data:image/png;base64,') ||
-                    bakedDataUrl.length < minValidLength) {
-                    console.warn('Baking failed: invalid data URL generated');
-                    bakingInProgress.delete(pageIndex);
-                    releaseOffscreenCanvas();
-                    return;
-                }
-
-                // Verify the image can actually be loaded before removing strokes
-                const testImg = new Image();
-                testImg.onload = () => {
-                    // Double-check dimensions match
-                    if (testImg.width !== offscreen.width || testImg.height !== offscreen.height) {
-                        console.warn('Baking failed: image dimensions mismatch');
-                        bakingInProgress.delete(pageIndex);
-                        releaseOffscreenCanvas();
-                        return;
-                    }
-
-                    // Release old baked background from cache before replacing
-                    if (page.bakedBackground) {
-                        imageCache.delete(page.bakedBackground);
-                        imageCacheUsage.delete(page.bakedBackground);
-                    }
-
-                    // Safe to proceed - image validated
-                    page.bakedBackground = bakedDataUrl;
-                    page.strokes = page.strokes.slice(page.strokes.length - keepCount);
-
-                    bakingInProgress.delete(pageIndex);
-                    releaseOffscreenCanvas();
-                    redrawPage(pageIndex);
-                    scheduleSave(false, pageIndex);
-                };
-                testImg.onerror = () => {
-                    console.warn('Baking failed: generated image could not be loaded');
-                    bakingInProgress.delete(pageIndex);
-                    releaseOffscreenCanvas();
-                };
-                testImg.src = bakedDataUrl;
-            }
-
-            // Release offscreen canvas memory
-            function releaseOffscreenCanvas() {
-                offscreen.width = 0;
-                offscreen.height = 0;
-            }
-        }
-
         // Memory-limited history with stroke count estimation
         const MAX_HISTORY_MEMORY = 25000; // Approximate max points in history
 
@@ -1114,12 +961,6 @@
                     }
                 }
             }
-            return totalPoints;
-        }
-
-        function estimateHistoryMemory() {
-            let totalPoints = 0;
-            for (const action of state.history) totalPoints += estimateHistoryActionMemory(action);
             return totalPoints;
         }
 
@@ -1240,10 +1081,8 @@
             panX: 0,
             panY: 0,
             overscrollY: 0,
-            pageCreateLocked: false,
             pendingPageCreate: false,
             isPanning: false,
-            isScrolling: false,
             scrollLocked: false,
             lastPanX: 0,
             lastPanY: 0,
@@ -1275,7 +1114,6 @@
             driveOwnerEmail: '',
             driveOwnerPhoto: '',
             driveResourceKey: '',
-            isUndoRedo: false,
             panVelocityX: 0,
             panVelocityY: 0,
             lastPanTime: 0,
@@ -1297,7 +1135,6 @@
             driveHeadRevisionId: null,
             driveRevisionVersion: null,
             driveLastKnownModified: null,
-            driveLastPolledAt: 0,
             collabEnabled: false,
             collabPollInterval: null,
             cleanOriginalPdfBytes: null,
@@ -1715,8 +1552,6 @@
         const eraserMenu = document.getElementById('eraser-menu');
         const eraserToggle = document.getElementById('eraser-stroke-toggle');
         const eraserButton = document.getElementById('btn-eraser');
-        const statusBar = document.getElementById('status-bar');
-        const statusText = document.getElementById('status-text');
         const pdfInput = document.getElementById('pdf-input');
         const coverImageInput = document.getElementById('cover-image-input');
         const loadingOverlay = document.getElementById('loading-overlay');
@@ -1898,8 +1733,6 @@
         let driveUploadedContentVersion = 0;
         let driveConfirmedContentHash = '';
         let backgroundExitSavePromise = null;
-        let backgroundExitSaveFailed = false;
-        let backgroundExitSaveFileId = null;
         let lifecycleExitSavePromise = null;
         let lifecycleExitSaveFileId = null;
         let lifecycleLocalCheckpointPromise = null;
@@ -1913,11 +1746,7 @@
         let activeDriveSaveController = null;
         const saveDebugState = {
             phase: 'saved',
-            status: 'Saved',
-            runId: 0,
-            runStartedAt: Date.now(),
-            lastUpdatedAt: Date.now(),
-            events: []
+            status: 'Saved'
         };
         let saveDebugElements = null;
         let saveDebugRenderInterval = null;
@@ -2022,7 +1851,6 @@
         let localBackupLastAt = 0;
         let notebookDbPromise = null;
         let notebookDbInstance = null;
-        const deferredBakePages = new Set();
         let driveRecentsCache = [];
         let driveStarredCache = [];
         let driveSharedCache = [];
@@ -2176,7 +2004,6 @@
                 clearSelection();
                 state.selectionTransform = null;
                 state.pendingPageCreate = false;
-                state.pageCreateLocked = false;
                 state.overscrollY = 0;
                 updateAddPageIndicator();
                 clearTimeout(state.saveTimeout);
@@ -2722,20 +2549,6 @@
             return true;
         }
 
-        function centerViewport() {
-            const viewportRect = canvasViewport.getBoundingClientRect();
-            const padding = 20;
-            const availableWidth = viewportRect.width - padding * 2;
-            const pageWidth = getMaxPageWidth();
-            const targetZoom = Math.min(2, Math.max(0.2, availableWidth / pageWidth));
-            state.zoom = targetZoom;
-
-            // PAGE_PADDING on the container is scaled by zoom
-            state.panX = viewportRect.width / 2 - (pageWidth * state.zoom) / 2 - (PAGE_PADDING * state.zoom);
-            state.panY = 0;
-            updateTransform();
-            scheduleVisiblePageUpdate(true);
-        }
         function centerViewOnTop() {
             alignViewportTopToWidth(getMaxPageWidth());
             updateAddPageIndicator();
@@ -2846,7 +2659,7 @@
             const page = state.pages[pageIndex];
             if (page && !page.preview && !page.unloaded) {
                 const hasContent = (Array.isArray(page.strokes) && page.strokes.length > 0)
-                    || page.backgroundImage || page.bakedBackground
+                    || page.backgroundImage
                     || (Array.isArray(page.images) && page.images.length > 0);
                 if (hasContent) {
                     page.preview = renderPagePreview(pageIndex);
@@ -3193,8 +3006,6 @@
                 state.activePdfObjectUrl = null;
             }
             // Release original PDF bytes (kept for text-preserving export via pdf-lib).
-            state.activePdfBytes = null;
-            state.activePdfBytesFileId = null;
             state.cleanOriginalPdfBytes = null;
             state.cleanOriginalPageSizes = null;
             // Drop the parsed pdf-lib document cached against the previous bytes.
@@ -4693,15 +4504,6 @@
                         stroke: persistedStroke
                     });
                     scheduleSave(false, targetPageIndex, 'stroke');
-
-                    // Check if we need to bake old strokes
-                    if (shouldBakeStrokes(targetPageIndex)) {
-                        if (isPenWriting) {
-                            deferredBakePages.add(targetPageIndex);
-                        } else {
-                            setTimeout(() => bakeOldStrokes(targetPageIndex), 100);
-                        }
-                    }
                 }
 	                clearEraserPreview(pageIndex);
 
@@ -5285,48 +5087,6 @@
             });
             page.deletedStrokeStamps = nextStamps;
             page.deletedStrokeIds = Object.keys(nextStamps).sort();
-        }
-
-        function deleteSelectedImages(pageIndex) {
-            if (state.isReadOnly || localPageStructureMutationToken || remotePageStructureApplyInProgress) return;
-            const page = state.pages[pageIndex];
-            if (!page) return;
-            if (!isPageLoaded(page)) {
-                ensurePageDataLoaded(pageIndex);
-                return;
-            }
-            if (!Array.isArray(page.images)) return;
-            if (!state.selection.imageIndices || state.selection.imageIndices.length === 0) return;
-            const uniqueIndices = Array.from(new Set(state.selection.imageIndices))
-                .filter(index => index >= 0 && index < page.images.length);
-            if (uniqueIndices.length === 0) return;
-
-            const removed = uniqueIndices
-                .slice()
-                .sort((a, b) => a - b)
-                .map(index => ({
-                    index,
-                    image: JSON.parse(JSON.stringify(page.images[index]))
-                }));
-
-            uniqueIndices
-                .slice()
-                .sort((a, b) => b - a)
-                .forEach(index => {
-                    page.images.splice(index, 1);
-                });
-
-            trackDeletedStrokeIds(page, removed);
-            saveToHistory({
-                type: 'delete-images',
-                pageIndex,
-                images: removed
-            });
-            clearSelection();
-            redrawPage(pageIndex);
-            renderPagesList();
-            scheduleSave(false, pageIndex);
-            showStatus(uniqueIndices.length > 1 ? 'Images deleted' : 'Image deleted', { preserveState: true });
         }
 
         function deleteSelection(pageIndex) {
@@ -6646,7 +6406,7 @@
             }
             updateDriveAuthUI();
             showStatus('Drive sign-in needed to keep syncing', { phase: 'paused' });
-            recordSaveDebug(`Drive auth paused: ${reason}`, { phase: 'paused' });
+            renderSaveDebugPopup();
         }
 
         function ensureDriveToken(interactive = false) {
@@ -6822,7 +6582,6 @@
             saveQueued = false;
             presenceSavePhase = '';
             presenceSavePhaseAt = 0;
-            presenceSavePhasePushInFlight = false;
             state.driveHeadRevisionId = null;
             state.driveRevisionVersion = null;
             resetDriveContentSyncVersion();
@@ -7158,8 +6917,6 @@
                     queueScrollPagePreviews(true);
                     activePdfPageCount = pdf.numPages;
                     state.activePdfObjectUrl = objectUrl;
-                    state.activePdfBytes = arrayBuffer;
-                    state.activePdfBytesFileId = restoreFileId;
                     pdfBackgroundScale = getPdfBackgroundScale(activePdfPageCount, blob.size);
                     scheduleVisiblePageUpdate(true);
 
@@ -7284,8 +7041,6 @@
                     if (parsedPdf && activePdfDocument === parsedPdf) {
                         activePdfDocument = null;
                         activePdfPageCount = 0;
-                        state.activePdfBytes = null;
-                        state.activePdfBytesFileId = null;
                         state.activePdfObjectUrl = null;
                         try { parsedPdf.destroy(); } catch (error) {}
                     }
@@ -7939,13 +7694,6 @@
             if (resourceKey) params.set('resourcekey', resourceKey);
             if (cacheBust) params.set('ihn_refresh', String(cacheBust));
             return `https://drive.google.com/file/d/${encodeURIComponent(fileId)}/preview?${params.toString()}`;
-        }
-
-        function buildPublicDriveOpenUrl(fileId, resourceKey = '') {
-            const params = new URLSearchParams();
-            if (resourceKey) params.set('resourcekey', resourceKey);
-            const suffix = params.toString();
-            return `https://drive.google.com/file/d/${encodeURIComponent(fileId)}/view${suffix ? `?${suffix}` : ''}`;
         }
 
         async function fetchPublicSharedMetadata(fileId, resourceKey = '') {
@@ -9541,10 +9289,6 @@
             }
         }
 
-        function openStarredFolder(folder) {
-            openDriveFolderFromCard(folder, null);
-        }
-
         function createDriveStarredCard(item) {
             if (item?.mimeType === 'application/vnd.google-apps.folder') {
                 return createDriveFolderCard(item);
@@ -9877,10 +9621,6 @@
 
         function navigateDriveBreadcrumb(index) {
             navigateDriveFolderTo(index);
-        }
-
-        function enterDriveFolder(folder) {
-            openDriveFolderFromCard(folder, null);
         }
 
         // ── § 4.15b  Home tabs and manila folders ───────────────────────────
@@ -13045,13 +12785,6 @@
             ctx.clearRect(damage.minX, damage.minY, damage.maxX - damage.minX, damage.maxY - damage.minY);
             ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
             drawPageBackgroundLayer(ctx, page, pageIndex, scale);
-            if (page.bakedBackground) {
-                const image = getCachedImage(page.bakedBackground, () => redrawPage(pageIndex, { assetsReady: true }));
-                if (image?.complete) {
-                    const size = getPageDimensions(pageIndex);
-                    ctx.drawImage(image, 0, 0, size.width, size.height);
-                }
-            }
             if (!pendingCleanOriginalSwap) {
                 drawLegacyCoverStrokes(ctx, { legacyCoverStrokes: (page.legacyCoverStrokes || []).filter(intersects) });
             }
@@ -13296,24 +13029,6 @@
             }
         }
 
-        // Get canvas position accounting for scale
-        function getCanvasPos(canvas, e) {
-            const rect = canvas.getBoundingClientRect();
-            const pageIndex = parseInt(canvas.dataset.page || '-1', 10);
-            if (Number.isFinite(pageIndex) && pageIndex >= 0) {
-                const { width: pageWidth, height: pageHeight } = getPageDimensions(pageIndex);
-                return {
-                    x: (e.clientX - rect.left) * (pageWidth / Math.max(1, rect.width)),
-                    y: (e.clientY - rect.top) * (pageHeight / Math.max(1, rect.height))
-                };
-            }
-            const zoom = Number.isFinite(state.zoom) && state.zoom > 0 ? state.zoom : 1;
-            return {
-                x: (e.clientX - rect.left) / zoom,
-                y: (e.clientY - rect.top) / zoom
-            };
-        }
-
         let lastPruneTime = 0;
 
         function touchImageCache(src) {
@@ -13378,29 +13093,6 @@
             }
         }
 
-        function ensureHighlighterMask(logicalWidth = A4_WIDTH, logicalHeight = A4_HEIGHT) {
-            const width = Math.max(1, Math.round(logicalWidth * CANVAS_SCALE));
-            const height = Math.max(1, Math.round(logicalHeight * CANVAS_SCALE));
-            if (highlighterMaskCanvas.width !== width || highlighterMaskCanvas.height !== height) {
-                highlighterMaskCanvas.width = width;
-                highlighterMaskCanvas.height = height;
-            }
-        }
-
-        function addRoundedRectPath(ctx, x, y, width, height, radius) {
-            const r = Math.max(0, Math.min(radius, width / 2, height / 2));
-            ctx.moveTo(x + r, y);
-            ctx.lineTo(x + width - r, y);
-            ctx.quadraticCurveTo(x + width, y, x + width, y + r);
-            ctx.lineTo(x + width, y + height - r);
-            ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
-            ctx.lineTo(x + r, y + height);
-            ctx.quadraticCurveTo(x, y + height, x, y + height - r);
-            ctx.lineTo(x, y + r);
-            ctx.quadraticCurveTo(x, y, x + r, y);
-            ctx.closePath();
-        }
-
         function drawFixedHighlighterStroke(ctx, stroke) {
             if (!stroke || !stroke.points || stroke.points.length === 0) return;
             const points = stroke.points;
@@ -13453,20 +13145,6 @@
             }
             const last = points[points.length - 1];
             ctx.lineTo(last.x, last.y);
-        }
-
-        function drawHighlighterCaps(ctx, stroke) {
-            const points = stroke.points;
-            if (!points || points.length < 2) return;
-            const radius = Math.max(1, stroke.width * 0.16);
-            ctx.save();
-            ctx.globalAlpha *= 0.45;
-            ctx.fillStyle = stroke.color;
-            ctx.beginPath();
-            ctx.arc(points[0].x, points[0].y, radius, 0, Math.PI * 2);
-            ctx.arc(points[points.length - 1].x, points[points.length - 1].y, radius, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
         }
 
         // ── § 4.6  Core drawing engine ────────────────────────────────────────
@@ -13668,14 +13346,14 @@
                 && previousPaint.strokeCount === page.strokes.length
                 && previousPaint.width === canvas.width && previousPaint.height === canvas.height
                 && previousPaint.background === page.backgroundImage && previousPaint.images === page.images
-                && previousPaint.baked === page.bakedBackground && remoteLiveErasePreviews.size === 0
+                && remoteLiveErasePreviews.size === 0
                 && !options.assetsReady && !options.duringErase) return;
             if (previousPaint) previousPaint.cancelled = true;
             if (!options.duringErase && isPenWriting) {
                 page.needsRedraw = true;
                 const job = {cancelled:false, page, generation, strokes: page.strokes,
                     strokeCount: page.strokes.length, width: canvas.width, height: canvas.height,
-                    background: page.backgroundImage, images: page.images, baked: page.bakedBackground};
+                    background: page.backgroundImage, images: page.images};
                 pendingPageRepaints.set(canvas,job);
                 const resume = () => {
                     if (job.cancelled || !canvas.isConnected || state.pages[pageIndex] !== page) {
@@ -13702,14 +13380,6 @@
 
             drawPageBackgroundLayer(ctx, page, pageIndex, renderScale);
 
-            // Draw baked background if available (contains old strokes)
-            if (page.bakedBackground) {
-                const bakedImg = getCachedImage(page.bakedBackground, () => redrawPage(pageIndex, { assetsReady: true }));
-                if (bakedImg.complete) {
-                    ctx.drawImage(bakedImg, 0, 0, pageWidth, pageHeight);
-                }
-            }
-
             // Hide strokes burnt into the page raster (legacy app-saved files
             // without a clean-original cache) before drawing user content.
             if (staged) {
@@ -13719,7 +13389,7 @@
                 const strokeCount = page.strokes.length;
                 const job = { cancelled: false, page, generation, strokes: page.strokes,
                     strokeCount, width: canvas.width, height: canvas.height,
-                    background: page.backgroundImage, images: page.images, baked: page.bakedBackground };
+                    background: page.backgroundImage, images: page.images };
                 pendingPageRepaints.set(canvas, job);
                 const strokes = getRemoteLiveErasePreviewStrokes(page);
                 const covers = !pendingCleanOriginalSwap ? (page.legacyCoverStrokes || []) : [];
@@ -14087,7 +13757,7 @@
                 ? 'All annotations across the document will be removed. A milestone entry will be added so you can roll forward to the current state again later.'
                 : `Roll the document back to the version saved by ${entry.author?.name || 'unknown'} on ${whenStr}.\nA new milestone entry will be added so you can roll forward again later.`;
             const sliderText = entry.isOriginal ? 'Slide to revert' : 'Slide to restore';
-            const requestedContext = captureLocalPageStructureDocumentContext();
+            const requestedContext = captureDocumentPersistenceContext();
             const ok = await showConfirmSlider({ title: titleText, message, sliderText });
             if (!ok) return false;
             let structureToken = await acquireLocalPageStructureMutation(12_000, requestedContext);
@@ -14137,88 +13807,6 @@
                     ? (hasCleanPdf ? 'Reverted to original PDF.' : 'Reverted to original document.')
                     : 'Document restored.',
                     { autoClose: true });
-            } else {
-                state.pendingVersionHint = null;
-            }
-            return applied;
-        }
-
-        async function revertToOriginalPdf() {
-            if (!state.cleanOriginalPdfBytes || !state.cleanOriginalPdfBytes.byteLength) {
-                showStatus('Original PDF not available for this document.', { error: true });
-                return false;
-            }
-            const ok = window.confirm(
-                'Discard ALL annotations and revert this document to the clean original PDF?\n\nThis cannot be undone (a new version entry will be added so you can roll back if needed).'
-            );
-            if (!ok) return false;
-            let structureToken = await acquireLocalPageStructureMutation();
-            if (!structureToken) return false;
-            let applied = false;
-            try {
-            const assertStructureContext = () => assertLocalPageStructureContext(structureToken);
-            const recoveryCreated = await captureTimelineRecoveryPoint('Before reverting to original PDF', {
-                assertContext: assertStructureContext
-            });
-            assertStructureContext();
-            if (!recoveryCreated) {
-                showStatus('Revert cancelled: a safe recovery point could not be created.', { error: true });
-                return false;
-            }
-            await swapDisplayDocToCleanOriginal({ assertContext: assertStructureContext });
-            assertStructureContext();
-            // Build a fresh, empty page-set matching the clean original PDF page count.
-            // activePdfDocument is the clean source after swapDisplayDocToCleanOriginal.
-            const originalSizes = Array.isArray(state.cleanOriginalPageSizes) ? state.cleanOriginalPageSizes : [];
-            let numPages = originalSizes.length || activePdfDocument?.numPages || 0;
-            if (!numPages && state.pages?.length) numPages = state.pages.length;
-            if (!numPages) {
-                showStatus('Could not determine original page count.', { error: true });
-                return false;
-            }
-            const newPages = [];
-            for (let i = 1; i <= numPages; i++) {
-                let pageSize = originalSizes[i - 1] || { width: A4_WIDTH, height: A4_HEIGHT };
-                if (!originalSizes[i - 1] && activePdfDocument) {
-                    try {
-                        const pdfPage = await activePdfDocument.getPage(i);
-                        assertStructureContext();
-                        const vp = pdfPage.getViewport({ scale: 1 });
-                        pageSize = { width: Math.round(vp.width), height: Math.round(vp.height) };
-                        if (pdfPage.cleanup) pdfPage.cleanup();
-                    } catch (e) {
-                        // A PDF page failure can use the A4 fallback, but a
-                        // document-session change must escape immediately.
-                        assertStructureContext();
-                    }
-                }
-                newPages.push({
-                    pageId: `original-page-${i}`,
-                    strokes: [],
-                    images: [],
-                    deletedStrokeIds: [],
-                    backgroundImage: null,
-                    backgroundSource: 'pdf',
-                    pdfPageIndex: i,
-                    pageWidth: pageSize.width,
-                    pageHeight: pageSize.height,
-                    needsRedraw: true
-                });
-            }
-            // Mark the upcoming save as a milestone — preserves the version we're
-            // reverting AWAY from so the user can roll forward to it later.
-            state.pendingVersionHint = {
-                milestone: true,
-                kind: 'revert-original',
-                summary: 'Reverted to clean original PDF'
-            };
-            applied = await applyRestoredPages(newPages, { structureToken });
-            structureToken = null;
-            } finally {
-                if (structureToken) releaseLocalPageStructureMutation(structureToken);
-            }
-            if (applied) {
-                showStatus('Reverted to original PDF.', { autoClose: true });
             } else {
                 state.pendingVersionHint = null;
             }
@@ -14907,7 +14495,6 @@
             };
 
             const months = groupTimelineEntriesForDisplay(reversed);
-            const newestMonthKey = months[0]?.key || null;
             months.forEach((month, monthIdx) => {
                 const monthGroup = document.createElement('li');
                 monthGroup.className = 'timeline-month-group';
@@ -15868,8 +15455,6 @@
                             }
                         }
                         if (!pendingDrive) clearPendingExitUpload(exitingFileId || '');
-                        backgroundExitSaveFailed = false;
-                        backgroundExitSaveFileId = null;
                         if (pendingDrive && typeof flushLiveCollaborationBeforeExit === 'function') {
                             void flushLiveCollaborationBeforeExit(650).catch(() => false);
                         }
@@ -16789,7 +16374,6 @@
                 state.panY = Math.max(minPanY, state.panY + dy);
                 state.overscrollY = 0;
                 state.pendingPageCreate = false;
-                state.pageCreateLocked = false;
                 updateAddPageIndicator();
                 return;
             }
@@ -16808,7 +16392,6 @@
                 const canCreate = bottomInView < viewportHeight * CREATE_PAGE_MIN_BOTTOM_RATIO;
 
                 state.pendingPageCreate = state.overscrollY >= OVERSCROLL_THRESHOLD && canCreate;
-                state.pageCreateLocked = state.pendingPageCreate;
                 updateAddPageIndicator();
                 if (overscrollResetTimeout) {
                     clearTimeout(overscrollResetTimeout);
@@ -16819,7 +16402,6 @@
                         state.overscrollY = 0;
                         state.panY = Math.max(state.panY, reset.minPanY);
                         state.pendingPageCreate = false;
-                        state.pageCreateLocked = false;
                         updateAddPageIndicator();
                         updateTransform();
                     }
@@ -16838,21 +16420,18 @@
                 const bottomInView = state.panY + getContentHeight() * state.zoom;
                 const canCreate = bottomInView < viewportHeight * CREATE_PAGE_MIN_BOTTOM_RATIO;
                 state.pendingPageCreate = state.overscrollY >= OVERSCROLL_THRESHOLD && canCreate;
-                state.pageCreateLocked = state.pendingPageCreate;
                 updateAddPageIndicator();
                 return;
             }
 
             state.panY = nextPanY;
             state.pendingPageCreate = false;
-            state.pageCreateLocked = false;
             updateAddPageIndicator();
         }
 
         function finalizePendingPageCreation() {
             if (state.isReadOnly) {
                 state.pendingPageCreate = false;
-                state.pageCreateLocked = false;
                 state.overscrollY = 0;
                 updateAddPageIndicator();
                 return false;
@@ -16865,13 +16444,11 @@
                 addPage(null, true);
                 state.overscrollY = 0;
                 state.pendingPageCreate = false;
-                state.pageCreateLocked = false;
                 updateAddPageIndicator();
                 animatePanTo(prevLimit.minPanY);
                 return true;
             }
             state.pendingPageCreate = false;
-            state.pageCreateLocked = false;
             updateAddPageIndicator();
             return false;
         }
@@ -17215,7 +16792,6 @@
             }
             wheelReleaseTimeout = setTimeout(() => {
                 finalizePendingPageCreation();
-                state.pageCreateLocked = false;
             }, 300);
         }
 
@@ -17448,7 +17024,6 @@
                 state.isPanning = false;
                 canvasViewport.style.cursor = '';
                 finalizePendingPageCreation();
-                state.pageCreateLocked = false;
                 stopInertia();
                 if (state.overscrollY > 0) {
                     const reset = getBottomLimit();
@@ -17491,7 +17066,6 @@
                 const finalLock = state.scrollLocked || 'free';
                 state.scrollLocked = false;
                 finalizePendingPageCreation();
-                state.pageCreateLocked = false;
                 if (state.overscrollY === 0) {
                     const speed = Math.hypot(state.panVelocityX, state.panVelocityY);
                     if (speed > TOUCH_INERTIA_STOP) {
@@ -17535,7 +17109,6 @@
                 state.panY = nextRect.height / 2 - anchorY * state.zoom;
                 state.overscrollY = 0;
                 state.pendingPageCreate = false;
-                state.pageCreateLocked = false;
                 updateAddPageIndicator();
                 updateTransform();
             });
@@ -17576,11 +17149,6 @@
             }
             scheduleViewSave();
             scheduleVisiblePageUpdate();
-        }
-
-        function setZoom(newZoom) {
-            state.zoom = Math.max(0.5, Math.min(3, newZoom));
-            updateTransform();
         }
 
         let calendarVisibleMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
@@ -18166,7 +17734,7 @@
                 return;
             }
             ensurePageIds(state.pages);
-            const requestedContext = captureLocalPageStructureDocumentContext();
+            const requestedContext = captureDocumentPersistenceContext();
             const targetPageIds = state.pages
                 .slice(startPage)
                 .map(page => String(page?.pageId || ''))
@@ -18179,7 +17747,7 @@
                 const totalDays = mode === 'week' ? effectiveCount * 7 : effectiveCount;
                 const endDate = addCalendarDays(startDate, totalDays - 1);
                 const eventsByDay = await getCalendarEventsForDateRange(startDate, endDate);
-                if (!isLocalPageStructureDocumentContextCurrent(requestedContext)) {
+                if (!isDocumentPersistenceContextCurrent(requestedContext)) {
                     throw new Error('Calendar target document changed');
                 }
                 structureToken = await acquireLocalPageStructureMutation(12_000, requestedContext);
@@ -19475,7 +19043,7 @@
         async function importScannedPagesFromBridge(data, sessionId) {
             if (scannerImportInProgress || sessionId !== scannerEditorSessionId) return;
             scannerImportInProgress = true;
-            const expectedContext = captureLocalPageStructureDocumentContext();
+            const expectedContext = captureDocumentPersistenceContext();
             const insertAfter = Number.isFinite(state.activePageIndex)
                 ? state.activePageIndex
                 : state.pages.length - 1;
@@ -19485,7 +19053,7 @@
                 const assets = [];
                 for (let index = 0; index < incomingPages.length; index += 1) {
                     if (sessionId !== scannerEditorSessionId
-                        || !isLocalPageStructureDocumentContextCurrent(expectedContext)) {
+                        || !isDocumentPersistenceContextCurrent(expectedContext)) {
                         throw createAbortError('Scanner document changed');
                     }
                     const incoming = incomingPages[index];
@@ -19519,7 +19087,7 @@
                 }
                 if (sessionId !== scannerEditorSessionId
                     || state.isReadOnly
-                    || !isLocalPageStructureDocumentContextCurrent(expectedContext)) {
+                    || !isDocumentPersistenceContextCurrent(expectedContext)) {
                     throw createAbortError('Scanner document changed');
                 }
                 const inserted = await insertScannedPagesAt(assets, insertAfter, {
@@ -19629,15 +19197,10 @@
             clearSelection();
             state.selectionTransform = null;
             releasePageTransientAssets(currentPage);
-            if (currentPage.bakedBackground) {
-                imageCache.delete(currentPage.bakedBackground);
-                imageCacheUsage.delete(currentPage.bakedBackground);
-            }
             const nextPage = {
                 ...currentPage,
                 ...clonePageSnapshot(snapshot),
                 preview: null,
-                bakedBackground: null,
                 strokeCount: getVisibleStrokeCount(snapshot),
                 unloaded: false,
                 pendingUnload: false,
@@ -20023,27 +19586,6 @@
             }
         }
 
-        async function waitForCollaborativeStructureIdle(timeoutMs = 12_000) {
-            const deadline = Date.now() + timeoutMs;
-            while (collabPageOrderMutationInProgress
-                || collabPageStoreRewritePending
-                || collabPageStoreRewritePromise) {
-                if (Date.now() >= deadline) {
-                    showStatus('Still syncing page order. Try again in a moment.', {
-                        error: true,
-                        preserveState: true
-                    });
-                    return false;
-                }
-                if (collabPageStoreRewritePromise) {
-                    try { await collabPageStoreRewritePromise; } catch (error) {}
-                } else {
-                    await new Promise(resolve => setTimeout(resolve, 32));
-                }
-            }
-            return true;
-        }
-
         async function waitForPromiseBeforeDeadline(promise, deadline) {
             const remaining = Math.max(0, deadline - Date.now());
             if (!promise || remaining <= 0) return false;
@@ -20060,27 +19602,14 @@
             }
         }
 
-        function captureLocalPageStructureDocumentContext() {
-            return {
-                sessionToken: getDocumentSessionToken(),
-                fileId: String(state.driveFileId || '')
-            };
-        }
-
-        function isLocalPageStructureDocumentContextCurrent(context) {
-            return !!context
-                && isDocumentSessionTokenValid(context.sessionToken)
-                && String(state.driveFileId || '') === context.fileId;
-        }
-
         async function acquireLocalPageStructureMutation(
             timeoutMs = 12_000,
-            expectedContext = captureLocalPageStructureDocumentContext()
+            expectedContext = captureDocumentPersistenceContext()
         ) {
             // A structural edit really does invalidate the export's page map.
             // Cancel only in this case, not for unrelated pointer/scroll input,
             // so a long export cannot hold page insertion/reordering hostage.
-            if (preparedDrivePdfBuild && isLocalPageStructureDocumentContextCurrent(expectedContext)) {
+            if (preparedDrivePdfBuild && isDocumentPersistenceContextCurrent(expectedContext)) {
                 if (preparedDrivePdfBuild.background) preparedDrivePdfBuild.controller?.abort();
                 else activeDriveSaveController?.abort();
             }
@@ -20094,7 +19623,7 @@
                 || collabPageOrderMutationInProgress
                 || collabPageStoreRewritePending
                 || collabPageStoreRewritePromise) {
-                if (!isLocalPageStructureDocumentContextCurrent(expectedContext)) {
+                if (!isDocumentPersistenceContextCurrent(expectedContext)) {
                     return null;
                 }
                 if (Date.now() >= deadline) {
@@ -20120,7 +19649,7 @@
                     await new Promise(resolve => setTimeout(resolve, 32));
                 }
             }
-            if (!isLocalPageStructureDocumentContextCurrent(expectedContext)) {
+            if (!isDocumentPersistenceContextCurrent(expectedContext)) {
                 return null;
             }
             const token = {
@@ -20216,7 +19745,7 @@
 
         async function insertPhotoPageAt(coverAsset, insertAfterIndex, options = {}) {
             const expectedContext = options.expectedContext
-                || captureLocalPageStructureDocumentContext();
+                || captureDocumentPersistenceContext();
             const anchorPageId = Object.prototype.hasOwnProperty.call(options, 'anchorPageId')
                 ? String(options.anchorPageId || '')
                 : (
@@ -20261,7 +19790,6 @@
                 pageHeight: coverAsset.pageHeight
             });
             photoPage.preview = null;
-            photoPage.bakedBackground = null;
             photoPage.strokeCount = 0;
             photoPage.unloaded = false;
             photoPage.pendingUnload = false;
@@ -20296,7 +19824,7 @@
         async function insertScannedPagesAt(scanAssets, insertAfterIndex, options = {}) {
             if (!Array.isArray(scanAssets) || scanAssets.length < 1) return false;
             const expectedContext = options.expectedContext
-                || captureLocalPageStructureDocumentContext();
+                || captureDocumentPersistenceContext();
             const anchorPageId = Object.prototype.hasOwnProperty.call(options, 'anchorPageId')
                 ? String(options.anchorPageId || '')
                 : (
@@ -20352,8 +19880,7 @@
                         stampCollaborativeItems(page.strokes);
                     } else if (nativeInkLayer) {
                         // Images are durable across local saves, collaboration,
-                        // timeline restores and PDF round-trips; bakedBackground
-                        // is only a transient rendering cache and must not hold ink.
+                        // timeline restores and PDF round-trips.
                         const image = {
                             id: generateStrokeId(),
                             src: asset.dataUrl,
@@ -20367,7 +19894,6 @@
                         page.images.push(image);
                     }
                     page.preview = null;
-                    page.bakedBackground = null;
                     page.strokeCount = page.strokes.length;
                     page.unloaded = false;
                     page.pendingUnload = false;
@@ -20456,7 +19982,7 @@
         async function confirmCoverModal() {
             if (!coverModalSelection || coverApplyInProgress || state.isReadOnly) return;
             ensurePageIds(state.pages);
-            const expectedContext = captureLocalPageStructureDocumentContext();
+            const expectedContext = captureDocumentPersistenceContext();
             const insertAfter = Number.isFinite(state.activePageIndex)
                 ? state.activePageIndex
                 : state.pages.length - 1;
@@ -20468,7 +19994,7 @@
             showLoading('Adding photo page...');
             try {
                 const coverAsset = await buildCoverImageAsset(selectedFile, layoutMode);
-                if (!isLocalPageStructureDocumentContextCurrent(expectedContext)) {
+                if (!isDocumentPersistenceContextCurrent(expectedContext)) {
                     throw createAbortError('Photo page document changed');
                 }
                 const inserted = await insertPhotoPageAt(coverAsset, insertAfter, {
@@ -20483,7 +20009,7 @@
                 console.error('Failed to add photo page:', err);
                 showStatus('Failed to add photo page', { preserveState: true, error: true });
             } finally {
-                if (isLocalPageStructureDocumentContextCurrent(expectedContext)) {
+                if (isDocumentPersistenceContextCurrent(expectedContext)) {
                     hideLoading();
                     setCoverModalBusy(false);
                     if (applied) {
@@ -21840,7 +21366,6 @@
             if (!state.driveFileId || state.driveFileId !== marker.fileId || !state.driveAutosave) return;
             const persistenceContext = captureDocumentPersistenceContext();
             pendingExitResumeInProgress = true;
-            backgroundExitSaveFileId = marker.fileId;
             driveContentVersion = Math.max(Number(marker.contentVersion) || 1, driveContentVersion || 0);
             driveUploadedContentVersion = Math.min(driveUploadedContentVersion, driveContentVersion - 1);
             driveDirty = true;
@@ -21855,19 +21380,16 @@
                 return isDriveUploadFullySettled();
             })()
                 .then(success => {
-                    backgroundExitSaveFailed = !success;
                     if (success) clearPendingExitUpload(marker.fileId);
                     return success;
                 })
                 .catch(error => {
                     console.warn('Pending Drive upload resume failed:', error);
-                    backgroundExitSaveFailed = true;
                     return false;
                 })
                 .finally(() => {
                     pendingExitResumeInProgress = false;
                     backgroundExitSavePromise = null;
-                    if (!backgroundExitSaveFailed) backgroundExitSaveFileId = null;
                     if (isDriveHomeVisible()) void refreshDriveFiles();
                 });
         }
@@ -21923,7 +21445,6 @@
             state.panY = viewState.panY;
             state.overscrollY = 0;
             state.pendingPageCreate = false;
-            state.pageCreateLocked = false;
             updateAddPageIndicator();
             updateTransform();
             return true;
@@ -22173,16 +21694,6 @@
             const normalized = normalizeTimelineHistory(state.versionHistory || []);
             state.versionHistory = normalized;
             return saveTimelineToIndexedDb(normalized);
-        }
-
-        function materializeStoredTimeline(value) {
-            try {
-                const materialized = timelineArchiveCore.materializeArchive(value);
-                return Array.isArray(materialized) ? normalizeTimelineHistory(materialized) : [];
-            } catch (error) {
-                console.warn('Ignoring an invalid local timeline archive:', error);
-                return [];
-            }
         }
 
         async function adoptVersionHistory(incomingHistory, options = {}) {
@@ -22457,7 +21968,6 @@
             const hasContentHint = !!(
                 (typeof page?.strokeCount === 'number' && page.strokeCount > 0)
                 || page?.preview
-                || page?.bakedBackground
             );
             if ((!hasStrokeArray || !hasImageArray) && hasContentHint) {
                 console.error('Refusing to save potentially incomplete page data', { pageIndex });
@@ -22929,35 +22439,6 @@
             });
         }
 
-        async function clearPageDataStoreOnly() {
-            const sessionToken = getDocumentSessionToken();
-            const db = await openNotebookDb();
-            if (!db || !isDocumentSessionTokenValid(sessionToken)) return false;
-            return new Promise((resolve) => {
-                let tx = null;
-                let settled = false;
-                const finish = (saved) => {
-                    if (settled) return;
-                    settled = true;
-                    if (tx) activePageStoreTransactions.delete(tx);
-                    activePageStoreWrites = activePageStoreTransactions.size;
-                    resolve(saved);
-                };
-                try {
-                    tx = db.transaction(PAGE_STORE, 'readwrite');
-                    activePageStoreTransactions.add(tx);
-                    activePageStoreWrites = activePageStoreTransactions.size;
-                    tx.oncomplete = () => finish(isDocumentSessionTokenValid(sessionToken));
-                    tx.onerror = () => finish(false);
-                    tx.onabort = () => finish(false);
-                    tx.objectStore(PAGE_STORE).clear();
-                } catch (error) {
-                    console.error('Failed to start page-data cleanup transaction:', error);
-                    finish(false);
-                }
-            });
-        }
-
         function scheduleCollabPageStoreRewriteRetry() {
             if (!collabPageStoreRewritePending || collabPageStoreRewriteRetryTimer) return;
             const sessionToken = getDocumentSessionToken();
@@ -23262,10 +22743,6 @@
                 imageCacheUsage.delete(page.backgroundImage);
                 URL.revokeObjectURL(page.backgroundImage);
             }
-            if (page.bakedBackground) {
-                imageCache.delete(page.bakedBackground);
-                imageCacheUsage.delete(page.bakedBackground);
-            }
         }
 
         function trimLocalCachesToPageCount(totalPages) {
@@ -23316,10 +22793,9 @@
                 (Array.isArray(page.strokes) && page.strokes.length > 0)
                 || (Array.isArray(page.images) && page.images.length > 0)
                 || page.backgroundImage
-                || page.bakedBackground
             );
             if (!page?.preview && hasPreviewableContent && !page.unloaded && !activePageIndices.has(pageIndex)
-                && (page.backgroundSource !== 'pdf' || page.backgroundImage || page.bakedBackground)) {
+                && (page.backgroundSource !== 'pdf' || page.backgroundImage)) {
                 page.preview = renderPagePreview(pageIndex);
             }
             if (page && page.preview) {
@@ -23405,13 +22881,12 @@
                     try {await task.promise;} finally {if(activeScrollPreviewTask===task)activeScrollPreviewTask=null;}
                 }
                 if(!valid())return;
-                const sources=[data.backgroundImage,data.bakedBackground,...(data.images||[]).map(image=>image.src)].filter(Boolean);
+                const sources=[data.backgroundImage,...(data.images||[]).map(image=>image.src)].filter(Boolean);
                 await Promise.all(sources.map(async src=>{const image=getCachedImage(src);if(!image.complete||!image.naturalWidth)await image.decode();}));
                 if(!valid())return;
                 ctx.setTransform(scale,0,0,scale,0,0);
                 if(data.backgroundImage)ctx.drawImage(getCachedImage(data.backgroundImage),0,0,width,height);
                 else if(source==='template'){const kind=normalizeTemplateKind(data.templateKind);drawTemplateBackgroundThumbnail(ctx,width,height,kind,width*scale,height*scale);}
-                if(data.bakedBackground)ctx.drawImage(getCachedImage(data.bakedBackground),0,0,width,height);
                 if(!pendingCleanOriginalSwap)drawLegacyCoverStrokes(ctx,data);
                 drawImagesOnContext(ctx,data,pageIndex);
                 let started=performance.now();
@@ -23463,12 +22938,6 @@
             }
             // For PDF background pages with no image loaded yet, white fill is already done above
 
-            if (page.bakedBackground) {
-                const bakedImg = getCachedImage(page.bakedBackground);
-                if (bakedImg.complete) {
-                    ctx.drawImage(bakedImg, 0, 0, pageWidth, pageHeight);
-                }
-            }
             drawImagesOnContext(ctx, page, pageIndex);
             for (const stroke of page.strokes) {
                 const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
@@ -24293,8 +23762,7 @@
                 const hasImages = Array.isArray(currentPage.images) && currentPage.images.length > 0;
                 const hasStrokes = Array.isArray(currentPage.strokes) && currentPage.strokes.length > 0;
                 const hasBackground = currentPage.backgroundSource === 'pdf'
-                    || !!currentPage.backgroundImage
-                    || !!currentPage.bakedBackground;
+                    || !!currentPage.backgroundImage;
                 if (hasImages || hasStrokes || hasBackground) {
                     const updatedPreview=renderPagePreview(pageIndex);
                     if(updatedPreview){currentPage.preview=updatedPreview;currentPage.scrollPreviewDirty=false;}
@@ -24345,11 +23813,6 @@
             }
             latestPage.strokes = null;
             latestPage.images = null;
-            if (latestPage.bakedBackground) {
-                imageCache.delete(latestPage.bakedBackground);
-                imageCacheUsage.delete(latestPage.bakedBackground);
-            }
-            latestPage.bakedBackground = null;
             latestPage.unloaded = true;
             latestPage.pendingUnload = false;
             applyPagePreview(pageIndex);
@@ -24695,16 +24158,6 @@
             }, delay);
         }
 
-        function isDriveSyncPending() {
-            return !!(state.driveAutosave && (
-                driveDirty
-                || deferredDriveSave
-                || driveSaveInProgress
-                || driveSaveQueued
-                || driveContentVersion !== driveUploadedContentVersion
-            ));
-        }
-
         function hasSmoothInteraction() {
             return !!(
                 isPenWriting
@@ -24894,7 +24347,6 @@
                 || strokeOpsFlushInProgress
                 || pdfRenderActive
                 || !!activePdfBackgroundRenderTask
-                || _prewarmRunning
                 || !!preparedDrivePdfBuild
             );
         }
@@ -24907,7 +24359,6 @@
                 || !!activePdfBackgroundRenderTask
                 || pdfRenderQueue.length > 0
                 || !!pdfRenderResumeHandle
-                || _prewarmRunning
                 || !!preparedDrivePdfBuild
             );
         }
@@ -24923,7 +24374,6 @@
         function interruptProcessingForUserInput() {
             if (forceFlushingForExit) return;
             noteRecentUserActivity();
-            if (_prewarmRunning) abortPrewarm();
             if (pdfRenderActive || activePdfBackgroundRenderTask || pdfRenderQueue.length > 0 || pdfRenderResumeHandle) {
                 pausePdfRenderingDuringInteraction();
             }
@@ -24950,10 +24400,6 @@
             if (forceFlushingForExit) return;
             if (!hasInterruptibleProcessingInFlight()) return;
             let pausedProcessing = false;
-            if (_prewarmRunning) {
-                abortPrewarm();
-                pausedProcessing = true;
-            }
             // Gesture start interrupts workers/uploads once; subsequent input
             // only extends the quiet deadline and keeps local work queued.
             pausePdfRenderingDuringInteraction();
@@ -25005,7 +24451,7 @@
                 armPausedSaveWatchdog(Math.max(360, penBurstQuiet + 40));
                 return;
             }
-            recordSaveDebug(`Resuming paused save (${reason})`, { phase: 'building' });
+            renderSaveDebugPopup();
             showStatus('Changes pending...', { phase: 'building' });
             if (saveQueued || pageDirty.size > 0 || strokeOpsQueue.length > 0) {
                 queueSave();
@@ -25111,13 +24557,6 @@
                 }
             });
             flushDeferredSavesAfterInteraction();
-            if (deferredBakePages.size > 0) {
-                const pending = Array.from(deferredBakePages);
-                deferredBakePages.clear();
-                pending.forEach((pageIndex) => {
-                    setTimeout(() => bakeOldStrokes(pageIndex), 100);
-                });
-            }
         }
 
         function armPenWritingIdleTimer(delay = 120) {
@@ -25429,7 +24868,7 @@
             driveSaveQueued = false;
             deferredDriveSave = false;
             setPresenceSavePhase('');
-            recordSaveDebug(driveSaveBlockedReason, { phase: 'error' });
+            renderSaveDebugPopup();
             showStatus(driveSaveBlockedReason, { error: true });
         }
 
@@ -25437,7 +24876,7 @@
             if (!driveSaveBlockedReason) return;
             driveSaveBlockedReason = '';
             if (!driveSaveInProgress) driveSavePhase = 'idle';
-            recordSaveDebug('Drive save block cleared');
+            renderSaveDebugPopup();
         }
 
         function reconcileSaveIndicatorIfIdle(delay = 0) {
@@ -25913,24 +25352,6 @@
             return !!(await hydrationRun);
         }
 
-        function waitForSavesIdle(timeoutMs = 15000) {
-            return new Promise((resolve) => {
-                const start = Date.now();
-                const tick = () => {
-                    if (!hasPendingLocalSave() && !hasPendingDriveSave()) {
-                        resolve(true);
-                        return;
-                    }
-                    if (Date.now() - start >= timeoutMs) {
-                        resolve(false);
-                        return;
-                    }
-                    setTimeout(tick, 60);
-                };
-                tick();
-            });
-        }
-
         function scheduleSave(immediate = false, pageIndex = null, mode = 'full') {
             if (state.isReadOnly) return;
             clearDriveSaveBlocked();
@@ -25984,7 +25405,7 @@
             clearTimeout(localSaveRetryTimer);
             localSaveRetryTimer = null;
             saveInProgress = true;
-            recordSaveDebug('Local save started');
+            renderSaveDebugPopup();
             const controller = { aborted: false };
             activeLocalSaveController = controller;
             let result = { ok: false, savedAt: null, cancelled: false };
@@ -25992,7 +25413,7 @@
                 result = await saveToStorage(controller);
             } catch (error) {
                 console.error('Local save failed unexpectedly:', error);
-                recordSaveDebug(`Local save failed: ${error?.message || error}`);
+                renderSaveDebugPopup();
                 result = { ok: false, savedAt: null, cancelled: !!controller.aborted };
             } finally {
                 if (activeLocalSaveController === controller) {
@@ -26011,19 +25432,19 @@
             }
             if (result.deferred) {
                 saveQueued = true;
-                recordSaveDebug('Local checkpoint superseded; retrying current changes');
+                renderSaveDebugPopup();
                 showPendingSaveStatus();
                 scheduleLocalSaveRetry({ deferred: true });
                 return result;
             }
             if (result.cancelled) {
                 saveQueued = true;
-                recordSaveDebug('Local save paused');
+                renderSaveDebugPopup();
                 showPendingSaveStatus();
             } else if (result.ok) {
                 confirmLocalSave(result.savedAt);
-                recordSaveDebug('Local save finished');
-                if (isDriveSyncPending()) {
+                renderSaveDebugPopup();
+                if (hasPendingDriveSave()) {
                     // Local save done, Drive sync still pending — keep saving indicator
                     showStatus('Saved locally, preparing Drive save...', { phase: 'building', savedAt: result.savedAt });
                 } else {
@@ -26041,7 +25462,7 @@
                 saveQueued = false;
                 showStatus('Saving...', true);
                 void queueSave();
-            } else if (result.ok && !isDriveSyncPending()) {
+            } else if (result.ok && !hasPendingDriveSave()) {
                 reconcileSavedIndicator();
             }
             return result;
@@ -26309,7 +25730,7 @@
                 if (!revision.headRevisionId || !latest.headRevisionId
                     || revision.headRevisionId !== latest.headRevisionId) throw error;
                 revision = latest;
-                recordSaveDebug('Metadata changed; retrying the same PDF with a fresh write token');
+                renderSaveDebugPopup();
             }
             }
             if (result?.id !== fileId) throw new Error('Drive did not confirm the expected document');
@@ -26529,12 +25950,12 @@
                 throw new Error('Timed out waiting for remote merge');
             }
             if (controller?.signal?.aborted) throw createAbortError('Drive save aborted');
-            recordSaveDebug(label);
+            renderSaveDebugPopup();
             const checkData = await readDriveWriteRevision(fileId, {signal:controller?.signal});
             if (!isRemoteMetaNewerThanTracked(checkData)) {
                 return {changed:false, hasLocalMerges:false, writeRevision:checkData};
             }
-            recordSaveDebug('Remote changes found, merging before upload');
+            renderSaveDebugPopup();
             const mergeResult = await pullRemoteChanges(checkData, {
                 allowWhileLocalPending: true,
                 preserveLocalUnsynced: true,
@@ -26639,7 +26060,7 @@
             driveUploadProgress = null;
             const hadPendingDriveContent = driveDirty || deferredDriveSave || state.needsMigrationResave;
             driveDirty = false;
-            recordSaveDebug('Drive save started');
+            renderSaveDebugPopup();
             clearDriveSyncTimers();
             remoteChangePendingDuringSave = false;
             remoteChangePendingMeta = null;
@@ -26657,7 +26078,7 @@
                     try {
                         driveSavePhase = 'verifying';
                         refreshSaveIndicatorState();
-                        recordSaveDebug('Merging pending remote changes');
+                        renderSaveDebugPopup();
                         const flushed = await flushDeferredRemotePull({ allowWhileLocalPending: true });
                         assertCurrent();
                         if (flushed?.error || flushed?.busy || flushed?.deferred) {
@@ -26683,7 +26104,7 @@
                 const needsPdf = state.pages.some(page => page?.pdfPageIndex);
                 if (needsPdf && !activePdfDocument) {
                     driveSavePhase = 'restoring';
-                    recordSaveDebug('Restoring PDF backgrounds');
+                    renderSaveDebugPopup();
                     await restorePdfBackgroundsIfNeeded();
                     assertCurrent();
                 }
@@ -26705,7 +26126,7 @@
                 driveSavePhase = 'building';
                 showStatus('Processing document...', { phase: 'building' });
                 setPresenceSavePhase('processing');
-                recordSaveDebug('Preparing Drive save');
+                renderSaveDebugPopup();
                 const driveOptions = {
                     ...options,
                     signal: controller.signal,
@@ -26717,7 +26138,7 @@
                 if (!state.driveFileId) {
                     showStatus('Building PDF...', { phase: 'building' });
                     setPresenceSavePhase('processing');
-                    recordSaveDebug('Building initial PDF');
+                    renderSaveDebugPopup();
                     const prepared = await prepareDrivePdfBlob({
                         signal: controller.signal,
                         sessionToken,
@@ -26728,7 +26149,7 @@
                     uploadedContentVersion = prepared.version;
                     uploadedContentHash = prepared.contentHash;
                 }
-                recordSaveDebug('Ensuring Drive file');
+                renderSaveDebugPopup();
                 if (pdfBlob) setPresenceSavePhase('uploading');
                 const ensureResult = await ensureDriveFile({
                     ...driveOptions,
@@ -26760,7 +26181,7 @@
                             driveSavePhase = 'building';
                             showStatus('Building PDF...', { phase: 'building' });
                             setPresenceSavePhase('processing');
-                            recordSaveDebug('Building PDF blob');
+                            renderSaveDebugPopup();
                             const prepared = await prepareDrivePdfBlob({
                                 signal: controller.signal,
                                 sessionToken,
@@ -26792,7 +26213,7 @@
                         if (finalRemoteCheckAttempts > 3) {
                             driveDirty = true;
                             deferredDriveSave = true;
-                            recordSaveDebug('Remote changes still arriving; restarting save');
+                            renderSaveDebugPopup();
                             throw createAbortError('Remote changes still arriving');
                         }
                         pdfBlob = null;
@@ -26804,7 +26225,7 @@
                     // Phase 2: Upload to Drive (orange dot)
                     showStatus('Uploading to Drive...', { phase: 'uploading' });
                     setPresenceSavePhase('uploading');
-                    recordSaveDebug(`Uploading PDF (${Math.round((pdfBlob?.size || 0) / 1024)} KB)`);
+                    renderSaveDebugPopup();
                     const updateRes = await updateDriveFile(fileId, pdfBlob, driveOptions);
                     assertCurrent();
                     if (updateRes.headRevisionId) {
@@ -26867,13 +26288,13 @@
                 showStatus('Saved', { savedAt });
                 setPresenceSavePhase('saved');
                 if (typeof publishDriveCommitHint === 'function') publishDriveCommitHint(fileId);
-                recordSaveDebug('Drive save finished');
+                renderSaveDebugPopup();
                 driveSaveSucceeded = true;
                 }
             } catch (err) {
                 if (!isDocumentSessionTokenValid(sessionToken)) return { cancelled: true };
                 if (driveSignedOut || !state.driveAutosave) {
-                    recordSaveDebug('Drive save stopped after sign out', { phase: 'saved' });
+                    renderSaveDebugPopup();
                     setPresenceSavePhase('');
                     driveDirty = false;
                     deferredDriveSave = false;
@@ -26885,7 +26306,7 @@
                 if (conflict) {
                     driveLastSaveError = null;
                     deferRemotePull(null);
-                    recordSaveDebug('Concurrent Drive edit; merging before retry');
+                    renderSaveDebugPopup();
                 }
                 const aborted = conflict || controller.signal.aborted
                     || err?.name === 'AbortError'
@@ -26907,7 +26328,7 @@
                 } else {
                     driveLastSaveError = err;
                     console.error('queueDriveSave failed:', err);
-                    recordSaveDebug(`Drive save failed: ${err?.message || err}`);
+                    renderSaveDebugPopup();
                     setPresenceSavePhase('');
                     if (typeof err?.message === 'string' && /missing page data for export/i.test(err.message)) {
                         driveDirty = true;
@@ -26981,12 +26402,12 @@
             if (driveContentVersion !== driveUploadedContentVersion && (driveDirty || driveSaveQueued || deferredDriveSave)) {
                 driveDirty = true;
                 deferredDriveSave = true;
-                recordSaveDebug('New edits detected during save; scheduling another upload');
+                renderSaveDebugPopup();
                 showPendingSaveStatus();
             } else if (driveContentVersion !== driveUploadedContentVersion) {
                 driveDirty = true;
                 deferredDriveSave = true;
-                recordSaveDebug('Unuploaded local version detected; scheduling upload');
+                renderSaveDebugPopup();
                 showPendingSaveStatus();
             }
             if (driveDirty || deferredDriveSave) {
@@ -27073,7 +26494,7 @@
             driveDirty = true;
             deferredDriveSave = true;
             driveSaveQueued = true;
-            recordSaveDebug('Remote change detected during save; restarting to merge');
+            renderSaveDebugPopup();
             showStatus('Syncing remote changes...', { phase: 'syncing' });
             if (activeDriveSaveController && !activeDriveSaveController.signal.aborted) {
                 activeDriveSaveController.abort();
@@ -27384,7 +26805,6 @@
                 if (!isDocumentSessionTokenValid(sessionToken) || state.driveFileId !== fileIdAtStart) {
                     return;
                 }
-                state.driveLastPolledAt = Date.now();
 
                 // Update presence avatars from appProperties (zero extra API calls)
                 updatePresenceFromProps({ ...(data.appProperties || {}), ...(data.properties || {}) });
@@ -27556,7 +26976,6 @@
         const PRESENCE_ACTIVE_PHASES = new Set(['processing', 'uploading']);
         let presenceSavePhase = '';
         let presenceSavePhaseAt = 0;
-        let presenceSavePhasePushInFlight = false;
         let remotePresenceSyncActive = false;
         let remotePresenceSyncDoneUntil = 0;
         let remotePresenceSyncSourceKeys = new Set();
@@ -28163,7 +27582,6 @@
             // Alone, nobody can see the save ring: the next heartbeat carries
             // the phase if another device joins, so skip the extra PATCH.
             if (getCollabPresenceMode() === 'solo') return;
-            presenceSavePhasePushInFlight = true;
             try {
                 const keyPrefix = getPresenceKey();
                 await driveFetch(
@@ -28181,8 +27599,6 @@
                 presenceLastBeatAt = Math.max(presenceLastBeatAt, now);
             } catch (err) {
                 // Best-effort visual telemetry; the save itself must not depend on it.
-            } finally {
-                presenceSavePhasePushInFlight = false;
             }
         }
 
@@ -29054,32 +28470,6 @@
             }
         }
 
-        async function updateLocalRevisionId() {
-            if (!state.driveFileId || !driveAccessToken) return;
-            try {
-                const revRes = await driveFetch(
-                    `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=headRevisionId,modifiedTime,version`,
-                    {
-                        timeout: DRIVE_META_TIMEOUT,
-                        headers: { 'Cache-Control': 'no-cache' }
-                    }
-                );
-                const revData = await revRes.json();
-                if (revData.headRevisionId) {
-                    state.driveHeadRevisionId = revData.headRevisionId;
-                }
-                if (normalizeDriveVersion(revData.version)) {
-                    state.driveRevisionVersion = normalizeDriveVersion(revData.version);
-                }
-                if (revData.modifiedTime) {
-                    state.driveLastKnownModified = new Date(revData.modifiedTime).getTime();
-                }
-                saveDriveSession();
-            } catch (err) {
-                console.warn('Failed to update revision ID:', err);
-            }
-        }
-
         function updateSyncBaseline() {
             lastSyncedStrokeIds.clear();
             lastSyncedPageIds.clear();
@@ -29291,7 +28681,7 @@
             }
 
             if (removedCount > 0) {
-                recordSaveDebug(`Resolved ${removedCount} duplicate cross-page item location(s)`);
+                renderSaveDebugPopup();
             }
             return {
                 changed: removedCount > 0,
@@ -30207,7 +29597,7 @@
                     || localStrokeConflictCount > 0
                     || localImageConflictCount > 0
                 )) {
-                    recordSaveDebug(`Merged local pending content on page ${i + 1}`);
+                    renderSaveDebugPopup();
                 }
 
                 // Check if anything actually changed
@@ -30231,7 +29621,6 @@
                 const remoteWidth = normalizePageDimension(remotePageData.pageWidth, currentWidth);
                 const remoteHeight = normalizePageDimension(remotePageData.pageHeight, currentHeight);
                 const sharedContentChanged = localStrokeConflictCount > 0 || localImageConflictCount > 0;
-                const remoteTemplateKind = normalizeTemplateKind(remotePageData.templateKind);
                 const localTemplateKind = normalizeTemplateKind(currentPage.templateKind);
                 const remoteBackgroundSource = remotePageData.backgroundSource || 'template';
                 const localBackgroundSource = currentPage.backgroundSource || 'template';
@@ -30907,12 +30296,6 @@
                 const page = state.pages[actionPageIndex];
                 applyHistoryStrokeSnapshotDelta(page, action.after, action.before);
                 redrawPage(actionPageIndex);
-            } else if (action.type === 'delete-images') {
-                const page = state.pages[actionPageIndex];
-                if (!Array.isArray(page.images)) page.images = [];
-                const restored = restoreHistoryItems(page.images, action.images, 'image');
-                untrackDeletedStrokeIds(page, restored);
-                redrawPage(actionPageIndex);
             } else if (action.type === 'delete-selection') {
                 const page = state.pages[actionPageIndex];
                 if (!page) return;
@@ -31051,12 +30434,6 @@
                 const page = state.pages[actionPageIndex];
                 applyHistoryStrokeSnapshotDelta(page, action.before, action.after);
                 redrawPage(actionPageIndex);
-            } else if (action.type === 'delete-images') {
-                const page = state.pages[actionPageIndex];
-                if (!Array.isArray(page.images)) return;
-                const removed = removeHistoryItems(page.images, action.images, 'image');
-                trackDeletedStrokeIds(page, removed);
-                redrawPage(actionPageIndex);
             } else if (action.type === 'delete-selection') {
                 const page = state.pages[actionPageIndex];
                 if (!page) return;
@@ -31149,12 +30526,6 @@
 
         const SAVE_STATES = ['paused', 'building', 'uploading', 'syncing', 'saving', 'saved', 'error'];
 
-        function formatSaveDebugMs(ms) {
-            if (!Number.isFinite(ms) || ms < 0) return '--';
-            if (ms < 1000) return `${Math.round(ms)}ms`;
-            return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s`;
-        }
-
         function escapeSaveDebugText(value) {
             return String(value ?? '').replace(/[&<>"']/g, ch => ({
                 '&': '&amp;',
@@ -31165,50 +30536,7 @@
             }[ch]));
         }
 
-        function getSaveDebugFlags() {
-            return {
-                localSaveInProgress: !!saveInProgress,
-                localSaveQueued: !!saveQueued,
-                driveSaveInProgress: !!driveSaveInProgress,
-                driveSavePhase: driveSavePhase || 'idle',
-                driveUploadProgress: driveUploadProgress && {
-                    sent: Number(driveUploadProgress.sent) || 0,
-                    total: Number(driveUploadProgress.total) || 0
-                },
-                driveSaveQueued: !!driveSaveQueued,
-                driveDirty: !!driveDirty,
-                deferredDriveSave: !!deferredDriveSave,
-                blocked: driveSaveBlockedReason || '',
-                contentVersion: driveContentVersion,
-                uploadedVersion: driveUploadedContentVersion,
-                pageDirtyCount: pageDirty?.size || 0,
-                strokeOpsQueued: strokeOpsQueue?.length || 0,
-                pendingStrokeCount: [...pendingStrokeOps.values()].reduce(
-                    (count, strokes) => count + (Array.isArray(strokes) ? strokes.length : 0),
-                    0
-                ),
-                readOnly: !!state.isReadOnly,
-                autosave: !!state.driveAutosave
-            };
-        }
-
-        function recordSaveDebug(message, details = {}) {
-            const now = Date.now();
-            const event = {
-                at: now,
-                runId: saveDebugState.runId,
-                message,
-                phase: details.phase || saveDebugState.phase,
-                flags: details.flags || getSaveDebugFlags()
-            };
-            saveDebugState.lastUpdatedAt = now;
-            saveDebugState.events.unshift(event);
-            if (saveDebugState.events.length > 80) saveDebugState.events.length = 80;
-            renderSaveDebugPopup();
-        }
-
         function setSaveDebugStatus(text, options = {}) {
-            const now = Date.now();
             const phase = options.phase || (options.error ? 'error' : (options.saving ? 'saving' : 'saved'));
             const currentPhase = saveDebugState.phase;
             if (
@@ -31220,15 +30548,9 @@
                 renderSaveDebugPopup();
                 return;
             }
-            const startsRun = phase !== 'saved' && phase !== 'error' && saveDebugState.phase === 'saved';
-            if (startsRun) {
-                saveDebugState.runId += 1;
-                saveDebugState.runStartedAt = now;
-                saveDebugState.events = [];
-            }
             saveDebugState.phase = phase;
             saveDebugState.status = text || phase;
-            recordSaveDebug(text || phase, { phase });
+            renderSaveDebugPopup();
         }
 
         function getSavePresentation(preferredPhase = '') {
@@ -31439,10 +30761,6 @@
             if (!saveDebugRenderInterval) saveDebugRenderInterval = setInterval(renderSaveDebugPopup, 1000);
         }
 
-        function getSaveIndicatorSemanticState(preferredPhase = '') {
-            return getSavePresentation(preferredPhase).phase;
-        }
-
         function refreshSaveIndicatorState(preferredPhase = '') {
             const indicator = document.getElementById('save-indicator');
             if (!indicator) return;
@@ -31465,7 +30783,7 @@
 
         function hasBlockingSaveState() {
             return !!(
-                isDriveSyncPending()
+                hasPendingDriveSave()
                 || saveInProgress
                 || saveQueued
                 || driveDirty
@@ -31835,7 +31153,6 @@
             if (!page || !Array.isArray(page.images) || page.images.length === 0) return;
             const abortSignal = options.abortSignal || null;
             const yieldFn = typeof options.yieldFn === 'function' ? options.yieldFn : null;
-            let drawn = 0;
             for (const image of page.images) {
                 if (abortSignal?.aborted) {
                     throw createAbortError('Drive save aborted');
@@ -31853,7 +31170,6 @@
                     image.height
                 );
                 ctx.restore();
-                drawn += 1;
                 if (yieldFn) {
                     await yieldFn();
                 }
@@ -32019,10 +31335,6 @@
                     queueScrollPagePreviews(true);
                 activePdfPageCount = numPages;
                 pdfBackgroundScale = getPdfBackgroundScale(numPages, options.fileSize || 0);
-                if (capturedOriginalBytes) {
-                    state.activePdfBytes = capturedOriginalBytes;
-                    state.activePdfBytesFileId = state.driveFileId || null;
-                }
 
                 // Track object url for cleanup
                 if (isUrl && pdfData.startsWith('blob:')) {
@@ -32039,19 +31351,12 @@
                 // Try to extract embedded stroke data from PDF metadata
                 let embeddedStrokes = null;
                 let pdfKeywordsString = '';
-                let collabMetadataAdvertised = false;
                 let metadataAlreadyNormalized = false;
                 try {
                     const metadata = cachedAnalysis ? null : await pdf.getMetadata();
                     const keywords = cachedAnalysis?.keywords || metadata?.info?.Keywords || '';
                     pdfKeywordsString = keywords;
                     metadataAlreadyNormalized = keywords.includes(`;${PDF_NORMALIZED_METADATA_KEYWORD}`);
-                    collabMetadataAdvertised = keywords.startsWith('STROKES_Z:')
-                        || keywords.startsWith('STROKES_DATA:')
-                        || keywords.includes(';IH_STRUCT:')
-                        || keywords.includes(';IH_FIELDS:')
-                        || keywords.includes(';IH_CAL:');
-
                     if (keywords.startsWith('STROKES_Z:')) {
                         embeddedStrokes = Array.isArray(cachedAnalysis?.embeddedStrokes)
                             ? cachedAnalysis.embeddedStrokes
@@ -32504,8 +31809,6 @@
                         const originalBytes = await getCapturedOriginalBytes();
                         if (originalBytes && isDocumentSessionTokenValid(sessionToken)) {
                             capturedOriginalBytes = originalBytes;
-                            state.activePdfBytes = originalBytes;
-                            state.activePdfBytesFileId = idbCacheKey;
                             state.cleanOriginalPdfBytes = originalBytes;
                             if (idbCacheKey) {
                                 saveOriginalPdfBytes(idbCacheKey, originalBytes).catch(() => {});
@@ -32726,153 +32029,6 @@
 
         // Cache rendered JPEG pages for incremental PDF builds
         const pdfExportCache = new Map(); // pageIndex -> { hash, jpegData (Uint8Array), metaJson }
-
-        // Pre-warm the PDF export cache in background so the first save is fast
-        let _prewarmRunning = false;
-        let _prewarmAborted = false;
-        async function prewarmPdfCache() {
-            if (!state.driveAutosave) return;
-            if (_prewarmRunning) return;
-            _prewarmRunning = true;
-            _prewarmAborted = false;
-            try {
-                await _prewarmPdfCacheInner();
-            } finally {
-                _prewarmRunning = false;
-                _prewarmAborted = false;
-            }
-        }
-        function abortPrewarm() {
-            if (_prewarmRunning) _prewarmAborted = true;
-        }
-        async function _prewarmPdfCacheInner() {
-            const pageCount = state.pages.length;
-            if (pageCount === 0) return;
-            const exportScale = pageCount >= 20 ? 1.1 : 1.22;
-            const jpegQuality = pageCount >= 20 ? 0.55 : 0.62;
-            const exportProfile = `drv-opt:${exportScale}:q${jpegQuality}`;
-            const isMobile = detectDeviceType() !== 'pc';
-            const cleanupPrewarmCanvas = (canvas) => {
-                if (!canvas) return;
-                canvas.width = 0;
-                canvas.height = 0;
-            };
-            const shouldAbortPrewarm = () => _prewarmAborted || hasPendingUserInput() || hasHotUserInteraction(isMobile ? 80 : 200);
-            const yieldPrewarm = async () => {
-                if (shouldAbortPrewarm()) return;
-                await yieldToMainThread();
-            };
-            // Pre-render template(s) at the export size for each kind in use
-            const kindsInUse = new Set();
-            for (const p of state.pages) {
-                if (p && (p.backgroundSource === 'template' || (!p.backgroundSource && !p.pdfPageIndex && !p.backgroundImage))) {
-                    kindsInUse.add(normalizeTemplateKind(p.templateKind));
-                }
-            }
-            kindsInUse.forEach(k => {
-                const kd = getTemplateKindDefaults(k);
-                const tplW = Math.round(kd.width * exportScale);
-                const tplH = Math.round(kd.height * exportScale);
-                drawTemplateBackground(null, tplW, tplH, exportScale, k);
-            });
-
-            const tempCanvas = createProcessingCanvas(1, 1);
-            const tempCtx = tempCanvas.getContext('2d');
-
-            for (let i = 0; i < pageCount; i++) {
-                await yieldPrewarm();
-                if (shouldAbortPrewarm()) {
-                    cleanupPrewarmCanvas(tempCanvas);
-                    return;
-                }
-
-                const pageData = state.pages[i];
-                if (!pageData) continue;
-                if (pdfExportCache.has(i)) continue; // already cached
-
-                const pageW = normalizePageDimension(pageData.pageWidth, A4_WIDTH);
-                const pageH = normalizePageDimension(pageData.pageHeight, A4_HEIGHT);
-                const canvasW = Math.max(1, Math.round(pageW * exportScale));
-                const canvasH = Math.max(1, Math.round(pageH * exportScale));
-                if (tempCanvas.width !== canvasW || tempCanvas.height !== canvasH) {
-                    tempCanvas.width = canvasW;
-                    tempCanvas.height = canvasH;
-                }
-                tempCtx.setTransform(1, 0, 0, 1, 0, 0);
-                tempCtx.clearRect(0, 0, canvasW, canvasH);
-
-                const backgroundSource = pageData.backgroundSource
-                    || (pageData.pdfPageIndex ? 'pdf' : (pageData.backgroundImage ? 'custom' : 'template'));
-
-                // Only pre-warm template pages (PDF/custom backgrounds need async loading)
-                if (backgroundSource !== 'template') continue;
-
-                drawTemplateBackground(tempCtx, canvasW, canvasH, exportScale, normalizeTemplateKind(pageData.templateKind));
-
-                // Draw strokes
-                tempCtx.setTransform(exportScale, 0, 0, exportScale, 0, 0);
-                tempCtx.lineCap = 'round';
-                tempCtx.lineJoin = 'round';
-                const strokes = Array.isArray(pageData.strokes) ? pageData.strokes : [];
-                let strokeCounter = 0;
-                let pointCounter = 0;
-                const chunkThreshold = isMobile ? 24 : 64;
-                const chunkSize = isMobile ? 18 : 48;
-                for (const stroke of strokes) {
-                    if (shouldAbortPrewarm()) {
-                        cleanupPrewarmCanvas(tempCanvas);
-                        return;
-                    }
-                    const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
-                    if (!stroke.points || stroke.points.length < minPoints) continue;
-                    if (stroke.tool === 'eraser-stroke') continue;
-                    if (stroke.points.length > chunkThreshold) {
-                        for (let start = 0; start < stroke.points.length - 1; start += (chunkSize - 1)) {
-                            if (shouldAbortPrewarm()) {
-                                cleanupPrewarmCanvas(tempCanvas);
-                                return;
-                            }
-                            const end = Math.min(stroke.points.length, start + chunkSize);
-                            const segmentPoints = stroke.points.slice(start, end);
-                            if (segmentPoints.length < minPoints) break;
-                            drawSmoothStroke(tempCtx, {
-                                ...stroke,
-                                points: segmentPoints
-                            });
-                            strokeCounter += 1;
-                            pointCounter += segmentPoints.length;
-                            await yieldPrewarm();
-                        }
-                    } else {
-                        drawSmoothStroke(tempCtx, stroke);
-                        strokeCounter += 1;
-                        pointCounter += Array.isArray(stroke.points) ? stroke.points.length : 0;
-                    }
-                    if (strokeCounter % 1 === 0 || pointCounter >= (isMobile ? 40 : 160)) {
-                        pointCounter = 0;
-                        await yieldPrewarm();
-                    }
-                }
-
-                await yieldPrewarm();
-                if (shouldAbortPrewarm()) {
-                    cleanupPrewarmCanvas(tempCanvas);
-                    return;
-                }
-
-                const pageBlob = await canvasToBlobSafe(tempCanvas, 'image/jpeg', jpegQuality);
-                if (shouldAbortPrewarm()) {
-                    cleanupPrewarmCanvas(tempCanvas);
-                    return;
-                }
-                if (!pageBlob) continue;
-                const jpegData = new Uint8Array(await pageBlob.arrayBuffer());
-
-                const pageHash = `${computePageHash(pageData)}|exp:${pageW}x${pageH}|${exportProfile}`;
-                pdfExportCache.set(i, { hash: pageHash, jpegData, metaJson: null });
-            }
-            cleanupPrewarmCanvas(tempCanvas);
-        }
 
         function computePageHash(pageData) {
             const strokeSig = Array.isArray(pageData.strokes)
@@ -33321,26 +32477,6 @@
                 ...normalizeTimelineHistoryUnpruned(leftHistory),
                 ...normalizeTimelineHistoryUnpruned(rightHistory)
             ]);
-        }
-
-        function ensureTimelineBaselineFromPages(pages, options = {}) {
-            if (Array.isArray(state.versionHistory) && state.versionHistory.length > 0) return false;
-            const snapshot = buildTimelineSnapshotFromPages(pages);
-            if (snapshot.length === 0) return false;
-            const ts = Number.isFinite(options.ts) ? options.ts : Math.max(1, Date.now() - 1);
-            state.versionHistory = normalizeTimelineHistory([{
-                id: options.id || `baseline_${ts.toString(36)}_${timelineSnapshotHash(snapshot, state.calendarPageConfig, state.exportName)}`,
-                ts,
-                author: options.author || { name: 'Imported document', email: '', photo: '' },
-                summary: options.summary || 'Starting version',
-                kind: options.kind || 'baseline',
-                isMilestone: true,
-                calendarPageConfig: cloneTimelineValue(state.calendarPageConfig || null, null),
-                exportName: state.exportName || '',
-                pages: snapshot
-            }]);
-            persistTimelineHistory().catch(() => {});
-            return true;
         }
 
         function captureVersionSnapshot(pagesJsonArray, options = {}) {
@@ -35260,7 +34396,7 @@
                     const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
                     canvas.width = 0;
                     canvas.height = 0;
-                    const expectedContext = captureLocalPageStructureDocumentContext();
+                    const expectedContext = captureDocumentPersistenceContext();
                     const insertAfter = Number.isFinite(state.activePageIndex)
                         ? state.activePageIndex
                         : state.pages.length - 1;

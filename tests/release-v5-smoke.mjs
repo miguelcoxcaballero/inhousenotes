@@ -483,7 +483,6 @@ assert.match(html, /connection\?\.transport/);
 assert.doesNotMatch(html, />Admin mode</);
 assert.doesNotMatch(html, /save-state-glyph/);
 assert.match(html, /\.mode-toggle-status \.save-indicator::after \{\s*content: "";\s*width: 9px;\s*height: 9px;/);
-assert.match(html, /function getSaveIndicatorSemanticState\(/);
 assert.match(html, /function refreshSaveIndicatorState\(/);
 assert.doesNotMatch(app.slice(app.indexOf('function renderSaveDebugPopup()'), app.indexOf('function openSaveDebugPopup()')), /row\('Live connection'|Other devices|save-debug-orb/);
 assert.match(html, /driveContentVersion !== driveUploadedContentVersion/);
@@ -880,8 +879,8 @@ assert.equal(
 const localStructureAcquireStart = html.indexOf('async function acquireLocalPageStructureMutation');
 const localStructureAcquireEnd = html.indexOf('function assertLocalPageStructureContext', localStructureAcquireStart);
 const localStructureAcquireSource = html.slice(localStructureAcquireStart, localStructureAcquireEnd);
-assert.match(localStructureAcquireSource, /expectedContext = captureLocalPageStructureDocumentContext\(\)/);
-assert.match(localStructureAcquireSource, /isLocalPageStructureDocumentContextCurrent\(expectedContext\)/);
+assert.match(localStructureAcquireSource, /expectedContext = captureDocumentPersistenceContext\(\)/);
+assert.match(localStructureAcquireSource, /isDocumentPersistenceContextCurrent\(expectedContext\)/);
 assert.match(html, /beginDocumentSession\(\{ preserveLocalStructureToken: structureToken \}\)/);
 
 assert.match(
@@ -913,7 +912,7 @@ assert.equal(
 );
 
 const pullStart = html.indexOf('async function pullRemoteChanges');
-const pullEnd = html.indexOf('async function updateLocalRevisionId', pullStart);
+const pullEnd = html.indexOf('function updateSyncBaseline', pullStart);
 const pullSource = html.slice(pullStart, pullEnd);
 assert.match(pullSource, /const metaAtApplyBoundary = await fetchDriveRevisionMeta\(fileIdAtStart\)/);
 assert.match(pullSource, /metaAfterApply = await fetchDriveRevisionMeta\(fileIdAtStart\)/);
@@ -991,11 +990,11 @@ const queueSaveContext = vm.createContext({
   noteLocalSaveFailure: () => {},
   confirmLocalSave: () => {},
   scheduleLocalSaveRetry: () => {},
-  recordSaveDebug: () => {},
+  renderSaveDebugPopup: () => {},
   saveToStorage: async () => { throw new Error('simulated storage failure'); },
   showPendingSaveStatus: () => {},
   showStatus: message => queueStatuses.push(message),
-  isDriveSyncPending: () => false,
+  hasPendingDriveSave: () => false,
   hasSmoothInteraction: () => false,
   reconcileSavedIndicator: () => {}
 });
