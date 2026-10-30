@@ -28790,11 +28790,6 @@
         // Features removed for now (scanner, diary, agenda) keep their button and answer with "Soon".
         let soonToastTimer = null;
         function showSoonNotice() {
-            if (editorView && !editorView.classList.contains('hidden')) {
-                showStatus('Soon', { preserveState: true });
-                return;
-            }
-            // The save indicator lives in the editor; on Home show a short toast instead.
             let toast = document.getElementById('soon-toast');
             if (!toast) {
                 toast = document.createElement('div');

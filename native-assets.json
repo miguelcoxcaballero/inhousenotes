@@ -2,13 +2,13 @@
   "schemaVersion": 1,
   "assets": {
     "/app-v5.js": {
-      "sha256": "3788a25ba3a900b1f46e8a6fe0e5b903ed33ae35970ac91239b643a6c45d703e",
-      "size": 1969513,
+      "sha256": "88739fc7aba04c52f64d27b18fb85e37707ee951060a50cb2ad7d86b36e818a1",
+      "size": 1769845,
       "mime": "application/javascript"
     },
     "/boot-v5.js": {
-      "sha256": "0fa2992894fbdcee8e2d83dd0847d67b5562fea583bdf81dbe3a38561d10ba7c",
-      "size": 10360,
+      "sha256": "1757549ffa99aea2ad90a458d8f9857b2acf3e0d20f3690bc72fe43c773cdee5",
+      "size": 9849,
       "mime": "application/javascript"
     },
     "/bullet-template.js": {
@@ -17,8 +17,8 @@
       "mime": "application/javascript"
     },
     "/collaboration-core-v5.js": {
-      "sha256": "7132aee0c569c2b5336ce6cc570fa4675514af69c9a973425f5cb86f64226fe4",
-      "size": 28782,
+      "sha256": "ae64ee8bb1c7fa2f7d695447a29ca43e9ae471ec313209a03b76d5f6a288dc00",
+      "size": 28572,
       "mime": "application/javascript"
     },
     "/document-processing-v5.js": {
@@ -27,13 +27,13 @@
       "mime": "application/javascript"
     },
     "/document-processing-worker-v5.js": {
-      "sha256": "a59587034fb46e820659229f2959a6b99e4ac2b55431723201d2bf8982b94a57",
-      "size": 19040,
+      "sha256": "c863c84ff1618bad86b4a882075bd9fea89f9ea482ae5f8708033d729fe54fe0",
+      "size": 19010,
       "mime": "application/javascript"
     },
     "/drive-ink-app-v5.js": {
-      "sha256": "70e0f4a485646ae964c59fac22950c13c5cee0c2d6da492a457060dc2d98e34c",
-      "size": 23141,
+      "sha256": "971c56f22887cf1c047f6f8de784a20d44c0f6bb703b84f80f10a6b5e641d062",
+      "size": 23332,
       "mime": "application/javascript"
     },
     "/drive-ink-journal-v5.js": {
@@ -57,18 +57,18 @@
       "mime": "application/javascript"
     },
     "/live-collaboration-v5.js": {
-      "sha256": "1cfc437f102056fefb9a45e1b496fd41f19d9223084459e39f1ae57b03b8d30f",
-      "size": 195274,
+      "sha256": "d7e37a779537de19b841b6fb907b27df19ad92404d313c35544c566a5367ce47",
+      "size": 208254,
       "mime": "application/javascript"
     },
     "/offline-app-v5.js": {
-      "sha256": "e9fdc9bcaebb3723c5749bc4b51c293561a418c6603bea43d9f5619812c985b8",
-      "size": 32155,
+      "sha256": "51b27305183e55c979ba3d6051121c0a829ac86c3e2649ff4363b1b5ff8d508d",
+      "size": 31894,
       "mime": "application/javascript"
     },
     "/offline-library-v5.js": {
-      "sha256": "3bf1f87b7997bd9809805f603272e026d9afb6ae8de3353f323996fb33c7aa89",
-      "size": 40620,
+      "sha256": "296a4e5fe2d030084d634ba3c1a91465bcb73ab4fd735ffc02603acd2364701f",
+      "size": 40596,
       "mime": "application/javascript"
     },
     "/offline-media-v5.js": {
@@ -107,8 +107,8 @@
       "mime": "application/javascript"
     },
     "/security-core-v5.js": {
-      "sha256": "f0da4a68b7f98358b8fd2941f177a4e3d1bc93f51b502268b968a4a5d0541a90",
-      "size": 7856,
+      "sha256": "915ed3cfb2dfd2beaf36ae50d55a636806dfb4f4f86b457634c6aa9007755db9",
+      "size": 4397,
       "mime": "application/javascript"
     },
     "/shared/inhouse-services-updater/updater.css": {
