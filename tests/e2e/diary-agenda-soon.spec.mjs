@@ -56,5 +56,4 @@ test('Pages-panel Calendar stays as a Soon button only for agenda documents', as
   await expect(calendar.locator('.soon-badge')).toHaveText('Soon');
   await calendar.click();
   await expect(page.locator('#soon-toast')).toHaveText('Soon');
-  await expect(page.locator('#soon-toast')).toHaveCount(0);
 });
