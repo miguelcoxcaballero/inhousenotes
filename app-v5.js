@@ -6749,6 +6749,8 @@
             localStorage.removeItem(DRIVE_REMEMBER_KEY);
             try { localStorage.removeItem('drive-hint-email');localStorage.removeItem('drive-profile-v1');window.InhouseOfflineMedia.clear(); } catch (e) { }
             try { localStorage.removeItem('drive-consent-granted'); } catch (e) { }
+            // Leftover v5 Google Calendar scope keys.
+            try { localStorage.removeItem('google-scope-version-v1'); localStorage.removeItem('google-granted-scopes-v1'); } catch (e) { }
             try { localStorage.removeItem(DRIVE_REFRESH_TOKEN_KEY); } catch (e) { }
             try { localStorage.removeItem(DRIVE_PKCE_VERIFIER_KEY); } catch (e) { }
             clearDriveSession();
@@ -13964,7 +13966,7 @@
         //   • PDF-imported docs: the clean original PDF bytes are cached
         //     (state.cleanOriginalPdfBytes); we list pdf-backed pages so the
         //     revert action can swap back to the cached PDF.
-        //   • Template-based docs (Agenda, Diary, new blank docs): there is
+        //   • Template-based docs (including old agenda/diary pages and new blank docs): there is
         //     no clean PDF, so we synthesise the entry from the CURRENT page
         //     structure with strokes/images removed. Revert keeps the page
         //     count and templates the user expects.
@@ -15400,8 +15402,12 @@
                 });
             }
             ['btn-drive-menu-diary', 'btn-drive-menu-agenda'].forEach(id => {
-                document.getElementById(id)?.addEventListener('click', showSoonNotice);
+                document.getElementById(id)?.addEventListener('click', () => {
+                    closeDriveProfileMenus();
+                    showSoonNotice();
+                });
             });
+            document.getElementById('btn-open-calendar')?.addEventListener('click', showSoonNotice);
             if (driveMenuRefreshBtn) {
                 driveMenuRefreshBtn.addEventListener('click', () => {
                     closeDriveProfileMenus();
@@ -17119,6 +17125,9 @@
         // panel UI.
         function openPagesPanel() {
             renderPagesList({ force: true });
+            // Old agenda documents keep their Calendar entry point, now a "Soon" button.
+            document.getElementById('btn-open-calendar')?.classList.toggle('hidden',
+                !state.pages.some(page => page?.templateKind === TEMPLATE_KINDS.AGENDA));
             if (setCoverBtn) setCoverBtn.disabled = !!state.isReadOnly;
             if (scanPageBtn) scanPageBtn.disabled = !!state.isReadOnly;
             const pagesPanel = document.getElementById('pages-panel');
@@ -28979,8 +28988,24 @@
         // Also contains small utilities: filename sanitation, image loading,
         // interaction-idle detection, and Canvas-to-image helpers.
         // Features removed for now (scanner, diary, agenda) keep their button and answer with "Soon".
+        let soonToastTimer = null;
         function showSoonNotice() {
-            showStatus('Soon', { preserveState: true });
+            if (editorView && !editorView.classList.contains('hidden')) {
+                showStatus('Soon', { preserveState: true });
+                return;
+            }
+            // The save indicator lives in the editor; on Home show a short toast instead.
+            let toast = document.getElementById('soon-toast');
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.id = 'soon-toast';
+                toast.setAttribute('role', 'status');
+                document.body.appendChild(toast);
+            }
+            toast.textContent = 'Soon';
+            toast.classList.add('visible');
+            clearTimeout(soonToastTimer);
+            soonToastTimer = setTimeout(() => toast.classList.remove('visible'), 1800);
         }
 
         function showStatus(text, options = {}) {
@@ -30496,6 +30521,8 @@
             try {
                 const serialized = JSON.stringify({
                     pages,
+                    // Frozen key kept so timeline hashes match v5.
+                    calendarPageConfig: null,
                     exportName: String(exportName || '')
                 });
                 return `${simpleHash(serialized)}:${serialized.length.toString(36)}`;
@@ -30576,6 +30603,8 @@
                     pdfPageIndex: Number.isFinite(page?.pdfPageIndex) ? page.pdfPageIndex : null,
                     pageWidth: normalizePageDimension(page?.pageWidth, A4_WIDTH),
                     pageHeight: normalizePageDimension(page?.pageHeight, A4_HEIGHT),
+                    // Frozen key kept so timeline hashes match v5.
+                    sidePanel: null,
                     legacyCoverStrokes: cloneTimelineValue(page?.legacyCoverStrokes || null, null)
                 };
             });
@@ -31698,7 +31727,8 @@
                 await yieldToUI(true);
                 const timelinePages = buildTimelineSnapshotFromPages(pagesParsed, true);
                 const timelineHash = await window.InhouseDocumentProcessing.run('timelineHash', {
-                    json: JSON.stringify({ pages: timelinePages,
+                    // calendarPageConfig: frozen key kept so timeline hashes match v5.
+                    json: JSON.stringify({ pages: timelinePages, calendarPageConfig: null,
                         exportName: String(state.exportName || '') })
                 });
                 throwIfSessionInvalid();
