@@ -162,13 +162,13 @@ fn generate(name: &str, n: u32, normal_strength: f32, f: impl Fn(f32, f32) -> Te
     std::thread::scope(|s| {
         for (k, chunk) in tex.chunks_mut(rows_per * n as usize).enumerate() {
             let f = &f;
-            s.spawn(move || {
+            s.spawn(forja_assets::threads::inherit(move || {
                 for (i, t) in chunk.iter_mut().enumerate() {
                     let idx = k * rows_per * n as usize + i;
                     let (x, y) = ((idx % n as usize) as f32, (idx / n as usize) as f32);
                     *t = f((x + 0.5) / n as f32, (y + 0.5) / n as f32);
                 }
-            });
+            }));
         }
     });
     let mut color = Vec::with_capacity(size * 4);
@@ -581,7 +581,7 @@ fn weathered(t: &TextureData, amount: f32, seed: u32) -> TextureData {
     std::thread::scope(|sc| {
         for (k, chunk) in out.chunks_mut(rows_per * w as usize * 4).enumerate() {
             let src = &t.rgba8;
-            sc.spawn(move || {
+            sc.spawn(forja_assets::threads::inherit(move || {
                 for (i, px) in chunk.chunks_exact_mut(4).enumerate() {
                     let idx = k * rows_per * w as usize + i;
                     let (x, y) = (idx % w as usize, idx / w as usize);
@@ -601,7 +601,7 @@ fn weathered(t: &TextureData, amount: f32, seed: u32) -> TextureData {
                     }
                     px[3] = 255;
                 }
-            });
+            }));
         }
     });
     TextureData { name: format!("{}_weathered", t.name), width: w, height: h, rgba8: Arc::from(out), srgb: true }

@@ -219,7 +219,7 @@ pub fn build_city_loading(load_kit: impl FnOnce() -> Kit + Send, styles: &StyleL
     let lib = ProfileLibrary::builtin();
     forja_assets::progress::stage("Trazando calles, manzanas y parcelas", 0.03);
     let (kit, fabric) = std::thread::scope(|s| {
-        let kit = s.spawn(load_kit);
+        let kit = s.spawn(forja_assets::threads::inherit(load_kit));
         let draft = generators::draft(&cfg.plan, &lib, cfg.seed);
         let fabric = Fabric::build(&draft, &cfg.plan, &lib, cfg.seed);
         (kit.join().expect("kit loader panicked"), fabric)

@@ -2765,7 +2765,7 @@ impl Renderer {
         let (bc, max) = (self.use_bc(), self.settings.max_texture_size);
         // A few at a time: a full RGBA mip chain of a 2048² map is 21 MB.
         for chunk in todo.chunks(rayon::current_num_threads().clamp(2, 8)) {
-            let prepared: Vec<_> = chunk.par_iter().map(|&i| Self::prepare_texture(&scene.textures[i], cutoffs[i], max, bc, normal[i])).collect();
+            let prepared: Vec<_> = forja_assets::threads::on_frame_pool(|| chunk.par_iter().map(|&i| Self::prepare_texture(&scene.textures[i], cutoffs[i], max, bc, normal[i])).collect());
             for (&i, (format, kind, mips)) in chunk.iter().zip(prepared) {
                 let t = &scene.textures[i];
                 let (view, bytes) = Self::create_prepared(&self.device, &self.queue, &t.name, format, kind, &mips);
@@ -3667,7 +3667,9 @@ impl Renderer {
                     list.ms = t.elapsed().as_secs_f32() * 1000.0;
                 }
             });
-            dyn_out = rayon::join(gather, dynamic_cull).1;
+            // On the frame's own pool: never queued behind a dusk/dawn
+            // build's jobs in rayon's global pool.
+            dyn_out = forja_assets::threads::on_frame_pool(|| rayon::join(gather, dynamic_cull)).1;
             // Instance offsets: each list after the previous ones.
             let mut base = 0u32;
             for (k, list) in static_lists.iter_mut().enumerate() {
@@ -4112,7 +4114,7 @@ impl Renderer {
         };
         let outs: Vec<PassOut> = {
             use rayon::prelude::*;
-            jobs.into_par_iter().with_max_len(1).map(|job| ctx.run(job)).collect()
+            forja_assets::threads::on_frame_pool(|| jobs.into_par_iter().with_max_len(1).map(|job| ctx.run(job)).collect())
         };
         let parallel_ms = t_pass.elapsed().as_secs_f32() * 1000.0;
         let mut indirect_args = std::mem::take(&mut self.indirect_args);
