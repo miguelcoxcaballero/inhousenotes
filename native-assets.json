@@ -2,13 +2,13 @@
   "schemaVersion": 1,
   "assets": {
     "/app-v5.js": {
-      "sha256": "52ce796caf543ecca8d8c04b0fc12d9e99d0e9bf7fad966e3e7f25ec19b206c6",
-      "size": 1988920,
+      "sha256": "fa6fd4e4aff5a459e6987cbb6bf81387177bf11a96e6d6598075cb7892990eee",
+      "size": 1998596,
       "mime": "application/javascript"
     },
     "/boot-v5.js": {
-      "sha256": "0b521f3367211bfeabbfd1fc5ee0ccce52a20402e33a72c2c83c52409cc4789c",
-      "size": 10423,
+      "sha256": "40033ba8f015254b82b161422a1c7810f35f432e0f634072bedfc02f2d48af7d",
+      "size": 9511,
       "mime": "application/javascript"
     },
     "/bullet-template.js": {
@@ -17,8 +17,8 @@
       "mime": "application/javascript"
     },
     "/collaboration-core-v5.js": {
-      "sha256": "7132aee0c569c2b5336ce6cc570fa4675514af69c9a973425f5cb86f64226fe4",
-      "size": 28782,
+      "sha256": "eb3f4a76f733b2073c232137b56828981d97ef05b8c23c63606735b84b238b5a",
+      "size": 28357,
       "mime": "application/javascript"
     },
     "/document-processing-v5.js": {
@@ -32,8 +32,8 @@
       "mime": "application/javascript"
     },
     "/drive-ink-app-v5.js": {
-      "sha256": "70e0f4a485646ae964c59fac22950c13c5cee0c2d6da492a457060dc2d98e34c",
-      "size": 23141,
+      "sha256": "265e03bffc2a4bcdd162b001e189e8b0acafb0fded7a7e0255b331f7b0c7178d",
+      "size": 23421,
       "mime": "application/javascript"
     },
     "/drive-ink-journal-v5.js": {
@@ -57,18 +57,18 @@
       "mime": "application/javascript"
     },
     "/live-collaboration-v5.js": {
-      "sha256": "1cfc437f102056fefb9a45e1b496fd41f19d9223084459e39f1ae57b03b8d30f",
-      "size": 195274,
+      "sha256": "cefe70062447ff634aad732576ff7bbd947500f65c907057da559dbd4fd27e0b",
+      "size": 205955,
       "mime": "application/javascript"
     },
     "/offline-app-v5.js": {
-      "sha256": "e9fdc9bcaebb3723c5749bc4b51c293561a418c6603bea43d9f5619812c985b8",
-      "size": 32155,
+      "sha256": "970fe4903b4b120523807545aa9e4111fafbe8a18f5d68f00589a34e0102a9fe",
+      "size": 32031,
       "mime": "application/javascript"
     },
     "/offline-library-v5.js": {
-      "sha256": "3bf1f87b7997bd9809805f603272e026d9afb6ae8de3353f323996fb33c7aa89",
-      "size": 40620,
+      "sha256": "70928af2efaefc1cc1926d33828874749f08394dd0a0d9a4c1bda8c88edc0382",
+      "size": 40552,
       "mime": "application/javascript"
     },
     "/offline-media-v5.js": {
@@ -97,13 +97,13 @@
       "mime": "application/javascript"
     },
     "/runtime-core-v5.js": {
-      "sha256": "ecd0fcdcdcc203096ccb8a131828197563d951a82bcd66b6108f033fc74ae22b",
-      "size": 15038,
+      "sha256": "4d9b4cfd6a6919d5d8a70460a1453cc6e97556ec47e15ffd4b716f8cb612370b",
+      "size": 13460,
       "mime": "application/javascript"
     },
     "/rust-core-v5.js": {
-      "sha256": "b66a947f64d3028bfd1398ebced7e58ee2ee3aa888f1ba3de377f177024b6bcb",
-      "size": 29966,
+      "sha256": "15cd4a497109347bb9bbaf6a4273c92698db7c58b40b62bf6a09005017b1a24f",
+      "size": 26557,
       "mime": "application/javascript"
     },
     "/scanner/configLoader.js": {
@@ -222,8 +222,8 @@
       "mime": "application/octet-stream"
     },
     "/security-core-v5.js": {
-      "sha256": "f0da4a68b7f98358b8fd2941f177a4e3d1bc93f51b502268b968a4a5d0541a90",
-      "size": 7856,
+      "sha256": "bd025bd0cb1441e6a64a7155b58808c307014ea14e2450112a5426a59cd7c8ba",
+      "size": 7808,
       "mime": "application/javascript"
     },
     "/shared/inhouse-services-updater/updater.css": {
@@ -237,8 +237,8 @@
       "mime": "application/javascript"
     },
     "/timeline-core-v5.js": {
-      "sha256": "7a136493ad24476fed153130c7cbc24fefe500780f63325bc19c6d86685d64cc",
-      "size": 15465,
+      "sha256": "879375a1cb08595c32659c2d73ff55303288752f35536960896d1415b13f1cf3",
+      "size": 15142,
       "mime": "application/javascript"
     },
     "/vendor/fonts/ui-0.ttf": {
@@ -1212,8 +1212,8 @@
       "mime": "font/ttf"
     },
     "/wasm/inhouse_notes_core.wasm": {
-      "sha256": "2cddd99269306979d68029fd9612ca398a0d9ab0eebbd1db3d2239519112d27c",
-      "size": 126798,
+      "sha256": "721132efae805bcb0b0f5b14f909a9bba7e8652f97f22c1a38d17aaeb1523372",
+      "size": 123089,
       "mime": "application/wasm"
     }
   }
