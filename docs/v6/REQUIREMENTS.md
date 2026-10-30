@@ -2,26 +2,26 @@
 
 Set by the user. Every design decision, work unit and review must satisfy these.
 
-Reference behaviour: 5.18.0, the cleaned-up 5.x release (scanner, agenda and diary replaced by "Soon",
-legacy compatibility and dead code removed). The specs in docs/v6/spec/ describe 5.17.22; where they
+Reference behaviour: 5.18.0 (published 2026-10-30, main 1d6e8a0), the cleaned-up 5.x release (scanner, agenda and
+diary replaced by "Soon", legacy compatibility and dead code removed). v6 must have every function of 5.18.0. The specs in docs/v6/spec/ describe 5.17.22; where they
 cover the scanner, agenda/diary/calendar, or code that 5.18.0 deletes, they are out of scope.
 
-## 1. Looks and works like v5 — as close as possible, not pixel-perfect
-(Revised by the user on 2026-10-29: "lo más parecida posible pero no pixel perfect si no es necesario".)
-- v6 must look and behave like the current app (v5.17.x) in every screen, state, theme and size:
-  Home (tabs, folders, cards, menus, dialogs, pull-to-refresh, empty/loading/offline states),
-  welcome/sign-in, the editor (toolbar, tools, menus, popups, page panels, manage-pages, timeline,
-  share dialog, presence avatars, save indicators, status bar, toasts, loading overlays), updater UI,
-  light and dark themes, phone/tablet/desktop widths, Android WebView. A user should not notice a difference.
-- Same layout, colours, fonts, icons, texts and animations (timings and curves, e.g. the manila folder zoom).
-- Ink, templates (including existing agenda/diary page backgrounds), images and PDF backgrounds look the same: same pen geometry,
-  widths, colours, highlighter blending. Pixel-exact output is NOT required; take the simplest approach
-  that is visually indistinguishable.
-- How: keep the existing HTML markup, CSS, fonts and assets as the UI definition (reuse them, do not
-  redesign or restyle); Rust drives that DOM. Draw with browser Canvas 2D like v5 rather than a custom
-  rasterizer. Visual check = screenshots of key screens v5 vs v6 compared with a small tolerance, plus a
-  side-by-side review of the differences; no pixel-for-pixel gate.
-- Functions and flows identical, except what §1b removes.
+## 1. Pixel-perfect copy of 5.18.0
+(Revised by the user on 2026-10-30: "con todas las funciones de la 18 y pixel perfect". This replaces the earlier
+"not pixel-perfect" relaxation.)
+- Every screen, state, theme and size renders pixel-identically to 5.18.0: Home (tabs, folders, cards, menus, dialogs,
+  pull-to-refresh, empty/loading/offline states), welcome/sign-in, the editor (toolbar, tools, menus, popups, pages panel,
+  timeline, share dialog, presence avatars, save indicators, toasts, loading overlays, Soon badges and toast), updater UI,
+  light and dark themes, phone/tablet/desktop widths, Android WebView.
+- Same animations, timings and curves (e.g. the manila folder zoom); compared at fixed paused instants.
+- Ink, templates (including existing agenda/diary page backgrounds), images and PDF backgrounds render pixel-identically:
+  same pen geometry, widths, caps/joins, colours, highlighter blending, fonts.
+- How: keep 5.18.0's HTML markup, CSS, fonts and assets byte-for-byte as the UI definition; Rust drives that DOM. Draw with
+  the same Canvas 2D operations in the same order and parameters as 5.18.0 (no custom rasterizer for visible output unless
+  proven pixel-identical).
+- Release gate: screenshot parity suite, the same scripted states rendered by 5.18.0 and v6 at several viewport sizes, DPRs
+  and both themes, pixel tolerance 0; the only allowed differences are listed in BEHAVIOUR-CHANGES.md and approved by the user.
+- Functions and flows identical to 5.18.0.
 
 ## 1b. Removed in 6.0.0, shown as "Soon": scanner, agenda, diary
 (Decided by the user on 2026-10-29: "quita lo del escáner y pon un cartel de 'soon'" and "elimina también
@@ -39,13 +39,13 @@ la agenda y el diario y sus funciones y ponlo en soon también".)
   appear in Recents and folders like any other PDF.
 - Existing documents with scanned pages (images + strokes) open, render and sync normally.
 
-## 2. Network documents that sync instantly — by design
+## 2. Collaborative network documents that sync instantly — designed for it from scratch
 - Every edit is an operation applied locally at once and propagated to other devices immediately
   (direct peer channel when available, durable Drive-backed relay otherwise). No full-document uploads
   on the edit path; the PDF in Drive is a derived export.
 - Conflict-free merge of concurrent edits; no data loss; works offline and converges after reconnect.
 
-## 3. Built from the ground up in Rust, as small, fast and light as possible
+## 3. Built from the ground up in Rust, excellent performance, as small and light as possible
 - Application logic, document model, sync, storage logic and rendering decisions in Rust/WebAssembly.
   JavaScript only as minimal glue where the platform requires it.
 - Lighter than 5.17.22 on CPU, battery, network and memory; minimal input-to-ink latency.
@@ -73,7 +73,7 @@ la agenda y el diario y sus funciones y ponlo en soon también".)
     photo page), share, save to Drive and reopen, offline then reconnect, exit upload,
     two devices editing the same document with instant sync, opening documents saved by 5.x,
     migration of 5.x local data, updater/version label, the "Soon" entry points.
-  - Screenshots of key screens v5 vs v6 (both themes, phone and desktop width) with tolerance (§1).
+  - The screenshot parity suite of §1 (pixel tolerance 0) over every screen and state.
   - The existing profiler to show v6 is lighter than 5.17.22.
 - Released to main only after that suite is green and the user has seen the behaviour changes.
 
