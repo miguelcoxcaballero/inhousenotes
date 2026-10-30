@@ -38,7 +38,6 @@ jobs:
             --exclude 'android app/' \
             --exclude 'docs/' \
             --exclude 'node_modules/' \
-            --exclude 'rebuild-v2/' \
             --exclude 'rust-core/' \
             --exclude 'scripts/' \
             --exclude 'test-results/' \
