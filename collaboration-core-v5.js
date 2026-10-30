@@ -621,7 +621,9 @@
             backgroundSource: String(page?.backgroundSource || 'template'),
             templateKind: String(page?.templateKind || ''),
             pageWidth: Number(page?.pageWidth) || 0,
-            pageHeight: Number(page?.pageHeight) || 0
+            pageHeight: Number(page?.pageHeight) || 0,
+            // Frozen key kept so page hashes match v5 clients.
+            sidePanel: null
         };
     }
 
@@ -634,6 +636,8 @@
             // deleted page later.
             structure: ihnCanonicalStructurePayload(structure),
             fields: ihnNormalizeFieldMeta(fieldMeta).fields,
+            // Frozen key kept so document hashes match v5 clients.
+            calendarPageConfig: null,
             exportName: String(exportName || '')
         }));
     }
