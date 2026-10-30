@@ -403,9 +403,6 @@
         const COVER_RENDER_SCALE = 3;
         const COVER_RENDER_MAX_SIDE = 3840;
         const COVER_JPEG_QUALITY = 0.94;
-        const SCANNER_MAX_PAGES = 24;
-        const SCANNER_MAX_PAGE_BYTES = 18 * 1024 * 1024;
-        const SCANNER_MAX_TOTAL_BYTES = 120 * 1024 * 1024;
         const DRIVE_TOKEN_KEY = 'drive-token-v1';
         const DRIVE_REMEMBER_KEY = 'drive-remember-v1';
         const DRIVE_SESSION_KEY = (OFFLINE_WORKER ? 'background-' : '') + 'drive-session-v1';
@@ -1814,8 +1811,6 @@
         const driveBinLoading = document.getElementById('drive-bin-loading');
         const setCoverBtn = document.getElementById('btn-set-cover');
         const scanPageBtn = document.getElementById('btn-scan-page');
-        const scannerEditorOverlay = document.getElementById('scanner-editor-overlay');
-        const scannerEditorFrame = document.getElementById('scanner-editor-frame');
         const coverModal = document.getElementById('modal-cover-image');
         const coverUploadDropzone = document.getElementById('cover-upload-dropzone');
         const coverBrowseBtn = document.getElementById('btn-cover-browse');
@@ -2076,8 +2071,6 @@
         let coverModalSelection = null;
         let coverModalSelectionToken = 0;
         let coverApplyInProgress = false;
-        let scannerEditorSessionId = '';
-        let scannerImportInProgress = false;
         let docTitleEditing = false;
         let docTitleOriginal = '';
         let pendingDriveRenamePromise = null;
@@ -2181,7 +2174,6 @@
                 }
                 closeEraserMenu();
                 closePagesPanel();
-                closeScannerEditor({ force: true });
                 closeDeleteModal();
                 closeResetModal();
                 clearSelection();
@@ -6117,7 +6109,6 @@
         }
 
         function showDriveHome() {
-            closeScannerEditor({ force: true });
             const welcomeView = document.getElementById('welcome-view');
             if (welcomeView) welcomeView.classList.add('hidden');
             if (driveHome) driveHome.classList.remove('hidden');
@@ -16359,7 +16350,6 @@
             });
 
             // Pages panel
-            window.addEventListener('message', handleScannerBridgeMessage);
             document.getElementById('btn-edit-pages').addEventListener('click', openPagesPanel);
             document.getElementById('panel-close').addEventListener('click', closePagesPanel);
             document.getElementById('panel-overlay').addEventListener('click', closePagesPanel);
@@ -16397,7 +16387,7 @@
                 setCoverBtn.addEventListener('click', openCoverModal);
             }
             if (scanPageBtn) {
-                scanPageBtn.addEventListener('click', openScannerEditor);
+                scanPageBtn.addEventListener('click', showSoonNotice);
             }
             if (coverBrowseBtn) {
                 coverBrowseBtn.addEventListener('click', (e) => {
@@ -19494,246 +19484,6 @@
             document.getElementById('panel-overlay').classList.remove('visible');
         }
 
-        function createScannerSessionId() {
-            try {
-                if (typeof crypto?.randomUUID === 'function') return crypto.randomUUID();
-            } catch (error) { }
-            return `scan-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
-        }
-
-        function postToScanner(type, payload = {}) {
-            if (!scannerEditorSessionId || !scannerEditorFrame?.contentWindow) return false;
-            scannerEditorFrame.contentWindow.postMessage({
-                ...payload,
-                source: 'inhouse-notes',
-                type,
-                sessionId: scannerEditorSessionId
-            }, window.location.origin);
-            return true;
-        }
-
-        function openScannerEditor() {
-            if (state.isReadOnly || scannerImportInProgress || !scannerEditorOverlay || !scannerEditorFrame) {
-                return;
-            }
-            closePagesPanel();
-            closeCoverModal();
-            ensurePageIds(state.pages);
-            scannerEditorSessionId = createScannerSessionId();
-            scannerImportInProgress = false;
-            const scannerUrl = new URL('scanner/index.html', document.baseURI);
-            scannerUrl.searchParams.set('embed', '1');
-            scannerUrl.searchParams.set('session', scannerEditorSessionId);
-            scannerUrl.searchParams.set('v', APP_VERSION);
-            scannerEditorOverlay.classList.add('visible');
-            scannerEditorOverlay.setAttribute('aria-hidden', 'false');
-            document.body.classList.add('scanner-editor-open');
-            scannerEditorFrame.src = scannerUrl.href;
-            setTimeout(() => scannerEditorFrame?.focus?.(), 0);
-        }
-
-        function closeScannerEditor(options = {}) {
-            if (scannerImportInProgress && !options.force) return false;
-            scannerEditorSessionId = '';
-            scannerEditorOverlay?.classList.remove('visible');
-            scannerEditorOverlay?.setAttribute('aria-hidden', 'true');
-            document.body.classList.remove('scanner-editor-open');
-            if (scannerEditorFrame && scannerEditorFrame.src !== 'about:blank') {
-                const frame = scannerEditorFrame;
-                setTimeout(() => {
-                    if (!scannerEditorSessionId && !scannerEditorOverlay?.classList.contains('visible')) {
-                        frame.src = 'about:blank';
-                    }
-                }, 0);
-            }
-            if (options.force) scannerImportInProgress = false;
-            return true;
-        }
-
-        function validateScannedInk(ink, width, height) {
-            if (ink == null) return null; // Existing scanner integrations remain readable.
-            if (ink.version !== 1 || ink.width !== width || ink.height !== height
-                || !Array.isArray(ink.strokes) || ink.strokes.length > 60000) {
-                throw new Error('Invalid editable scan ink');
-            }
-            let points = 0;
-            return ink.strokes.map(stroke => {
-                if (stroke?.tool !== 'pen' || !SELECTION_ALLOWED_COLORS.includes(stroke.color)
-                    || !Number.isFinite(stroke.width) || stroke.width <= 0 || stroke.width > Math.max(width, height)
-                    || !Array.isArray(stroke.points) || stroke.points.length < 2
-                    || (points += stroke.points.length) > 500000) throw new Error('Invalid editable scan stroke');
-                return { tool: 'pen', color: stroke.color, width: stroke.width,
-                    points: stroke.points.map(point => {
-                        if (!Number.isFinite(point?.x) || !Number.isFinite(point?.y)
-                            || point.x < 0 || point.y < 0 || point.x > width || point.y > height) {
-                            throw new Error('Invalid editable scan coordinates');
-                        }
-                        return { x: point.x, y: point.y, p: .5 };
-                    }) };
-            });
-        }
-
-        function validateScannerPages(inputPages) {
-            if (!Array.isArray(inputPages) || inputPages.length < 1) {
-                throw new Error('No scanned pages were received');
-            }
-            if (inputPages.length > SCANNER_MAX_PAGES) {
-                throw new Error(`A scan can contain up to ${SCANNER_MAX_PAGES} pages`);
-            }
-            let totalBytes = 0;
-            return inputPages.map((entry, index) => {
-                const blob = entry?.blob;
-                const blobLike = blob
-                    && typeof blob.size === 'number'
-                    && typeof blob.type === 'string'
-                    && typeof blob.arrayBuffer === 'function';
-                if (!blobLike || !blob.type.startsWith('image/')) {
-                    throw new Error(`Scanned page ${index + 1} is invalid`);
-                }
-                if (blob.size <= 0 || blob.size > SCANNER_MAX_PAGE_BYTES) {
-                    throw new Error(`Scanned page ${index + 1} is too large`);
-                }
-                totalBytes += blob.size;
-                if (totalBytes > SCANNER_MAX_TOTAL_BYTES) {
-                    throw new Error('The complete scan is too large');
-                }
-                const inkLayer = entry.inkLayer === true;
-                if (inkLayer && (blob.type !== 'image/png' || entry.templateKind !== TEMPLATE_KINDS.DEFAULT)) {
-                    throw new Error(`Scanned page ${index + 1} has an invalid native ink layer`);
-                }
-                const rawWidth = Number(entry.width);
-                const rawHeight = Number(entry.height);
-                if (!Number.isFinite(rawWidth) || rawWidth <= 0
-                    || !Number.isFinite(rawHeight) || rawHeight <= 0) {
-                    throw new Error(`Scanned page ${index + 1} has no dimensions`);
-                }
-                const width = Math.max(1, Math.min(12000, Math.round(rawWidth)));
-                const height = Math.max(1, Math.min(12000, Math.round(rawHeight)));
-                if (entry.editableInk != null && !inkLayer) throw new Error('Editable scan ink requires a verified native page');
-                const strokes = validateScannedInk(entry.editableInk, width, height);
-                return {
-                    blob,
-                    width,
-                    height,
-                    name: String(entry.name || `Scan ${index + 1}`).slice(0, 160),
-                    inkLayer,
-                    strokes,
-                    templateKind: inkLayer ? TEMPLATE_KINDS.DEFAULT : null
-                };
-            });
-        }
-
-        function getScannedPageLogicalSize(width, height) {
-            return width > height
-                ? { pageWidth: A4_HEIGHT, pageHeight: A4_WIDTH }
-                : { pageWidth: A4_WIDTH, pageHeight: A4_HEIGHT };
-        }
-
-        async function importScannedPagesFromBridge(data, sessionId) {
-            if (scannerImportInProgress || sessionId !== scannerEditorSessionId) return;
-            scannerImportInProgress = true;
-            const expectedContext = captureLocalPageStructureDocumentContext();
-            const insertAfter = Number.isFinite(state.activePageIndex)
-                ? state.activePageIndex
-                : state.pages.length - 1;
-            const anchorPageId = String(state.pages[insertAfter]?.pageId || '');
-            try {
-                const incomingPages = validateScannerPages(data.pages);
-                const assets = [];
-                for (let index = 0; index < incomingPages.length; index += 1) {
-                    if (sessionId !== scannerEditorSessionId
-                        || !isLocalPageStructureDocumentContextCurrent(expectedContext)) {
-                        throw createAbortError('Scanner document changed');
-                    }
-                    const incoming = incomingPages[index];
-                    const dataUrl = await dataUrlFromBlob(incoming.blob);
-                    if (!dataUrl || !dataUrl.startsWith('data:image/')) {
-                        throw new Error(`Scanned page ${index + 1} could not be read`);
-                    }
-                    if (incoming.inkLayer) {
-                        // Only a decoded, portrait PNG can become ink over the native
-                        // A4 template. A rejected/raw photo keeps its custom background.
-                        const inkImage = await loadImage(dataUrl);
-                        if (!inkImage || inkImage.naturalWidth !== incoming.width
-                            || inkImage.naturalHeight !== incoming.height
-                            || incoming.width >= incoming.height) {
-                            throw new Error(`Scanned page ${index + 1} has an invalid native ink layer`);
-                        }
-                    }
-                    assets.push({
-                        dataUrl,
-                        inkLayer: incoming.inkLayer,
-                        templateKind: incoming.templateKind,
-                        strokes: incoming.strokes?.map(stroke => {
-                            const { pageWidth, pageHeight } = getScannedPageLogicalSize(incoming.width, incoming.height);
-                            const sx = pageWidth / incoming.width, sy = pageHeight / incoming.height;
-                            return { ...stroke, width: stroke.width * Math.sqrt(sx * sy),
-                                points: stroke.points.map(point => ({ x: point.x * sx, y: point.y * sy, p: .5 })) };
-                        }),
-                        ...getScannedPageLogicalSize(incoming.width, incoming.height)
-                    });
-                    if ((index + 1) % 2 === 0) await yieldToMainThread();
-                }
-                if (sessionId !== scannerEditorSessionId
-                    || state.isReadOnly
-                    || !isLocalPageStructureDocumentContextCurrent(expectedContext)) {
-                    throw createAbortError('Scanner document changed');
-                }
-                const inserted = await insertScannedPagesAt(assets, insertAfter, {
-                    expectedContext,
-                    anchorPageId
-                });
-                if (!inserted) throw new Error('Could not insert the scanned pages');
-                if (sessionId === scannerEditorSessionId) {
-                    postToScanner('ihn-scanner-result', { ok: true, count: assets.length });
-                    showStatus(
-                        assets.length === 1 ? 'Scanned page added' : `${assets.length} scanned pages added`,
-                        { preserveState: true }
-                    );
-                    closeScannerEditor({ force: true });
-                }
-            } catch (error) {
-                if (error?.name !== 'AbortError') {
-                    console.error('Failed to add scanned pages:', error);
-                    if (sessionId === scannerEditorSessionId) {
-                        postToScanner('ihn-scanner-result', {
-                            ok: false,
-                            message: error?.message || 'Could not add scanned pages'
-                        });
-                    }
-                    showStatus('Failed to add scanned pages', { preserveState: true, error: true });
-                }
-            } finally {
-                if (sessionId === scannerEditorSessionId) scannerImportInProgress = false;
-            }
-        }
-
-        function handleScannerBridgeMessage(event) {
-            if (!scannerEditorSessionId
-                || event.origin !== window.location.origin
-                || event.source !== scannerEditorFrame?.contentWindow) {
-                return;
-            }
-            const data = event.data;
-            if (!data
-                || data.source !== 'inhouse-scanner'
-                || data.sessionId !== scannerEditorSessionId) {
-                return;
-            }
-            if (data.type === 'ihn-scanner-ready') {
-                postToScanner('ihn-scanner-init', {
-                    documentName: state.exportName || 'Untitled',
-                    theme: document.documentElement.getAttribute('data-theme') || 'light',
-                    maxPages: SCANNER_MAX_PAGES,
-                    openSource: true
-                });
-            } else if (data.type === 'ihn-scanner-close') {
-                closeScannerEditor();
-            } else if (data.type === 'ihn-scanner-pages') {
-                void importScannedPagesFromBridge(data, scannerEditorSessionId);
-            }
-        }
-
         function createBlankPageData(options = {}) {
             const backgroundImage = options.backgroundImage || null;
             const resolvedKind = normalizeTemplateKind(options.templateKind);
@@ -20450,116 +20200,9 @@
             }
         }
 
-        async function insertScannedPagesAt(scanAssets, insertAfterIndex, options = {}) {
-            if (!Array.isArray(scanAssets) || scanAssets.length < 1) return false;
-            const expectedContext = options.expectedContext
-                || captureLocalPageStructureDocumentContext();
-            const anchorPageId = Object.prototype.hasOwnProperty.call(options, 'anchorPageId')
-                ? String(options.anchorPageId || '')
-                : (
-                    Number.isFinite(insertAfterIndex)
-                        ? String(state.pages[insertAfterIndex]?.pageId || '')
-                        : ''
-                );
-            const structureToken = await acquireLocalPageStructureMutation(
-                12_000,
-                expectedContext
-            );
-            if (!structureToken) return false;
-            try {
-                const assertStructureContext = () => assertLocalPageStructureContext(structureToken);
-                if (anchorPageId) {
-                    const currentAnchorIndex = state.pages.findIndex(page => page?.pageId === anchorPageId);
-                    if (currentAnchorIndex >= 0) insertAfterIndex = currentAnchorIndex;
-                }
-                await ensureAllPagesLoadedForStructureChange({ assertContext: assertStructureContext });
-                assertStructureContext();
-
-                clearSelection();
-                state.selectionTransform = null;
-                const clearedOps = await clearStrokeOpsStore();
-                assertStructureContext();
-                if (!clearedOps) {
-                    throw new Error('Could not reset pending page operations');
-                }
-
-                invalidatePageStructureAsyncState();
-                pageDirty.clear();
-                pageDirtyMode.clear();
-                pageAccess.clear();
-                lastSyncedStrokeIds.clear();
-                lastSyncedPageCount = 0;
-
-                const insertAt = Number.isFinite(insertAfterIndex)
-                    ? Math.max(0, Math.min(state.pages.length, insertAfterIndex + 1))
-                    : state.pages.length;
-                const scannedPages = scanAssets.map(asset => {
-                    const nativeInkLayer = asset.inkLayer === true && asset.templateKind === TEMPLATE_KINDS.DEFAULT;
-                    const page = createBlankPageData({
-                        backgroundImage: nativeInkLayer ? null : asset.dataUrl,
-                        backgroundSource: nativeInkLayer ? 'template' : 'custom',
-                        templateKind: TEMPLATE_KINDS.DEFAULT,
-                        pageWidth: asset.pageWidth,
-                        pageHeight: asset.pageHeight
-                    });
-                    if (nativeInkLayer && Array.isArray(asset.strokes)) {
-                        // Ordinary pens participate in erasing, selection, history,
-                        // collaboration and PDF metadata exactly like handwritten ink.
-                        page.strokes = asset.strokes.map(stroke => ({ ...stroke, id: generateStrokeId() }));
-                        stampCollaborativeItems(page.strokes);
-                    } else if (nativeInkLayer) {
-                        // Images are durable across local saves, collaboration,
-                        // timeline restores and PDF round-trips; bakedBackground
-                        // is only a transient rendering cache and must not hold ink.
-                        const image = {
-                            id: generateStrokeId(),
-                            src: asset.dataUrl,
-                            x: page.pageWidth / 2,
-                            y: page.pageHeight / 2,
-                            width: page.pageWidth,
-                            height: page.pageHeight,
-                            rotation: 0
-                        };
-                        stampCollaborativeItems([image]);
-                        page.images.push(image);
-                    }
-                    page.preview = null;
-                    page.bakedBackground = null;
-                    page.strokeCount = page.strokes.length;
-                    page.unloaded = false;
-                    page.pendingUnload = false;
-                    page.needsRedraw = true;
-                    return page;
-                });
-
-                scannedPages.forEach((page, offset) => {
-                    const pageIndex = insertAt + offset;
-                    state.pages.splice(pageIndex, 0, page);
-                    noteCollabPageAdded(page.pageId, pageIndex);
-                });
-                state.activePageIndex = insertAt;
-                state.history = [];
-                state.historyIndex = -1;
-                updateHistoryButtons();
-
-                await reindexPagesAfterInsert(insertAt, state.pages.length, scannedPages.length);
-                assertStructureContext();
-
-                renderAllPages();
-                renderPagesList();
-                markAllPagesDirty('full');
-                scheduleSave(true);
-                goToPage(insertAt);
-                return true;
-            } finally {
-                releaseLocalPageStructureMutation(structureToken);
-            }
-        }
-
-        async function reindexPagesAfterInsert(insertAt, totalPages, shiftBy = 1) {
+        async function reindexPagesAfterInsert(insertAt, totalPages) {
             const sessionToken = getDocumentSessionToken();
             const structureVersion = pageStructureVersion;
-            const safeShift = Math.max(1, Math.min(totalPages, Math.round(Number(shiftBy) || 1)));
             const db = await openNotebookDb();
             if (!db
                 || !isDocumentSessionTokenValid(sessionToken)
@@ -20588,15 +20231,14 @@
                     tx.onerror = () => finish(false);
                     tx.onabort = () => finish(false);
                     const store = tx.objectStore(PAGE_STORE);
-                    // Shift the pre-existing rows high-to-low so a multi-page
-                    // scan is one structure operation and no source row is overwritten.
-                    let current = lastIndex - safeShift;
+                    // Shift the pre-existing rows high-to-low so no source row is overwritten.
+                    let current = lastIndex - 1;
                     const shiftNext = () => {
                         if (current < insertAt) return;
                         const req = store.get(current);
                         req.onsuccess = () => {
-                            if (req.result) store.put(req.result, current + safeShift);
-                            else store.delete(current + safeShift);
+                            if (req.result) store.put(req.result, current + 1);
+                            else store.delete(current + 1);
                             current -= 1;
                             shiftNext();
                         };
@@ -24980,7 +24622,6 @@
             _eraserRedrawRaf = null;
             _eraserRedrawPending.clear();
             eraserDamage.clear();
-            closeScannerEditor({ force: true });
             pendingVersionHistoryRestore = null;
             versionHistoryRestorePromise = null;
             preparedTimelineArchive = null;
@@ -35557,10 +35198,9 @@
                     renderPagesList();
                     return this.snapshot();
                 },
-                async addScannedPagesForTest(pageCount = 2) {
+                async addPhotoPageForTest() {
                     await ready();
                     ensurePageIds(state.pages);
-                    const count = Math.max(1, Math.min(4, Number(pageCount) || 1));
                     const canvas = document.createElement('canvas');
                     canvas.width = 24;
                     canvas.height = 34;
@@ -35572,34 +35212,14 @@
                     const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
                     canvas.width = 0;
                     canvas.height = 0;
-                    const expectedContext = captureLocalPageStructureDocumentContext();
                     const insertAfter = Number.isFinite(state.activePageIndex)
                         ? state.activePageIndex
                         : state.pages.length - 1;
-                    const anchorPageId = String(state.pages[insertAfter]?.pageId || '');
-                    const inserted = await insertScannedPagesAt(
-                        Array.from({ length: count }, () => ({
-                            dataUrl,
-                            pageWidth: A4_WIDTH,
-                            pageHeight: A4_HEIGHT
-                        })),
-                        insertAfter,
-                        { expectedContext, anchorPageId }
+                    const inserted = await insertPhotoPageAt(
+                        { dataUrl, pageWidth: A4_WIDTH, pageHeight: A4_HEIGHT },
+                        insertAfter
                     );
                     return { inserted, snapshot: this.snapshot() };
-                },
-                async openScannerForTest() {
-                    await ready();
-                    openScannerEditor();
-                    return {
-                        visible: scannerEditorOverlay?.classList.contains('visible') || false,
-                        src: scannerEditorFrame?.src || ''
-                    };
-                },
-                async closeScannerForTest() {
-                    await ready();
-                    closeScannerEditor({ force: true });
-                    return !scannerEditorOverlay?.classList.contains('visible');
                 },
                 async addSyntheticStroke(pageIndex = 0, marker = 'stroke') {
                     await ready();

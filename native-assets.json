@@ -2,18 +2,18 @@
   "schemaVersion": 1,
   "assets": {
     "/app-v5.js": {
-      "sha256": "52ce796caf543ecca8d8c04b0fc12d9e99d0e9bf7fad966e3e7f25ec19b206c6",
-      "size": 1988920,
+      "sha256": "3788a25ba3a900b1f46e8a6fe0e5b903ed33ae35970ac91239b643a6c45d703e",
+      "size": 1969513,
       "mime": "application/javascript"
     },
     "/boot-v5.js": {
-      "sha256": "0b521f3367211bfeabbfd1fc5ee0ccce52a20402e33a72c2c83c52409cc4789c",
-      "size": 10423,
+      "sha256": "0fa2992894fbdcee8e2d83dd0847d67b5562fea583bdf81dbe3a38561d10ba7c",
+      "size": 10360,
       "mime": "application/javascript"
     },
     "/bullet-template.js": {
-      "sha256": "6a0b9bcf6ca15fd007a6f302e41fe2597b494f1b6d4607406db44785f7cc0088",
-      "size": 4189,
+      "sha256": "40968237082c597861f7c0f374ec94f8d9e5045da305fe2548fd4366759399e8",
+      "size": 3802,
       "mime": "application/javascript"
     },
     "/collaboration-core-v5.js": {
@@ -52,8 +52,8 @@
       "mime": "image/svg+xml"
     },
     "/ink-palette.js": {
-      "sha256": "682f56c8810624d850e2ef67c8d24688d740eee6468d5e2933ab44a3af773bf4",
-      "size": 288,
+      "sha256": "fce9728b3ba4a5e1df4241f1c4f2f0d36009f698f0253c456b74531913307e7c",
+      "size": 173,
       "mime": "application/javascript"
     },
     "/live-collaboration-v5.js": {
@@ -102,124 +102,9 @@
       "mime": "application/javascript"
     },
     "/rust-core-v5.js": {
-      "sha256": "b66a947f64d3028bfd1398ebced7e58ee2ee3aa888f1ba3de377f177024b6bcb",
-      "size": 29966,
+      "sha256": "ba1f46b164b4b8a4abdcd8f7d0431da17b5fd4bf819c9d88be4892ab0ab45e14",
+      "size": 19517,
       "mime": "application/javascript"
-    },
-    "/scanner/configLoader.js": {
-      "sha256": "b511d25da2be5b242309de0b8666ffebbd7dd6a24f60cabdef0051c023027809",
-      "size": 9676,
-      "mime": "application/javascript"
-    },
-    "/scanner/live-camera.css": {
-      "sha256": "0d378eeab8c7488d11b0d5c0529dc6935a8e71b48fa843beea5ba52fc1604eab",
-      "size": 9040,
-      "mime": "text/css"
-    },
-    "/scanner/live-camera.js": {
-      "sha256": "78baaa998dbdf96844a31533a39ffe8c3f4d19da0fa9909650f4ecddbed34328",
-      "size": 52766,
-      "mime": "application/javascript"
-    },
-    "/scanner/processing/capture-quality-worker.js": {
-      "sha256": "05452b79792994b04d6e1e229320fa83372d2006866c69baa96b46f0a24b01ee",
-      "size": 637,
-      "mime": "application/javascript"
-    },
-    "/scanner/processing/capture-quality.js": {
-      "sha256": "46c6e4d647e0560fc42e67cc3c0250fea09534570d68e9ca3a5e5e80c94f4020",
-      "size": 16249,
-      "mime": "application/javascript"
-    },
-    "/scanner/processing/colorTransform.js": {
-      "sha256": "a07f036f388bae75d03b30c874bcd2fb887ceb3ddf129c1bd80e76e1d6d271e8",
-      "size": 64485,
-      "mime": "application/javascript"
-    },
-    "/scanner/processing/colourValues.js": {
-      "sha256": "1e351920ad7b493e9601c8ba8d605cf9f93073f4d521bb6d6c1a1aa49b1f95fc",
-      "size": 23665,
-      "mime": "application/javascript"
-    },
-    "/scanner/processing/detection-worker.js": {
-      "sha256": "5e2db4eeb73fe6fbff5ff5c50af13a395c5ec6fd1bb3e722493613a909573c06",
-      "size": 2158,
-      "mime": "application/javascript"
-    },
-    "/scanner/processing/edgeDetectionFallback.js": {
-      "sha256": "ea162a46360a255d505b7e0ecbfa5ad1b46986f9dd81c55487bebc7d4b51056f",
-      "size": 3116,
-      "mime": "application/javascript"
-    },
-    "/scanner/processing/ink-vectorizer.js": {
-      "sha256": "bce5569878b595a95bd066043b1757849505507f89ac433b9da641551e34d002",
-      "size": 38128,
-      "mime": "application/javascript"
-    },
-    "/scanner/processing/lightweight.js": {
-      "sha256": "da4588d4e02b48012aef15eecc820b4db5f20799c91358b5986d4f07637b8543",
-      "size": 296777,
-      "mime": "application/javascript"
-    },
-    "/scanner/processing/liveDetection.js": {
-      "sha256": "618d46bc58146b85da5a3b5dc7e8d9558fa0a145e232b28822e5f0cc1fa5c1e0",
-      "size": 57533,
-      "mime": "application/javascript"
-    },
-    "/scanner/processing/mesh.js": {
-      "sha256": "a94670a44940cd63335ce8a5f2a3668a11d0d942f1b9b3c3fb3c730ddc6e0908",
-      "size": 16637,
-      "mime": "application/javascript"
-    },
-    "/scanner/processing/metric-surface.js": {
-      "sha256": "583b6f6754af0104f45edd3353f920e7a14f99af0128031dec3c298f6b929a36",
-      "size": 107635,
-      "mime": "application/javascript"
-    },
-    "/scanner/processing/preMesh.js": {
-      "sha256": "1818547bd15f6692c22cde2fe899744e588babbbc41807eacdbf54cf5672ec4e",
-      "size": 9217,
-      "mime": "application/javascript"
-    },
-    "/scanner/processing/scan-template.js": {
-      "sha256": "48c692b6d5248ba1416277610e07a7372f03af7182f47fffbc92408781ff1525",
-      "size": 5085,
-      "mime": "application/javascript"
-    },
-    "/scanner/processing/surface-parameterization.js": {
-      "sha256": "72a9e0ab0ed4a7a25e69d1dbe10783307eb8d6b6e654975c2d75e2530468b8dc",
-      "size": 14622,
-      "mime": "application/javascript"
-    },
-    "/scanner/processing/yellowMask.js": {
-      "sha256": "63b6df8a3d11d1e3fa674a0042129e27e321fca7ec9cd1d351edb8dc957c40d4",
-      "size": 12068,
-      "mime": "application/javascript"
-    },
-    "/scanner/processing/yellowRectangle.js": {
-      "sha256": "4d90fb95930188c3502f44191d8224123a35deca72f9ba1eed24cb7724db612a",
-      "size": 1395,
-      "mime": "application/javascript"
-    },
-    "/scanner/script.js": {
-      "sha256": "009a9f9fe23b168bbdd037efbf106cbdfd728fcadd90cba66773048f8397967d",
-      "size": 103316,
-      "mime": "application/javascript"
-    },
-    "/scanner/stencil.png": {
-      "sha256": "de5015c386860afae465ebd81601ae3ca502f4b8dbbfcd67396c305d6077c167",
-      "size": 11254,
-      "mime": "image/png"
-    },
-    "/scanner/styles.css": {
-      "sha256": "10c5d3bde6cd0598d98a2a35f5c3d2ae0b3c2e9833e8970728efee54e744f959",
-      "size": 24291,
-      "mime": "text/css"
-    },
-    "/scanner/values.config": {
-      "sha256": "ca12f8e470851f90643a5bb2d1a0b3e25ea1c5c9933fde8b0049ab31da36285b",
-      "size": 3968,
-      "mime": "application/octet-stream"
     },
     "/security-core-v5.js": {
       "sha256": "f0da4a68b7f98358b8fd2941f177a4e3d1bc93f51b502268b968a4a5d0541a90",
@@ -1212,8 +1097,8 @@
       "mime": "font/ttf"
     },
     "/wasm/inhouse_notes_core.wasm": {
-      "sha256": "2cddd99269306979d68029fd9612ca398a0d9ab0eebbd1db3d2239519112d27c",
-      "size": 126798,
+      "sha256": "9e1496dcad6bf8afe2f612af4c60613d1b26dabe29174cec711d5e551bf1db94",
+      "size": 57943,
       "mime": "application/wasm"
     }
   }
