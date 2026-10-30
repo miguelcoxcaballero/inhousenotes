@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
 import {fakeInkDrive} from '../helpers/fake-ink-drive.mjs';
 
 const DOC='heartbeat-document',SOURCE='heartbeat-preview';
-const CLIENT='remote-client-abcdefghijklmnopqrstuvwxyz0123456789';
+const CLIENT='cremote01';
 async function setup(page,api,client=CLIENT){
  const property=`ihn_live_${client.replace(/[^a-zA-Z0-9]/g,'').slice(-24)}`;
  await page.exposeFunction('heartbeatRequest',(url,options)=>api.request(url,options));
@@ -39,14 +39,14 @@ async function setup(page,api,client=CLIENT){
    heartbeatLive.nextList=now+60000;heartbeatLive.schedulePoll(15000);
    return entry.next;
   };
-  window.deliverHeartbeat=(h,{clientOverride=client,t=Date.now(),file=doc,includePresence=true,propertyOverride=property,packed=false}={})=>{
+  window.deliverHeartbeat=(h,{clientOverride=client,file=doc,includePresence=true,propertyOverride=property}={})=>{
    const props={[propertyOverride]:source};
    // Parse actual public presence properties; do not inject its derived user
    // list. Normal revision polling updates presence before passing ink hints.
-   if(includePresence&&packed){
+   if(includePresence){
     props.p_heartbeatfixture_q=`account|${clientOverride.slice(0,16)}|writer@example.test|Remote tablet|t|Tablet`;
     props.p_heartbeatfixture_r=`${Math.floor(h).toString(36)}||`;
-   }else if(includePresence)props.p_heartbeatfixture=JSON.stringify({n:'Remote tablet',e:'writer@example.test',c:clientOverride,t,h});
+   }
    updatePresenceFromProps(props);
    const started=performance.now();InhouseDriveInk.hints(file,props);
    return {started,next:heartbeatLive.previewSources.get(source)?.next};
@@ -63,7 +63,7 @@ test('a new matching presence heartbeat wakes an existing preview without P2P or
  const signal=await page.evaluate(()=>{
   const asleepUntil=sleepHeartbeatSource(),h=Date.now();
   const passive=deliverHeartbeat(0,{includePresence:false});
-  const active=deliverHeartbeat(h,{packed:true});return {asleepUntil,passive,active,h};
+  const active=deliverHeartbeat(h);return {asleepUntil,passive,active,h};
  });
  expect(signal.passive.next).toBe(signal.asleepUntil);
  expect(signal.active.next).toBeLessThan(signal.asleepUntil-14000);
@@ -96,7 +96,7 @@ test('repeated, stale, future, and mismatched presence cannot repeatedly wake a 
    ['wrong-client',()=>deliverHeartbeat(h+1,{clientOverride:'unrelated-device'})],
    ['wrong-property',()=>deliverHeartbeat(h+2,{propertyOverride:'ihn_live_anotherDevice'})],
    ['property-only',()=>deliverHeartbeat(0,{includePresence:false})],
-   ['fresh-t-only',()=>deliverHeartbeat(0,{t:h+3})],
+   ['zero-heartbeat',()=>deliverHeartbeat(0)],
    ['other-document',()=>deliverHeartbeat(h+4,{file:'different-document'})]
   ];
   const checks=cases.map(([kind,send])=>{const deadline=sleepHeartbeatSource();send();return {kind,deadline,next:heartbeatLive.previewSources.get(heartbeatFixture.source).next};});
