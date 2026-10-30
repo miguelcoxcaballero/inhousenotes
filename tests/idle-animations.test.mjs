@@ -96,7 +96,7 @@ test('placeholder shimmers and the peer search pulse are bounded', () => {
     }
   }
   // Pulse (::before ring, ::after halo), the Home placeholders and the
-  // calendar/share placeholders all declare one.
+  // share placeholders all declare one.
   assert.ok(seen >= 8, `found ${seen} bounded shimmer/pulse declarations`);
   const pulse = rules.find(r => r.selector.includes('.presence-avatar-wrapper.p2p-connecting::before,') && !r.media);
   assert.ok(pulse, 'shared pulse timing rule');
