@@ -611,8 +611,14 @@
             templateKind: String(page?.templateKind || ''),
             pageWidth: Number(page?.pageWidth) || 0,
             pageHeight: Number(page?.pageHeight) || 0,
-            // Frozen key kept so page hashes match v5 clients.
-            sidePanel: null
+            sidePanel: page?.sidePanel
+                ? {
+                    title: String(page.sidePanel.title || ''),
+                    dateKeys: Array.isArray(page.sidePanel.dateKeys)
+                        ? [...page.sidePanel.dateKeys].map(String)
+                        : null
+                }
+                : null
         };
     }
 

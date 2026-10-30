@@ -25,7 +25,7 @@
         return {backgroundImage,key:JSON.stringify(metadata)};
     }
     function sameMetadata(left,right){return !!left&&left.backgroundImage===right.backgroundImage&&left.key===right.key;}
-    const pageFields=['background','template','size'];
+    const pageFields=['background','template','size','sidePanel'];
     const contextFieldIndexes=new WeakMap();
     function pageFieldsKey(pageId,metadata){
         return JSON.stringify(pageFields.map(field=>metadata.fields?.[`page:${pageId}:${field}`]||null));

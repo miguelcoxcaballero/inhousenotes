@@ -244,24 +244,31 @@ test('structure merge stays associative when an all-deleted fallback meets a con
   assert.deepEqual(rightGrouped.orderedPageIds, ['p3']);
 });
 
-test('canonical document hash ignores arrival order', () => {
+test('canonical document hash ignores arrival order and derived panel HTML', () => {
   const first = {
     pageId: 'p1',
     strokes: [{ id: 's2', points: [{ x: 2, y: 2 }] }, { id: 's1', points: [{ x: 1, y: 1 }] }],
     images: [{ id: 'i2', src: 'b' }, { id: 'i1', src: 'a' }],
     deletedStrokeIds: ['gone-b', 'gone-a'],
-    backgroundSource: 'template'
+    backgroundSource: 'template',
+    sidePanel: { title: 'Today', dateKeys: ['2026-07-30'], html: '<p>device A cache</p>' }
   };
   const second = {
     ...first,
     strokes: [...first.strokes].reverse(),
     images: [...first.images].reverse(),
-    deletedStrokeIds: [...first.deletedStrokeIds].reverse()
+    deletedStrokeIds: [...first.deletedStrokeIds].reverse(),
+    sidePanel: { ...first.sidePanel, html: '<p>device B cache</p>' }
   };
   const structure = ihnNormalizeStructureMeta(null, ['p1']);
   assert.equal(
     ihnCanonicalDocumentHash([first], structure, 'Doc'),
     ihnCanonicalDocumentHash([second], structure, 'Doc')
+  );
+  // Stored agenda panels stay part of the page identity, as in 5.17.
+  assert.notEqual(
+    ihnCanonicalDocumentHash([first], structure, 'Doc'),
+    ihnCanonicalDocumentHash([{ ...first, sidePanel: null }], structure, 'Doc')
   );
   const customOnDeviceA = {
     ...first,
