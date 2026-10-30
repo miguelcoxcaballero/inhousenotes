@@ -7921,6 +7921,7 @@
         }
 
         .pages-tool {
+            position: relative;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -8106,6 +8107,13 @@
             pointer-events: none;
         }
         /* Home has no save indicator, so showSoonNotice() uses this toast there. */
+        .pages-tool .soon-badge {
+            position: absolute;
+            top: 3px;
+            right: 3px;
+            margin: 0;
+        }
+
         #soon-toast {
             position: fixed;
             left: 50%;
@@ -9124,7 +9132,7 @@
     <script defer src="vendor/pdfjs/pdf.min.js?native=5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
     <script defer src="vendor/pdf-lib/pdf-lib.min.js?native=0f9a5cad07941f0826586c94e089d89b918c46e5c17cf2d5a3c6f666e3bc694f" integrity="sha384-weMABwrltA6jWR8DDe9Jp5blk+tZQh7ugpCsF3JwSA53WZM9/14PjS5LAJNHNjAI" crossorigin="anonymous"></script>
     <script defer src="peer-transport-v5.js?v=5.17.22&amp;native=fbdc091bee695e5806fe6b178cb53a202a48ecfc494d71c42fa40c773c755254"></script>
-    <script defer src="live-collaboration-v5.js?v=5.17.22&amp;native=7b162df57d14e62ba24efea5575f8c6793768956c0383348e0d77d1cb3530ae4"></script>
+    <script defer src="live-collaboration-v5.js?v=5.17.22&amp;native=d7e37a779537de19b841b6fb907b27df19ad92404d313c35544c566a5367ce47"></script>
     <script defer src="runtime-core-v5.js?v=5.17.22&amp;native=ecd0fcdcdcc203096ccb8a131828197563d951a82bcd66b6108f033fc74ae22b"></script>
     <script defer src="security-core-v5.js?v=5.17.22&amp;native=915ed3cfb2dfd2beaf36ae50d55a636806dfb4f4f86b457634c6aa9007755db9"></script>
     <script defer src="timeline-core-v5.js?v=5.17.22&amp;native=7a136493ad24476fed153130c7cbc24fefe500780f63325bc19c6d86685d64cc"></script>
