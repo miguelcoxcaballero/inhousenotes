@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "assets": {
     "/app-v5.js": {
-      "sha256": "52ce796caf543ecca8d8c04b0fc12d9e99d0e9bf7fad966e3e7f25ec19b206c6",
-      "size": 1988920,
+      "sha256": "84b275bd1cd01046d1f837d878376dceaddaba7d341298c862f1befaf73956af",
+      "size": 1941639,
       "mime": "application/javascript"
     },
     "/boot-v5.js": {
@@ -32,8 +32,8 @@
       "mime": "application/javascript"
     },
     "/drive-ink-app-v5.js": {
-      "sha256": "70e0f4a485646ae964c59fac22950c13c5cee0c2d6da492a457060dc2d98e34c",
-      "size": 23141,
+      "sha256": "265e03bffc2a4bcdd162b001e189e8b0acafb0fded7a7e0255b331f7b0c7178d",
+      "size": 23421,
       "mime": "application/javascript"
     },
     "/drive-ink-journal-v5.js": {
@@ -57,8 +57,8 @@
       "mime": "application/javascript"
     },
     "/live-collaboration-v5.js": {
-      "sha256": "1cfc437f102056fefb9a45e1b496fd41f19d9223084459e39f1ae57b03b8d30f",
-      "size": 195274,
+      "sha256": "4c4e150f9c17b7709b235cb63482f2f77d12eaa7cdfd639cbe67350314a8a608",
+      "size": 208594,
       "mime": "application/javascript"
     },
     "/offline-app-v5.js": {
