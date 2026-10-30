@@ -186,7 +186,6 @@ for (const visible of [false, true]) {
         attributes: true, childList: true, characterData: true, subtree: true
       });
       for (let index = 0; index < 20; index++) {
-        recordSaveDebug('Local save status refreshed');
         renderSaveDebugPopup();
       }
       const records = observer.takeRecords().map(record => ({ type: record.type, attribute: record.attributeName }));
