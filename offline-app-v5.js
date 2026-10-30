@@ -214,7 +214,7 @@
         const account=L.account(); if(!account || driveSignedOut)return;
         await S.put('settings','__session__','active',{accountId:account,enabled:true});
         await S.put('settings',account,'background-auth',{token:driveAccessToken,expiry:driveTokenExpiry,
-            refreshToken:useAndroidPkceFlow()?localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY):null,clientId:useAndroidPkceFlow()?ANDROID_OAUTH_CLIENT_ID:null});
+            refreshToken:isInhouseApp?localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY):null,clientId:isInhouseApp?ANDROID_OAUTH_CLIENT_ID:null});
         // Signing in is what a run waiting for authentication was waiting for.
         if(!L.isWorker)void L.kick({force:true,reason:'signed-in'});
     }
@@ -340,7 +340,7 @@
                     session.lastToken=credentials.token;
                 }else{
                     loadDriveTokenFromStorage();
-                    if(!driveAccessToken && !useAndroidPkceFlow())throw new Error('Sign in to renew background access');
+                    if(!driveAccessToken && !isInhouseApp)throw new Error('Sign in to renew background access');
                     await ensureDriveToken(false);
                 }
                 if(!profileChecked){
