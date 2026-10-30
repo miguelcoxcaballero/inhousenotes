@@ -1,4 +1,4 @@
-/* Native bullet-journal template shared by the editor and scanner preview.
+/* Native bullet-journal template used by the editor.
  * Draw in backing pixels, using the editor's width-based A4 geometry and
  * source-over colours. Photographed ink is a separate layer above this one.
  */
@@ -7,14 +7,6 @@
 
   const dotStamps = new Map();
 
-  function createCanvas(width, height) {
-    const canvas = root.document?.createElement
-      ? root.document.createElement("canvas") : new root.OffscreenCanvas(width, height);
-    canvas.width = width;
-    canvas.height = height;
-    return canvas;
-  }
-
   function dotStamp(u) {
     let stamp = dotStamps.get(u);
     if (stamp) return stamp;
@@ -22,7 +14,9 @@
     const blurSigma = 0.02 * u;
     const stampR = dotR + blurSigma;
     const stampSize = Math.ceil(stampR * 2) + 2;
-    const canvas = createCanvas(stampSize, stampSize);
+    const canvas = root.document.createElement("canvas");
+    canvas.width = stampSize;
+    canvas.height = stampSize;
     const context = canvas.getContext("2d");
     const center = stampSize / 2;
     const gradient = context.createRadialGradient(center, center, 0, center, center, stampR);
@@ -39,7 +33,7 @@
     return stamp;
   }
 
-  function render(context, width, height, options = {}) {
+  function render(context, width, height) {
     if (!context || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
       throw new TypeError("A valid canvas is required for the bullet-journal template.");
     }
@@ -54,10 +48,8 @@
       context.lineCap = "butt";
       context.lineJoin = "miter";
       context.setLineDash([]);
-      if (options.background !== false) {
-        context.fillStyle = "white";
-        context.fillRect(0, 0, width, height);
-      }
+      context.fillStyle = "white";
+      context.fillRect(0, 0, width, height);
 
       const u = width / 21;
       const strokeColor = "#f0db4c";
@@ -69,14 +61,12 @@
       context.roundRect(1.5 * u, 1.43 * u, 18 * u, 27 * u, cornerR);
       context.stroke();
 
-      if (options.dots !== false) {
-        const stamp = dotStamp(u);
-        for (let col = 0; col < 35; col++) {
-          const cx = (2.0 + col * 0.5) * u;
-          for (let row = 0; row < 51; row++) {
-            const cy = (1.93 + row * 0.5) * u;
-            context.drawImage(stamp.canvas, cx - stamp.center, cy - stamp.center);
-          }
+      const stamp = dotStamp(u);
+      for (let col = 0; col < 35; col++) {
+        const cx = (2.0 + col * 0.5) * u;
+        for (let row = 0; row < 51; row++) {
+          const cy = (1.93 + row * 0.5) * u;
+          context.drawImage(stamp.canvas, cx - stamp.center, cy - stamp.center);
         }
       }
 
@@ -118,4 +108,4 @@
   }
 
   root.InhouseBulletTemplate = Object.freeze({ render });
-})(typeof window === "undefined" ? globalThis : window);
+})(window);

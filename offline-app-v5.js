@@ -11,7 +11,7 @@
     let pageSnapshotSession = null, pageSnapshotBytes = 0;
     const snapshotPageFields = ['pageId','strokes','images','legacyCoverStrokes',
         'deletedStrokeIds','deletedStrokeStamps','backgroundImage','backgroundSource',
-        'templateKind','pdfPageIndex','pageWidth','pageHeight','sidePanel','unloaded'];
+        'templateKind','pdfPageIndex','pageWidth','pageHeight','unloaded'];
     function pageSnapshotKey(page, index) {
         return [pageDirtyGeneration.get(index) || 0,
             ...snapshotPageFields.map(key=>page?.[key]), page?.strokes?.length,
@@ -64,7 +64,7 @@
             }
             const page=await loadPageDataForExport(i);assertCurrent();
             const copy=buildTimelineSnapshotFromPages([{...page,strokes:[],images:[],legacyCoverStrokes:null}])[0];
-            if(typeof structuredClone==='function' && window.InhouseDocumentProcessing){
+            if(window.InhouseDocumentProcessing){
                 const packed=await packInkPageForStorage({...copy,strokes:page.strokes||[],images:page.images||[],legacyCoverStrokes:page.legacyCoverStrokes||null},token,()=>{assertCurrent();return false;},true);
                 assertCurrent();
                 if (!packed) throw createAbortError('Page checkpoint interrupted');
@@ -80,13 +80,13 @@
         }
         assertCurrent();
         const snapshot={pages,collabStructure:getCollabStructureSnapshot(),collabFields:getCollabFieldSnapshot(),
-            calendarPageConfig:state.calendarPageConfig,exportName:state.exportName,versionHistory:state.versionHistory,
+            exportName:state.exportName,versionHistory:state.versionHistory,
             baseline:[...lastSyncedStrokeIds].map(([index,ids])=>[index,[...ids]]),baselinePages:[...lastSyncedPageIds]};
         const pendingExit=readPendingExitUpload();
         const dirty=driveContentVersion!==driveUploadedContentVersion || driveDirty || state.driveFileId?.startsWith('local-') || pendingExit?.fileId===state.driveFileId;
         return {id,snapshot,baseMeta:metadata(),contentVersion:version,session:getOfflineDocumentSessionToken(token),dirty,
             entry:{id,localPreview:state.pages[0]?.preview||null,name:state.driveFileName||`${state.exportName||'Untitled'}.pdf`,mimeType:'application/pdf',parents:state.driveParentIds?.length?state.driveParentIds:['root'],ownedByMe:state.driveOwnedByMe,pending:!!dirty},
-            details:{fileName:state.driveFileName,parentIds:state.driveParentIds,canEdit:state.driveCanEdit,ownedByMe:state.driveOwnedByMe,resourceKey:state.driveResourceKey,folderKind:state.driveFolderKind,ownerName:state.driveOwnerName,ownerEmail:state.driveOwnerEmail,ownerPhoto:state.driveOwnerPhoto},
+            details:{fileName:state.driveFileName,parentIds:state.driveParentIds,canEdit:state.driveCanEdit,ownedByMe:state.driveOwnedByMe,resourceKey:state.driveResourceKey,ownerName:state.driveOwnerName,ownerEmail:state.driveOwnerEmail,ownerPhoto:state.driveOwnerPhoto},
             originalBlob:state.cleanOriginalPdfBytes?.byteLength?new Blob([state.cleanOriginalPdfBytes],{type:'application/pdf'}):undefined};
     }
     function renderSyncStatus() {
@@ -121,7 +121,6 @@
         state.driveCanEdit=doc.details?.canEdit!==false;
         state.driveOwnedByMe=doc.details?.ownedByMe!==false;
         state.driveResourceKey=doc.details?.resourceKey||'';
-        state.driveFolderKind=doc.details?.folderKind||null;
         state.driveOwnerName=doc.details?.ownerName||'';state.driveOwnerEmail=doc.details?.ownerEmail||'';state.driveOwnerPhoto=doc.details?.ownerPhoto||'';
         state.driveAutosave=false;
         // A current native snapshot is already editable; parsing an older PDF
@@ -134,7 +133,6 @@
         if(doc.originalBlob?.size) {
             const bytes=await doc.originalBlob.arrayBuffer();
             state.cleanOriginalPdfBytes=bytes;
-            state.activePdfBytes=bytes;state.activePdfBytesFileId=state.driveFileId;
             if(doc.snapshot?.pages.some(p=>p.pdfPageIndex)) {
                 if(activePdfDocument)await activePdfDocument.destroy().catch(()=>{});
                 activePdfDocument=await loadSecurePdfDocument({data:bytes.slice(0),cMapUrl:PDFJS_CMAP_URL,cMapPacked:true,standardFontDataUrl:PDFJS_STANDARD_FONT_URL});
@@ -146,7 +144,6 @@
             await migrateLegacyPayload({...doc.snapshot,pages:doc.snapshot.pages.slice()},{awaitAllPages:false,deferPageWrites:true,initialPages:1});
             state.collabStructure=ihnNormalizeStructureMeta(doc.snapshot.collabStructure,state.pages.map(p=>p.pageId));
             state.collabFields=ihnNormalizeFieldMeta(doc.snapshot.collabFields);
-            state.calendarPageConfig=doc.snapshot.calendarPageConfig||null;
             state.exportName=doc.snapshot.exportName||state.driveFileName.replace(/\.pdf$/i,'');
             state.versionHistory=doc.snapshot.versionHistory||[];
             lastSyncedStrokeIds.clear();
@@ -217,7 +214,7 @@
         const account=L.account(); if(!account || driveSignedOut)return;
         await S.put('settings','__session__','active',{accountId:account,enabled:true});
         await S.put('settings',account,'background-auth',{token:driveAccessToken,expiry:driveTokenExpiry,
-            refreshToken:useAndroidPkceFlow()?localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY):null,clientId:useAndroidPkceFlow()?ANDROID_OAUTH_CLIENT_ID:null});
+            refreshToken:isInhouseApp?localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY):null,clientId:isInhouseApp?ANDROID_OAUTH_CLIENT_ID:null});
         // Signing in is what a run waiting for authentication was waiting for.
         if(!L.isWorker)void L.kick({force:true,reason:'signed-in'});
     }
@@ -240,7 +237,7 @@
         return S.put('leases',account,'editor',{documentId,expires:editorLease.expires}).catch(()=>{editorLease.key=null;});
     }
     async function initialize() {
-        await L.init({version:APP_VERSION,currentId,quickAccess:isQuickAccessDriveFile,activeDocument:()=>{void heartbeat();return editorActive();},busy:()=>hasSmoothInteraction()||driveOpenInProgress||offlineOpenInProgress,
+        await L.init({version:APP_VERSION,currentId,activeDocument:()=>{void heartbeat();return editorActive();},busy:()=>hasSmoothInteraction()||driveOpenInProgress||offlineOpenInProgress,
             // Signed out, or a failed refresh with no usable token: nothing can
             // upload until the user signs in again (authorizeBackground kicks).
             canSync:()=>!driveSignedOut&&(!driveAuthNeedsReconnect||!!driveAccessToken),
@@ -343,7 +340,7 @@
                     session.lastToken=credentials.token;
                 }else{
                     loadDriveTokenFromStorage();
-                    if(!driveAccessToken && !useAndroidPkceFlow())throw new Error('Sign in to renew background access');
+                    if(!driveAccessToken && !isInhouseApp)throw new Error('Sign in to renew background access');
                     await ensureDriveToken(false);
                 }
                 if(!profileChecked){

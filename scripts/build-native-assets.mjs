@@ -19,7 +19,7 @@ for(const path of paths) {
 }
 await writeFile('native-assets.json',JSON.stringify({schemaVersion:1,assets},null,2)+'\n');
 const hashes=Object.fromEntries(Object.entries(assets).map(([path,info])=>[path,info.sha256]));
-for(const page of ['index.html','scanner/index.html']) {
+for(const page of ['index.html']) {
  let html=await readFile(page,'utf8');
  html=html.replace(/\s*<script type="application\/json" id="inhouse-native-assets">[\s\S]*?<\/script>/,'');
  html=html.replace(/((?:src|href)=")([^"#]+)(")/g,(whole,start,url,end)=>{
