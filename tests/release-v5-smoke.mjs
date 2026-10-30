@@ -19,13 +19,6 @@ const timelineCore = readText('../timeline-core-v5.js');
 const html = [indexHtml, app, boot, runtimeCore, securityCore, timelineCore].join('\n');
 const live = readText('../live-collaboration-v5.js');
 const collaborationCore = readText('../collaboration-core-v5.js');
-const scannerHtml = readText('../scanner/index.html');
-const scannerStyles = readText('../scanner/styles.css');
-const scanner = readText('../scanner/script.js');
-const scannerConfig = readText('../scanner/configLoader.js');
-const scannerLightweight = readText('../scanner/processing/lightweight.js');
-const scannerLive = readText('../scanner/live-camera.js');
-const scannerLiveDetection = readText('../scanner/processing/liveDetection.js');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
 const notes = readText('../RELEASE_NOTES_v5.17.22.md');
 const oauthCallback = readText('../oauth-callback/index.html');
@@ -72,65 +65,9 @@ assert.ok(
   indexHtml.indexOf('id="btn-scan-page"') > indexHtml.indexOf('id="btn-set-cover"'),
   'Scan Page must be directly available below Photo'
 );
-assert.match(indexHtml, /id="scanner-editor-overlay"/);
-assert.match(indexHtml, /id="scanner-editor-frame"[^>]*allow="camera"/);
-assert.match(app, /function openScannerEditor\(/);
-assert.match(app, /function handleScannerBridgeMessage\(/);
-assert.match(app, /function insertScannedPagesAt\(/);
-assert.match(app, /reindexPagesAfterInsert\(insertAt, state\.pages\.length, scannedPages\.length\)/);
-assert.match(app, /noteCollabPageAdded\(page\.pageId, pageIndex\)/);
+assert.match(indexHtml, /id="btn-scan-page"[\s\S]{0,1200}<span class="soon-badge">Soon<\/span><\/button>/);
+assert.match(app, /scanPageBtn\.addEventListener\('click', showSoonNotice\)/);
 assert.match(app, /markAllPagesDirty\('full'\);[\s\S]{0,100}scheduleSave\(true\);/);
-assert.match(scannerHtml, /window\.__scannerEmbedMode/);
-assert.match(scannerHtml, /id="closeEmbedBtn"/);
-assert.match(scannerHtml, /id="addToDocumentBtn"/);
-assert.match(scannerHtml, /id="downloadEmbedStencilBtn"/);
-assert.match(scannerStyles, /html\[data-embed="true"\] #appContainer/);
-assert.match(scanner, /postEmbeddedMessage\("ihn-scanner-ready"\)/);
-assert.match(scanner, /postEmbeddedMessage\("ihn-scanner-pages"/);
-assert.match(scanner, /async function addScannedPagesToDocument\(/);
-assert.match(scanner, /await applyStencilToContext\(/);
-assert.doesNotMatch(scannerHtml, /opencv\.js|__cvReady|Loading Core/);
-assert.match(scannerHtml, /processing\/lightweight\.js\?v=5.17.22/);
-assert.match(scannerLightweight, /function estimateCalibrationStrip\(/);
-assert.match(scannerLightweight, /function detectMarkerGuidedStencil\(/);
-assert.match(scannerLightweight, /function traceYellowFrame\(/);
-assert.match(scannerLightweight, /function traceLowerStencilRails\(/);
-assert.match(scannerLightweight, /const boxTopExpected = 1 - 1 \/ 27/);
-assert.match(scannerLightweight, /const boxBottomExpected = 1 - 0\.5 \/ 27/);
-assert.match(scannerLightweight, /const ANALYSIS_FAST_MAX = 608/);
-assert.match(scannerLightweight, /sideMatchesAnchor/);
-assert.match(scannerLightweight, /function mapFramePoint\(/);
-assert.match(scannerLightweight, /const curved = !!frame\?\.paths/);
-assert.match(scanner, /await SP\.Lightweight\.detectPageAsync\(srcCanvas\)/);
-assert.match(scannerLightweight, /method: "marker-guided"/);
-assert.match(scanner, /detection\.method === "marker-guided"/);
-assert.match(scannerHtml, /id="processAnimationLayer"/);
-assert.match(scannerStyles, /\.processing-animation-layer\.active/);
-assert.match(scanner, /const PROCESSING_PHASES = Object\.freeze/);
-assert.match(scanner, /yellow: "Finding yellow marks"/);
-assert.match(scanner, /frame: "Forming page frame"/);
-assert.match(scanner, /corners: "Confirming 4 corners"/);
-assert.match(scanner, /function createProcessingAnimator\(/);
-assert.match(scanner, /drawPreviewTriangle\(pctx, source/);
-assert.match(scanner, /scanner-processing-phase/);
-assert.match(scanner, /const yellowBox = "#ffea00"/);
-assert.match(scanner, /paintEvidenceCloud/);
-assert.match(scanner, /drawYellowBoxCanonical/);
-assert.match(scannerLightweight, /function localStencilEvidence/);
-assert.match(scannerLightweight, /function calibrateFromReference/);
-assert.match(scannerHtml, /id="liveScanner"/);
-assert.match(scannerHtml, /<video[^>]*id="liveVideo"[^>]*autoplay[^>]*muted[^>]*playsinline/);
-assert.match(scannerHtml, /id="liveOverlay"/);
-assert.match(scannerHtml, /id="liveReview"/);
-assert.match(scannerHtml, /id="liveAddBtn"/);
-assert.match(scannerHtml, /processing\/liveDetection\.js/);
-assert.match(scannerHtml, /live-camera\.js/);
-assert.match(scannerLive, /navigator\.mediaDevices\.getUserMedia/);
-assert.match(scannerLive, /audio: false/);
-assert.match(scannerLive, /scanner-live-detection/);
-assert.match(scannerLive, /track\.stop\(\)/);
-assert.match(scannerLive, /ihn-scanner-pages/);
-assert.match(scannerLiveDetection, /SP\.LiveDetection = \{ detect, normalizeIllumination, normalizeIlluminationAsync, findColourReferences \}/);
 assert.match(androidBuilder, /android\.permission\.CAMERA/);
 // Publishes straight to the gh-pages branch (Settings -> Pages -> Source),
 // replacing the Actions "workflow" deployment API (configure-pages /
@@ -567,9 +504,6 @@ new vm.Script(runtimeCore, { filename: 'runtime-core-v5.js' });
 new vm.Script(securityCore, { filename: 'security-core-v5.js' });
 new vm.Script(timelineCore, { filename: 'timeline-core-v5.js' });
 new vm.Script(live, { filename: 'live-collaboration-v5.js' });
-new vm.Script(scanner, { filename: 'scanner/script.js' });
-new vm.Script(scannerLive, { filename: 'scanner/live-camera.js' });
-new vm.Script(scannerLiveDetection, { filename: 'scanner/processing/liveDetection.js' });
 assert.match(live, /actorId: `\$\{ihnGetLivePeerId\(\)\}:\$\{ihnGetLiveTabId\(\)\}`/);
 assert.match(live, /let ihnLiveSequence = Date\.now\(\)/);
 new vm.Script(collaborationCore, { filename: 'collaboration-core-v5.js' });
@@ -1085,16 +1019,10 @@ const driveBinSource = html.slice(
   html.indexOf('async function refreshDriveBin'),
   html.indexOf('function toggleBinItemMenu')
 );
-const scannerListSource = scanner.slice(
-  scanner.indexOf('function renderList'),
-  scanner.indexOf('function select', scanner.indexOf('function renderList'))
-);
 assert.doesNotMatch(folderPickerSource, /\$\{folder\.name/);
 assert.match(folderPickerSource, /textContent = folder\.name/);
 assert.doesNotMatch(driveBinSource, /\$\{file\.name/);
 assert.match(driveBinSource, /textContent = file\.name/);
-assert.doesNotMatch(scannerListSource, /\$\{p\.name/);
-assert.match(scannerListSource, /textContent = p\.name/);
 const sidePanelSanitizerStart = html.indexOf('const CALENDAR_ALLOWED_TAGS');
 const sidePanelSanitizerEnd = html.indexOf('function byteLengthOfPdfData', sidePanelSanitizerStart);
 const sidePanelSanitizerSource = html.slice(sidePanelSanitizerStart, sidePanelSanitizerEnd);
@@ -1143,13 +1071,6 @@ assert.match(html, /let pdfExportInProgress = false;/);
 assert.match(html, /Timed out preparing PDF for Android/);
 assert.match(html, /if \(inputObjectUrl && state\.activePdfObjectUrl !== inputObjectUrl\) \{\s*try \{ URL\.revokeObjectURL\(inputObjectUrl\);/);
 assert.match(html, /const timeoutMs = Number\.isFinite\(options\.timeoutMs\)[\s\S]{0,120}: 20000;/);
-assert.match(scanner, /Image decode timed out/);
-assert.match(scanner, /Stencil image decode timed out/);
-assert.match(scanner, /Canvas encoding failed/);
-assert.match(scanner, /Could not apply crop/);
-assert.match(scanner, /Scanner PDF export failed:/);
-assert.match(scanner, /if \(exportedPages === 0\) throw new Error\("No page could be decoded"\)/);
-assert.match(scannerConfig, /setTimeout\(\(\) => controller\.abort\(\), 1500\)/);
 const htmlLines = html.split(/\r?\n/);
 const unguardedTransactions = [];
 htmlLines.forEach((line, index) => {

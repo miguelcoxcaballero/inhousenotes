@@ -159,7 +159,6 @@
                     if (!key.startsWith('inhouse-shell-') || key === `inhouse-shell-${published}`) continue;
                     const cache = await root.caches.open(key);
                     await cache.delete('/index.html');
-                    await cache.delete('/scanner/index.html');
                 }
             } catch (error) { /* no Cache Storage: nothing stale to drop */ }
             root.location.reload();
