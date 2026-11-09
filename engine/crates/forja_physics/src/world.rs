@@ -435,7 +435,12 @@ impl PhysicsWorld {
             // cannot skip through thin geometry in one step.
             let speed = |c: &Collider| self.bodies.get(c.body.0).map_or(0.0, |b| b.linvel.length() + b.angvel.length() * c.shape.local_aabb().half_extents().max_element());
             let margin = base_margin + ((speed(ca) + speed(cb)) * dt).min(2.0);
-            narrowphase::collide(&ca.shape, &ca.world_iso, &cb.shape, &cb.world_iso, margin, &mut self.scratch_manifolds);
+            // Swept test: speculative contacts only where the pair can
+            // actually meet during this step (see `narrowphase::Sweep`).
+            let motion = |c: &Collider| self.bodies.get(c.body.0).map_or((Vec3::ZERO, 0.0), |b| (b.linvel, b.angvel.length() * c.shape.local_aabb().half_extents().length()));
+            let ((va, wa), (vb, wb)) = (motion(ca), motion(cb));
+            let sweep = narrowphase::Sweep { disp: (vb - va) * dt, slack: base_margin + (wa + wb) * dt };
+            narrowphase::collide_swept(&ca.shape, &ca.world_iso, &cb.shape, &cb.world_iso, margin, Some(sweep), &mut self.scratch_manifolds);
             if self.scratch_manifolds.is_empty() {
                 continue;
             }
