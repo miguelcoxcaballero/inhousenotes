@@ -7,6 +7,7 @@ pub mod combat;
 pub mod crowd;
 pub mod env;
 pub mod humans;
+pub mod island;
 pub mod people;
 pub mod player;
 pub mod props;
@@ -102,6 +103,9 @@ pub struct RenderScene {
     /// Far-distance groups of `statics`: `(group, is the HLOD)` by index
     /// (missing or group 0: always drawn).
     pub static_lod: Vec<(u32, bool)>,
+    /// Groups that switch at a multiple of the HLOD distance: `(group,
+    /// scale)`.
+    pub static_lod_scale: Vec<(u32, f32)>,
     pub dynamic: Vec<RenderItem>,
     pub lights: Vec<PointLight>,
     /// Physical point and spot lights of this frame (the city at night).
@@ -176,8 +180,10 @@ impl Hud {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MapKind {
-    /// Valencia's centre from the Isla Levante map (real footprints and streets).
+    /// The whole Isla Levante: 500 km² with Valencia at real scale.
     Isla,
+    /// Valencia's centre from the Isla Levante map, all detailed (a 460 m window).
+    IslaCentre,
     Spain,
     /// The classic grids-and-boulevard map.
     SpainClassic,
@@ -196,11 +202,12 @@ pub enum MapKind {
 }
 
 impl MapKind {
-    pub const ALL: [MapKind; 11] = [MapKind::Isla, MapKind::Spain, MapKind::Carmen, MapKind::Austrias, MapKind::CarmenOsm, MapKind::AustriasOsm, MapKind::SpainClassic, MapKind::Osm, MapKind::Terrain, MapKind::Track, MapKind::Kit];
+    pub const ALL: [MapKind; 12] = [MapKind::Isla, MapKind::IslaCentre, MapKind::Spain, MapKind::Carmen, MapKind::Austrias, MapKind::CarmenOsm, MapKind::AustriasOsm, MapKind::SpainClassic, MapKind::Osm, MapKind::Terrain, MapKind::Track, MapKind::Kit];
 
     pub fn parse(s: &str) -> Option<Self> {
         Some(match s {
             "isla" | "valencia" | "levante" => Self::Isla,
+            "isla-centre" | "isla-centro" | "centro" => Self::IslaCentre,
             "spain" | "espana" | "madrid" => Self::Spain,
             "classic" | "spain-classic" => Self::SpainClassic,
             "carmen" => Self::Carmen,
@@ -217,7 +224,8 @@ impl MapKind {
 
     pub fn label(&self) -> &'static str {
         match self {
-            Self::Isla => "Valencia (Isla Levante)",
+            Self::Isla => "Isla Levante",
+            Self::IslaCentre => "Valencia, centro (Isla Levante)",
             Self::Spain => "Madrid y Valencia (procedural)",
             Self::SpainClassic => "Madrid y Valencia, ensanches (procedural)",
             Self::Carmen => "Barrio del Carmen (procedural)",

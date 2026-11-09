@@ -5,7 +5,7 @@ use std::sync::Arc;
 use forja_assets::{MeshData, SceneData, TextureData};
 use forja_core::{App, Plugin};
 use forja_physics::PhysicsWorld;
-use forja_world::{KitCity, OsmWorld, SpanishCity, TerrainWorld, TestTrack, WorldDescription, WorldSource};
+use forja_world::{IslandWorld, KitCity, OsmWorld, SpanishCity, TerrainWorld, TestTrack, WorldDescription, WorldSource};
 
 use super::{Hud, MapKind, Paths, RenderItem, RenderScene};
 
@@ -14,6 +14,13 @@ pub struct WorldPlugin {
     /// Clock hour of the night content (`None`: daytime city).
     pub hour: Option<f32>,
 }
+
+/// The map of the loaded world for minimaps and navigation: the island's
+/// outline, water, land cover areas, roads by class, building footprints
+/// and named places, in world metres (see [`forja_world::MapData`]; `x`
+/// east, `z` south as the second coordinate). `None` on maps without one.
+#[derive(Clone, Default)]
+pub struct MapData(pub Option<Arc<forja_world::MapData>>);
 
 /// The loaded world description (spawns, lights, extent).
 pub struct GameWorld {
@@ -73,7 +80,8 @@ fn load(map: MapKind, paths: &Paths, hour: Option<f32>) -> Result<WorldDescripti
         SpanishCity { hour, ..SpanishCity::from_osm(Some(dl), Some(&styles), &path)? }.build()
     };
     match map {
-        MapKind::Isla => SpanishCity { hour, ..SpanishCity::from_osm(Some(dl), Some(&styles), &paths.data.join("maps/isla_valencia.json"))? }.build(),
+        MapKind::Isla => IslandWorld { hour, ..IslandWorld::new(&paths.data) }.build(),
+        MapKind::IslaCentre => SpanishCity { hour, ..SpanishCity::from_osm(Some(dl), Some(&styles), &paths.data.join("maps/isla_valencia.json"))? }.build(),
         MapKind::Spain => SpanishCity { hour, ..SpanishCity::new(dl, &styles) }.build(),
         MapKind::SpainClassic => preset("classic"),
         MapKind::Carmen => preset("carmen"),
@@ -127,12 +135,21 @@ impl Plugin for WorldPlugin {
                     rs.static_lod[static_base + tile.hlod] = (g, true);
                 }
             }
+            if !desc.lod_tags.is_empty() {
+                rs.static_lod.resize(rs.statics.len(), (0, false));
+                for &(p, g, hlod) in &desc.lod_tags {
+                    rs.static_lod[static_base + p] = (g, hlod);
+                }
+                rs.static_lod_scale = desc.lod_scales.clone();
+            }
             (base, static_base)
         };
         let hud = app.world.res_mut::<Hud>();
         hud.map = kind.label().to_string();
         hud.attribution = desc.attribution.clone();
         log::info!("{}: {} placements, {} triangles", kind.label(), desc.placements.len(), desc.triangle_count());
+        app.insert_resource(MapData(desc.island.as_ref().map(|i| i.map.clone())));
         app.insert_resource(GameWorld { desc, kind, scene_base, static_base, night_content: self.hour.is_some(), released: false });
+        super::island::install(app);
     }
 }

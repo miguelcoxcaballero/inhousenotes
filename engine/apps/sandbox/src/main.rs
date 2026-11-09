@@ -385,6 +385,11 @@ impl Extract {
             let statics: Vec<DrawInstance> = kept().map(|(_, item)| DrawInstance { model: self.handles[item.model], transform: item.transform, nodes: item.nodes.clone(), joints: None, tint: item.tint, cast_shadows: true, motion_id: 0 }).collect();
             let lod: Vec<forja_render::StaticLod> = kept().map(|(i, _)| rs.static_lod.get(i).map_or(forja_render::StaticLod::default(), |&(group, hlod)| forja_render::StaticLod { group, hlod })).collect();
             renderer.set_static_instances_lod(&statics, &lod);
+            for &(g, k) in &rs.static_lod_scale {
+                renderer.set_static_group_scale(g, k);
+            }
+            // An island's distant trees are left to the ground colour.
+            renderer.settings.detail_cull_px = if app.world.resources.get::<game::island::IslandColliders>().is_some() { 1.6 } else { 0.6 };
             self.statics_uploaded = Some(key);
         }
     }

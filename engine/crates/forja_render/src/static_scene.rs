@@ -144,6 +144,10 @@ pub(crate) struct GatherScratch {
 pub(crate) struct StaticScene {
     keys: Vec<DrawKey>,
     cells: Vec<Cell>,
+    /// Cells grouped by [`BLOCK_SIZE`] squares (bounds, cell range): a
+    /// block outside a view is skipped without looking at its cells, so a
+    /// large world costs by what is in view, not by its size.
+    blocks: Vec<(Aabb, std::ops::Range<u32>)>,
     runs: Vec<Run>,
     raws: Vec<InstanceRaw>,
     /// center xyz, radius (same order as `raws`).
@@ -154,6 +158,8 @@ pub(crate) struct StaticScene {
     groups: Vec<(Aabb, bool)>,
     /// Groups whose detail is not resident (streamed out): kept at HLOD.
     not_ready: std::collections::HashSet<u32>,
+    /// Groups that switch at a multiple of the HLOD distance.
+    scale: std::collections::HashMap<u32, f32>,
     /// Groups switched in the last [`StaticScene::update_groups`].
     pub switched: u32,
 }
@@ -161,6 +167,9 @@ pub(crate) struct StaticScene {
 /// Grid cell edge (m): about a city block side, so a street view touches
 /// a few dozen cells.
 pub(crate) const CELL_SIZE: f32 = 32.0;
+
+/// Edge of the squares the cells are grouped in for culling (m).
+pub(crate) const BLOCK_SIZE: f32 = 512.0;
 
 /// Runs with at most this many items pick a LOD per instance.
 const PER_ITEM_LOD_RUN: u32 = 32;
@@ -247,6 +256,22 @@ impl StaticScene {
             }
             s.cells.push(Cell { bounds, runs: run_start..s.runs.len() as u32 });
         }
+        // Blocks: the cells sorted by the 512 m square of their centre.
+        let block_of = |c: &Cell| {
+            let p = c.bounds.center();
+            (((p.x / BLOCK_SIZE).floor() as i64) << 32) ^ ((p.z / BLOCK_SIZE).floor() as i64 & 0xffff_ffff)
+        };
+        s.cells.sort_by_key(block_of);
+        let mut i = 0;
+        while i < s.cells.len() {
+            let (b, start) = (block_of(&s.cells[i]), i);
+            let mut bounds = Aabb::EMPTY;
+            while i < s.cells.len() && block_of(&s.cells[i]) == b {
+                bounds = bounds.union(&s.cells[i].bounds);
+                i += 1;
+            }
+            s.blocks.push((bounds, start as u32..i as u32));
+        }
         s.keys = keys;
         let ngroups = items.iter().map(|it| it.group).max().unwrap_or(0) as usize;
         s.groups = vec![(Aabb::EMPTY, false); ngroups];
@@ -266,6 +291,7 @@ impl StaticScene {
     pub fn update_groups(&mut self, eye: Vec3, distance: f32) {
         self.switched = 0;
         for (gi, (b, far)) in self.groups.iter_mut().enumerate() {
+            let distance = distance * self.scale.get(&(gi as u32 + 1)).copied().unwrap_or(1.0);
             let d = dist_to_aabb(eye, b);
             let want = (distance > 0.0 && if *far { d > distance * 0.9 } else { d > distance }) || self.not_ready.contains(&(gi as u32 + 1));
             if want != *far {
@@ -281,6 +307,16 @@ impl StaticScene {
         } else {
             self.not_ready.insert(group);
         }
+    }
+
+    /// Makes `group` switch at `scale` times the HLOD distance.
+    pub fn set_scale(&mut self, group: u32, scale: f32) {
+        self.scale.insert(group, scale);
+    }
+
+    /// Whether `group` currently shows its far state.
+    pub fn is_far(&self, group: u32) -> bool {
+        group.checked_sub(1).and_then(|g| self.groups.get(g as usize)).is_some_and(|g| g.1)
     }
 
     /// Groups currently drawn with their detail.
@@ -306,12 +342,17 @@ impl StaticScene {
     /// (cell bounds); stops early once under `stop`.
     pub fn nearest_visible(&self, planes: &[Vec4], eye: Vec3, stop: f32) -> f32 {
         let mut nearest = f32::INFINITY;
-        for cell in &self.cells {
-            let d = dist_to_aabb(eye, &cell.bounds);
-            if d < nearest && classify(planes, &cell.bounds) != 0 {
-                nearest = d;
-                if nearest <= stop {
-                    break;
+        'blocks: for (bounds, range) in &self.blocks {
+            if dist_to_aabb(eye, bounds) >= nearest || classify(planes, bounds) == 0 {
+                continue;
+            }
+            for cell in &self.cells[range.start as usize..range.end as usize] {
+                let d = dist_to_aabb(eye, &cell.bounds);
+                if d < nearest && classify(planes, &cell.bounds) != 0 {
+                    nearest = d;
+                    if nearest <= stop {
+                        break 'blocks;
+                    }
                 }
             }
         }
@@ -333,8 +374,12 @@ impl StaticScene {
         let GatherScratch { segments, picked } = sc;
         segments.clear();
         picked.clear();
-        for cell in &self.cells {
-            let class = classify(view.planes, &cell.bounds);
+        for (cell, inside) in self.blocks.iter().flat_map(|(bounds, range)| {
+            let class = classify(view.planes, bounds);
+            let cells = if class == 0 { &[][..] } else { &self.cells[range.start as usize..range.end as usize] };
+            cells.iter().map(move |c| (c, class == 2))
+        }) {
+            let class = if inside { 2 } else { classify(view.planes, &cell.bounds) };
             if class == 0 {
                 continue;
             }

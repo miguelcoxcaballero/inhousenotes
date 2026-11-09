@@ -99,6 +99,13 @@ pub fn plant(props: &[(PropKind, Mat4)], sites: &[PropSite], lib: &SpeciesLibrar
             wanted.push((i, sp, pr));
         }
     }
+    plant_species(props, wanted, lib, opt)
+}
+
+/// [`plant`] with the species of each prop chosen by the caller:
+/// `wanted` lists `(index into props, species id, pruning)` (a landscape
+/// that knows its own vegetation: pine woods, orange groves).
+pub fn plant_species(props: &[(PropKind, Mat4)], wanted: Vec<(usize, &'static str, Pruning)>, lib: &SpeciesLibrary, opt: &PlantOptions) -> CityForest {
     // Unique (species, pruning) groups in a stable order.
     let mut groups: Vec<(&'static str, Pruning)> = Vec::new();
     for (_, sp, pr) in &wanted {
