@@ -170,6 +170,8 @@ pub struct Hud {
     pub physics_ms: f32,
     pub bodies: usize,
     pub attribution: Vec<String>,
+    /// A cutscene is playing: the radar and the bars are hidden.
+    pub cutscene: bool,
 }
 
 impl Hud {
@@ -272,7 +274,8 @@ pub fn build_at(map: MapKind, paths: Paths, hour: Option<f32>) -> App {
         .add_plugin(combat::CombatPlugin)
         .add_plugin(traffic::TrafficPlugin)
         .add_plugin(crowd::CrowdPlugin)
-        .add_plugin(camera::CameraPlugin);
+        .add_plugin(camera::CameraPlugin)
+        .add_plugin(crate::minimap::MinimapPlugin);
     crate::perf::trim_heap();
     app.add_system(Stage::PreUpdate, "clear_frame", |w| {
         let rs = w.res_mut::<RenderScene>();
