@@ -150,6 +150,16 @@ impl Plugin for WorldPlugin {
         log::info!("{}: {} placements, {} triangles", kind.label(), desc.placements.len(), desc.triangle_count());
         app.insert_resource(MapData(desc.island.as_ref().map(|i| i.map.clone())));
         app.insert_resource(GameWorld { desc, kind, scene_base, static_base, night_content: self.hour.is_some(), released: false });
+        // The minimap's island map, placed in this world's frame.
+        match kind {
+            MapKind::Isla => {
+                app.insert_resource(crate::minimap::IslandFrame { origin: forja_math::Vec2::new(forja_world::island::ORIGIN.0, forja_world::island::ORIGIN.1) });
+            }
+            MapKind::IslaCentre => {
+                app.insert_resource(crate::minimap::IslandFrame::VALENCIA);
+            }
+            _ => {}
+        }
         super::island::install(app);
     }
 }

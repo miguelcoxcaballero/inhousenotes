@@ -309,7 +309,13 @@ pub fn kerbs(gr: &Ground) -> Vec<Kerb> {
                     let d = (b - a).normalize_or(Vec2::X);
                     let probe = (a + b) * 0.5 + Vec2::new(d.y, -d.x) * 0.05;
                     let lo = gr.surface_at(probe).map(|o| o.h);
-                    let face = lo.filter(|lo| s.h - lo > 0.01);
+                    // The raised surface must really be there behind the
+                    // edge: region arithmetic leaves hairline slivers (a
+                    // sidewalk "bridging" the roadway where two street
+                    // pieces meet), and a kerb face on each side of one is
+                    // a 15 cm wall across the lanes.
+                    let behind = (a + b) * 0.5 - Vec2::new(d.y, -d.x) * 0.12;
+                    let face = lo.filter(|lo| s.h - lo > 0.01 && s.region.contains(behind));
                     match (face, cur.as_mut()) {
                         (Some(lo), Some(k)) if (k.lo - lo).abs() < 1e-3 && k.line.last() == Some(&a) => k.line.push(b),
                         (Some(lo), _) => {
@@ -394,6 +400,19 @@ pub fn mesh(gr: &Ground, g: &StreetGraph, lib: &ProfileLibrary, courts: &Region,
                     // CCW in (x, z) faces -Y: flip to face up.
                     prim.indices.extend([base + t[0], base + t[2], base + t[1]]);
                     let v = |i: u32| Vec3::new(pts[i as usize].x, ys[i as usize], pts[i as usize].y);
+                    // Slivers of a raised surface (see `kerbs`) are no ground
+                    // to stand on; a wheel's ray that lands on one would find
+                    // a kerb in the middle of a lane.
+                    if s.h > 0.02 {
+                        let p = [pts[t[0] as usize], pts[t[1] as usize], pts[t[2] as usize]];
+                        let long = (0..3).max_by(|a, b| p[*a].distance(p[(*a + 1) % 3]).total_cmp(&p[*b].distance(p[(*b + 1) % 3]))).unwrap_or(0);
+                        let e = p[(long + 1) % 3] - p[long];
+                        let thin = (p[(long + 2) % 3] - p[long]).perp_dot(e).abs() < e.length() * 0.12;
+                        let (c, n) = ((p[0] + p[1] + p[2]) / 3.0, Vec2::new(e.y, -e.x).normalize_or_zero() * 0.12);
+                        if thin && !s.region.contains(c + n) && !s.region.contains(c - n) {
+                            continue;
+                        }
+                    }
                     col.push([v(t[0]), v(t[2]), v(t[1])]);
                 }
                 if !flat {

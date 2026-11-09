@@ -201,9 +201,9 @@ def main():
                     flags = {"orchard": 1, "arable": 2, "fallow": 3}.get(p.get("crop"), 0)
                 height = float(p.get("height") or 0)
                 if kind == "building":
-                    height, src = real_height(p, poly[0])
-                    flags |= src | (1 if p.get("airport") else 0)
-                    stats["lidar " + str(src)] = stats.get("lidar " + str(src), 0) + 1
+                    height, hsrc = real_height(p, poly[0])
+                    flags |= hsrc | (1 if p.get("airport") else 0)
+                    stats["lidar " + str(hsrc)] = stats.get("lidar " + str(hsrc), 0) + 1
                 polys.u(k)
                 polys.u(flags)
                 polys.u(round(height * 10))
