@@ -73,6 +73,7 @@ fn load(map: MapKind, paths: &Paths, hour: Option<f32>) -> Result<WorldDescripti
         SpanishCity { hour, ..SpanishCity::from_osm(Some(dl), Some(&styles), &path)? }.build()
     };
     match map {
+        MapKind::Isla => SpanishCity { hour, ..SpanishCity::from_osm(Some(dl), Some(&styles), &paths.data.join("maps/isla_valencia.json"))? }.build(),
         MapKind::Spain => SpanishCity { hour, ..SpanishCity::new(dl, &styles) }.build(),
         MapKind::SpainClassic => preset("classic"),
         MapKind::Carmen => preset("carmen"),

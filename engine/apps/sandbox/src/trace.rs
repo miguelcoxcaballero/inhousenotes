@@ -22,6 +22,8 @@ use std::time::{Duration, Instant};
 /// Log records written so far and the nanoseconds spent writing them.
 static LOG_RECORDS: AtomicU64 = AtomicU64::new(0);
 static LOG_NANOS: AtomicU64 = AtomicU64::new(0);
+/// Logger start (the crash report's line times).
+static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
 
 /// `env_logger` with a counter around it (records and time spent in the
 /// console or file write, read by the trace).
@@ -38,6 +40,9 @@ impl log::Log for CountingLogger {
         }
         let t = Instant::now();
         self.0.log(r);
+        // The last lines go into the crash report (`sandbox::crash`).
+        let up = START.get_or_init(Instant::now).elapsed().as_secs_f64();
+        crate::crash::remember(format!("[{up:9.3}s {} {}] {}", r.level(), r.target(), r.args()));
         LOG_NANOS.fetch_add(t.elapsed().as_nanos() as u64, Ordering::Relaxed);
         LOG_RECORDS.fetch_add(1, Ordering::Relaxed);
     }
@@ -51,6 +56,7 @@ impl log::Log for CountingLogger {
 pub fn init_logger(default_filter: &str) {
     let logger = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(default_filter)).build();
     let max = logger.filter();
+    START.get_or_init(Instant::now);
     if log::set_boxed_logger(Box::new(CountingLogger(logger))).is_ok() {
         log::set_max_level(max);
     }

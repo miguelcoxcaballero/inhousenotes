@@ -4,6 +4,12 @@ FORJA - version jugable (Windows)
 Mundo abierto en una ciudad procedural de Madrid y Valencia: camina, corre,
 conduce coches y usa armas e inventario.
 
+NOVEDADES DE LA v0.1.5
+  - Mapa por defecto: el centro de Valencia de la Isla Levante (edificios y
+    calles reales del mapa de la isla). F2 cambia de mapa.
+  - Arreglado el cierre al cambiar de mapa. Si el juego falla, guarda
+    forja_crash.txt junto al ejecutable y muestra un aviso.
+
 NOVEDADES DE LA v0.1.4
   - Resolucion nativa completa de tu pantalla por defecto (sin reescalado);
     escala y resolucion dinamica opcionales en Opciones.
