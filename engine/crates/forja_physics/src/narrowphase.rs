@@ -342,11 +342,50 @@ fn rank(s: &Shape) -> u8 {
     }
 }
 
+/// Motion of a pair over the coming step, for speculative contacts.
+///
+/// A speculative contact (separation above `slack`) stops the bodies from
+/// closing in along its normal faster than the gap allows. The SAT axis of
+/// two separated polytopes is not the direction they will meet in, though: a
+/// car's chassis flying 25 cm over the road is "0.3 m away" from the next
+/// triangle of the road mesh, or from a kerb it clears, along a horizontal
+/// axis, and a contact on that axis stops the car dead at a seam it never
+/// touches. With the relative displacement the test becomes a swept one: if
+/// some axis separates the shapes both now and after the step, they do not
+/// meet during it (projections move linearly) and no contact is made.
+#[derive(Clone, Copy, Debug)]
+pub struct Sweep {
+    /// Displacement of the second shape relative to the first over the step.
+    pub disp: Vec3,
+    /// Separation below which contacts are always kept (resting contact
+    /// margin plus the reach of the bodies' rotation over the step).
+    pub slack: f32,
+}
+
+impl Sweep {
+    /// True when an axis (pointing from the first shape to the second) with
+    /// separation `sep` keeps the shapes apart over the whole step.
+    #[inline]
+    fn clears(&self, axis: Vec3, sep: f32) -> bool {
+        sep.min(sep + axis.dot(self.disp)) > self.slack
+    }
+
+    fn reversed(self) -> Self {
+        Self { disp: -self.disp, slack: self.slack }
+    }
+}
+
 /// Generates manifolds between two shapes. Appends to `out`.
 pub fn collide(sa: &Shape, ia: &Iso, sb: &Shape, ib: &Iso, margin: f32, out: &mut Vec<Manifold>) {
+    collide_swept(sa, ia, sb, ib, margin, None, out);
+}
+
+/// [`collide`] for a simulation step: `sweep` drops the speculative contacts
+/// of polytopes that provably stay apart during the step.
+pub fn collide_swept(sa: &Shape, ia: &Iso, sb: &Shape, ib: &Iso, margin: f32, sweep: Option<Sweep>, out: &mut Vec<Manifold>) {
     if rank(sa) > rank(sb) {
         let start = out.len();
-        collide(sb, ib, sa, ia, margin, out);
+        collide_swept(sb, ib, sa, ia, margin, sweep.map(Sweep::reversed), out);
         for m in &mut out[start..] {
             *m = m.flipped();
         }
@@ -359,7 +398,7 @@ pub fn collide(sa: &Shape, ia: &Iso, sb: &Shape, ib: &Iso, margin: f32, out: &mu
             let ctx = TriCtx::new(sa, ia);
             mesh.query(&local_aabb, |i, t| {
                 let tri = t.map(|v| ib.transform_point(v));
-                ctx.collide(tri, i, margin, &mut soup);
+                ctx.collide(tri, i, margin, sweep, &mut soup);
             });
             soup.reduce_into(out);
         }
@@ -369,12 +408,12 @@ pub fn collide(sa: &Shape, ia: &Iso, sb: &Shape, ib: &Iso, margin: f32, out: &mu
             let ctx = TriCtx::new(sa, ia);
             hf.query(&local_aabb, |i, t| {
                 let tri = t.map(|v| ib.transform_point(v));
-                ctx.collide(tri, i, margin, &mut soup);
+                ctx.collide(tri, i, margin, sweep, &mut soup);
             });
             soup.reduce_into(out);
         }
         _ => {
-            if let Some(m) = collide_convex(sa, ia, sb, ib, margin) {
+            if let Some(m) = collide_convex(sa, ia, sb, ib, margin, sweep) {
                 out.push(m);
             }
         }
@@ -399,14 +438,14 @@ impl<'a> TriCtx<'a> {
         }
     }
 
-    fn collide(&self, tri: [Vec3; 3], key: u32, margin: f32, out: &mut TriContacts) {
+    fn collide(&self, tri: [Vec3; 3], key: u32, margin: f32, sweep: Option<Sweep>, out: &mut TriContacts) {
         let (m, face_contact) = match self {
             TriCtx::Round(p, q, r) => match round_vs_triangle(*p, *q, *r, tri, margin) {
                 Some((m, face)) => (Some(m.flipped()), face),
                 None => (None, false),
             },
             TriCtx::Poly(pa) => {
-                let m = poly_vs_poly(pa, &Poly::triangle(tri), margin, true);
+                let m = poly_vs_poly(pa, &Poly::triangle(tri), margin, true, sweep);
                 let tn = (tri[1] - tri[0]).cross(tri[2] - tri[0]).normalize_or(Vec3::Y);
                 let face = m.is_some_and(|m| m.normal.dot(tn).abs() > 0.999);
                 (m, face)
@@ -501,7 +540,7 @@ fn normal_key(n: Vec3) -> u32 {
     0x4000_0000 | (q(x) << 8) | q(y)
 }
 
-fn collide_convex(sa: &Shape, ia: &Iso, sb: &Shape, ib: &Iso, margin: f32) -> Option<Manifold> {
+fn collide_convex(sa: &Shape, ia: &Iso, sb: &Shape, ib: &Iso, margin: f32, sweep: Option<Sweep>) -> Option<Manifold> {
     match (round_core(sa, ia), round_core(sb, ib)) {
         (Some((p1, q1, r1)), Some((p2, q2, r2))) => {
             let (c1, c2) = segment_segment(p1, q1, p2, q2);
@@ -524,7 +563,7 @@ fn collide_convex(sa: &Shape, ia: &Iso, sb: &Shape, ib: &Iso, margin: f32) -> Op
         (None, None) => {
             let pa = shape_poly(sa, ia)?;
             let pb = shape_poly(sb, ib)?;
-            poly_vs_poly(&pa, &pb, margin, false)
+            poly_vs_poly(&pa, &pb, margin, false, sweep)
         }
     }
 }
@@ -727,23 +766,26 @@ fn round_vs_poly(p: Vec3, q: Vec3, r: f32, poly: &Poly, margin: f32) -> Option<M
 }
 
 /// SAT + clipping between two polytopes. Normal points from `a` to `b`.
-fn poly_vs_poly(a: &Poly, b: &Poly, margin: f32, b_is_triangle: bool) -> Option<Manifold> {
-    let face_query = |x: &Poly, y: &Poly| {
+fn poly_vs_poly(a: &Poly, b: &Poly, margin: f32, b_is_triangle: bool, sweep: Option<Sweep>) -> Option<Manifold> {
+    // `towards_b`: +1 when `x` is `a` (its normals point at `b`), -1 for `b`.
+    let face_query = |x: &Poly, y: &Poly, towards_b: f32| {
         let mut best = (f32::MIN, 0usize);
+        let mut clear = false;
         for i in 0..x.normals.len() {
             let sep = y.project(x.normals[i]).0 - x.ds[i];
             if sep > best.0 {
                 best = (sep, i);
             }
+            clear |= sweep.is_some_and(|s| s.clears(x.normals[i] * towards_b, sep));
         }
-        best
+        (best.0, best.1, clear)
     };
-    let (sep_a, face_a) = face_query(a, b);
-    if sep_a > margin {
+    let (sep_a, face_a, clear_a) = face_query(a, b, 1.0);
+    if sep_a > margin || clear_a {
         return None;
     }
-    let (mut sep_b, mut face_b) = face_query(b, a);
-    if sep_b > margin {
+    let (mut sep_b, mut face_b, clear_b) = face_query(b, a, -1.0);
+    if sep_b > margin || clear_b {
         return None;
     }
     if b_is_triangle {
@@ -768,7 +810,7 @@ fn poly_vs_poly(a: &Poly, b: &Poly, margin: f32, b_is_triangle: bool) -> Option<
                 axis = -axis;
             }
             let sep = b.project(axis).0 - a.project(axis).1;
-            if sep > margin {
+            if sep > margin || sweep.is_some_and(|s| s.clears(axis, sep)) {
                 return None;
             }
             if sep > best_edge.0 {
