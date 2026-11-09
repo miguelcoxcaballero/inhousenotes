@@ -2,6 +2,7 @@
 //! review renders, layout checks) can use the same people, crowd and
 //! walkway code as the game.
 
+pub mod crash;
 pub mod game;
 pub mod pause;
 pub mod perf;
