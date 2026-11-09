@@ -1,0 +1,12 @@
+{
+ "source": "IGN MDT25 (CC BY 4.0 scne.es), WCS servicios.idee.es/wcs-inspire/mdt, smoothed sigma 125 m",
+ "units": "centimetres above sea level",
+ "width": 868,
+ "height": 608,
+ "extent": [
+  -13189.915000000037,
+  -6796.74199999962,
+  8485.084999999963,
+  8378.25800000038
+ ]
+}

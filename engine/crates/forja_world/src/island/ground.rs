@@ -2,12 +2,16 @@
 //! the same triangles for rendering and collision) and a land-cover class
 //! per triangle.
 //!
-//! Heights come from the island's height map (land sits on a 14 m base
-//! there, the sea and the lagoons are 0), reshaped for play: the plain is
-//! level 0, the sea surface is [`SEA`], the shore crosses it on the real
-//! coastline, the mountains taper towards the coast instead of ending in a
-//! cut, the ground is levelled along the roads and lowered under lakes and
-//! rivers.
+//! Heights are metres above sea level ([`SEA`] = 0). Where the island is
+//! real geography (Valencia and its surroundings, kept at real scale and
+//! position) the base is the real terrain (IGN MDT25, see
+//! [`super::data::RealDem`]); elsewhere it is a low designed plain
+//! ([`PLAIN`]). The island's designed relief (its height map: the
+//! mountains of the interior, which are not real geography) is added on
+//! top of that base. The result is reshaped for play: the shore crosses the
+//! sea surface on the coastline, the relief fades out towards the coast
+//! instead of ending in a cut, cliffs are limited to ~40 degrees, the
+//! ground is levelled along the roads and lowered under lakes and rivers.
 
 use forja_assets::MeshData;
 use forja_math::{Vec2, Vec3, Vec4};
@@ -19,8 +23,12 @@ pub const CELL: f32 = 16.0;
 /// Cells per terrain tile side (512 m tiles).
 pub const TILE_CELLS: usize = 32;
 pub const TILE: f32 = CELL * TILE_CELLS as f32;
-/// Height of the sea surface (the plain is 0).
-pub const SEA: f32 = -1.0;
+/// Height of the sea surface.
+pub const SEA: f32 = 0.0;
+/// Height of the designed plain where there is no real terrain (m).
+pub const PLAIN: f32 = 5.0;
+/// Dry land is never lower than this (the sea sheet lies at 0).
+pub const LAND_MIN: f32 = 0.8;
 /// Lakes and rivers lie this far below their banks.
 pub const WATER_DROP: f32 = 1.5;
 /// Height of the land base in the source height map (m).
@@ -317,30 +325,87 @@ impl Ground {
             if h[i].is_nan() {
                 h[i] = 0.0;
             }
-            // The relief fades out towards the coast.
-            h[i] *= smoothstep(0.0, 420.0, dist[i]);
+            // The designed relief fades out towards the coast, and stands
+            // on the real terrain where there is some, else on the plain.
+            let fade = smoothstep(0.0, 420.0, dist[i]);
+            let (x, z) = (x0 + (i % cols) as f32 * CELL, z0 + (i / cols) as f32 * CELL);
+            let (real, trust) = d.dem.as_ref().map_or((0.0, 0.0), |m| m.sample(x, z));
+            let base = PLAIN + (real - PLAIN) * trust;
+            h[i] = h[i] * fade + base.max(LAND_MIN) * smoothstep(0.0, 60.0, dist[i]);
+        }
+        // No cliffs: the designed relief has cut edges (the levelled
+        // ground around the airport); slopes are limited to ~40 degrees
+        // by lowering the high side.
+        let talus = 0.85;
+        for pass in 0..4 {
+            let fwd = pass % 2 == 0;
+            for k in 0..n {
+                let i = if fwd { k } else { n - 1 - k };
+                let (r, c) = (i / cols, i % cols);
+                let s: isize = if fwd { -1 } else { 1 };
+                let mut best = h[i];
+                for (dr, dc, w) in [(0, s, CELL), (s, 0, CELL), (s, s, diag), (s, -s, diag)] {
+                    let (rr, cc2) = (r as isize + dr, c as isize + dc);
+                    if rr >= 0 && cc2 >= 0 && (rr as usize) < rows && (cc2 as usize) < cols {
+                        let j = rr as usize * cols + cc2 as usize;
+                        if inside[j] {
+                            best = best.min(h[j] + w * talus);
+                        }
+                    }
+                }
+                h[i] = best;
+            }
         }
         let mut g = Ground { x0, z0, cols, rows, h, cover: vec![Cover::Scrub as u8; (cols - 1) * (rows - 1) * 2], coast: dist };
-        g.level_roads(&d.lines);
-        // Shore: the ground crosses the sea surface on the coastline and
-        // falls to the sea bed beyond it.
+        // Shore: the ground crosses the sea surface on the coastline, rises
+        // from it to the land within some metres, and falls to the sea bed
+        // beyond it.
         for i in 0..n {
             let dd = g.coast[i];
-            g.h[i] = if dd >= 0.0 { g.h[i] + (SEA + dd * 0.15).min(0.0) } else { (SEA + dd * 0.15).max(SEA - 5.0) };
+            g.h[i] = if dd >= 0.0 {
+                // A smooth rise from the waterline (no kink where a road
+                // runs down to a beach or a quay).
+                let land = g.h[i].max(LAND_MIN);
+                SEA + (land - SEA) * smoothstep(0.0, (land / 0.1).max(14.0), dd)
+            } else {
+                (SEA - 0.15 * dd * dd / (10.0 - dd)).max(SEA - 5.0)
+            };
         }
-        g.classify(d);
+        // Twice: the second pass smooths what the first left between
+        // neighbouring roads.
+        let mut road = vec![0.0f32; n];
+        g.level_roads(&d.lines, &mut road);
+        g.level_roads(&d.lines, &mut road);
+        // Vertical curves: the road vertices relax towards their
+        // neighbours (weighted by how much they are road, so the verges
+        // blend out), which rounds the changes of grade a car would feel.
+        for _ in 0..24 {
+            let prev = g.h.clone();
+            for r in 1..rows - 1 {
+                for c in 1..cols - 1 {
+                    let i = r * cols + c;
+                    if road[i] > 0.0 {
+                        let mean = (prev[i - 1] + prev[i + 1] + prev[i - cols] + prev[i + cols]) * 0.25;
+                        g.h[i] += (mean - prev[i]) * 0.5 * road[i];
+                    }
+                }
+            }
+        }
+        g.classify(d, &road);
         g
     }
 
     /// Levels the ground along the roads: a road keeps the smoothed height
     /// of the ground along its centreline, and the ground within a cell of
     /// it takes that height, so roads never tilt across or float.
-    fn level_roads(&mut self, lines: &[Line]) {
+    fn level_roads(&mut self, lines: &[Line], road: &mut [f32]) {
         let n = self.h.len();
         let mut sum = vec![0.0f32; n];
         let mut wsum = vec![0.0f32; n];
         let mut wmax = vec![0.0f32; n];
-        let (inner, outer) = (CELL * 0.6, CELL * 1.6);
+        // Every triangle a road touches must be all road: its corners are
+        // up to a cell diagonal (plus half the road) from the centreline.
+        let reach = CELL * 1.45;
         for l in lines {
             if l.bridge() || l.tunnel() || l.width < 3.5 || l.class == super::data::RoadClass::Subway {
                 continue;
@@ -356,11 +421,6 @@ impl Ground {
             }
             pts.push(*l.pts.last().expect("two points"));
             let hs: Vec<f32> = pts.iter().map(|p| self.height(p.x, p.y)).collect();
-            let (lo, hi) = hs.iter().fold((f32::MAX, f32::MIN), |(lo, hi), v| (lo.min(*v), hi.max(*v)));
-            if hi - lo < 0.02 && hi.abs() < 0.02 {
-                // On the plain: nothing to level.
-                continue;
-            }
             // Smoothed along the line (a window of ~100 m).
             let win = 6usize;
             let smooth: Vec<f32> = (0..hs.len())
@@ -369,6 +429,7 @@ impl Ground {
                     hs[a..b].iter().sum::<f32>() / (b - a) as f32
                 })
                 .collect();
+            let (inner, outer) = (reach + l.width * 0.5, reach + l.width * 0.5 + CELL * 2.0);
             for (p, hr) in pts.iter().zip(&smooth) {
                 let c0 = ((p.x - outer - self.x0) / CELL).ceil().max(0.0) as usize;
                 let c1 = (((p.x + outer - self.x0) / CELL).floor().max(0.0) as usize).min(self.cols - 1);
@@ -391,11 +452,14 @@ impl Ground {
         for i in 0..n {
             if wsum[i] > 0.0 {
                 self.h[i] += (sum[i] / wsum[i] - self.h[i]) * wmax[i];
+                road[i] = road[i].max(wmax[i]);
             }
         }
     }
 
-    fn classify(&mut self, d: &IslandData) {
+    /// `road`: how much each vertex belongs to a road (0..1); those are
+    /// not lowered under water (a road beside or across water stays level).
+    fn classify(&mut self, d: &IslandData, road: &[f32]) {
         let (cc, cr) = (self.cols - 1, self.rows - 1);
         let (x0, z0) = (self.x0, self.z0);
         // Lowest priority first.
@@ -517,7 +581,9 @@ impl Ground {
         }
         for i in 0..wet.len() {
             if wet[i] && self.coast[i] > 0.0 {
-                self.h[i] -= WATER_DROP;
+                if road[i] <= 0.0 {
+                    self.h[i] -= WATER_DROP;
+                }
             }
         }
         // Steep ground is rock; the sea bed and the shore are sand.
@@ -529,7 +595,7 @@ impl Ground {
                     let ny = (b - a).cross(cc3 - a).normalize_or(Vec3::Y).y;
                     let e = &mut cover[(r * cc + c) * 2 + t];
                     let cur = Cover::from_u8(*e);
-                    let low = a.y.max(b.y).max(cc3.y) < SEA + 0.35;
+                    let low = a.y.max(b.y).max(cc3.y) < SEA + 0.45;
                     if low && cur != Cover::Water {
                         *e = Cover::Sand as u8;
                     } else if ny < 0.72 && matches!(cur, Cover::Scrub | Cover::Grass | Cover::Forest | Cover::FieldDry | Cover::FieldGreen | Cover::FieldSoil | Cover::Orchard) {
@@ -676,8 +742,10 @@ impl Ground {
         let mut map = vec![u32::MAX; verts];
         let mut mesh = MeshData::default();
         let mut levels: Vec<Vec<u32>> = vec![Vec::new(); LEVELS];
-        // Half a texel inside the tile's texture, which repeats.
-        let inset = |f: f32| (0.5 + f * (FAR_TEXELS as f32 - 1.0)) / FAR_TEXELS as f32;
+        // The tile's square of its cover atlas (the atlas repeats: stay
+        // half a texel inside it).
+        let size = (FAR_TEXELS * ATLAS_TILES) as f32;
+        let inset = |tile: usize, f: f32| (((tile % ATLAS_TILES) as f32 + f) * FAR_TEXELS as f32).clamp(0.5, size - 0.5) / size;
         for (level, list) in levels.iter_mut().enumerate() {
             let s = 1usize << level;
             let mut tri = |_: u8, ids: [usize; 3]| {
@@ -686,9 +754,11 @@ impl Ground {
                         let (r, c, drop) = self.tile_vertex(r_base, c_base, N, STEP, id);
                         let p = self.pos(r, c);
                         map[id] = mesh.positions.len() as u32;
-                        mesh.positions.push(p - Vec3::Y * drop);
+                        // Half a metre low: roads (drawn a few centimetres over
+                        // the full-resolution ground) stay above the stand-in.
+                        mesh.positions.push(p - Vec3::Y * (drop + 0.6));
                         mesh.normals.push(self.normal(r, c));
-                        mesh.uvs.push(Vec2::new(inset((c - c_base) as f32 / TILE_CELLS as f32), inset((r - r_base) as f32 / TILE_CELLS as f32)));
+                        mesh.uvs.push(Vec2::new(inset(tx, (c - c_base) as f32 / TILE_CELLS as f32), inset(tz, (r - r_base) as f32 / TILE_CELLS as f32)));
                         mesh.tangents.push(Vec4::new(1.0, 0.0, 0.0, 1.0));
                     }
                     list.push(map[id]);
@@ -709,19 +779,20 @@ impl Ground {
         (!mesh.indices.is_empty()).then_some(mesh)
     }
 
-    /// The cover map of terrain tile `(tx, tz)`: [`FAR_TEXELS`] texels a
-    /// side (8 m each), every texel the colour of the cover under it
-    /// (`colors` by [`Cover`]), sRGB RGBA.
-    pub fn far_texture(&self, tx: usize, tz: usize, colors: &[[u8; 3]; COVERS]) -> Vec<u8> {
-        let n = FAR_TEXELS;
+    /// Cover atlas `(ax, az)`: the cover map of a square of
+    /// [`ATLAS_TILES`] tiles a side, [`FAR_TEXELS`] texels per tile (8 m
+    /// each), every texel the colour of the cover under it (`colors` by
+    /// [`Cover`]); sRGB RGBA, `FAR_TEXELS * ATLAS_TILES` a side.
+    pub fn cover_atlas(&self, ax: usize, az: usize, colors: &[[u8; 3]; COVERS]) -> Vec<u8> {
+        let n = FAR_TEXELS * ATLAS_TILES;
+        let texel = TILE / FAR_TEXELS as f32;
         let mut px = Vec::with_capacity(n * n * 4);
-        let (wx, wz) = (self.x0 + tx as f32 * TILE, self.z0 + tz as f32 * TILE);
+        let (wx, wz) = (self.x0 + (ax * ATLAS_TILES) as f32 * TILE, self.z0 + (az * ATLAS_TILES) as f32 * TILE);
         for j in 0..n {
             for i in 0..n {
-                let (x, z) = (wx + (i as f32 + 0.5) * TILE / n as f32, wz + (j as f32 + 0.5) * TILE / n as f32);
-                let c = colors[self.cover_at(x, z) as usize];
+                let c = colors[self.cover_at(wx + (i as f32 + 0.5) * texel, wz + (j as f32 + 0.5) * texel) as usize];
                 // A little grain so large fields are not flat.
-                let h = ((i * 7919 + j * 104_729 + tx * 31 + tz * 17) as u32).wrapping_mul(0x9e37_79b9) >> 24;
+                let h = ((i * 7919 + j * 104_729 + ax * 31 + az * 17) as u32).wrapping_mul(0x9e37_79b9) >> 24;
                 let k = 0.955 + h as f32 / 255.0 * 0.09;
                 px.extend([(c[0] as f32 * k).min(255.0) as u8, (c[1] as f32 * k).min(255.0) as u8, (c[2] as f32 * k).min(255.0) as u8, 255]);
             }
@@ -730,5 +801,7 @@ impl Ground {
     }
 }
 
-/// Texels per side of a terrain tile's far cover map.
+/// Texels per terrain tile side in the cover atlases.
 pub const FAR_TEXELS: usize = 64;
+/// Terrain tiles per cover atlas side.
+pub const ATLAS_TILES: usize = 16;

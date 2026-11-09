@@ -73,15 +73,15 @@ pub fn cover_material(c: Cover) -> (TextureData, MaterialData) {
     let name = format!("isla_{c:?}").to_lowercase();
     let seed = c as u32 * 31 + 5;
     let tex = match c {
-        Cover::Scrub => mottled(&name, 0x8f8a5c, 0x6f7a48, 0.06, seed),
+        Cover::Scrub => mottled(&name, 0x8a8560, 0x74774e, 0.06, seed),
         Cover::Rock => mottled(&name, 0x8d8477, 0x6e675d, 0.08, seed),
-        Cover::Grass => mottled(&name, 0x6f8f45, 0x86a052, 0.05, seed),
-        Cover::Park => mottled(&name, 0x4f8a3c, 0x67a04a, 0.04, seed),
-        Cover::Forest => mottled(&name, 0x3f5a2c, 0x566b35, 0.07, seed),
-        Cover::Sand => mottled(&name, 0xd9c79a, 0xcdb986, 0.03, seed),
+        Cover::Grass => mottled(&name, 0x858a55, 0x777f4c, 0.05, seed),
+        Cover::Park => mottled(&name, 0x5f8446, 0x6c8f4e, 0.04, seed),
+        Cover::Forest => mottled(&name, 0x4a5a34, 0x5a673c, 0.07, seed),
+        Cover::Sand => mottled(&name, 0xd3c6a2, 0xc8ba94, 0.03, seed),
         Cover::Wetland => mottled(&name, 0x5d6f3e, 0x4c6a52, 0.05, seed),
         Cover::Rice => {
-            let (a, b) = (rgb(0x7fa046), rgb(0x94b256));
+            let (a, b) = (rgb(0x7f9450), rgb(0x8c9f58));
             paint(&name, 128, |u, v, x, y| {
                 let n = fbm(u, v, seed);
                 let row = if (v * 32.0).fract() < 0.18 { 0.86 } else { 1.0 };
@@ -91,13 +91,13 @@ pub fn cover_material(c: Cover) -> (TextureData, MaterialData) {
         }
         Cover::Concrete => mottled(&name, 0xa9a69f, 0x9a978f, 0.04, seed),
         Cover::Gravel => mottled(&name, 0xa39a86, 0x8c8472, 0.10, seed),
-        Cover::Sport => mottled(&name, 0x5e9a4a, 0x6aa653, 0.02, seed),
+        Cover::Sport => mottled(&name, 0x6a8f52, 0x739858, 0.02, seed),
         Cover::Water => mottled(&name, 0x2f6f86, 0x2a637b, 0.0, seed),
         Cover::FieldGreen | Cover::FieldSoil | Cover::FieldDry => {
             let (a, b) = match c {
-                Cover::FieldGreen => (rgb(0x6d9a3f), rgb(0x8a7a52)),
+                Cover::FieldGreen => (rgb(0x758c4a), rgb(0x8a7c58)),
                 Cover::FieldSoil => (rgb(0x8f6f4c), rgb(0x7d5f40)),
-                _ => (rgb(0xb7a56c), rgb(0xa3935d)),
+                _ => (rgb(0xb3a680), rgb(0xa49870)),
             };
             paint(&name, 128, |u, v, x, y| {
                 // Furrows every 1.5 m.
@@ -108,7 +108,7 @@ pub fn cover_material(c: Cover) -> (TextureData, MaterialData) {
             })
         }
         Cover::Orchard => {
-            let (soil, leaf) = (rgb(0x9a8058), rgb(0x3f6a2a));
+            let (soil, leaf) = (rgb(0x9a8462), rgb(0x47633a));
             paint(&name, 128, |u, v, x, y| {
                 // Rows of round crowns seen from far away, 6 m apart.
                 let (cu, cv) = ((u * 2.0).fract() - 0.5, (v * 2.0).fract() - 0.5);
@@ -255,25 +255,25 @@ struct Style {
     roofs: [u32; 2],
 }
 
-const TERRACOTTA: u32 = 0xb5654a;
-const TERRACE: u32 = 0xc4b7a2;
+const TERRACOTTA: u32 = 0xa9735e;
+const TERRACE: u32 = 0xb9ae9d;
 const GRAVEL: u32 = 0x9a968c;
 const METAL: u32 = 0x8f9698;
 
 const STYLES: [Style; 12] = [
     // Ensanche: ochres, creams and pinks with balconies.
-    Style { wall: 0xd9c39a, frame: 0xf0e8d6, shutter: 0x5d6b52, balcony: true, window: (0.34, 0.62), glass: 0x2b3038, roofs: [TERRACOTTA, TERRACE] },
-    Style { wall: 0xe8dcc0, frame: 0xf6f1e4, shutter: 0x6b5a48, balcony: true, window: (0.34, 0.62), glass: 0x2b3038, roofs: [TERRACOTTA, TERRACE] },
-    Style { wall: 0xd7a98c, frame: 0xf2e6d8, shutter: 0x4f5f4a, balcony: true, window: (0.32, 0.6), glass: 0x30343a, roofs: [TERRACOTTA, 0xa85c44] },
+    Style { wall: 0xd9c39a, frame: 0xf0e8d6, shutter: 0x5d6b52, balcony: true, window: (0.34, 0.62), glass: 0x2b3038, roofs: [TERRACE, TERRACOTTA] },
+    Style { wall: 0xe8dcc0, frame: 0xf6f1e4, shutter: 0x6b5a48, balcony: true, window: (0.34, 0.62), glass: 0x2b3038, roofs: [TERRACE, TERRACOTTA] },
+    Style { wall: 0xd7a98c, frame: 0xf2e6d8, shutter: 0x4f5f4a, balcony: true, window: (0.32, 0.6), glass: 0x30343a, roofs: [TERRACE, 0xa06a55] },
     Style { wall: 0xc9b8a0, frame: 0xe9e2d2, shutter: 0x7a6a55, balcony: true, window: (0.36, 0.6), glass: 0x2b3038, roofs: [TERRACE, TERRACOTTA] },
-    Style { wall: 0xe3cf9f, frame: 0xf4ecd8, shutter: 0x3f5a4f, balcony: true, window: (0.3, 0.64), glass: 0x2d3238, roofs: [TERRACOTTA, TERRACE] },
+    Style { wall: 0xe3cf9f, frame: 0xf4ecd8, shutter: 0x3f5a4f, balcony: true, window: (0.3, 0.64), glass: 0x2d3238, roofs: [TERRACE, TERRACOTTA] },
     // Brick blocks of the 60s and 70s.
     Style { wall: 0xa9673f, frame: 0xd8d2c6, shutter: 0xc9c2b2, balcony: false, window: (0.5, 0.45), glass: 0x39424c, roofs: [GRAVEL, 0xa7846a] },
     Style { wall: 0xb9845c, frame: 0xdcd6ca, shutter: 0xbdb6a6, balcony: true, window: (0.46, 0.5), glass: 0x39424c, roofs: [GRAVEL, TERRACE] },
     Style { wall: 0xc8c2b6, frame: 0xe6e2da, shutter: 0xa9a294, balcony: false, window: (0.52, 0.46), glass: 0x3a4650, roofs: [GRAVEL, 0x8a867c] },
     // Village houses: whitewash, small windows.
-    Style { wall: 0xf1ede2, frame: 0xf6f3ea, shutter: 0x4a6a8a, balcony: false, window: (0.26, 0.42), glass: 0x2a2e34, roofs: [TERRACOTTA, 0xa3573f] },
-    Style { wall: 0xe9dfc8, frame: 0xf3eee0, shutter: 0x5a7046, balcony: false, window: (0.26, 0.42), glass: 0x2a2e34, roofs: [TERRACOTTA, 0xbd7355] },
+    Style { wall: 0xf1ede2, frame: 0xf6f3ea, shutter: 0x4a6a8a, balcony: false, window: (0.26, 0.42), glass: 0x2a2e34, roofs: [TERRACOTTA, 0x9d6753] },
+    Style { wall: 0xe9dfc8, frame: 0xf3eee0, shutter: 0x5a7046, balcony: false, window: (0.26, 0.42), glass: 0x2a2e34, roofs: [TERRACOTTA, 0xb27e66] },
     // Modern: curtain wall and concrete grid.
     Style { wall: 0x8f9aa3, frame: 0xcfd6da, shutter: 0x8f9aa3, balcony: false, window: (0.86, 0.72), glass: 0x41566a, roofs: [GRAVEL, METAL] },
     // Warehouses: sheet metal, no windows.

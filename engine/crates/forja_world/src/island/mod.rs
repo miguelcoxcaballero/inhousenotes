@@ -406,15 +406,24 @@ impl WorldSource for IslandWorld {
         forja_assets::progress::stage("Modelando el terreno", 0.18);
         let (tx, tz) = g.tiles();
         let keys: Vec<(usize, usize)> = (0..tz).flat_map(|z| (0..tx).map(move |x| (x, z))).collect();
+        let far_mat = MaterialData { name: "isla_terrain_far".into(), base_color: Vec4::ONE, base_color_tex: Some(0), roughness: 0.95, specular: 0.6, ..Default::default() };
+        let side = (ground::FAR_TEXELS * ground::ATLAS_TILES) as u32;
+        let (ax, az) = (tx.div_ceil(ground::ATLAS_TILES), tz.div_ceil(ground::ATLAS_TILES));
+        let atlases: Vec<TextureSet> = (0..ax * az)
+            .into_par_iter()
+            .map(|i| {
+                let map = TextureData { name: "isla_cover_map".into(), width: side, height: side, rgba8: Arc::from(g.cover_atlas(i % ax, i / ax, &mats.cover_colors)), srgb: true };
+                Arc::new((map, None, far_mat.clone()))
+            })
+            .collect();
         let terrain: Vec<(SceneData, SceneData)> = keys
             .par_iter()
             .filter_map(|&(x, z)| {
                 let far = g.far_mesh(x, z)?;
                 let parts = g.tile_meshes(x, z);
                 let near = scene_of("isla_terrain", parts.into_iter().map(|(c, m)| (mats.covers[c as usize].clone(), m)).collect());
-                let map = TextureData { name: "isla_cover_map".into(), width: ground::FAR_TEXELS as u32, height: ground::FAR_TEXELS as u32, rgba8: Arc::from(g.far_texture(x, z, &mats.cover_colors)), srgb: true };
-                let mat = MaterialData { name: "isla_terrain_far".into(), base_color: Vec4::ONE, base_color_tex: Some(0), roughness: 0.95, specular: 0.6, ..Default::default() };
-                Some((near, scene_of("isla_terrain_far", vec![(Arc::new((map, None, mat)), far)])))
+                let atlas = atlases[z / ground::ATLAS_TILES * ax + x / ground::ATLAS_TILES].clone();
+                Some((near, scene_of("isla_terrain_far", vec![(atlas, far)])))
             })
             .collect();
         let terrain_tiles = terrain.len();

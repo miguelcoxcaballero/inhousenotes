@@ -140,8 +140,9 @@ pub const LINE_PASSAGE: u8 = 8;
 #[derive(Clone, Debug)]
 pub struct Poly {
     pub kind: PolyKind,
-    /// Agriculture: crop (1 orchard, 2 arable, 3 fallow). Buildings: 1 at
-    /// the airport.
+    /// Agriculture: crop (1 orchard, 2 arable, 3 fallow). Buildings: bit 0
+    /// at the airport, bit 1 height measured (IGN LiDAR), bit 2 height taken
+    /// from measured neighbours.
     pub flags: u8,
     /// Buildings: height above the ground (m).
     pub height: f32,
@@ -255,6 +256,43 @@ pub struct HeightMap {
     pub dm: Vec<u16>,
 }
 
+/// Real terrain where the island is real geography (Valencia): IGN MDT25,
+/// centimetres above sea level, row 0 at the north edge
+/// (`dem_valencia.png`, written by `tools/isla/fetch_dem.py`).
+#[derive(Clone, Debug, Default)]
+pub struct RealDem {
+    /// World `(west, north (min z), east, south)` of the sample centres.
+    pub extent: [f32; 4],
+    pub width: usize,
+    pub height: usize,
+    pub cm: Vec<u16>,
+}
+
+impl RealDem {
+    /// Height above sea level (m) at a world position and how much to
+    /// trust it there (1 inside, fading to 0 over the last 1.5 km to the
+    /// edge of the data).
+    pub fn sample(&self, x: f32, z: f32) -> (f32, f32) {
+        let (w, h) = (self.width, self.height);
+        if w < 2 || h < 2 {
+            return (0.0, 0.0);
+        }
+        let edge = (x - self.extent[0]).min(self.extent[2] - x).min(z - self.extent[1]).min(self.extent[3] - z);
+        if edge <= 0.0 {
+            return (0.0, 0.0);
+        }
+        let fx = ((x - self.extent[0]) / (self.extent[2] - self.extent[0]) * (w - 1) as f32).clamp(0.0, (w - 1) as f32);
+        let fz = ((z - self.extent[1]) / (self.extent[3] - self.extent[1]) * (h - 1) as f32).clamp(0.0, (h - 1) as f32);
+        let (c, r) = ((fx as usize).min(w - 2), (fz as usize).min(h - 2));
+        let (u, v) = (fx - c as f32, fz - r as f32);
+        let s = |r: usize, c: usize| self.cm[r * w + c] as f32 * 0.01;
+        let a = s(r, c) + (s(r, c + 1) - s(r, c)) * u;
+        let b = s(r + 1, c) + (s(r + 1, c + 1) - s(r + 1, c)) * u;
+        let t = (edge / 1500.0).clamp(0.0, 1.0);
+        (a + (b - a) * v, t * t * (3.0 - 2.0 * t))
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct IslandData {
     pub strings: Vec<String>,
@@ -262,6 +300,9 @@ pub struct IslandData {
     pub lines: Vec<Line>,
     pub points: Vec<Point>,
     pub height: HeightMap,
+    /// Real terrain of the Valencia area (`None` without the file: the
+    /// designed plain is used).
+    pub dem: Option<RealDem>,
 }
 
 struct Cur<'a> {
@@ -325,7 +366,22 @@ impl IslandData {
             return Err(WorldError::Parse(format!("{}: expected {} px", hp.display(), d.height.size)));
         }
         d.height.dm = img.into_raw();
+        d.dem = Self::load_dem(dir);
         Ok(d)
+    }
+
+    fn load_dem(dir: &Path) -> Option<RealDem> {
+        let meta: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("dem_valencia.json")).ok()?).ok()?;
+        let img = image::open(dir.join("dem_valencia.png")).ok()?.into_luma16();
+        let e = meta.get("extent")?.as_array()?;
+        let mut extent = [0.0f32; 4];
+        for (k, v) in extent.iter_mut().enumerate() {
+            *v = e.get(k)?.as_f64()? as f32;
+        }
+        if !(extent[2] > extent[0] && extent[3] > extent[1]) || extent.iter().any(|v| !v.is_finite()) {
+            return None;
+        }
+        Some(RealDem { extent, width: img.width() as usize, height: img.height() as usize, cm: img.into_raw() })
     }
 
     pub fn parse(raw: &[u8]) -> Option<Self> {

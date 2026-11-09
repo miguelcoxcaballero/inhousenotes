@@ -6,6 +6,9 @@ Usage: isla_pack.py <isla-v5/data dir> <out dir>
 
 Writes `<out>/isla.bin.gz` (every polygon, line and point of the island in
 engine world coordinates) and copies the height map as `<out>/height.png`.
+Building heights are the island data's (OSM height, or levels x 3.2 m),
+except Valencia's buildings without levels, which take real heights from
+`<out>/lidar_heights.json` when it is there (see `lidar_heights.py`).
 
 World frame: x = east, z = south, metres, origin at the Plaça de
 l'Ajuntament (the frame of `data/landmarks/valencia`). The island keeps
@@ -19,7 +22,7 @@ then polygons, lines and points. Every integer is an unsigned LEB128 varint;
 coordinates are centimetres, zigzag-encoded, the first point of a ring
 absolute and the others deltas.
 """
-import gzip, json, math, shutil, struct, sys
+import gzip, json, math, os, shutil, struct, sys, zlib
 
 OX, OY = 3478.569, 2582.763
 
@@ -146,6 +149,40 @@ def main():
     shared = {q for q, n in seen.items() if n > 1}
     del seen
 
+    # Real building heights (tools/isla/lidar_heights.py): Valencia's
+    # buildings that only have the default two storeys take the LiDAR height
+    # sampled for them, or that of one of the nearest sampled buildings
+    # (which of the four nearest: by the building's id, so streets keep the
+    # mix of heights of their neighbourhood).
+    lidar, lidar_grid = {}, {}
+    if os.path.exists(f"{out}/lidar_heights.json"):
+        lidar = {k: v for k, v in json.load(open(f"{out}/lidar_heights.json")).items() if v and 2.5 <= v <= 150}
+    centre = {}
+    for f in d["features"]:
+        p, g = f["properties"], f["geometry"]
+        if p.get("kind") == "building" and p.get("source_id") in lidar and g["type"] in ("Polygon", "MultiPolygon"):
+            r = g["coordinates"][0] if g["type"] == "Polygon" else g["coordinates"][0][0]
+            c = (sum(q[0] for q in r) / len(r), sum(q[1] for q in r) / len(r))
+            centre[p["source_id"]] = c
+            lidar_grid.setdefault((int(c[0] // 250), int(c[1] // 250)), []).append((c, lidar[p["source_id"]]))
+
+    def real_height(p, ring):
+        """(height, flag): flag 2 sampled, 4 from the neighbours, 0 as given."""
+        h = float(p.get("height") or 0)
+        if p.get("zone") != "valencia" or abs(h - 6.4) > 0.01 or not lidar:
+            return h, 0
+        sid = p.get("source_id")
+        if sid in lidar:
+            return lidar[sid], 2
+        c = (sum(q[0] for q in ring) / len(ring), sum(q[1] for q in ring) / len(ring))
+        gx, gy = int(c[0] // 250), int(c[1] // 250)
+        near = sorted(((q[0] - c[0]) ** 2 + (q[1] - c[1]) ** 2, v) for dx in (-1, 0, 1) for dy in (-1, 0, 1) for q, v in lidar_grid.get((gx + dx, gy + dy), []))[:4]
+        near = [v for d2, v in near if d2 < 400 ** 2]
+        if not near:
+            return h, 0
+        return near[zlib.crc32((sid or "").encode()) % len(near)], 4
+
+    seen_lines = set()
     polys, lines, points = W(), W(), W()
     npoly = nline = npoint = 0
     stats = {}
@@ -162,11 +199,14 @@ def main():
                 flags = 0
                 if kind == "agriculture":
                     flags = {"orchard": 1, "arable": 2, "fallow": 3}.get(p.get("crop"), 0)
-                if kind == "building" and p.get("airport"):
-                    flags |= 1
+                height = float(p.get("height") or 0)
+                if kind == "building":
+                    height, src = real_height(p, poly[0])
+                    flags |= src | (1 if p.get("airport") else 0)
+                    stats["lidar " + str(src)] = stats.get("lidar " + str(src), 0) + 1
                 polys.u(k)
                 polys.u(flags)
-                polys.u(round(float(p.get("height") or 0) * 10))
+                polys.u(round(height * 10))
                 polys.u(s(p.get("name")))
                 polys.u(osm_id(p))
                 polys.u(len(rings))
@@ -197,6 +237,11 @@ def main():
                 pts = simple
                 if len(pts) < 2:
                     continue
+                # The source lists bridges twice (as roads and as bridges).
+                dup = (CLASS[rc], tuple(pts))
+                if dup in seen_lines or (CLASS[rc], tuple(reversed(pts))) in seen_lines:
+                    continue
+                seen_lines.add(dup)
                 lines.u(CLASS[rc])
                 lines.u(flags)
                 lines.i(layer)
