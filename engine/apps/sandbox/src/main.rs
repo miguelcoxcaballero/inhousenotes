@@ -85,6 +85,38 @@ struct Args {
     car_cam: Option<String>,
     /// Headless `drive_turn`: which car to get into (`--car N`).
     car: usize,
+    /// `--smoke` with `--switch a,b,...`: after the smoke frames on the
+    /// starting map, change to each map in turn (`next`: the F2 map;
+    /// `night`/`day`: set the clock so dusk or dawn rebuilds the city) and
+    /// render the smoke frames again on each, in one process.
+    switches: Vec<Switch>,
+}
+
+/// One step of a `--switch` smoke run.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Switch {
+    /// Change to this map, as F2 does.
+    Map(MapKind),
+    /// F2: the next map of the cycle.
+    Next,
+    /// Set the clock to this hour (the dusk/dawn rebuild when it changes
+    /// the city's night content).
+    Hour(f32),
+}
+
+impl Switch {
+    fn parse_list(s: &str) -> Vec<Switch> {
+        s.split(',')
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .map(|t| match t {
+                "next" | "f2" => Switch::Next,
+                "night" => Switch::Hour(22.0),
+                "day" => Switch::Hour(12.0),
+                _ => MapKind::parse(t).map(Switch::Map).unwrap_or_else(|| panic!("unknown --switch step {t} (a map, next, night or day)")),
+            })
+            .collect()
+    }
 }
 
 fn parse_vec3(s: &str) -> Option<Vec3> {
@@ -93,7 +125,7 @@ fn parse_vec3(s: &str) -> Option<Vec3> {
 }
 
 fn parse_args() -> Args {
-    let mut a = Args { map: MapKind::Spain, screenshot: None, script: "idle".into(), frames: 90, width: 1600, height: 900, hours: None, camera: None, preset: None, bench: 0, csv: None, night_switch: false, stability: 0, adapter: forja_render::gpu::AdapterChoice::from_env(), smoke: 0, window: false, windowed: false, ui: None, ppp: 1.0, burst: None, car_cam: None, car: 0, frame_trace: 0 };
+    let mut a = Args { map: MapKind::Isla, screenshot: None, script: "idle".into(), frames: 90, width: 1600, height: 900, hours: None, camera: None, preset: None, bench: 0, csv: None, night_switch: false, stability: 0, adapter: forja_render::gpu::AdapterChoice::from_env(), smoke: 0, window: false, windowed: false, ui: None, ppp: 1.0, burst: None, car_cam: None, car: 0, frame_trace: 0, switches: Vec::new() };
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
     let mut eye = None;
@@ -145,6 +177,7 @@ fn parse_args() -> Args {
             }
             "--car-cam" => a.car_cam = Some(v),
             "--car" => a.car = v.parse().expect("car index"),
+            "--switch" => a.switches = Switch::parse_list(&v),
             _ => {
                 eprintln!("unknown argument {}", args[i]);
                 std::process::exit(2);
@@ -1021,11 +1054,57 @@ fn run_smoke(args: &Args) {
         view_formats: &[],
     });
     let view = tex.create_view(&Default::default());
-    let mut ms = Vec::with_capacity(args.smoke);
+    let mut ms = Vec::with_capacity(args.smoke * (args.switches.len() + 1));
     let mut trace = sandbox::trace::FrameTrace::from_args(args.frame_trace, "headless");
+    let (mut map, mut hours) = (args.map, args.hours);
+    let mut total = 0;
+    for stage in 0..=args.switches.len() {
+        if stage > 0 {
+            // `--switch`: the next world replaces this one as in the game
+            // (`Sandbox::install`): the old one is freed first, the
+            // renderer keeps its pipelines and drops the scene.
+            let step = args.switches[stage - 1];
+            match step {
+                Switch::Map(m) => map = m,
+                Switch::Next => map = map.next(),
+                Switch::Hour(h) => hours = Some(h),
+            }
+            log::info!("smoke: step {stage}/{}: {step:?} -> {} at {:?} h", args.switches.len(), map.label(), hours);
+            sandbox::crash::set_context("map", map.label());
+            drop(std::mem::replace(&mut app, App::new()));
+            extract = Extract::new();
+            renderer.clear_scene();
+            renderer.apply_graphics(&perf_state.cfg);
+            if let Ok(fx) = std::env::var("FORJA_FX") {
+                renderer.settings.apply_fx(&fx);
+            }
+            renderer.resize(w, h);
+            perf::trim_heap();
+            let t_build = Instant::now();
+            app = game::build_at(map, paths(), hours);
+            if let Some(h) = hours {
+                let t = app.world.res_mut::<game::env::TimeOfDay>();
+                t.hours = h;
+                t.photo_sky = false;
+            }
+            log::info!("smoke: {} built in {:.2?}, resident {:.0} MB", map.label(), t_build.elapsed(), perf::resident_mb());
+        }
+        smoke_stage(args, &mut app, &mut renderer, &mut extract, &view, &mut trace, &mut ms, &mut total);
+        log::info!("smoke: {} rendered {} frames (GPU errors {}, resident {:.0} MB, VRAM estimate {:.0} MB)", map.label(), args.smoke, forja_render::gpu::GPU_ERRORS.load(std::sync::atomic::Ordering::Relaxed), perf::resident_mb(), renderer.vram_estimate() as f64 / 1048576.0);
+    }
+    println!("smoke: gpu passes: {}", renderer.profiler.last.iter().map(|(k, v)| format!("{k} {v:.2}")).collect::<Vec<_>>().join(", "));
+    let img = renderer.read_image(&tex);
+    let out = args.screenshot.clone().unwrap_or_else(|| PathBuf::from("smoke.png"));
+    smoke_verdict(total, &img, &out, &ms);
+}
+
+/// The `--smoke` frames of one world (headless).
+#[allow(clippy::too_many_arguments)]
+fn smoke_stage(args: &Args, app: &mut App, renderer: &mut Renderer, extract: &mut Extract, view: &forja_render::wgpu::TextureView, trace: &mut Option<sandbox::trace::FrameTrace>, ms: &mut Vec<f32>, total: &mut usize) {
     for f in 0..args.smoke {
+        *total += 1;
         let t = Instant::now();
-        if let Some(tr) = &mut trace {
+        if let Some(tr) = trace {
             tr.begin(renderer.upload_waits);
         }
         script_intent(&args.script, f, app.world.res_mut::<Intent>());
@@ -1033,24 +1112,24 @@ fn run_smoke(args: &Args) {
         if let Some(cam) = args.camera {
             app.world.res_mut::<game::camera::CameraRig>().fixed = Some(cam);
         }
-        if let Some(tr) = &mut trace {
+        if let Some(tr) = trace {
             tr.mark("sim");
             let timings = app.world.res::<forja_core::SystemTimings>();
             tr.details("sim", &timings.last);
             tr.fixed_steps(timings.fixed_steps);
         }
-        let frame = extract.frame(&mut renderer, &mut app);
-        if let Some(tr) = &mut trace {
+        let frame = extract.frame(renderer, app);
+        if let Some(tr) = trace {
             tr.mark("extract");
             tr.details("extract", &extract.timings);
         }
-        renderer.render(&frame, &view);
-        if let Some(tr) = &mut trace {
+        renderer.render(&frame, view);
+        if let Some(tr) = trace {
             tr.mark("render");
             tr.details("render", &renderer.cpu.scopes);
         }
         let _ = renderer.device.poll(forja_render::wgpu::PollType::wait_indefinitely());
-        if let Some(tr) = &mut trace {
+        if let Some(tr) = trace {
             tr.mark("gpu wait");
             // GPU pass times (timestamp queries, a few frames late).
             tr.details("gpu wait", &renderer.profiler.last);
@@ -1065,10 +1144,6 @@ fn run_smoke(args: &Args) {
             log::info!("smoke frame {f}: {dt:.1} ms, gpu {:.1} ms, {} draws, {:.2} M tris, {} shadow draws, {} draw calls, {} lights, GPU errors {}", renderer.profiler.total_ms, st.draw_calls, st.triangles as f64 / 1e6, st.shadow_draws, st.api_draws, st.lights, forja_render::gpu::GPU_ERRORS.load(std::sync::atomic::Ordering::Relaxed));
         }
     }
-    println!("smoke: gpu passes: {}", renderer.profiler.last.iter().map(|(k, v)| format!("{k} {v:.2}")).collect::<Vec<_>>().join(", "));
-    let img = renderer.read_image(&tex);
-    let out = args.screenshot.clone().unwrap_or_else(|| PathBuf::from("smoke.png"));
-    smoke_verdict(args.smoke, &img, &out, &ms);
 }
 
 struct Gpu {
@@ -1112,7 +1187,23 @@ struct Sandbox {
     pause: PauseMenu,
     /// Frame cap: when the next frame may start.
     next_frame: Instant,
+    /// F2 while a dusk/dawn city is being built in the background: the map
+    /// to change to once that build is done.
+    queued_map: Option<MapKind>,
+    /// Worlds installed so far (the first load included).
+    installs: usize,
+    /// Windowed `--smoke --switch`: steps done, the installs the run waits
+    /// for, frames rendered on the current world, the step taken at the
+    /// next frame and when the current stage started (time limit).
+    smoke_step: usize,
+    smoke_installs: usize,
+    stage_frames: usize,
+    forced_switch: Option<Switch>,
+    stage_started: Instant,
 }
+
+/// Longest a `--smoke --switch` stage may take (build, upload, frames).
+const SMOKE_STAGE_LIMIT: std::time::Duration = std::time::Duration::from_secs(900);
 
 /// CPU time the fixed steps (physics, movement, combat) of one windowed
 /// frame may take; the rest of a backlog is dropped.
@@ -1155,12 +1246,21 @@ struct Carry {
     message: &'static str,
 }
 
+/// `FORJA_TEST_PANIC=frame|build`: a deliberate panic on the first frame
+/// of play or in the world build, to test the crash report.
+fn test_panic(at: &str) {
+    if std::env::var("FORJA_TEST_PANIC").is_ok_and(|v| v == at) {
+        panic!("FORJA_TEST_PANIC={at}: deliberate panic to test the crash report");
+    }
+}
+
 /// Starts building `map` at `hour` on a worker thread.
 fn spawn_build(map: MapKind, hour: Option<f32>, background: bool) -> Pending {
     let handle = std::thread::Builder::new()
         .name("world build".into())
         .spawn(move || {
             let build = move || {
+                test_panic("build");
                 let mut app = game::build_at(map, paths(), hour);
                 if let Some(h) = hour {
                     app.world.res_mut::<game::env::TimeOfDay>().hours = h;
@@ -1196,6 +1296,7 @@ impl Sandbox {
         // is built on a worker thread.
         forja_assets::progress::reset("Preparando el mapa");
         let pending = Some(spawn_build(map, args.hours, false));
+        sandbox::crash::set_context("map", map.label());
         let trace = args.frame_trace;
         Self {
             args,
@@ -1218,6 +1319,13 @@ impl Sandbox {
             trace: sandbox::trace::FrameTrace::from_args(trace, "window"),
             pause,
             next_frame: Instant::now(),
+            queued_map: None,
+            installs: 0,
+            smoke_step: 0,
+            smoke_installs: 1,
+            stage_frames: 0,
+            forced_switch: None,
+            stage_started: Instant::now(),
         }
     }
 
@@ -1284,6 +1392,8 @@ impl Sandbox {
         }
         perf::trim_heap();
         self.app = app;
+        self.installs += 1;
+        log::info!("world installed: {} (install {})", self.map.label(), self.installs);
         forja_assets::progress::stage("Subiendo la ciudad a la tarjeta gráfica", 0.85);
         if self.loading.is_none() {
             self.loading = Some("Preparando la ciudad".into());
@@ -1354,11 +1464,23 @@ impl Sandbox {
     }
 
     /// Another map (F2): the old one is freed first and the new one is
-    /// built behind the loading screen.
-    fn switch_map(&mut self, map: MapKind) {
-        if self.pending.is_some() {
-            return;
+    /// built behind the loading screen. `true` when the old world is gone:
+    /// the caller must not touch `self.app` again this frame (it is an
+    /// empty [`App`] until the build is installed). While a dusk/dawn city
+    /// is being built in the background the change waits for it.
+    fn switch_map(&mut self, map: MapKind) -> bool {
+        match &self.pending {
+            Some(p) if p.background => {
+                log::info!("map change to {} queued behind the background build", map.label());
+                self.queued_map = Some(map);
+                self.app.world.res_mut::<Hud>().message(format!("Cambiando a {} en cuanto termine la ciudad en curso", map.label()));
+                return false;
+            }
+            Some(_) => return false,
+            None => {}
         }
+        log::info!("map change: {} -> {}", self.map.label(), map.label());
+        sandbox::crash::set_context("map", map.label());
         self.map = map;
         // Keep the clock (and build the city's night content for it).
         let (hours, photo, speed) = {
@@ -1379,6 +1501,7 @@ impl Sandbox {
         self.carry = Some(Carry { hours, photo_sky: photo, speed, player: None, message: map.label() });
         self.pending = Some(spawn_build(map, (!photo).then_some(hours), false));
         self.loading = Some(format!("Cargando {}", map.label()));
+        true
     }
 
     /// Dusk or dawn: the city with the other content is built on a worker
@@ -1428,10 +1551,11 @@ impl Sandbox {
                         self.install(app);
                     }
                 }
-                Err(_) => {
-                    log::error!("the world build panicked");
-                    std::process::exit(1);
-                }
+                Err(_) => sandbox::crash::fatal(&format!("the world build of {} panicked", self.map.label()), 1),
+            }
+            // F2 during a background build: now.
+            if let Some(m) = self.queued_map.take() {
+                self.switch_map(m);
             }
         }
         if self.pending.as_ref().is_some_and(|p| !p.background) {
@@ -1486,12 +1610,19 @@ impl Sandbox {
     }
 
     fn redraw(&mut self, event_loop: &ActiveEventLoop) {
+        if self.args.smoke > 0 && self.stage_started.elapsed() > SMOKE_STAGE_LIMIT {
+            println!("SMOKE FAILED: step {} ({}) did not finish within {:?}", self.smoke_step, self.map.label(), SMOKE_STAGE_LIMIT);
+            std::process::exit(1);
+        }
         if self.update_loading() {
             self.input.end_frame();
             if let Some(gpu) = &self.gpu {
                 gpu.window.request_redraw();
             }
             return;
+        }
+        if self.frames == 0 {
+            test_panic("frame");
         }
         if let Some(tr) = &mut self.trace {
             tr.begin(self.gpu.as_ref().map_or((0, 0.0), |g| g.renderer.upload_waits));
@@ -1521,9 +1652,35 @@ impl Sandbox {
         if !paused && self.input.pressed("debug_physics") {
             self.ui.debug = !self.ui.debug;
         }
-        if !paused && self.input.pressed("next_map") {
-            let next = self.map.next();
-            self.switch_map(next);
+        let forced = self.forced_switch.take();
+        let target = match forced {
+            Some(Switch::Map(m)) => Some(m),
+            Some(Switch::Next) => Some(self.map.next()),
+            _ => (!paused && self.input.pressed("next_map")).then(|| self.map.next()),
+        };
+        if let Some(map) = target
+            && self.switch_map(map)
+        {
+            // The old world is gone (`self.app` is empty until the new one
+            // is installed): the loading screen owns the frame from here.
+            // Running the rest of this frame on the empty world panicked
+            // on its first missing resource (v0.1.3 to v0.1.4).
+            self.input.end_frame();
+            if let Some(gpu) = &self.gpu {
+                gpu.window.request_redraw();
+            }
+            return;
+        }
+        if let Some(Switch::Hour(h)) = forced {
+            let t = self.app.world.res_mut::<game::env::TimeOfDay>();
+            t.hours = h;
+            t.photo_sky = false;
+            let want = t.night_content();
+            let rebuild = self.map == MapKind::Spain && std::env::var_os("FORJA_NO_TIME_REBUILD").is_none() && want != self.app.world.res::<game::world::GameWorld>().night_content;
+            if rebuild {
+                // The dusk/dawn swap below starts this frame.
+                self.smoke_installs += 1;
+            }
         }
         if !paused && self.input.pressed("time_of_day") {
             let t = self.app.world.res_mut::<game::env::TimeOfDay>();
@@ -1714,17 +1871,41 @@ impl Sandbox {
             });
         }
         self.frames += 1;
-        if self.args.smoke > 0 {
-            if self.frames > 1 {
+        // A stage counts its frames once its world is in (a dusk/dawn
+        // rebuild runs in the background while frames go on).
+        if self.args.smoke > 0 && self.installs >= self.smoke_installs && self.pending.is_none() {
+            self.stage_frames += 1;
+            if self.stage_frames > 1 {
                 self.smoke_ms.push(dt * 1000.0);
             }
-            if self.frames % 10 == 0 {
-                log::info!("smoke frame {}: {:.1} ms, gpu {:.1} ms, GPU errors {}", self.frames, dt * 1000.0, gpu.renderer.profiler.total_ms, forja_render::gpu::GPU_ERRORS.load(std::sync::atomic::Ordering::Relaxed));
+            if self.stage_frames % 10 == 0 {
+                log::info!("smoke frame {} ({}): {:.1} ms, gpu {:.1} ms, GPU errors {}", self.stage_frames, self.map.label(), dt * 1000.0, gpu.renderer.profiler.total_ms, forja_render::gpu::GPU_ERRORS.load(std::sync::atomic::Ordering::Relaxed));
             }
-            if self.frames >= self.args.smoke {
-                let img = gpu.renderer.render_live_to_image(&frame, gpu.config.width, gpu.config.height);
-                let out = self.args.screenshot.clone().unwrap_or_else(|| PathBuf::from("smoke.png"));
-                smoke_verdict(self.frames, &img, &out, &self.smoke_ms);
+            if self.stage_frames >= self.args.smoke {
+                if let Some(&step) = self.args.switches.get(self.smoke_step) {
+                    self.smoke_step += 1;
+                    log::info!(
+                        "smoke: {} rendered {} frames (GPU errors {}, resident {:.0} MB, VRAM estimate {:.0} MB); step {}/{}: {step:?}",
+                        self.map.label(),
+                        self.stage_frames,
+                        forja_render::gpu::GPU_ERRORS.load(std::sync::atomic::Ordering::Relaxed),
+                        perf::resident_mb(),
+                        gpu.renderer.vram_estimate() as f64 / 1048576.0,
+                        self.smoke_step,
+                        self.args.switches.len()
+                    );
+                    // Taken at the next frame, where F2 is handled.
+                    self.forced_switch = Some(step);
+                    if matches!(step, Switch::Map(_) | Switch::Next) {
+                        self.smoke_installs += 1;
+                    }
+                    self.stage_frames = 0;
+                    self.stage_started = Instant::now();
+                } else {
+                    let img = gpu.renderer.render_live_to_image(&frame, gpu.config.width, gpu.config.height);
+                    let out = self.args.screenshot.clone().unwrap_or_else(|| PathBuf::from("smoke.png"));
+                    smoke_verdict(self.frames, &img, &out, &self.smoke_ms);
+                }
             }
         }
         if std::mem::take(&mut self.want_screenshot) {
@@ -1836,6 +2017,7 @@ impl ApplicationHandler for Sandbox {
         let egui_state = egui_winit::State::new(egui_ctx, egui::ViewportId::ROOT, &window, Some(window.scale_factor() as f32), None, None);
         let egui_renderer = egui_wgpu::Renderer::new(&renderer.device, renderer.output_format, Default::default());
         log::info!("{} on {:?}", renderer.adapter_info.name, renderer.adapter_info.backend);
+        sandbox::crash::set_context("gpu", format!("{} ({:?}, driver {} {})", renderer.adapter_info.name, renderer.adapter_info.backend, renderer.adapter_info.driver, renderer.adapter_info.driver_info));
         let caps = surface.get_capabilities(&adapter);
         log::info!("surface: present {:?} (available {:?}), latency {}, format {:?}, alpha {:?}, {}x{}", config.present_mode, caps.present_modes, config.desired_maximum_frame_latency, config.format, config.alpha_mode, config.width, config.height);
         self.gpu = Some(Gpu { window, surface, config, renderer, egui_state, egui_renderer, present_modes, display });
@@ -1999,6 +2181,9 @@ fn present_mode(modes: &[forja_render::wgpu::PresentMode], vsync: bool) -> forja
 
 fn main() {
     sandbox::trace::init_logger("info,wgpu_core=warn,wgpu_hal=warn,naga=warn");
+    // Before anything can panic (argument parsing included).
+    let unattended = std::env::args().any(|a| a == "--smoke" || a == "--screenshot");
+    sandbox::crash::install(unattended);
     let args = parse_args();
     // Rayon's global pool runs loads and builds only (the frame has its
     // own pool, see forja_assets::threads): below normal priority, so a
