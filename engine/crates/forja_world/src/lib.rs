@@ -9,6 +9,7 @@
 
 pub mod builder;
 mod gltf_world;
+pub mod island;
 pub mod library;
 mod kit;
 pub mod osm;
@@ -24,6 +25,7 @@ use forja_math::{Aabb, Iso, Mat4, Vec2};
 use forja_physics::{ColliderDesc, PhysicsWorld};
 
 pub use gltf_world::GltfWorld;
+pub use island::{Island, IslandWorld, MapData};
 pub use kit::KitCity;
 pub use library::ContentLibrary;
 pub use osm::OsmWorld;
@@ -95,6 +97,18 @@ pub struct WorldDescription {
     /// City tiles with a far-distance stand-in: `placements` ranges of
     /// detail and the index of their HLOD placement (procedural cities).
     pub hlod_tiles: Vec<forja_city::hlod::HlodTile>,
+    /// Far-distance groups beyond `hlod_tiles`: `(placement, group, is the
+    /// group's far stand-in)`. A group's detail placements are drawn near
+    /// the camera and its stand-ins beyond the HLOD distance; a group may
+    /// have only detail (it disappears far away). Group ids start at 1 and
+    /// must not collide with `hlod_tiles` (which use `1..=len`).
+    pub lod_tags: Vec<(usize, u32, bool)>,
+    /// Groups that switch at a multiple of the HLOD distance: `(group,
+    /// scale)`.
+    pub lod_scales: Vec<(u32, f32)>,
+    /// The island behind this world ([`IslandWorld`]): its map, ground and
+    /// buildings, for streaming detail and collision around the player.
+    pub island: Option<Arc<island::Island>>,
 }
 
 impl WorldDescription {

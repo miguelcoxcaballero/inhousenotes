@@ -501,6 +501,11 @@ pub struct RenderSettings {
     /// Distance (m) beyond which a city tile's detail is replaced by its
     /// HLOD stand-in (0: never).
     pub hlod_distance: f32,
+    /// Static instances whose bounding radius covers fewer pixels than
+    /// this in the camera are not drawn (0.6: sub-pixel detail). A large
+    /// open world raises it, so its distant trees are left to the ground
+    /// colour under them.
+    pub detail_cull_px: f32,
     /// Depth of field of [`FrameDesc::look`] (`FORJA_FX=-dof`).
     pub dof: bool,
     /// Multiple-scattering energy compensation and the DFG LUT (`-ms`
@@ -561,6 +566,7 @@ impl Default for RenderSettings {
             texture_compression: true,
             stable_shadows: true,
             hlod_distance: 250.0,
+            detail_cull_px: 0.6,
             dof: true,
             multiscatter: true,
             specular_aa: true,
@@ -3030,6 +3036,13 @@ impl Renderer {
         self.statics.set_ready(group, ready);
     }
 
+    /// Makes a far-distance group switch at `scale` times
+    /// [`RenderSettings::hlod_distance`] (terrain keeps its detail further
+    /// out than facades). Lost when the static set is replaced.
+    pub fn set_static_group_scale(&mut self, group: u32, scale: f32) {
+        self.statics.set_scale(group, scale);
+    }
+
     /// Distance from `eye` to a far-distance group's bounds.
     pub fn static_group_distance(&self, group: u32, eye: Vec3) -> Option<f32> {
         self.statics.group_distance(group, eye)
@@ -3632,7 +3645,7 @@ impl Renderer {
             use rayon::prelude::*;
             let meshes = &self.meshes;
             let statics = &self.statics;
-            let main_view = static_scene::View { planes: &frustum.planes, eye: cam.position, min_radius_per_m: 0.6 / focal, min_radius: 0.0, lod_scale, texel_lod_scale: 0.0, shadow: false, skip: static_scene::role_bit(ShadowRole::Proxy), stable_lod: false };
+            let main_view = static_scene::View { planes: &frustum.planes, eye: cam.position, min_radius_per_m: s.detail_cull_px / focal, min_radius: 0.0, lod_scale, texel_lod_scale: 0.0, shadow: false, skip: static_scene::role_bit(ShadowRole::Proxy), stable_lod: false };
             // (view, LOD bias) per list: the camera, then each shadow view.
             let mut views: Vec<Option<(static_scene::View, u32)>> = vec![Some((main_view, 0))];
             for (c, (planes, min_r)) in cascade_planes.iter().enumerate() {
