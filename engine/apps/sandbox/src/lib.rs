@@ -4,6 +4,7 @@
 
 pub mod crash;
 pub mod game;
+pub mod minimap;
 pub mod pause;
 pub mod perf;
 pub mod stream;
