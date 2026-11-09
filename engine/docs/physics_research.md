@@ -213,7 +213,8 @@ constraint on the contact (using the chassis' effective mass at the contact
 point and cancelling the wheel's share of gravity), so parked cars neither
 creep nor ring. The gearbox shifts on road speed (as an automatic's output
 shaft), the engine revs with wheelspin, and traction control and ABS act on
-the combined slip.
+the combined slip. (The steering, the assists and the wheel-spin
+integrator were reworked later: see "Handling pass" below.)
 
 ### 21-22. The motorbike
 
@@ -277,10 +278,123 @@ before.
   kickstand_lean_deg, tyre_crown}`; `WheelState::slip_ratio`. New handling
   fields default to the sedan's values, so the TOML files load unchanged.
 
+## Handling pass: cars a keyboard can drive
+
+Report: "cars lose control far too easily" and "cars stop dead on small road
+bumps". Both were measured with a keyboard-like driver (binary throttle and
+brake, steering keys fully down or released) in
+`crates/forja_gameplay/tests/handling.rs`; `cargo test -p forja_gameplay
+--test handling -- --ignored --nocapture` prints the whole table for every
+preset at 30/60/100/140 km/h.
+
+### What was wrong
+
+| Symptom (before) | Cause |
+|---|---|
+| Left-right flick or a lane change at 100 km/h spins every car (slip 55-70 deg, 180 deg in the sedan and SUV at 140) | A key gave `max_steer / (1 + 0.025 v)`: 18 deg of lock at 100 km/h, where the grip limit needs about 1 deg plus the tyre's 7 deg of slip. The fronts were thrown far past their peak in a quarter of a second and the tail followed. |
+| Skidpad 1.3-1.55 g, yet 100-0 km/h in 34-68 m | `grip` 1.25-1.45 (racing slicks) with brakes too weak to use it (the SUV had 0.68 g of brake force) and an even front/rear split. |
+| Handbrake at 60 km/h and above: 150-180 deg, no recovery | Locked rear tyres have no cornering force at all; nothing limited the slide. |
+| Cars stop dead, flip or turn round on a flat road mesh, at 5 cm steps and at kerbs | Not the wheels. Speculative contacts used a margin of `speed * dt` (0.46 m at 100 km/h) and the SAT axis of greatest separation as the contact normal. For a chassis 25 cm above the road, that axis towards the *next* triangle of the mesh (or a kerb it would clear) is horizontal, so the solver stopped the car at a seam it never touches. |
+| Front wheels at -12 % slip while rolling free below 25 km/h | The wheel-spin integrator used the tangent of the slip curve, which is flat past the peak: after any wheelspin or lock a light wheel jumped from one side of the curve to the other every sub-step (a limit cycle) and lost its cornering grip. |
+| 0-100 km/h slower than the torque allows | No clutch slip: the engine lugged at idle (30-50 % torque) off the line. |
+
+### What changed
+
+* **Swept speculative contacts** (`narrowphase::Sweep`, `collide_swept`):
+  for polytope pairs (boxes, hulls, mesh and heightfield triangles) the
+  narrowphase gets the pair's relative displacement over the step. If any
+  SAT axis separates the shapes both now and after the step (by more than
+  the resting margin plus the reach of their rotation), they cannot meet
+  during it and no contact is made. Real impacts are untouched: the axis
+  along the approach closes, so the contact stays (the tunnelling tests
+  pass unchanged).
+* **Speed-sensitive steering**: full input asks for the lock the turn needs
+  at the limit of grip, `atan(L μ g / v²)`, plus the slip angle that puts the
+  front tyres at their peak (`steer_slip * peak_slip_deg`), never more. The
+  input winds on at `steer_rate` (slower at speed, 1.8x faster back to
+  centre) and passes through the inverse of the slip curve, so half a stick
+  is half the cornering force: analog input stays proportional.
+* **Caster / countersteer assist** (`countersteer_assist`): the front wheels
+  follow the direction the front axle travels in, so the input commands
+  front slip rather than a wheel angle. Hands off, the wheels point down the
+  road; in a slide they countersteer on their own, and a key still held into
+  a slide stops feeding it once the rear is past 1.4x its peak slip.
+* **Balance**: `rear_grip` (wider rear tyres), tyre **load sensitivity**
+  (`load_sensitivity`: grip lost per doubling of load) and the front share
+  of the roll stiffness (`anti_roll_front`) make every preset push its nose
+  before the tail lets go. Tyre forces now act lower (`force_height`
+  0.05-0.5 instead of 0.55), so weight transfer, dive and squat are closer
+  to the real thing.
+* **Brakes**: `brake_bias` (65 % front by default) and brake forces that can
+  use the tyres. **ABS** (`abs`) limits each wheel's torque to what its tyre
+  holds at its current load and backs off past the peak slip; **traction
+  control** does the same for the drive torque and leaves room in the
+  friction circle for the cornering the tyre is doing.
+* **Stability control** (`stability_control`): yaw-rate target from the
+  bicycle model, `r = v δ / (L (1 + v²/v_ch²))` bounded by `μ g / v`. Too
+  much yaw, or a rear axle past its peak slip: the outer front wheel is
+  braked and the throttle cut. Too little: the inner rear is braked lightly.
+  The corrections are brake torques through the tyre model, so they are
+  bounded by grip. With the handbrake pulled it allows a slide of ~22 deg.
+* **Handbrake**: `handbrake_grip` is now the share of free-rolling cornering
+  grip the locked wheels keep (0.45), so it starts a slide instead of a spin.
+* **Differential** (`diff_lock`): a clutch torque from the faster to the
+  slower driven wheel, bounded by a preload plus a share of the drive torque.
+* **Wheel spin**: brake, drive and tyre torque are solved in one implicit
+  step whose slope is never below the secant to the free-rolling speed
+  (no limit cycle, wheels lock and release cleanly).
+* **Wheel contact**: car wheels cast five rays across the tyre's
+  circumference, each shortened by the chord there, so the wheel climbs a
+  step with its leading edge like a disc. The contact normal is the road's
+  slope under the axle, never a kerb face or the edge being climbed.
+  Dampers blow off at 2.5x the static load and a bump stop takes the end of
+  the travel.
+* **Launch**: the clutch slips up to 60 % of the torque peak's rpm in first
+  and reverse.
+* **Bike**: the lean target is capped at what the tyres hold
+  (`atan(0.85 μ)`); it shares the wheel, ABS and traction control changes.
+
+### Before and after
+
+Default car (`sports` handling on the CarConcept model), keyboard driver.
+"slip" is the largest body slip angle; "rec" the time to run straight again
+with the hands off.
+
+| Manoeuvre | Before | After |
+|---|---|---|
+| Left-right flick, 100 km/h | SPUN, slip 63 deg, rec 2.9 s | slip 2.2 deg, rec 0.2 s |
+| Double lane change, 100 km/h | SPUN, 6.5 m off the path | slip 2.4 deg, 0.73 m |
+| Double lane change, 140 km/h | SPUN | slip 5.1 deg, 1.42 m |
+| Steering taps, 140 km/h | slide, slip 36 deg | slip 0.4 deg |
+| Key held 3 s, 140 km/h | slip 12.8 deg, rec 1.0 s | slip 8.1 deg, rec 0.5 s |
+| Brake while turning, 100 km/h | slip 12.7 deg | slip 9.9 deg, rec 0.3 s |
+| Lift-off mid-corner, 100 km/h | slip 4.3 deg | slip 6.6 deg, rec 0.2 s |
+| Handbrake tap, 60 km/h | SPUN 114 deg | slip 13 deg, turned 43 deg, rec 0.4 s |
+| Handbrake tap, 100 km/h | SPUN 180 deg, never recovers | slip 24 deg, turned 32 deg, rec 0.8 s |
+| Flat mesh road / 5 cm step / 10 cm kerb, 100 km/h | flipped or turned round | 99-100 % of the speed kept, heading unchanged |
+
+| Preset | 0-100 km/h | 100-0 km/h | Skidpad |
+|---|---|---|---|
+| concept (default car) | 6.3 -> 5.8 s | 36.2 -> 32.4 m | 1.55 -> 0.98 g |
+| sports | 5.5 -> 5.2 s | 34.3 -> 32.4 m | 1.52 -> 0.95 g |
+| sedan | 7.0 -> 7.2 s | 38.0 -> 37.9 m | 1.29 -> 0.85 g |
+| suv | >8 -> 7.8 s | 56.3 -> 41.2 m | 1.15 -> 0.80 g |
+| truck | >8 s | 67.8 -> 46.2 m | 0.99 -> 0.71 g |
+
+The regression tests in `tests/handling.rs` cover, for every car preset: the
+70 km/h double lane change, lane change and flick at 100 and 140 km/h, the
+full-throttle launch, steering taps at 130 km/h, a held key at every speed,
+trail braking, lift-off, the handbrake turn (turns the car at 40 km/h,
+recoverable slide at 70 and 100), 2 and 5 cm steps and a 10 cm chamfered
+kerb at 100 km/h (straight and at 25 deg), mesh seams at 180 km/h, the
+performance figures, analog proportionality, and the bike at 100-180 km/h.
+
 ## Remaining issues and next steps
 
-* Wheels are rays: a car can clip a kerb with the side of a tyre. Next:
-  sphere or cylinder casts per wheel (`cast_shape` is now available).
+* Wheels are ray fans in the rolling plane: a car can still clip a kerb with
+  the side of a tyre. Next: cylinder casts per wheel (`cast_shape`).
+* The swept speculative test covers polytopes; spheres and capsules against
+  meshes keep the plain margin (they are small and slow here).
 * The bike's low-speed handling (feet down below 2.5 m/s) is simplified, and
   bike wheels are rays too.
 * Joints and ragdolls do not exist yet; XPBD (Müller et al. 2020) is the
