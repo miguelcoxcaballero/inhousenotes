@@ -717,6 +717,10 @@ fn traffic(d: &IslandData, g: &Ground) -> forja_city::traffic::TrafficInfo {
     info
 }
 
+/// The world origin (the Plaça de l'Ajuntament) in the island's own metres
+/// (`x` east, `y` north): `world.x = island.x - ORIGIN.0`, `world.z =
+/// -(island.y - ORIGIN.1)`.
+pub const ORIGIN: (f32, f32) = (3478.569, 2582.763);
 /// Size of a terrain tile (m), for callers that lay things out by tile.
 pub const TERRAIN_TILE: f32 = TILE;
 /// The terrain keeps its near meshes (textured land cover) within this

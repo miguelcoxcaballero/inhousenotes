@@ -65,11 +65,40 @@ fn routes_where(w: &WorldDescription, max_len: f32, count: usize, keep: impl Fn(
             len += next.windows(2).map(|s| s[0].distance(s[1])).sum::<f32>();
             pts.extend_from_slice(&next[1..]);
         }
-        if len > 60.0 {
+        if len > 60.0 || max_len == 0.0 {
             out.push(pts);
         }
     }
     out
+}
+
+/// `route` without its first and last `d` metres (`None` if nothing is left).
+fn trim(route: &[Vec2], d: f32) -> Option<Vec<Vec2>> {
+    let len: f32 = route.windows(2).map(|s| s[0].distance(s[1])).sum();
+    if len < 2.0 * d + 20.0 {
+        return None;
+    }
+    let at = |t: f32| {
+        let mut left = t;
+        for s in route.windows(2) {
+            let l = s[0].distance(s[1]);
+            if left <= l {
+                return s[0].lerp(s[1], left / l.max(1e-6));
+            }
+            left -= l;
+        }
+        route[route.len() - 1]
+    };
+    let mut out = vec![at(d)];
+    let mut run = 0.0;
+    for s in route.windows(2) {
+        run += s[0].distance(s[1]);
+        if run > d && run < len - d {
+            out.push(s[1]);
+        }
+    }
+    out.push(at(len - d));
+    Some(out)
 }
 
 fn ground(pw: &PhysicsWorld, p: Vec2, from: f32) -> Option<f32> {
@@ -241,10 +270,25 @@ fn city_roads_are_smooth() {
         let w = SpanishCity { downloaded: None, styles: None, ..SpanishCity::preset(data(), data().join("city/styles.toml"), preset).expect("preset") }.build().expect("city");
         let mut pw = PhysicsWorld::default();
         w.add_to_physics(&mut pw);
-        // Along the lanes of two-way streets without a median (a route
-        // down the middle of an avenue would climb its median).
-        let plain = |s: &forja_city::traffic::TrafficStreet| s.median_half == 0.0 && s.lanes.len() == 2 && s.road_half >= 2.8;
-        let r = check(preset, &w, &mut pw, &routes_where(&w, 400.0, 60, plain), &[1.3]);
+        // Along every driving lane, street by street between its stop
+        // lines: the city's junctions have kerbs by design (continuous
+        // footways, plazas), which the physics tests cover (forja_physics:
+        // kerbs and steps at 100 km/h).
+        let mut streets: Vec<Vec<Vec2>> = Vec::new();
+        for st in &w.traffic.as_ref().expect("road graph").streets {
+            let Some(c) = trim(&st.centreline(), 9.0) else { continue };
+            for lane in &st.lanes {
+                // Left of a -> b is positive.
+                let shifted: Vec<Vec2> = (0..c.len())
+                    .map(|i| {
+                        let d = (c[(i + 1).min(c.len() - 1)] - c[i.saturating_sub(1)]).normalize_or(Vec2::X);
+                        c[i] + Vec2::new(d.y, -d.x) * lane.offset
+                    })
+                    .collect();
+                streets.push(shifted);
+            }
+        }
+        let r = check(preset, &w, &mut pw, &streets, &[0.0]);
         assert_smooth(preset, &r);
     }
 }
