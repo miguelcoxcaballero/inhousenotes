@@ -4,6 +4,22 @@ FORJA - version jugable (Windows)
 Mundo abierto en una ciudad procedural de Madrid y Valencia: camina, corre,
 conduce coches y usa armas e inventario.
 
+NOVEDADES (proxima version)
+  - RADAR como el de GTA V, abajo a la izquierda: gira con la camara, plano a
+    pie e inclinado en coche, se aleja con la velocidad, flecha del jugador,
+    N en el borde, monumentos, hospitales, policia, mercados, gasolineras y
+    estaciones, tu vehiculo y el destino pegado al borde cuando queda lejos.
+    Debajo, la vida (verde) y el blindaje (azul). Muestra TODA la Isla
+    Levante, tambien donde aun no hay ciudad en 3D.
+  - Z: un toque aleja el radar unos segundos; mantenerla muestra el radar
+    grande cuadrado.
+  - MAPA en el menu de pausa (o tecla M): arrastra para moverlo, rueda para
+    acercar o alejar, clic para marcar un destino (clic sobre el o clic
+    derecho lo quita). El GPS dibuja en morado la ruta por carretera mas
+    rapida (respeta los sentidos unicos) en el mapa y en el radar, y la
+    recalcula si te sales de ella.
+  - Opciones > Interfaz: mostrar u ocultar el radar y cambiar su tamano.
+
 NOVEDADES DE LA v0.1.5
   - Mapa por defecto: el centro de Valencia de la Isla Levante (edificios y
     calles reales del mapa de la isla). F2 cambia de mapa.
@@ -84,7 +100,7 @@ REQUISITOS
 
 CONTROLES
   Clic izquierdo en la ventana  capturar el raton
-  Esc                           menu de pausa: Reanudar, Opciones (graficos,
+  Esc                           menu de pausa: Reanudar, Mapa, Opciones (graficos,
                                 pantalla, escala de render, resolucion
                                 dinamica, limite de FPS, sensibilidad del
                                 raton, invertir eje Y), Controles y Salir
@@ -104,6 +120,11 @@ CONTROLES
   H                             guardar el arma
   Tab                           inventario      E  usar objeto
   V                             cambiar camara
+  Z                             radar: un toque lo aleja unos segundos;
+                                mantenerla muestra el radar grande
+  M                             mapa (tambien en el menu de pausa): arrastrar
+                                para mover, rueda para zoom, clic para marcar
+                                el destino del GPS, clic derecho para quitarlo
   F2                            siguiente mapa
   F3                            hora del dia (+3 h; al anochecer la ciudad
                                 nocturna se prepara en segundo plano y se
@@ -114,7 +135,8 @@ CONTROLES
   F10                           ayuda           F12 captura de pantalla
 
   Las teclas se pueden cambiar en data\input.toml; la sensibilidad del
-  raton y el eje Y se guardan desde el menu de pausa en data\controls.toml.
+  raton, el eje Y y el radar (mostrarlo y su tamano, en Opciones >
+  Interfaz) se guardan desde el menu de pausa en data\controls.toml.
 
 PANTALLA Y RESOLUCION
   El juego arranca en ventana sin bordes a la resolucion nativa de la
