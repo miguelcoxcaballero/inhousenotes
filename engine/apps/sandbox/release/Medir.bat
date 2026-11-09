@@ -2,7 +2,7 @@
 rem Forja: juega normalmente y guarda una medicion de rendimiento en forja_trace.txt
 cd /d "%~dp0"
 title Forja (medicion)
-forja_fetch.exe fetch --play --missing --root "%~dp0."
+if not exist "%~dp0assets\downloaded\.completo" forja_fetch.exe fetch --play --missing --root "%~dp0."
 set FORJA_NO_FETCH=1
 set FORJA_TRACE_FILE=%~dp0forja_trace.txt
 Forja.exe --frame-trace 60 %*

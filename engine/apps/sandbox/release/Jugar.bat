@@ -2,8 +2,11 @@
 rem Forja: descarga el contenido la primera vez y abre el juego.
 cd /d "%~dp0"
 title Forja
+rem El ZIP completo ya trae el contenido: no se descarga nada.
+if exist "%~dp0assets\downloaded\.completo" goto jugar
 forja_fetch.exe fetch --play --missing --root "%~dp0."
 if errorlevel 1 echo Algunos paquetes no se descargaron; el juego usara sustitutos. Vuelve a ejecutar Jugar.bat para reintentarlo.
+:jugar
 set FORJA_NO_FETCH=1
 Forja.exe %*
 if errorlevel 1 (
