@@ -176,6 +176,8 @@ impl Hud {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MapKind {
+    /// Valencia's centre from the Isla Levante map (real footprints and streets).
+    Isla,
     Spain,
     /// The classic grids-and-boulevard map.
     SpainClassic,
@@ -194,11 +196,12 @@ pub enum MapKind {
 }
 
 impl MapKind {
-    pub const ALL: [MapKind; 10] = [MapKind::Spain, MapKind::Carmen, MapKind::Austrias, MapKind::CarmenOsm, MapKind::AustriasOsm, MapKind::SpainClassic, MapKind::Osm, MapKind::Terrain, MapKind::Track, MapKind::Kit];
+    pub const ALL: [MapKind; 11] = [MapKind::Isla, MapKind::Spain, MapKind::Carmen, MapKind::Austrias, MapKind::CarmenOsm, MapKind::AustriasOsm, MapKind::SpainClassic, MapKind::Osm, MapKind::Terrain, MapKind::Track, MapKind::Kit];
 
     pub fn parse(s: &str) -> Option<Self> {
         Some(match s {
-            "spain" | "espana" | "madrid" | "valencia" => Self::Spain,
+            "isla" | "valencia" | "levante" => Self::Isla,
+            "spain" | "espana" | "madrid" => Self::Spain,
             "classic" | "spain-classic" => Self::SpainClassic,
             "carmen" => Self::Carmen,
             "austrias" => Self::Austrias,
@@ -214,6 +217,7 @@ impl MapKind {
 
     pub fn label(&self) -> &'static str {
         match self {
+            Self::Isla => "Valencia (Isla Levante)",
             Self::Spain => "Madrid y Valencia (procedural)",
             Self::SpainClassic => "Madrid y Valencia, ensanches (procedural)",
             Self::Carmen => "Barrio del Carmen (procedural)",
