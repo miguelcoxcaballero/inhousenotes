@@ -24,6 +24,10 @@ weapon_shotgun = ["Digit4"]
 weapon_rifle = ["Digit5"]
 weapon_sniper = ["Digit6"]
 camera = ["KeyV"]
+# Radar: a tap zooms it out for a few seconds, holding shows the big one.
+radar_zoom = ["KeyZ"]
+# Opens the pause menu on the map.
+map = ["KeyM"]
 debug_physics = ["F1"]
 screenshot = ["F12"]
 next_map = ["F2"]
