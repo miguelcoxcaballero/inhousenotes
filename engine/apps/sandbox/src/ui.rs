@@ -1,4 +1,4 @@
-//! egui HUD: status, speedometer, weapon and ammo, crosshair, inventory,
+//! egui HUD: radar, status, speedometer, weapon and ammo, crosshair, inventory,
 //! controls help and debug stats.
 
 use forja_core::World;
@@ -16,6 +16,8 @@ pub struct UiState {
     pub fps: f32,
     pub render_stats: forja_render::RenderStats,
     pub adapter: String,
+    /// Radar settings and key (see [`crate::minimap`]).
+    pub radar: crate::minimap::RadarOptions,
 }
 
 /// Loading screen: title, stage, progress bar and elapsed time.
@@ -55,6 +57,8 @@ pub const CONTROLS: &[(&str, &str)] = &[
     ("E", "usar botiquín"),
     ("Tab", "inventario"),
     ("V", "cámara"),
+    ("Z", "radar: toque aleja, mantener = radar grande"),
+    ("M", "mapa (clic: marcar destino del GPS)"),
     ("F1", "depuración de físicas"),
     ("F2", "siguiente mapa"),
     ("F3", "hora +3 h (noche de 21 a 6 h)"),
@@ -94,14 +98,18 @@ pub fn draw(ctx: &egui::Context, world: &mut World, ui: &mut UiState) {
     if let Some(h) = &hud.interact_hint {
         shadow(&painter, screen.center_bottom() - egui::vec2(0.0, 120.0), egui::Align2::CENTER_CENTER, h, 18.0, egui::Color32::WHITE);
     }
-    // Bottom-left: health and armor.
+    // Bottom-left: the radar over the health and armour bars (plain bars
+    // when the radar is off).
+    let radar = crate::minimap::draw_radar(ctx, world, &ui.radar);
     let bar = |p: &egui::Painter, y: f32, frac: f32, color: egui::Color32| {
         let r = egui::Rect::from_min_size(egui::pos2(20.0, screen.bottom() - y), egui::vec2(220.0, 9.0));
         p.rect_filled(r, 3.0, egui::Color32::from_black_alpha(150));
         p.rect_filled(egui::Rect::from_min_size(r.min, egui::vec2(220.0 * frac.clamp(0.0, 1.0), 9.0)), 3.0, color);
     };
-    bar(&painter, 44.0, hud.health / 100.0, egui::Color32::from_rgb(95, 200, 110));
-    bar(&painter, 30.0, hud.armor / 100.0, egui::Color32::from_rgb(90, 160, 230));
+    if !radar {
+        bar(&painter, 44.0, hud.health / 100.0, egui::Color32::from_rgb(95, 200, 110));
+        bar(&painter, 30.0, hud.armor / 100.0, egui::Color32::from_rgb(90, 160, 230));
+    }
     if hud.health <= 0.0 {
         shadow(&painter, screen.center(), egui::Align2::CENTER_CENTER, "WASTED", 64.0, egui::Color32::from_rgb(220, 40, 40));
     }
@@ -156,6 +164,10 @@ pub fn draw(ctx: &egui::Context, world: &mut World, ui: &mut UiState) {
             u.label(format!("triangles {:.2} M · render cpu {:.2} ms", s.triangles as f64 / 1e6, s.cpu_ms));
             u.label(format!("physics {:.2} ms · bodies {}", hud.physics_ms, hud.bodies));
             u.label(format!("time {:02}:{:02}", tod as u32, ((tod.fract()) * 60.0) as u32));
+            if let Some(mm) = world.resources.get::<crate::minimap::Minimap>() {
+                let (loaded, waiting) = mm.tiles_loaded();
+                u.label(format!("radar {:.3} ms · {loaded} tiles ({waiting} pending)", mm.cpu_ms));
+            }
             for a in &hud.attribution {
                 u.small(a);
             }
