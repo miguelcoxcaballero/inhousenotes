@@ -2946,6 +2946,7 @@ dependencies = [
  "egui-wgpu",
  "egui-winit",
  "env_logger",
+ "flate2",
  "forja_ai",
  "forja_anim",
  "forja_assets",

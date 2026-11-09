@@ -537,3 +537,95 @@ fn far_bodies_freeze_and_render_poses_interpolate() {
     let mid = b.interpolated_iso(0.5).pos.y;
     assert!(mid < b.prev_iso().pos.y && mid > b.position().y);
 }
+
+// ---------------------------------------------------------------------------
+// Regression tests for the handling pass (see docs/physics_research.md).
+
+/// A flat road as a triangle mesh in 4 m strips along +Z.
+fn strip_road() -> TriMesh {
+    let (mut v, mut t) = (Vec::new(), Vec::new());
+    let mut z = -20.0;
+    while z < 400.0 {
+        quad(&mut v, &mut t, vec3(-50.0, 0.0, z), vec3(-50.0, 0.0, z + 4.0), vec3(50.0, 0.0, z + 4.0), vec3(50.0, 0.0, z));
+        z += 4.0;
+    }
+    TriMesh::new(v, t)
+}
+
+#[test]
+fn speculative_contacts_do_not_catch_mesh_seams_or_cleared_kerbs() {
+    // A box flying level 25 cm over a road mesh, then over a 10 cm kerb it
+    // clears: no contact may touch its velocity (it used to stop dead at the
+    // first seam, where the SAT axis towards the next triangle is horizontal).
+    let mut w = PhysicsWorld::new(PhysicsConfig { gravity: Vec3::ZERO, ..Default::default() });
+    w.add_collider(ColliderDesc::new(Shape::TriMesh(std::sync::Arc::new(strip_road()))), None);
+    w.add_collider(ColliderDesc::new(Shape::cuboid(vec3(5.0, 0.05, 0.5))).translation(vec3(0.0, 0.05, 30.0)), None);
+    let v0 = vec3(3.0, 0.0, 45.0);
+    let (b, _) = w.add_dynamic(RigidBodyDesc::dynamic().position(vec3(0.0, 0.7, 0.0)).linvel(v0).can_sleep(false), ColliderDesc::new(Shape::cuboid(vec3(0.9, 0.45, 2.2))).mass(1400.0));
+    run(&mut w, 2.0);
+    let body = w.body(b).unwrap();
+    assert!((body.linvel - v0).length() < 0.2, "velocity changed: {:?}", body.linvel);
+    assert!(body.angvel.length() < 0.01, "picked up spin: {:?}", body.angvel);
+    // The same box aimed 30 cm lower does hit the kerb.
+    let (low, _) = w.add_dynamic(RigidBodyDesc::dynamic().position(vec3(0.0, 0.5, 0.0)).linvel(v0).can_sleep(false), ColliderDesc::new(Shape::cuboid(vec3(0.9, 0.45, 2.2))).mass(1400.0));
+    run(&mut w, 1.0);
+    assert!((w.body(low).unwrap().linvel - v0).length() > 1.0, "a real obstacle must still be hit");
+}
+
+#[test]
+fn free_rolling_wheels_do_not_hunt_at_low_speed() {
+    // After a burst of wheelspin from rest the undriven wheels must roll
+    // with the road. (They used to fall into a limit cycle between spinning
+    // and locking below ~25 km/h, which also cost the front its grip.)
+    let mut w = flat_track();
+    let mut car = Vehicle::spawn(&mut w, VehicleConfig { traction_control: 0.0, ..VehicleConfig::sedan() }, Iso::from_pos(vec3(0.0, 0.9, 0.0)));
+    for _ in 0..60 {
+        car.update(&mut w, DT);
+        w.step(DT);
+    }
+    car.controls.throttle = 1.0;
+    let mut worst: f32 = 0.0;
+    for i in 0..150 {
+        car.update(&mut w, DT);
+        w.step(DT);
+        if i > 30 {
+            for (ws, wc) in car.wheels.iter().zip(&car.config.wheels) {
+                if !wc.drive {
+                    worst = worst.max(ws.slip_ratio.abs());
+                }
+            }
+        }
+    }
+    assert!(car.speed(&w) > 4.0, "did not pull away: {}", car.speed(&w));
+    assert!(worst < 0.03, "front wheels slip {worst} while rolling free");
+}
+
+#[test]
+fn car_brakes_straight_and_abs_keeps_the_wheels_turning() {
+    let mut w = flat_track();
+    let mut car = Vehicle::spawn(&mut w, VehicleConfig::sedan(), Iso::from_pos(vec3(0.0, 0.9, 0.0)));
+    for _ in 0..60 {
+        car.update(&mut w, DT);
+        w.step(DT);
+    }
+    w.body_mut(car.body).unwrap().set_linvel(vec3(0.0, 0.0, 30.0));
+    for (ws, wc) in car.wheels.iter_mut().zip(&car.config.wheels) {
+        ws.spin_rate = 30.0 / wc.radius;
+    }
+    car.controls = VehicleControls { brake: 1.0, ..Default::default() };
+    let z0 = w.body(car.body).unwrap().position().z;
+    let mut locked = 0;
+    let mut steps = 0;
+    while car.speed(&w) > 5.0 && steps < 600 {
+        car.update(&mut w, DT);
+        w.step(DT);
+        steps += 1;
+        locked += car.wheels.iter().filter(|ws| ws.spin_rate.abs() < 1.0).count();
+    }
+    let b = w.body(car.body).unwrap();
+    let dist = b.position().z - z0;
+    // 30 -> 5 m/s at the tyres' 1 g is 44.6 m.
+    assert!(dist > 38.0 && dist < 52.0, "braking distance {dist}");
+    assert_eq!(locked, 0, "wheels locked under ABS");
+    assert!(b.position().x.abs() < 0.3 && (b.rotation() * Vec3::Z).x.abs() < 0.02, "pulled to one side");
+}

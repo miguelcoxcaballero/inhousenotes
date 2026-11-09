@@ -74,8 +74,16 @@ struct Args {
     /// `--windowed`: a window instead of the saved display mode.
     windowed: bool,
     /// Headless: menu drawn over the screenshot (`--ui pause|options|
-    /// controls|help|quit|f9|f11`).
+    /// controls|interface|help|quit|f9|f11|map`, or the radar's states
+    /// `radar-zoom` and `radar-big`).
     ui: Option<String>,
+    /// Headless: GPS waypoint (`--waypoint x,z`, world metres), mission
+    /// destination (`--mission x,z`) and wanted level (`--wanted N`).
+    waypoint: Option<Vec2>,
+    mission: Option<Vec2>,
+    wanted: u8,
+    /// Headless: zoom of the `--ui map` page in points per metre.
+    map_zoom: Option<f32>,
     /// Headless: UI scale (the OS DPI scaling, e.g. 2 for 200%).
     ppp: f32,
     /// Headless: after the screenshot, `N:K` more frames saving every K-th
@@ -124,8 +132,13 @@ fn parse_vec3(s: &str) -> Option<Vec3> {
     (v.len() == 3).then(|| Vec3::new(v[0], v[1], v[2]))
 }
 
+fn parse_vec2(s: &str) -> Option<Vec2> {
+    let v: Vec<f32> = s.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+    (v.len() == 2).then(|| Vec2::new(v[0], v[1]))
+}
+
 fn parse_args() -> Args {
-    let mut a = Args { map: MapKind::Isla, screenshot: None, script: "idle".into(), frames: 90, width: 1600, height: 900, hours: None, camera: None, preset: None, bench: 0, csv: None, night_switch: false, stability: 0, adapter: forja_render::gpu::AdapterChoice::from_env(), smoke: 0, window: false, windowed: false, ui: None, ppp: 1.0, burst: None, car_cam: None, car: 0, frame_trace: 0, switches: Vec::new() };
+    let mut a = Args { map: MapKind::Isla, screenshot: None, script: "idle".into(), frames: 90, width: 1600, height: 900, hours: None, camera: None, preset: None, bench: 0, csv: None, night_switch: false, stability: 0, adapter: forja_render::gpu::AdapterChoice::from_env(), smoke: 0, window: false, windowed: false, ui: None, waypoint: None, mission: None, wanted: 0, map_zoom: None, ppp: 1.0, burst: None, car_cam: None, car: 0, frame_trace: 0, switches: Vec::new() };
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
     let mut eye = None;
@@ -170,6 +183,10 @@ fn parse_args() -> Args {
                 continue;
             }
             "--ui" => a.ui = Some(v),
+            "--waypoint" => a.waypoint = Some(parse_vec2(&v).expect("waypoint x,z")),
+            "--mission" => a.mission = Some(parse_vec2(&v).expect("mission x,z")),
+            "--wanted" => a.wanted = v.parse().expect("wanted level"),
+            "--map-zoom" => a.map_zoom = Some(v.parse().expect("map zoom")),
             "--ppp" => a.ppp = v.parse().expect("ppp"),
             "--burst" => {
                 let (n, k) = v.split_once(':').unwrap_or((v.as_str(), "1"));
@@ -776,11 +793,26 @@ fn headless_ui(
             menu.screen = pause::Screen::Options;
             menu.tab = pause::OptionsTab::Controls;
         }
+        Some("interface") => {
+            menu.open();
+            menu.screen = pause::Screen::Options;
+            menu.tab = pause::OptionsTab::Interface;
+        }
+        Some("map") => menu.open_map(),
         Some("f9") => perf_state.options = true,
         Some("f11") => perf_state.overlay = true,
         _ => {}
     }
     let mut map = forja_input::ActionMap::default();
+    if let Some(mm) = app.world.resources.get_mut::<sandbox::minimap::Minimap>() {
+        // No later frame would pick up tiles or a route from the workers.
+        mm.set_sync(true);
+        mm.waypoint = args.waypoint;
+        mm.mission = args.mission;
+        mm.wanted = args.wanted;
+        mm.preset(args.ui.as_deref() == Some("radar-big"), args.ui.as_deref() == Some("radar-zoom"), args.map_zoom);
+    }
+    ui_state.radar = menu.radar(args.ui.as_deref() == Some("radar-big"));
     ctx.set_zoom_factor(ppp);
     // egui lays windows out over a couple of passes and fades windows in
     // (~0.1 s): run half a second of 60 Hz UI frames and keep the last
@@ -798,12 +830,16 @@ fn headless_ui(
             ui::draw(ui.ctx(), &mut app.world, ui_state);
             perf::draw_overlay(ui.ctx(), perf_state);
             perf::draw_options(ui.ctx(), perf_state);
-            pause::draw(ui.ctx(), menu, perf_state, &mut map);
+            pause::draw(ui.ctx(), menu, perf_state, &mut map, &mut app.world);
         });
         sets.extend(out.textures_delta.set.clone());
         last = Some(out);
     }
     let out = last.expect("ran");
+    if let Some(mm) = app.world.resources.get::<sandbox::minimap::Minimap>() {
+        let (tiles, _) = mm.tiles_loaded();
+        log::info!("radar: {:.3} ms CPU for the last frame, {tiles} tiles painted, route {}", mm.last_ms, mm.route().map_or("none".into(), |r| format!("{:.0} m, {} points", r.length(), r.pts.len())));
+    }
     let jobs = ctx.tessellate(out.shapes, out.pixels_per_point);
     let screen = egui_wgpu::ScreenDescriptor { size_in_pixels: [args.width, args.height], pixels_per_point: out.pixels_per_point };
     for (id, deltas) in &sets {
@@ -1294,6 +1330,10 @@ impl Sandbox {
         let paths = paths();
         let map_text = std::fs::read_to_string(paths.data.join("input.toml")).unwrap_or_default();
         let mut input = Input::new(ActionMap::from_toml(&map_text).unwrap_or_default());
+        // Bindings files from before the radar get its keys.
+        for (action, key) in [("radar_zoom", "KeyZ"), ("map", "KeyM")] {
+            input.map.actions.entry(action.into()).or_insert_with(|| vec![key.into()]);
+        }
         let pause = PauseMenu::new(paths.data.join("controls.toml"), &input.map);
         pause.controls.apply(&mut input.map);
         let map = args.map;
@@ -1654,6 +1694,11 @@ impl Sandbox {
             self.ui.inventory_open = !self.ui.inventory_open;
             self.capture(!self.ui.inventory_open);
         }
+        if !paused && self.input.pressed("map") && !self.ui.inventory_open {
+            self.set_paused(true);
+            self.pause.open_map();
+        }
+        self.ui.radar = self.pause.radar(!paused && self.captured && self.input.held("radar_zoom"));
         if !paused && self.input.pressed("debug_physics") {
             self.ui.debug = !self.ui.debug;
         }
@@ -1801,7 +1846,7 @@ impl Sandbox {
             ui::draw(ui.ctx(), world, ui_state);
             perf::draw_overlay(ui.ctx(), perf_state);
             perf::draw_options(ui.ctx(), perf_state);
-            menu_action = pause::draw(ui.ctx(), menu, perf_state, map);
+            menu_action = pause::draw(ui.ctx(), menu, perf_state, map, world);
         });
         gpu.egui_state.handle_platform_output(&gpu.window, out.platform_output);
         let jobs = ctx.tessellate(out.shapes, out.pixels_per_point);
