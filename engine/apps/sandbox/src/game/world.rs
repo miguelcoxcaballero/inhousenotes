@@ -144,8 +144,7 @@ impl Plugin for WorldPlugin {
             }
             if let Some(island) = &desc.island {
                 // Site shells show until their landmark is built.
-                // ... and tile shells until their facades are (see `island`).
-                rs.static_not_ready = island.sites.iter().flatten().map(|s| s.group).chain(island.tiles.iter().map(|t| t.group).filter(|g| *g != 0)).collect();
+                rs.static_not_ready = island.sites.iter().flatten().map(|s| s.group).collect();
             }
             (base, static_base)
         };
@@ -166,5 +165,6 @@ impl Plugin for WorldPlugin {
             _ => {}
         }
         super::island::install(app);
+        super::island_detail::install(app, self.hour);
     }
 }

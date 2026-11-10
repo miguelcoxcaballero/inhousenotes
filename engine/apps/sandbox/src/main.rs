@@ -49,6 +49,10 @@ struct Args {
     height: u32,
     hours: Option<f32>,
     camera: Option<(Vec3, Vec3)>,
+    /// `--street-cam x,z,heading[,height[,pitch]]`: a fixed camera standing
+    /// on the island's ground (`--smoke`): heading in degrees clockwise
+    /// from north, height above the ground (1.7 m), pitch in degrees.
+    street_cam: Option<Vec<f32>>,
     preset: Option<forja_render::Preset>,
     bench: usize,
     csv: Option<PathBuf>,
@@ -138,7 +142,7 @@ fn parse_vec2(s: &str) -> Option<Vec2> {
 }
 
 fn parse_args() -> Args {
-    let mut a = Args { map: MapKind::Isla, screenshot: None, script: "idle".into(), frames: 90, width: 1600, height: 900, hours: None, camera: None, preset: None, bench: 0, csv: None, night_switch: false, stability: 0, adapter: forja_render::gpu::AdapterChoice::from_env(), smoke: 0, window: false, windowed: false, ui: None, waypoint: None, mission: None, wanted: 0, map_zoom: None, ppp: 1.0, burst: None, car_cam: None, car: 0, frame_trace: 0, switches: Vec::new() };
+    let mut a = Args { map: MapKind::Isla, screenshot: None, script: "idle".into(), frames: 90, width: 1600, height: 900, hours: None, camera: None, street_cam: None, preset: None, bench: 0, csv: None, night_switch: false, stability: 0, adapter: forja_render::gpu::AdapterChoice::from_env(), smoke: 0, window: false, windowed: false, ui: None, waypoint: None, mission: None, wanted: 0, map_zoom: None, ppp: 1.0, burst: None, car_cam: None, car: 0, frame_trace: 0, switches: Vec::new() };
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
     let mut eye = None;
@@ -160,6 +164,7 @@ fn parse_args() -> Args {
             "--time" => a.hours = v.parse().ok(),
             "--eye" => eye = parse_vec3(&v),
             "--look" => look = parse_vec3(&v),
+            "--street-cam" => a.street_cam = Some(v.split(',').filter_map(|x| x.trim().parse().ok()).collect::<Vec<f32>>()).filter(|c| c.len() >= 3),
             "--preset" => a.preset = Some(perf::parse_preset(&v).unwrap_or_else(|| panic!("unknown preset {v}"))),
             "--bench" => a.bench = v.parse().expect("bench frames"),
             "--csv" => a.csv = Some(v.into()),
@@ -255,8 +260,8 @@ struct Extract {
     freed: usize,
     /// Streaming of the city tiles' block meshes (see `sandbox::stream`).
     stream: Option<sandbox::stream::Streamer>,
-    /// Static layers installed by key: renderer layer, own models, gate.
-    layers: std::collections::HashMap<u64, (usize, Vec<usize>, Option<u32>)>,
+    /// The island's streamed detail layers (see `game::island_detail`).
+    layers: game::island_detail::LayerSync,
     /// CPU ms of the last [`Extract::frame`] by stage (frame trace).
     pub timings: [(&'static str, f32); 4],
 }
@@ -300,7 +305,6 @@ impl Extract {
         let handles = &mut self.handles;
         let mut upload = |rs: &mut RenderScene, mut world: Option<(&mut game::world::GameWorld, usize)>| {
             let mut sent = 0usize;
-            let mut pruned = false;
             while handles.len() < n {
                 if deadline.is_some_and(|d| Instant::now() >= d) {
                     break;
@@ -313,11 +317,11 @@ impl Extract {
                 let i = handles.len();
                 sent += rs.models[i].meshes.iter().flatten().map(|m| m.positions.len() * 48 + m.indices.len() * 4).sum::<usize>();
                 handles.push(renderer.upload_scene(&rs.models[i]));
-                if world.is_none() && rs.draw_only.remove(&i) {
-                    // Streamed content is only drawn: no CPU copy is kept
-                    // (nor its pixels in the renderer's upload cache).
-                    rs.models[i] = Arc::new(game::world::strip(&rs.models[i]).0);
-                    pruned = true;
+                if rs.texture_aliases.as_ref().is_some_and(|a| a.0 == i)
+                    && let Some((_, pairs)) = rs.texture_aliases.take()
+                {
+                    let ok = pairs.iter().filter(|(original, placeholder)| renderer.alias_texture(original, placeholder)).count();
+                    log::info!("{ok} of {} kit textures aliased to placeholders", pairs.len());
                 }
                 if let Some((gw, base)) = world.as_mut()
                     && let Some(d) = i.checked_sub(*base).and_then(|j| gw.desc.scenes.get_mut(j))
@@ -337,9 +341,6 @@ impl Extract {
                         perf::trim_heap();
                     }
                 }
-            }
-            if pruned {
-                renderer.prune_texture_cache();
             }
         };
         if app.world.resources.get::<game::world::GameWorld>().is_some_and(|w| !w.released) {
@@ -449,42 +450,7 @@ impl Extract {
         // Items listed in `volatile_statics` (signal heads) change at run
         // time and are submitted per frame instead.
         self.upload_statics(renderer, app);
-        // Content that arrived while playing: one layer per frame, once
-        // its models are on the GPU.
-        {
-            let rs = app.world.res_mut::<RenderScene>();
-            if let Some(k) = rs.static_layers.iter().position(|l| l.items.iter().all(|i| i.model < self.handles.len())) {
-                let layer = rs.static_layers.remove(k);
-                let items: Vec<DrawInstance> = layer.items.iter().map(|item| DrawInstance { model: self.handles[item.model], transform: item.transform, nodes: item.nodes.clone(), joints: None, tint: item.tint, cast_shadows: true, motion_id: 0 }).collect();
-                let id = renderer.add_static_layer(&items, layer.gate.unwrap_or(0));
-                if let Some(g) = layer.replaces {
-                    // Always "near": the group's stand-in is never drawn again.
-                    rs.static_lod_scale.push((g, 1.0e6));
-                    renderer.set_static_group_scale(g, 1.0e6);
-                }
-                for g in layer.replaces.into_iter().chain(layer.gate) {
-                    rs.static_not_ready.retain(|x| *x != g);
-                    renderer.set_static_group_ready(g, true);
-                }
-                if let Some(key) = layer.key {
-                    self.layers.insert(key, (id, layer.own_models.clone(), layer.gate));
-                }
-            }
-            for key in std::mem::take(&mut rs.drop_layers) {
-                if let Some((id, models, gate)) = self.layers.remove(&key) {
-                    renderer.remove_static_layer(id);
-                    for m in models {
-                        if let Some(h) = self.handles.get(m) {
-                            renderer.release_model(*h);
-                        }
-                    }
-                    if let Some(g) = gate {
-                        rs.static_not_ready.push(g);
-                        renderer.set_static_group_ready(g, false);
-                    }
-                }
-            }
-        }
+        game::island_detail::sync(&mut self.layers, renderer, &self.handles, app.world.res_mut::<RenderScene>());
         let rs = app.world.res::<RenderScene>();
         let t2 = Instant::now();
         self.timings[1].1 = (t2 - t1).as_secs_f32() * 1000.0;
@@ -1200,9 +1166,23 @@ fn run_smoke(args: &Args) {
     smoke_verdict(total, &img, &out, &ms);
 }
 
+/// The camera of `--street-cam`: on the island's ground.
+fn street_cam(args: &Args, app: &App) -> Option<(Vec3, Vec3)> {
+    let c = args.street_cam.as_ref()?;
+    let island = app.world.resources.get::<game::world::GameWorld>()?.desc.island.clone()?;
+    let (yaw, pitch) = (c[2].to_radians(), c.get(4).copied().unwrap_or(0.0).to_radians());
+    let eye = Vec3::new(c[0], island.ground.height(c[0], c[1]) + c.get(3).copied().unwrap_or(1.7), c[1]);
+    Some((eye, eye + Vec3::new(yaw.sin() * pitch.cos(), pitch.sin(), -yaw.cos() * pitch.cos()) * 10.0))
+}
+
 /// The `--smoke` frames of one world (headless).
 #[allow(clippy::too_many_arguments)]
 fn smoke_stage(args: &Args, app: &mut App, renderer: &mut Renderer, extract: &mut Extract, view: &forja_render::wgpu::TextureView, trace: &mut Option<sandbox::trace::FrameTrace>, ms: &mut Vec<f32>, total: &mut usize) {
+    // A fixed camera is known to the first update (what streams by the
+    // camera then starts where the camera is).
+    if let Some(cam) = args.camera.or_else(|| street_cam(args, app)) {
+        app.world.res_mut::<game::camera::CameraRig>().fixed = Some(cam);
+    }
     for f in 0..args.smoke {
         *total += 1;
         let t = Instant::now();
@@ -1211,7 +1191,7 @@ fn smoke_stage(args: &Args, app: &mut App, renderer: &mut Renderer, extract: &mu
         }
         script_intent(&args.script, f, app.world.res_mut::<Intent>());
         app.update_with_dt(1.0 / 60.0);
-        if let Some(cam) = args.camera {
+        if let Some(cam) = args.camera.or_else(|| street_cam(args, app)) {
             app.world.res_mut::<game::camera::CameraRig>().fixed = Some(cam);
         }
         if let Some(tr) = trace {

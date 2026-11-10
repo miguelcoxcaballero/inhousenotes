@@ -34,8 +34,8 @@ const DRAW: f32 = 170.0;
 const SOLID: f32 = 45.0;
 
 /// A car model: scene, rotation onto +Z, bounds in that frame.
-struct CarModel {
-    model: usize,
+pub(crate) struct CarModel {
+    pub(crate) model: usize,
     rot: Quat,
     lo: Vec3,
     hi: Vec3,
@@ -43,7 +43,7 @@ struct CarModel {
 
 impl CarModel {
     /// Model transform for a car `len` long, base on the ground at the origin.
-    fn local(&self, len: f32) -> Mat4 {
+    pub(crate) fn local(&self, len: f32) -> Mat4 {
         let k = len / (self.hi.z - self.lo.z).max(0.1);
         let c = Vec3::new((self.lo.x + self.hi.x) * 0.5, self.lo.y, (self.lo.z + self.hi.z) * 0.5);
         Mat4::from_scale(Vec3::splat(k)) * Mat4::from_translation(-c) * Mat4::from_quat(self.rot)
@@ -77,7 +77,7 @@ fn car_pose(ground: &Option<forja_world::HeightGrid>, pos: Vec2, fwd: Vec2, len:
     ((front + back) * 0.5, yaw * Quat::from_rotation_x(-pitch))
 }
 
-fn car_model(rs: &mut RenderScene, paths: &Paths, file: &str) -> Option<CarModel> {
+pub(crate) fn car_model(rs: &mut RenderScene, paths: &Paths, file: &str) -> Option<CarModel> {
     let m = rs.load(&paths.asset(file))?;
     let scene = Arc::clone(&rs.models[m]);
     // Orientation from the wheel layout, as for the drivable cars.
