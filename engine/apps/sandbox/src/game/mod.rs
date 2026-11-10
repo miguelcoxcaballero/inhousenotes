@@ -321,6 +321,11 @@ pub fn build_at(map: MapKind, paths: Paths, hour: Option<f32>) -> App {
         hud.messages.retain(|m| m.1 > 0.0);
         hud.hit_marker = (hud.hit_marker - dt * 4.0).max(0.0);
     });
+    if hour.is_none() && map == MapKind::Isla {
+        // An open landscape to the horizon: the physical sky, not the
+        // street photo (its buildings would stand behind the island).
+        app.world.res_mut::<env::TimeOfDay>().photo_sky = false;
+    }
     if let Some(h) = hour {
         let t = app.world.res_mut::<env::TimeOfDay>();
         t.hours = h;
