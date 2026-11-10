@@ -2951,6 +2951,7 @@ dependencies = [
  "forja_ai",
  "forja_anim",
  "forja_assets",
+ "forja_city",
  "forja_core",
  "forja_gameplay",
  "forja_input",

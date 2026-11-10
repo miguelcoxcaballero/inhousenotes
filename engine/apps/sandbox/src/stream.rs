@@ -48,20 +48,8 @@ enum State {
     Uploading { scenes: Vec<MeshUpload>, next: usize, bytes: u64 },
 }
 
-/// Reads a tile's meshes again (a world's own store, e.g. the landmark
-/// cache) instead of this module's session files.
-pub type Source = Arc<dyn Fn() -> Option<Vec<SceneData>> + Send + Sync>;
-
-/// A streamed tile: its far-distance group, the render models of its
-/// detail, the group's HLOD distance scale and where its meshes are read
-/// back from (`None`: the session files written at the first upload).
-pub type TileDesc = (u32, Vec<usize>, f32, Option<Source>);
-
 struct Tile {
     group: u32,
-    /// The group switches at this many HLOD distances.
-    scale: f32,
-    source: Option<Source>,
     /// Render models of the tile's block scenes.
     models: Vec<usize>,
     state: State,
@@ -82,9 +70,9 @@ pub struct Streamer {
 static SESSION: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 impl Streamer {
-    /// `None` when
+    /// `tiles`: `(group, render models of its blocks)`. `None` when
     /// streaming is off (`FORJA_NO_STREAM=1`) or there is no cache folder.
-    pub fn new(tiles: Vec<TileDesc>) -> Option<Self> {
+    pub fn new(tiles: Vec<(u32, Vec<usize>)>) -> Option<Self> {
         if tiles.is_empty() || std::env::var_os("FORJA_NO_STREAM").is_some() {
             return None;
         }
@@ -115,17 +103,16 @@ impl Streamer {
                 }
             })
             .ok()?;
-        Some(Self { dir, tiles: tiles.into_iter().map(|(group, models, scale, source)| Tile { group, scale, source, models, state: State::Resident }).collect(), writer: Some(tx), writer_done: Some(writer_done), released_bytes: 0, released_tiles: 0, loads: 0 })
+        Some(Self { dir, tiles: tiles.into_iter().map(|(group, models)| Tile { group, models, state: State::Resident }).collect(), writer: Some(tx), writer_done: Some(writer_done), released_bytes: 0, released_tiles: 0, loads: 0 })
     }
 
     fn path(&self, model: usize) -> PathBuf {
         self.dir.join(format!("{model}.bin"))
     }
 
-    /// Whether `model` is streamed from the session files (its scene must
-    /// be kept on disk).
+    /// Whether `model` is streamed (its scene must be kept on disk).
     pub fn streams(&self, model: usize) -> bool {
-        self.tiles.iter().any(|t| t.source.is_none() && t.models.contains(&model))
+        self.tiles.iter().any(|t| t.models.contains(&model))
     }
 
     /// Keeps the full scene of a streamed model before its CPU copy is
@@ -158,11 +145,10 @@ impl Streamer {
         if !self.writer_finished() {
             return;
         }
-        let hlod = renderer.settings.hlod_distance;
+        let d0 = renderer.settings.hlod_distance;
         let mut budget = RELOAD_BYTES_PER_FRAME;
         for i in 0..self.tiles.len() {
             let group = self.tiles[i].group;
-            let d0 = hlod * self.tiles[i].scale;
             let d = renderer.static_group_distance(group, eye).unwrap_or(0.0);
             let near = d0 <= 0.0 || d < d0 * 1.2;
             match &self.tiles[i].state {
@@ -179,13 +165,9 @@ impl Streamer {
                 State::Released if near => {
                     let (tx, rx) = channel();
                     let paths: Vec<PathBuf> = self.tiles[i].models.iter().map(|&m| self.path(m)).collect();
-                    let source = self.tiles[i].source.clone();
                     let _ = std::thread::Builder::new().name("stream loader".into()).spawn(move || {
                         crate::threads::lower_priority();
-                        let scenes: Option<Vec<MeshUpload>> = match source {
-                            Some(read) => read().filter(|s| s.len() == paths.len()).map(|s| s.iter().map(MeshUpload::prepare).collect()),
-                            None => paths.iter().map(|p| std::fs::read(p).ok().and_then(|b| forja_assets::cache::Reader::new(&b)).and_then(|mut r| r.scene()).map(|s| MeshUpload::prepare(&s))).collect(),
-                        };
+                        let scenes: Option<Vec<MeshUpload>> = paths.iter().map(|p| std::fs::read(p).ok().and_then(|b| forja_assets::cache::Reader::new(&b)).and_then(|mut r| r.scene()).map(|s| MeshUpload::prepare(&s))).collect();
                         let _ = tx.send(scenes);
                     });
                     self.tiles[i].state = State::Loading(rx);

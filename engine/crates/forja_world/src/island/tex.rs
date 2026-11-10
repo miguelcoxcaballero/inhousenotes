@@ -181,22 +181,25 @@ pub fn surface_material(s: Surface) -> (TextureData, MaterialData) {
         [dark + n, dark + n, dark + n + 0.005]
     };
     let white = [0.86, 0.86, 0.84];
+    let kerb = [0.62, 0.61, 0.58];
     let tex = match s {
         Surface::Highway => paint(&name, 128, |u, v, x, y| {
             let edge = (0.03..0.055).contains(&u) || (0.945..0.97).contains(&u);
             let lane = (u - 0.5).abs() < 0.012 && v < 0.4;
-            if edge || lane { white } else { asphalt(u, v, x, y, 0.17) }
+            if edge || lane { white } else { asphalt(u, v, x, y, 0.27) }
         }),
         Surface::Road => paint(&name, 128, |u, v, x, y| {
             let edge = (0.03..0.05).contains(&u) || (0.95..0.97).contains(&u);
             let centre = (u - 0.5).abs() < 0.012 && v < 0.5;
-            if edge || centre { white } else { asphalt(u, v, x, y, 0.19) }
+            if u < 0.02 || u > 0.98 { kerb } else if edge || centre { white } else { asphalt(u, v, x, y, 0.29) }
         }),
-        Surface::Street => paint(&name, 128, |u, v, x, y| asphalt(u, v, x, y, 0.21)),
+        // A granite kerb line along both edges: the street reads as a
+        // roadway between pavements.
+        Surface::Street => paint(&name, 128, |u, v, x, y| if u < 0.035 || u > 0.965 { kerb } else { asphalt(u, v, x, y, 0.31) }),
         Surface::Runway => paint(&name, 128, |u, v, x, y| {
             let edge = (0.02..0.035).contains(&u) || (0.965..0.98).contains(&u);
             let centre = (u - 0.5).abs() < 0.008 && v < 0.6;
-            if edge || centre { white } else { asphalt(u, v, x, y, 0.2) }
+            if edge || centre { white } else { asphalt(u, v, x, y, 0.3) }
         }),
         Surface::Paved => {
             let (a, b) = (rgb(0xb9b1a2), rgb(0xa79f90));
@@ -306,7 +309,7 @@ pub fn style_rect(k: u8) -> (f32, f32, f32, f32) {
 }
 
 /// What a facade texel is: 0 wall, 1 frame, 2 glass, 3 shutter, 4 balcony
-/// slab, 5 railing, 6 sign band.
+/// slab, 5 railing, 6 sign band, 7 door.
 fn facade_texel(k: u8, st: &Style, ground: bool, bay: i32, u: f32, v: f32) -> u8 {
     let (shed, modern) = (k == STYLE_SHED, k == STYLE_MODERN);
     if shed {
@@ -323,7 +326,20 @@ fn facade_texel(k: u8, st: &Style, ground: bool, bay: i32, u: f32, v: f32) -> u8
                 return 6;
             }
             if v >= 0.24 {
-                return if (0.14..0.86).contains(&u) && v < 0.97 { 2 } else { 1 };
+                // By bay: a shop window, a shutter down, a doorway, a window.
+                let inside = (0.14..0.86).contains(&u) && v < 0.97;
+                return match bay {
+                    1 if inside => 3,
+                    2 => {
+                        if (0.3..0.7).contains(&u) && v > 0.3 {
+                            7
+                        } else {
+                            0
+                        }
+                    }
+                    _ if inside => 2,
+                    _ => 1,
+                };
             }
         }
         return 0;
@@ -389,6 +405,9 @@ pub fn shell_material(night: f32) -> (TextureData, Option<TextureData>, Material
                         4 => frame.map(|c| c * 0.8),
                         5 => [0.13, 0.13, 0.14],
                         6 => mix(shutter, [0.2, 0.2, 0.22], 0.3 + 0.4 * hash2(bx, 0, seed + 9)),
+                        7 => [0.30, 0.20, 0.13].map(|c: f32| c * if lx % 9 == 0 { 0.7 } else { 1.0 }),
+                        2 if ground => mix(glass, [0.55, 0.47, 0.36], 0.35 + 0.3 * (1.0 - v)),
+                        3 if ground => [0.62, 0.63, 0.64].map(|c: f32| c * if ly % 4 == 0 { 0.75 } else { 1.0 }),
                         _ => {
                             // Storey line.
                             let band = if v < 0.03 { 0.92 } else { 1.0 };

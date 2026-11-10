@@ -106,27 +106,9 @@ pub struct WorldDescription {
     /// Groups that switch at a multiple of the HLOD distance: `(group,
     /// scale)`.
     pub lod_scales: Vec<(u32, f32)>,
-    /// Far-distance groups whose detail the game may take off the GPU while
-    /// they show their stand-in (landmarks: large models seen a few at a
-    /// time).
-    pub stream_groups: Vec<StreamGroup>,
     /// The island behind this world ([`IslandWorld`]): its map, ground and
     /// buildings, for streaming detail and collision around the player.
     pub island: Option<Arc<island::Island>>,
-}
-
-/// A far-distance group whose detail meshes can be read back from disk.
-#[derive(Clone)]
-pub struct StreamGroup {
-    pub group: u32,
-    /// Scenes of its detail (indices into [`WorldDescription::scenes`]).
-    pub scenes: Vec<usize>,
-    /// The group's scale in [`WorldDescription::lod_scales`].
-    pub scale: f32,
-    /// Reads the meshes of `scenes` again, in order (textures are not
-    /// needed: they stay on the GPU). Called on a worker thread; `None`
-    /// when they cannot be read, and the group then keeps its stand-in.
-    pub source: Arc<dyn Fn() -> Option<Vec<SceneData>> + Send + Sync>,
 }
 
 impl WorldDescription {

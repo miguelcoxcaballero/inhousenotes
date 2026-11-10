@@ -31,6 +31,9 @@ pub struct Building {
     pub style: u8,
     pub roof: u8,
     pub seed: u32,
+    /// The landmark site that replaces this building's shell (it still
+    /// collides as its prism).
+    pub site: Option<u16>,
 }
 
 fn hash(mut x: u32) -> u32 {
@@ -70,7 +73,7 @@ impl Building {
             5 + (seed >> 8) as u8 % 3
         };
         let roof = ((seed >> 12) % 3 == 0) as u8;
-        Building { poly: index as u32, centre, floor, low, height, storeys, style, roof, seed }
+        Building { poly: index as u32, centre, floor, low, height, storeys, style, roof, seed, site: None }
     }
 
     pub fn tile(&self) -> (i32, i32) {

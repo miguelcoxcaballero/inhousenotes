@@ -12,17 +12,16 @@ use std::sync::{Arc, Mutex};
 use forja_assets::cache::{Key, Reader, Writer};
 use forja_assets::{SceneData, TextureData};
 use forja_math::Vec3;
-use rayon::prelude::*;
 
-/// A built landmark: what the cache keeps.
-pub(super) struct Model {
+/// A landmark ready for the world.
+pub struct Model {
+    /// Its scene, with distance LODs down to a few hundred triangles.
     pub scene: SceneData,
-    pub far: SceneData,
+    /// Collision mesh in the landmark's frame.
     pub col_verts: Vec<Vec3>,
     pub col_tris: Vec<[u32; 3]>,
+    /// Landmark-local bounds.
     pub bounds: (Vec3, Vec3),
-    /// Its entry in the cache, when it has one.
-    pub cache_key: Option<[u8; 32]>,
 }
 
 /// Welds a triangle soup (the framework's collider has three vertices per
@@ -85,7 +84,7 @@ fn shrink_textures(scene: &mut SceneData) {
     }
 }
 
-pub(super) fn build_model(dir: &Path) -> Option<Model> {
+fn build_model(dir: &Path) -> Option<Model> {
     // A material library of its own: the shared one would keep every
     // landmark's full-size textures (gigabytes) for the life of the process.
     let lib = forja_city::landmark::Library::new(forja_city::landmark::shared_library(dir).kit);
@@ -99,10 +98,8 @@ pub(super) fn build_model(dir: &Path) -> Option<Model> {
     drop(lib);
     shrink_textures(&mut lm.scene);
     forja_city::landmark::far::extend_lods(&mut lm.scene);
-    let tris = lm.scene.triangle_count();
-    let far = forja_city::landmark::far::far_scene(&lm.scene, (tris / 40).clamp(1200, 6000));
     let (col_verts, col_tris) = weld(&lm.collider.verts, &lm.collider.tris);
-    Some(Model { scene: lm.scene, far, col_verts, col_tris, bounds: lm.bounds, cache_key: None })
+    Some(Model { scene: lm.scene, col_verts, col_tris, bounds: lm.bounds })
 }
 
 /// A texture's identity in the cache: its pixels' hash and its shape.
@@ -181,15 +178,14 @@ fn read_scene(r: &mut Reader, textures: &Textures) -> Option<SceneData> {
     Some(scene)
 }
 
-/// Stores a model; `false` when there is no cache to store it in.
-fn store_model(key: &[u8; 32], m: &Model, near: &[TexKey], far: &[TexKey]) -> bool {
+fn store_model(key: &[u8; 32], m: &Model, keys: &[TexKey]) {
     if forja_assets::cache::dir().is_none() {
-        return false;
+        return;
     }
     let blank: Arc<[u8]> = Arc::from(vec![0u8; 4]);
     let mut w = Writer::new();
-    if !write_scene(&mut w, &m.scene, near, &blank) || !write_scene(&mut w, &m.far, far, &blank) {
-        return false;
+    if !write_scene(&mut w, &m.scene, keys, &blank) {
+        return;
     }
     w.usize(m.col_verts.len());
     for v in &m.col_verts {
@@ -199,18 +195,10 @@ fn store_model(key: &[u8; 32], m: &Model, near: &[TexKey], far: &[TexKey]) -> bo
     w.vec3(m.bounds.0);
     w.vec3(m.bounds.1);
     forja_assets::cache::store_limited("isla_landmark", key, &w.finish(), 160);
-    true
 }
 
-/// The meshes of a stored model's full scene (placeholder textures): what
-/// the game needs to put it back on the GPU.
-pub(super) fn read_meshes(key: &[u8; 32]) -> Option<SceneData> {
-    Reader::new(&forja_assets::cache::load("isla_landmark", key)?)?.scene()
-}
-
-fn read_model(mut r: Reader, textures: &Textures, key: &[u8; 32]) -> Option<Model> {
+fn read_model(mut r: Reader, textures: &Textures) -> Option<Model> {
     let scene = read_scene(&mut r, textures)?;
-    let far = read_scene(&mut r, textures)?;
     let n = r.usize()?;
     let mut col_verts = Vec::with_capacity(n.min(1 << 22));
     for _ in 0..n {
@@ -221,41 +209,53 @@ fn read_model(mut r: Reader, textures: &Textures, key: &[u8; 32]) -> Option<Mode
         return None;
     }
     let col_tris = idx.chunks_exact(3).map(|t| [t[0], t[1], t[2]]).collect();
-    Some(Model { scene, far, col_verts, col_tris, bounds: (r.vec3()?, r.vec3()?), cache_key: Some(*key) })
+    Some(Model { scene, col_verts, col_tris, bounds: (r.vec3()?, r.vec3()?) })
 }
 
-/// Builds (or reads back from the cache, one entry per landmark and one
-/// per texture) the models of `slugs` under `dir`.
-pub(super) fn load_models(dir: &Path, slugs: &[String]) -> Vec<Option<Model>> {
-    let t0 = std::time::Instant::now();
-    let mut code = Key::new().str("isla landmark 4").str(include_str!("landmark_models.rs"));
-    for s in forja_city::landmark::far::SOURCES {
-        code = code.u64(forja_assets::cache::fast_hash(s.as_bytes()));
-    }
-    // The textures come from the kit's downloaded sets when they are there.
-    let downloaded = std::env::var_os("FORJA_DOWNLOADED").map(PathBuf::from).or_else(|| forja_city::landmark::engine_root(dir).map(|r| r.join("assets/downloaded"))).filter(|p| p.exists());
-    let code = code.str(if downloaded.is_some() { "kit" } else { "no kit" }).finish();
-    let keys: Vec<[u8; 32]> = slugs.iter().map(|s| Key::new().bytes(&code).str(s).dir_files(&dir.join(s)).finish()).collect();
-    let textures = Textures::default();
-    let mut models: Vec<Option<Model>> = keys.par_iter().map(|k| forja_assets::cache::load("isla_landmark", k).and_then(|b| Reader::new(&b)).and_then(|r| read_model(r, &textures, k))).collect();
-    let missing: Vec<usize> = (0..slugs.len()).filter(|&i| models[i].is_none()).collect();
-    // A few at a time: a landmark being built holds its full-size textures.
-    for (n, chunk) in missing.chunks(4).enumerate() {
-        forja_assets::progress::advance(0.47 + 0.05 * (n * 4) as f32 / missing.len() as f32);
-        let built: Vec<Option<Model>> = chunk
-            .par_iter()
-            .map(|&i| {
-                let mut m = build_model(&dir.join(&slugs[i]))?;
-                let near: Vec<TexKey> = m.scene.textures.iter_mut().map(|t| textures.share(t)).collect();
-                let far: Vec<TexKey> = m.far.textures.iter_mut().map(|t| textures.share(t)).collect();
-                m.cache_key = store_model(&keys[i], &m, &near, &far).then_some(keys[i]);
-                Some(m)
-            })
-            .collect();
-        for (&i, m) in chunk.iter().zip(built) {
-            models[i] = m;
+/// The models of the landmarks under a folder: read back from the cache
+/// or built (and stored). Keep one for as long as landmarks are being
+/// loaded, so that they share their textures; drop it afterwards (it
+/// holds a reference to every texture).
+pub struct Models {
+    dir: PathBuf,
+    code: [u8; 32],
+    textures: Textures,
+}
+
+impl Models {
+    /// `dir`: `data/landmarks/valencia`.
+    pub fn new(dir: &Path) -> Self {
+        let mut code = Key::new().str("isla landmark 5").str(include_str!("landmark_models.rs"));
+        for s in forja_city::landmark::far::SOURCES {
+            code = code.u64(forja_assets::cache::fast_hash(s.as_bytes()));
         }
+        // The textures come from the kit's downloaded sets when they are there.
+        let downloaded = std::env::var_os("FORJA_DOWNLOADED").map(PathBuf::from).or_else(|| forja_city::landmark::engine_root(dir).map(|r| r.join("assets/downloaded"))).filter(|p| p.exists());
+        Models { dir: dir.to_path_buf(), code: code.str(if downloaded.is_some() { "kit" } else { "no kit" }).finish(), textures: Textures::default() }
     }
-    log::info!("landmarks: {} models in {:.2}s ({} built, the rest from the cache)", models.iter().flatten().count(), t0.elapsed().as_secs_f32(), missing.len());
-    models
+
+    fn key(&self, slug: &str) -> [u8; 32] {
+        Key::new().bytes(&self.code).str(slug).dir_files(&self.dir.join(slug)).finish()
+    }
+
+    /// Whether `slug` is in the cache (it then loads in a fraction of a second).
+    pub fn cached(&self, slug: &str) -> bool {
+        forja_assets::cache::dir().is_some_and(|d| {
+            let k = self.key(slug);
+            d.join("isla_landmark").join(format!("{}.bin", k[..12].iter().map(|b| format!("{b:02x}")).collect::<String>())).exists()
+        })
+    }
+
+    /// The model of `slug`; the second value says whether it was built
+    /// (seconds) rather than read from the cache. `None`: its spec fails.
+    pub fn load(&self, slug: &str) -> Option<(Model, bool)> {
+        let key = self.key(slug);
+        if let Some(m) = forja_assets::cache::load("isla_landmark", &key).and_then(|b| Reader::new(&b)).and_then(|r| read_model(r, &self.textures)) {
+            return Some((m, false));
+        }
+        let mut m = build_model(&self.dir.join(slug))?;
+        let keys: Vec<TexKey> = m.scene.textures.iter_mut().map(|t| self.textures.share(t)).collect();
+        store_model(&key, &m, &keys);
+        Some((m, true))
+    }
 }
