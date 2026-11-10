@@ -2928,7 +2928,11 @@ impl Renderer {
                             let sum = (w[0] + w[1] + w[2] + w[3]).max(1e-6);
                             SkinVertex { joints: p.joints[i], weights: [w[0] / sum, w[1] / sum, w[2] / sum, w[3] / sum] }
                         })
-                        .collect();
+                        .collect::<Vec<_>>();
+                    // A zero-sized vertex buffer cannot be bound (wgpu panics
+                    // on an empty slice): a primitive without vertices gets
+                    // one unused skin vertex.
+                    let sv = if sv.is_empty() { vec![SkinVertex { joints: [0; 4], weights: [1.0, 0.0, 0.0, 0.0] }] } else { sv };
                     self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("skin"), contents: bytemuck::cast_slice(&sv), usage: wgpu::BufferUsages::VERTEX })
                 });
                 let material = mat_base + if scene.materials.is_empty() { 0 } else { p.material as u32 };

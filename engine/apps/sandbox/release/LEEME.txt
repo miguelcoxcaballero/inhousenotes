@@ -4,6 +4,14 @@ FORJA - version jugable (Windows)
 Mundo abierto en una ciudad procedural de Madrid y Valencia: camina, corre,
 conduce coches y usa armas e inventario.
 
+NOVEDADES DE LA v0.1.8
+  - Arreglado el cierre "buffer slice can not be empty".
+  - Arreglada la camara que se volvia loca al empezar a pie: ahora empiezas
+    en medio de la Placa de l'Ajuntament, lejos de las paredes, y la camara
+    ya no salta al rozar fachadas.
+  - Vuelven los coches del trafico y los aparcados (faltaba un paquete de
+    contenido en la v0.1.7).
+
 NOVEDADES DE LA v0.1.7
   - LA ISLA LEVANTE ENTERA: todo el mapa jugable sin huecos (Valencia, puerto,
     Albufera, pueblos, montana y costa). Terreno real (IGN MDT25) y alturas de
