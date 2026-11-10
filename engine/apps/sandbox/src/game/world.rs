@@ -161,5 +161,6 @@ impl Plugin for WorldPlugin {
             _ => {}
         }
         super::island::install(app);
+        super::island_detail::install(app, self.hour);
     }
 }

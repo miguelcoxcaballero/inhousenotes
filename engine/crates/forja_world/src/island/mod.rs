@@ -18,6 +18,7 @@
 //! origin at the Plaça de l'Ajuntament, the plain at height 0.
 
 pub mod data;
+pub mod detail;
 pub mod flora;
 pub mod ground;
 pub mod roads;
@@ -73,6 +74,10 @@ pub struct BuildingTile {
     pub buildings: std::ops::Range<usize>,
     /// Index of its shell placement in the world's placements.
     pub placement: usize,
+    /// Far-distance group of that placement: never far, so the game can
+    /// hide the shells of a tile whose detail it draws itself
+    /// (`forja_render::Renderer::set_static_group_hidden`).
+    pub group: u32,
     pub bounds: (Vec3, Vec3),
 }
 
@@ -90,6 +95,9 @@ pub struct Island {
     /// Far-distance groups the world uses (`1..=groups`); the game numbers
     /// its own after them.
     pub groups: u32,
+    /// The shells' texture, glow map and material, to mesh the shells of
+    /// part of a tile with ([`shells::tile_mesh`]).
+    pub shell: Arc<(TextureData, Option<TextureData>, MaterialData)>,
 }
 
 impl Island {
@@ -351,6 +359,11 @@ impl Materials {
         Materials { covers, cover_colors, surfaces, shell: Arc::new(tex::shell_material(night)) }
     }
 
+    /// A scene of `mesh` with the shells' material.
+    pub fn shell_mesh_scene(shell: &Arc<(TextureData, Option<TextureData>, MaterialData)>, mesh: MeshData) -> SceneData {
+        scene_of("isla_shells", vec![(shell.clone(), mesh)])
+    }
+
     /// The shell scene of a set of buildings (`None` without any).
     pub fn shell_scene(&self, buildings: &[Building], polys: &[data::Poly]) -> Option<SceneData> {
         let mesh = shells::tile_mesh(buildings, polys);
@@ -490,7 +503,7 @@ impl WorldSource for IslandWorld {
             while i < buildings.len() && buildings[i].tile() == key {
                 i += 1;
             }
-            tiles.push(BuildingTile { key, buildings: start..i, placement: 0, bounds: (Vec3::ZERO, Vec3::ZERO) });
+            tiles.push(BuildingTile { key, buildings: start..i, placement: 0, group: 0, bounds: (Vec3::ZERO, Vec3::ZERO) });
         }
         let shell_scenes: Vec<Option<SceneData>> = tiles.par_iter().map(|t| mats.shell_scene(&buildings[t.buildings.clone()], &d.polys)).collect();
         let mut shell_tris = 0;
@@ -501,6 +514,10 @@ impl WorldSource for IslandWorld {
             let b = s.bounds();
             t.bounds = (b.min, b.max);
             t.placement = w.placements.len();
+            group += 1;
+            t.group = group;
+            w.lod_tags.push((t.placement, group, false));
+            w.lod_scales.push((group, SHELL_DETAIL));
             w.add_scene(Arc::new(s), Mat4::IDENTITY);
             kept.push(t);
         }
@@ -547,7 +564,7 @@ impl WorldSource for IslandWorld {
         w.attribution.push("Isla Levante: map data © OpenStreetMap contributors, ODbL 1.0; barrios: Ajuntament de València, CC BY 4.0".into());
         let map = Arc::new(MapData::build(&d, &removed, start));
         let tile_index = tiles.iter().enumerate().map(|(i, t)| (t.key, i)).collect();
-        w.island = Some(Arc::new(Island { data: d, ground: g, buildings, tiles, tile_index, map, night, groups: group }));
+        w.island = Some(Arc::new(Island { data: d, ground: g, buildings, tiles, tile_index, map, night, groups: group, shell: mats.shell.clone() }));
         log::info!("island: built in {:.2}s ({})", t0.elapsed().as_secs_f32(), w.stats.iter().map(|(k, v)| format!("{v} {k}")).collect::<Vec<_>>().join(", "));
         Ok(w)
     }
@@ -727,3 +744,5 @@ pub const TERRAIN_TILE: f32 = TILE;
 /// many HLOD distances, streets and paths within [`STREET_DETAIL`].
 pub const TERRAIN_DETAIL: f32 = 2.0;
 pub const STREET_DETAIL: f32 = 5.0;
+/// Shell tiles are groups that never go far (they have no stand-in).
+pub const SHELL_DETAIL: f32 = 1.0e6;

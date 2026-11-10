@@ -8,6 +8,7 @@ pub mod crowd;
 pub mod env;
 pub mod humans;
 pub mod island;
+pub mod island_detail;
 pub mod people;
 pub mod player;
 pub mod props;
@@ -115,6 +116,11 @@ pub struct RenderScene {
     pub env: Environment,
     /// Equirectangular HDR photo used for image-based lighting.
     pub hdri: Option<PathBuf>,
+    /// Commands for the renderer's streamed static layers, applied in
+    /// order after the frame's uploads (see [`island_detail::sync`]).
+    pub layer_cmds: Vec<island_detail::LayerCmd>,
+    /// Models whose CPU copy is dropped once they are on the GPU.
+    pub strip_after_upload: Vec<usize>,
 }
 
 impl RenderScene {
