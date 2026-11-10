@@ -647,18 +647,64 @@ impl WorldSource for IslandWorld {
 
 /// Player, car, bike, weapon and prop spawns; returns the player's spot.
 fn spawns(w: &mut WorldDescription, d: &IslandData, g: &Ground) -> Vec2 {
-    let near = |p: Vec2| p.length_squared();
-    // The player: on a pedestrian street or footway near the origin.
-    let mut player = Vec2::ZERO;
-    let mut best = f32::MAX;
-    for l in d.lines.iter().filter(|l| roads::visible(l) && !l.bridge() && matches!(l.class, RoadClass::Pedestrian | RoadClass::Footway | RoadClass::LivingStreet)) {
-        for s in l.pts.windows(2) {
-            let m = (s[0] + s[1]) * 0.5;
-            if near(m) < best {
-                best = near(m);
-                player = m;
+    // The player: on a pedestrian street or footway near the origin, in
+    // the open. Weapons and props are laid out within ~7 m of the player,
+    // and the third-person camera stands 4 m behind: next to a wall (the
+    // Ajuntament's façade is 1.4 m from the nearest footway) the camera
+    // is pushed in and out by the wall and the props start inside it.
+    const CLEAR: f32 = 9.0;
+    const SEARCH: f32 = 300.0;
+    let walls: Vec<&[Vec2]> = d
+        .polys
+        .iter()
+        .filter(|p| p.kind == data::PolyKind::Building)
+        .filter_map(|p| p.rings.first())
+        .filter(|r| r.iter().any(|v| v.length() < SEARCH + 60.0))
+        .map(|r| r.as_slice())
+        .collect();
+    let clearance = |p: Vec2| -> f32 {
+        let mut best = f32::MAX;
+        for r in &walls {
+            let mut inside = false;
+            for i in 0..r.len() {
+                let (a, b) = (r[i], r[(i + 1) % r.len()]);
+                if (a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x {
+                    inside = !inside;
+                }
+                let ab = b - a;
+                let t = ((p - a).dot(ab) / ab.length_squared().max(1e-6)).clamp(0.0, 1.0);
+                best = best.min(p.distance(a + ab * t));
+            }
+            if inside {
+                return 0.0;
             }
         }
+        best
+    };
+    let mut player = Vec2::ZERO;
+    let (mut best, mut fallback) = ((f32::MAX, None), (0.0f32, Vec2::ZERO));
+    for l in d.lines.iter().filter(|l| roads::visible(l) && !l.bridge() && matches!(l.class, RoadClass::Pedestrian | RoadClass::Footway | RoadClass::LivingStreet)) {
+        for s in l.pts.windows(2) {
+            let steps = (s[0].distance(s[1]) / 2.0).ceil().max(1.0) as usize;
+            for k in 0..=steps {
+                let m = s[0].lerp(s[1], k as f32 / steps as f32);
+                let r = m.length();
+                if r > SEARCH || r >= best.0 {
+                    continue;
+                }
+                let c = clearance(m);
+                if c >= CLEAR {
+                    best = (r, Some(m));
+                } else if c > fallback.0 {
+                    fallback = (c, m);
+                }
+            }
+        }
+    }
+    if let Some(m) = best.1 {
+        player = m;
+    } else if fallback.0 > 0.0 {
+        player = fallback.1;
     }
     let at = |p: Vec2, up: f32| Vec3::new(p.x, g.height(p.x, p.y) + up, p.y);
     w.spawns.push(SpawnPoint { kind: SpawnKind::Player, iso: Iso::from_pos(at(player, 1.1)) });

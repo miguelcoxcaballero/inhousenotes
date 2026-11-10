@@ -867,7 +867,7 @@ fn headless_ui(
         let (tiles, _) = mm.tiles_loaded();
         log::info!("radar: {:.3} ms CPU for the last frame, {tiles} tiles painted, route {}", mm.last_ms, mm.route().map_or("none".into(), |r| format!("{:.0} m, {} points", r.length(), r.pts.len())));
     }
-    let jobs = ctx.tessellate(out.shapes, out.pixels_per_point);
+    let jobs = drop_empty_meshes(ctx.tessellate(out.shapes, out.pixels_per_point));
     let screen = egui_wgpu::ScreenDescriptor { size_in_pixels: [args.width, args.height], pixels_per_point: out.pixels_per_point };
     for (id, deltas) in &sets {
         for delta in deltas {
@@ -1505,7 +1505,7 @@ impl Sandbox {
         let ctx = gpu.egui_state.egui_ctx().clone();
         let out = ctx.run_ui(raw, |ui| ui::draw_loading(ui.ctx(), &title, &stage, fraction, elapsed));
         gpu.egui_state.handle_platform_output(&gpu.window, out.platform_output);
-        let jobs = ctx.tessellate(out.shapes, out.pixels_per_point);
+        let jobs = drop_empty_meshes(ctx.tessellate(out.shapes, out.pixels_per_point));
         let screen = egui_wgpu::ScreenDescriptor { size_in_pixels: [gpu.config.width, gpu.config.height], pixels_per_point: out.pixels_per_point };
         for (id, deltas) in &out.textures_delta.set {
             for delta in deltas {
@@ -1890,7 +1890,7 @@ impl Sandbox {
             menu_action = pause::draw(ui.ctx(), menu, perf_state, map, world);
         });
         gpu.egui_state.handle_platform_output(&gpu.window, out.platform_output);
-        let jobs = ctx.tessellate(out.shapes, out.pixels_per_point);
+        let jobs = drop_empty_meshes(ctx.tessellate(out.shapes, out.pixels_per_point));
         if let Some(tr) = &mut self.trace {
             tr.mark("ui build");
         }
@@ -2302,4 +2302,15 @@ fn main() {
     let event_loop = builder.build().expect("event loop");
     let mut sandbox = Sandbox::new(args);
     event_loop.run_app(&mut sandbox).expect("event loop");
+}
+
+/// egui-wgpu binds each mesh's vertex and index range as a buffer slice;
+/// an empty range panics in wgpu ("buffer slice can not be empty"), so
+/// meshes without vertices or indices are dropped before upload.
+fn drop_empty_meshes(mut jobs: Vec<egui::ClippedPrimitive>) -> Vec<egui::ClippedPrimitive> {
+    jobs.retain(|j| match &j.primitive {
+        egui::epaint::Primitive::Mesh(m) => !m.vertices.is_empty() && !m.indices.is_empty(),
+        _ => true,
+    });
+    jobs
 }

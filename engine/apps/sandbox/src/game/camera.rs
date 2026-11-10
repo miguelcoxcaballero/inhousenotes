@@ -24,6 +24,9 @@ pub struct CameraRig {
     /// Weapon kick (yaw, pitch) that springs back to zero.
     pub recoil: (f32, f32),
     smoothed: Option<Vec3>,
+    /// Boom length the walls allow (m): shortened at once against a wall,
+    /// let out gently, so brushing past façades does not make it jump.
+    reach: f32,
 }
 
 impl Plugin for CameraPlugin {
@@ -37,7 +40,7 @@ impl Plugin for CameraPlugin {
 
     fn build(&self, app: &mut App) {
         let facing = app.world.res::<Player>().facing;
-        app.insert_resource(CameraRig { yaw: facing + std::f32::consts::PI, pitch: -0.18, distance: 4.2, fov: 62.0, idle: 0.0, fixed: None, recoil: (0.0, 0.0), smoothed: None });
+        app.insert_resource(CameraRig { yaw: facing + std::f32::consts::PI, pitch: -0.18, distance: 4.2, fov: 62.0, idle: 0.0, fixed: None, recoil: (0.0, 0.0), smoothed: None, reach: 4.2 });
         app.add_system(Stage::PostUpdate, "camera", camera_system);
     }
 }
@@ -68,8 +71,11 @@ fn camera_system(w: &mut forja_core::World) {
     } else {
         rig.idle += dt;
     }
-    rig.yaw -= intent.look.x;
-    rig.pitch = (rig.pitch - intent.look.y).clamp(-1.25, 0.7);
+    // A burst of mouse motion (a hitch, focus regained) turns at most a
+    // quarter turn per frame.
+    let look = intent.look.clamp(forja_math::Vec2::splat(-1.5), forja_math::Vec2::splat(1.5));
+    rig.yaw -= look.x;
+    rig.pitch = (rig.pitch - look.y).clamp(-1.25, 0.7);
     if let Some(h) = chase_heading
         && rig.idle > 1.2
     {
@@ -108,10 +114,13 @@ fn camera_system(w: &mut forja_core::World) {
     let dir = desired - pivot;
     let len = dir.length();
     let filter = QueryFilter::exclude(exclude).with_groups(CollisionGroups::new(u32::MAX, layers::WORLD));
-    let pos = match w.res::<PhysicsWorld>().raycast(&Ray::new(pivot, dir), len, filter) {
-        Some(h) => pivot + dir / len * (h.t - 0.25).max(0.3),
-        None => desired,
+    let allowed = match w.res::<PhysicsWorld>().raycast(&Ray::new(pivot, dir), len, filter) {
+        Some(h) => (h.t - 0.25).max(0.3),
+        None => len,
     };
+    let rig = w.res_mut::<CameraRig>();
+    rig.reach = if allowed < rig.reach { allowed } else { (rig.reach + (allowed - rig.reach) * smoothing(4.0, dt)).min(allowed) };
+    let pos = pivot + dir / len.max(1e-4) * rig.reach;
     let camera = match fixed {
         Some((eye, look)) => Camera::look_at(eye, look),
         None => Camera { position: pos, rotation: rot, fov_y: fov.to_radians(), near: 0.1, aspect: 16.0 / 9.0 },
