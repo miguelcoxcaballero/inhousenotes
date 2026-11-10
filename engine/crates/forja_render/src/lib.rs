@@ -2687,6 +2687,19 @@ impl Renderer {
         view
     }
 
+    /// Makes `placeholder` (a texture without its pixels) stand for
+    /// `original`, which must be uploaded already: scenes that reference
+    /// the placeholder get the original's GPU texture. `false` when the
+    /// original is not in the cache (the placeholder would then upload as
+    /// itself). The alias lives while anything else holds the
+    /// placeholder's buffer.
+    pub fn alias_texture(&mut self, original: &TextureData, placeholder: &TextureData) -> bool {
+        let Some((_, view)) = self.texture_cache.get(&(original.rgba8.as_ptr() as usize, original.srgb)) else { return false };
+        let view = view.clone();
+        self.texture_cache.insert((placeholder.rgba8.as_ptr() as usize, placeholder.srgb), (placeholder.rgba8.clone(), view));
+        true
+    }
+
     /// Whether textures are uploaded block-compressed.
     fn use_bc(&self) -> bool {
         self.settings.texture_compression && self.device.features().contains(wgpu::Features::TEXTURE_COMPRESSION_BC)

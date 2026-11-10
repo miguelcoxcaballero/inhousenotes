@@ -48,6 +48,11 @@ pub const DCELL: f32 = BTILE / 4.0;
 pub const CELL_TRIANGLES: usize = 1_500_000;
 /// Block meshes from this many triangles per material get LOD chains.
 const BLOCK_LOD_MIN: usize = 3000;
+/// A footprint whose ground falls this much (m) is cut into level slices,
+/// each falling about [`SLICE_DROP`] and at least [`SLICE_MIN`] m wide.
+const SLOPE_DROP: f32 = 1.5;
+const SLICE_DROP: f32 = 1.1;
+const SLICE_MIN: f32 = 4.5;
 /// How far around a cell the neighbours (footprints, roads) are read.
 const MARGIN: f32 = 90.0;
 
@@ -91,7 +96,7 @@ pub fn zone_at(p: Vec2) -> Zone {
         Zone::Russafa
     } else if p.x > 150.0 && p.x < 1650.0 && p.y > -500.0 && p.y < 1100.0 {
         Zone::Eixample
-    } else if p.x > 4150.0 && p.x < 5400.0 && p.y > -1700.0 && p.y < 800.0 {
+    } else if p.x > 3550.0 && p.x < 4750.0 && p.y > -1400.0 && p.y < 850.0 {
         Zone::Cabanyal
     } else if p.length() < 6800.0 {
         Zone::Periphery
@@ -476,6 +481,9 @@ pub struct LotPlan {
     /// Metres of street front (the build order under the budget).
     pub frontage: f32,
     pub seed: u64,
+    /// 0 for a whole footprint; the slices of a footprint on a slope are
+    /// numbered from 1.
+    pub piece: u32,
 }
 
 fn mix64(mut x: u64) -> u64 {
@@ -532,8 +540,9 @@ fn clean_ring(ring: &[Vec2]) -> Option<Vec<Vec2>> {
 }
 
 impl Ctx<'_> {
-    fn face(&self, p: Vec2, n: Vec2, own: u32) -> Face {
-        if self.inside(p + n * 0.45, own) {
+    fn face(&self, p: Vec2, n: Vec2, own: u32, whole: Option<&[Vec2]>) -> Face {
+        // Against another footprint, or against the next slice of its own.
+        if self.inside(p + n * 0.45, own) || whole.is_some_and(|w| point_in_ring(w, p + n * 0.45)) {
             return Face::Party;
         }
         let o = p + n * 0.05;
@@ -575,14 +584,90 @@ impl Ctx<'_> {
 
     /// The lot of a building, or `None` when it keeps its shell (seen from
     /// nowhere, too small, or not a valid lot).
-    fn plan(&self, index: &DetailIndex, bi: u32, b: &Building) -> Option<LotPlan> {
+    fn plan(&self, index: &DetailIndex, bi: u32, b: &Building) -> Vec<LotPlan> {
         let poly = &self.island.data.polys[b.poly as usize];
-        let ring = clean_ring(&poly.rings[0])?;
+        let Some(ring) = clean_ring(&poly.rings[0]) else { return Vec::new() };
         let area = ring_area(&ring);
         // Sheds, kiosks and garden huts stay shells.
         if area < 28.0 || (b.storeys <= 1 && area < 70.0) || b.height < 2.6 {
+            return Vec::new();
+        }
+        // On a slope the footprint is cut into level slices across the
+        // fall line, each standing on its own ground like a terrace of
+        // houses: one level lot would float at its low end.
+        if let Some(pieces) = self.slices(&ring) {
+            let plans: Vec<LotPlan> = pieces.iter().enumerate().filter_map(|(k, piece)| self.plan_ring(index, bi, b, piece.clone(), Some(&ring), k as u32 + 1)).collect();
+            if plans.len() == pieces.len() {
+                return plans;
+            }
+        }
+        self.plan_ring(index, bi, b, ring, None, 0).into_iter().collect()
+    }
+
+    /// The level slices of a footprint whose ground falls more than a
+    /// plinth can take (`None`: it stands as one lot).
+    fn slices(&self, ring: &[Vec2]) -> Option<Vec<Vec<Vec2>>> {
+        let hs: Vec<f32> = ring.iter().map(|p| self.ground(*p)).collect();
+        let (lo, hi) = hs.iter().fold((f32::MAX, f32::MIN), |(a, b), h| (a.min(*h), b.max(*h)));
+        if hi - lo < SLOPE_DROP {
             return None;
         }
+        // The fall line: the least-squares plane through the corners.
+        let n = ring.len() as f32;
+        let c = ring.iter().copied().sum::<Vec2>() / n;
+        let hm = hs.iter().sum::<f32>() / n;
+        let (mut sxx, mut sxy, mut syy, mut sxh, mut syh) = (0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        for (p, h) in ring.iter().zip(&hs) {
+            let d = *p - c;
+            sxx += d.x * d.x;
+            sxy += d.x * d.y;
+            syy += d.y * d.y;
+            sxh += d.x * (h - hm);
+            syh += d.y * (h - hm);
+        }
+        let det = sxx * syy - sxy * sxy;
+        if det.abs() < 1e-3 {
+            return None;
+        }
+        let grad = Vec2::new((sxh * syy - syh * sxy) / det, (syh * sxx - sxh * sxy) / det);
+        let slope = grad.length();
+        if slope < 0.01 {
+            return None;
+        }
+        let dir = grad / slope;
+        let (t0, t1) = ring.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p.dot(dir)), b.max(p.dot(dir))));
+        let count = (((hi - lo) / SLICE_DROP).ceil() as usize).min(((t1 - t0) / SLICE_MIN).floor() as usize).min(24);
+        if count < 2 {
+            return None;
+        }
+        let across = Vec2::new(-dir.y, dir.x);
+        let reach = ring.iter().map(|p| (*p - c).length()).fold(0.0, f32::max) + 5.0;
+        let cuts: Vec<Vec<Vec2>> = (1..count)
+            .map(|k| {
+                let o = c + dir * (t0 + (t1 - t0) * k as f32 / count as f32 - c.dot(dir));
+                vec![o - across * reach, o + across * reach]
+            })
+            .collect();
+        let shapes = forja_city::plan::Region::ring(ring).slice(&cuts);
+        let mut pieces = Vec::new();
+        for sh in shapes {
+            if !sh.holes.is_empty() {
+                return None;
+            }
+            // Slivers left at a corner are dropped, real pieces must clean.
+            if ring_area(&sh.outer).abs() < 6.0 {
+                continue;
+            }
+            pieces.push(clean_ring(&sh.outer)?);
+        }
+        (pieces.len() >= 2).then_some(pieces)
+    }
+
+    /// The lot on `ring`: a footprint, or one slice of the footprint
+    /// `whole` (`piece` numbers the slices from 1).
+    fn plan_ring(&self, index: &DetailIndex, bi: u32, b: &Building, ring: Vec<Vec2>, whole: Option<&[Vec2]>, piece: u32) -> Option<LotPlan> {
+        let poly = &self.island.data.polys[b.poly as usize];
+        let area = ring_area(&ring);
         let n = ring.len();
         let mut edges = vec![EdgeKind::Party; n];
         let mut fronts = vec![Front::UNCONSTRAINED; n];
@@ -602,7 +687,7 @@ impl Ctx<'_> {
             let d = (c - a) / len;
             let out = Vec2::new(d.y, -d.x);
             let ts: &[f32] = if len < 4.0 { &[0.5] } else if len < 12.0 { &[0.25, 0.5, 0.75] } else { &[0.1, 0.3, 0.5, 0.7, 0.9] };
-            let faces: Vec<Face> = ts.iter().map(|t| self.face(a + d * (len * t), out, b.poly)).collect();
+            let faces: Vec<Face> = ts.iter().map(|t| self.face(a + d * (len * t), out, b.poly, whole)).collect();
             let party = faces.iter().filter(|f| matches!(f, Face::Party)).count();
             if party * 2 > faces.len() {
                 continue;
@@ -647,7 +732,14 @@ impl Ctx<'_> {
             }
         }
         if !any_seen {
-            return None;
+            // A whole footprint seen from nowhere keeps its shell; a slice
+            // in the middle of its footprint is built blind (walls and a
+            // roof), level with the ground around it.
+            whole?;
+            let base = ring.iter().map(|p| self.ground(*p)).fold(f32::MIN, f32::max);
+            let lot = Lot::new(ring, edges, base);
+            lot.check().ok()?;
+            return Some(LotPlan { building: bi, lot, zone: zone_at(b.centre), frontage: 0.0, seed: mix64(b.poly as u64 ^ 0x15_1a_de7a ^ (piece as u64) << 40), piece });
         }
         // Short jogs take the kind of the longer wall next to them.
         for i in 0..n {
@@ -698,15 +790,31 @@ impl Ctx<'_> {
                 break;
             }
         }
-        if !lot.edges.iter().any(|e| e.is_street()) || lot.check().is_err() {
+        if (whole.is_none() && !lot.edges.iter().any(|e| e.is_street())) || lot.check().is_err() {
             return None;
         }
         let frontage = (0..n).filter(|&i| lot.edges[i].is_street()).map(|i| lens[i]).sum();
         let centre = b.centre;
         let industrial = poly.flags & 1 != 0 || (b.storeys <= 3 && area > 1400.0) || (b.storeys <= 3 && area > 350.0 && index.industrial.iter().any(|&pi| self.island.data.polys[pi as usize].contains(centre)));
         let zone = if industrial { Zone::Industrial } else { zone_at(centre) };
-        Some(LotPlan { building: bi, lot, zone, frontage, seed: mix64(b.poly as u64 ^ 0x15_1a_de7a) })
+        Some(LotPlan { building: bi, lot, zone, frontage, seed: mix64(b.poly as u64 ^ 0x15_1a_de7a ^ (piece as u64) << 40), piece })
     }
+}
+
+/// The lots of a cell (without building them) and the buildings that keep
+/// their shell (indices into [`Island::buildings`]).
+pub fn plan_cell(island: &Island, index: &DetailIndex, key: (i32, i32)) -> (Vec<LotPlan>, Vec<u32>) {
+    let (lo, hi) = cell_bounds(key);
+    let ctx = Ctx::new(island, index, lo, hi);
+    let (mut plans, mut rest) = (Vec::new(), Vec::new());
+    for &bi in index.cells.get(&key).map_or(&[][..], |v| v.as_slice()) {
+        let p = ctx.plan(index, bi, &island.buildings[bi as usize]);
+        if p.is_empty() {
+            rest.push(bi);
+        }
+        plans.extend(p);
+    }
+    (plans, rest)
 }
 
 /// Storeys (ground floor included) of `style` that best reach `height`.
@@ -834,6 +942,8 @@ impl DetailKit {
             Mat::StreetLabel,
             Mat::RoomLit(0, false),
             Mat::RoomLit(0, true),
+            Mat::Grass,
+            Mat::Plate(0),
         ];
         let mut parts: Parts<Mat> = Parts::new();
         for (i, m) in mats.into_iter().enumerate() {
@@ -841,6 +951,12 @@ impl DetailKit {
             parts.get(m).tri(o, o + Vec3::X * 0.01, o + Vec3::Z * 0.01, [Vec2::ZERO, Vec2::X, Vec2::Y]);
         }
         forja_city::kit::assemble(&self.kit, "isla_kit_warm", parts, None)
+    }
+
+    /// Drops the pixels of the textures `warm` holds; see
+    /// [`Kit::hollow_textures`] for what the renderer must be told.
+    pub fn hollow(&mut self, warm: &SceneData) -> Vec<(forja_assets::TextureData, forja_assets::TextureData)> {
+        self.kit.hollow_textures(warm)
     }
 
     pub fn builder(&self, island: Arc<Island>, index: Arc<DetailIndex>, species: Option<&Path>) -> DetailBuilder<'_> {
@@ -909,28 +1025,39 @@ impl<'k> DetailBuilder<'k> {
         let mut rest: Vec<Building> = Vec::new();
         for &bi in &ids {
             let b = &island.buildings[bi as usize];
-            match ctx.plan(&index, bi, b) {
-                Some(p) => plans.push(p),
-                None => rest.push(b.clone()),
+            let p = ctx.plan(&index, bi, b);
+            if p.is_empty() {
+                rest.push(b.clone());
             }
+            plans.extend(p);
         }
         stats.shells = rest.len();
         // The longest street fronts first: they are what is seen.
-        plans.sort_by(|a, b| b.frontage.total_cmp(&a.frontage).then(a.building.cmp(&b.building)));
+        let mut front_of: HashMap<u32, f32> = HashMap::new();
+        for p in &plans {
+            *front_of.entry(p.building).or_default() += p.frontage;
+        }
+        plans.sort_by(|a, b| front_of[&b.building].total_cmp(&front_of[&a.building]).then(a.building.cmp(&b.building)).then(a.piece.cmp(&b.piece)));
         let mut parts: Parts<Mat> = Parts::new();
         let first_wall = self.out.party_walls.len();
         let first_mass = self.out.shadow_masses.len();
         let mut budget = CELL_TRIANGLES as i64;
+        let mut over: HashSet<u32> = HashSet::new();
         for plan in &plans {
             let b = &island.buildings[plan.building as usize];
-            if budget <= 0 {
+            // Slices of a footprint are built together or not at all.
+            if budget <= 0 && plan.piece <= 1 {
+                over.insert(plan.building);
                 rest.push(b.clone());
                 stats.over_budget += 1;
+            }
+            if over.contains(&plan.building) {
                 continue;
             }
             let style = self.styles.pick(plan.zone, b.storeys, (plan.seed >> 40) as u32 % 100).clone();
             let mut lot = plan.lot.clone();
-            lot.levels = Some(levels_for(&style, b.floor + b.height - lot.base));
+            // A slice keeps the building's storeys on its own ground.
+            lot.levels = Some(levels_for(&style, if plan.piece > 0 { b.height } else { b.floor + b.height - lot.base }));
             // Built apart, so a lot the generator cannot build leaves
             // nothing behind.
             let marks = (self.out.placements.len(), self.out.party_walls.len(), self.out.shadow_masses.len(), self.out.city_lights.len(), self.out.frontages.len(), self.out.lights.len(), self.out.col_verts.len(), self.out.col_tris.len());
@@ -947,8 +1074,12 @@ impl<'k> DetailBuilder<'k> {
                 self.out.lights.truncate(marks.5);
                 self.out.col_verts.truncate(marks.6);
                 self.out.col_tris.truncate(marks.7);
-                rest.push(b.clone());
-                stats.shells += 1;
+                // A slice that fails leaves a gap (its footprint's other
+                // slices stand); a whole footprint keeps its shell.
+                if plan.piece == 0 {
+                    rest.push(b.clone());
+                    stats.shells += 1;
+                }
                 continue;
             }
             plinth(&mut own, &ctx, &lot);
@@ -962,7 +1093,7 @@ impl<'k> DetailBuilder<'k> {
             }
             budget -= tris as i64;
             parts.append(&own, &Mat4::IDENTITY);
-            stats.detailed += 1;
+            stats.detailed += (plan.piece <= 1) as usize;
         }
         building::medianeras(&mut self.lib, &mut self.out, &mut parts, first_wall);
         let mut cars = Vec::new();
@@ -1469,7 +1600,7 @@ mod tests {
         assert_eq!(zone_at(Vec2::new(-100.0, -300.0)), Zone::OldTown);
         assert_eq!(zone_at(Vec2::new(450.0, 950.0)), Zone::Russafa);
         assert_eq!(zone_at(Vec2::new(900.0, 100.0)), Zone::Eixample);
-        assert_eq!(zone_at(Vec2::new(4700.0, -300.0)), Zone::Cabanyal);
+        assert_eq!(zone_at(Vec2::new(4060.0, -120.0)), Zone::Cabanyal);
         assert_eq!(zone_at(Vec2::new(-3000.0, 2500.0)), Zone::Periphery);
         assert_eq!(zone_at(Vec2::new(-9000.0, 9000.0)), Zone::Village);
     }

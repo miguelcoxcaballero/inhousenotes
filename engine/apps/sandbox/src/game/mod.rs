@@ -119,8 +119,15 @@ pub struct RenderScene {
     /// Commands for the renderer's streamed static layers, applied in
     /// order after the frame's uploads (see [`island_detail::sync`]).
     pub layer_cmds: Vec<island_detail::LayerCmd>,
+    /// Radius (m) of the island's streamed detail for the renderer's
+    /// graphics settings (set by the frame extraction).
+    pub detail_radius: Option<f32>,
     /// Models whose CPU copy is dropped once they are on the GPU.
     pub strip_after_upload: Vec<usize>,
+    /// Textures that stand for the textures of a model once it is
+    /// uploaded: `(model, (original, placeholder) pairs)`, see
+    /// `forja_render::Renderer::alias_texture`.
+    pub texture_aliases: Option<(usize, Vec<(forja_assets::TextureData, forja_assets::TextureData)>)>,
 }
 
 impl RenderScene {
