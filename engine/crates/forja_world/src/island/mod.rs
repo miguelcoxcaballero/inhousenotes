@@ -14,8 +14,36 @@
 //! * [`MapData`]: the island as a map (outline, water, roads by class,
 //!   building blocks, places) for minimaps and navigation.
 //!
+//! ## Replacing shells (landmarks, detailed facades)
+//!
+//! * Per building: list a [`Site`] in [`IslandWorld::sites`] (rings or OSM
+//!   ids). Its buildings get no tile shell but one shell per site, the
+//!   stand-in of a far-distance group ([`Island::sites`], [`SiteShell`]);
+//!   every [`shells::Building`] carries its `site`. They still collide.
+//! * Per tile: every [`BuildingTile`] shell is the stand-in of its own
+//!   group ([`BuildingTile::group`], switching at [`FACADE_DETAIL`] HLOD
+//!   distances). The game adds the tile's detail as a static layer gated
+//!   by that group (`sandbox::game::RenderScene::static_layers`,
+//!   `StaticLayer::gate` / `replaces`) and the renderer swaps shell and
+//!   detail; until a layer arrives the group is kept "not ready" and shows
+//!   the shell. `sandbox::game::island` does both (facades from
+//!   `forja_city::building`, landmarks from `forja_city::landmark`).
+//!
+//! ## What is real and what is designed
+//!
+//! * Real: the plan of Valencia (OSM footprints and streets at real scale
+//!   and position), the terrain under it (IGN MDT25, smoothed), the
+//!   building heights with an OSM height or levels, and the heights of
+//!   2 775 buildings sampled from the IGN PNOA-LiDAR building layer.
+//! * Estimated: Valencia's other buildings without levels (16 000) take
+//!   the LiDAR height of one of their four nearest sampled neighbours;
+//!   elsewhere levels x 3.2 m, 6.4 m without levels.
+//! * Designed: the island itself (coast, the moved villages, the interior
+//!   and its relief from the island's height map on a 5 m plain), the
+//!   lagoon's size, bridges as straight spans, flyover heights (5.6 m).
+//!
 //! The world frame is the frame of the Valencia landmarks: x east, z south,
-//! origin at the Plaça de l'Ajuntament, the plain at height 0.
+//! origin at the Plaça de l'Ajuntament, heights above sea level.
 
 pub mod data;
 pub mod flora;
@@ -639,7 +667,7 @@ fn spawns(w: &mut WorldDescription, d: &IslandData, g: &Ground) -> Vec2 {
             continue;
         }
         taken.push(m);
-        w.spawns.push(SpawnPoint { kind: SpawnKind::Vehicle, iso: Iso::new(at(m, 0.8), Quat::from_rotation_y(dir.x.atan2(dir.y))) });
+        w.spawns.push(SpawnPoint { kind: SpawnKind::Vehicle, iso: Iso::new(at(m, 0.55), Quat::from_rotation_y(dir.x.atan2(dir.y))) });
         if taken.len() >= 14 {
             break;
         }
@@ -648,7 +676,7 @@ fn spawns(w: &mut WorldDescription, d: &IslandData, g: &Ground) -> Vec2 {
         w.spawns.push(SpawnPoint { kind: SpawnKind::Weapon, iso: Iso::from_pos(at(player + Vec2::new(-2.0 + i as f32 * 1.3, 2.5), 0.6)) });
     }
     for i in 0..8 {
-        w.spawns.push(SpawnPoint { kind: SpawnKind::Prop, iso: Iso::from_pos(at(player + Vec2::new(3.0 + (i % 4) as f32 * 0.9, -3.0), 0.45 + (i / 4) as f32 * 0.85)) });
+        w.spawns.push(SpawnPoint { kind: SpawnKind::Prop, iso: Iso::from_pos(at(player + Vec2::new(3.0 + (i % 4) as f32 * 0.9, -3.0), 0.42 + (i / 4) as f32 * 0.82)) });
     }
     player
 }

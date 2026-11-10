@@ -650,3 +650,47 @@ the default map 122 s, ~2.4 s per WARP frame.
   pipeline cache would shorten it.
 - Upscaling is spatial (FSR 1 EASU after TAA); a TAAU resolve at output
   resolution would be sharper at 50% scale (research list item 16).
+
+## Isla Levante (the whole island)
+
+The default map is the whole 500 km² island (`forja_world::island`,
+`sandbox::game::island`), not a window of it. What keeps it cheap:
+
+- **One height field** for the island (16 m cells, 3.0 M samples): the
+  collision ground and the surface the roads lie on. Cars drive on it
+  directly; road ribbons are only drawn (3-5 cm over it), so no road has a
+  seam (`forja_world/tests/road_smoothness.rs`: 142 km probed every 2.5 cm,
+  no step over 2 mm; cars at 120 km/h lose at most 0.04 m/s in a frame).
+- **Terrain** in 512 m tiles: a near mesh per land cover (textured, within
+  2 HLOD distances) and a far stand-in with one draw (32 m cells, three
+  coarser index levels, a cover map from 8 atlases of 1024² for the island).
+- **Roads**: main roads always; streets and paths are the detail of a
+  group that ends at 5 HLOD distances.
+- **Buildings**: 43 800 shells in 256 m tiles, one draw per tile (all
+  facade styles in one 1024x1536 atlas). Within 0.6 HLOD distances a
+  tile's shell gives way to the procedural facades, built on a background
+  thread (0.3-1.5 s per tile), uploaded 6 MB per frame as a *static layer*
+  gated by the tile's group, and dropped again when more than six tiles are
+  held. Colliders: a triangle mesh per tile, 3x3 tiles around the camera.
+- **Static culling** walks 512 m blocks of cells first, so its cost follows
+  what is in view; `RenderSettings::detail_cull_px` (1.6 on the island)
+  leaves distant trees (340 k instances) to the ground colour.
+
+Measured headless on lavapipe (software GPU: frame times are proportions
+only), 960x540, low preset:
+
+| | old 460 m window | whole island |
+|---|---|---|
+| world build | 21.8 s (kit 12-18 s) | 2.2-3.0 s (kit loads in the background) |
+| first upload | 3 637 models, 5.5 s | 7 305 models, 2.6 s |
+| resident memory after load | 4.7-5.2 GB | 3.4-4.0 GB (5.6-5.8 GB with four detailed tiles and the kit) |
+| GPU memory estimate | 635 MB | 729 MB (1.0-1.1 GB with detail) |
+| street view, shells only | - | 2 150 draws, 1.45 M triangles, 0.6 s/frame |
+| street view, detailed | 2 409 draws, 1.39 M tris, 0.5 s/frame | 6 240 draws, 5.55 M tris, 1.4-2.4 s/frame |
+| aerial view of the city | - | 1 240 draws, 1.28 M triangles, 0.9 s/frame |
+
+The detailed street view is the cost to watch on real GPUs: up to four
+256 m tiles of facades are in at once (the old window was one). The
+knobs are `FACADE_DETAIL` (group distance), `DETAIL_BUILD` / `DETAIL_KEEP`
+in `sandbox::game::island` and `hlod_distance` in the graphics settings;
+`FORJA_NO_DETAIL=1` and `FORJA_NO_LANDMARKS=1` switch the streams off.
