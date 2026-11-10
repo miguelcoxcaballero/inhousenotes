@@ -80,7 +80,7 @@ fn load(map: MapKind, paths: &Paths, hour: Option<f32>) -> Result<WorldDescripti
         SpanishCity { hour, ..SpanishCity::from_osm(Some(dl), Some(&styles), &path)? }.build()
     };
     match map {
-        MapKind::Isla => IslandWorld { hour, ..IslandWorld::new(&paths.data) }.build(),
+        MapKind::Isla => IslandWorld { hour, sites: super::island::landmark_sites(paths).into_iter().map(|(_, s)| s).collect(), ..IslandWorld::new(&paths.data) }.build(),
         MapKind::IslaCentre => SpanishCity { hour, ..SpanishCity::from_osm(Some(dl), Some(&styles), &paths.data.join("maps/isla_valencia.json"))? }.build(),
         MapKind::Spain => SpanishCity { hour, ..SpanishCity::new(dl, &styles) }.build(),
         MapKind::SpainClassic => preset("classic"),
@@ -141,6 +141,10 @@ impl Plugin for WorldPlugin {
                     rs.static_lod[static_base + p] = (g, hlod);
                 }
                 rs.static_lod_scale = desc.lod_scales.clone();
+            }
+            if let Some(island) = &desc.island {
+                // Site shells show until their landmark is built.
+                rs.static_not_ready = island.sites.iter().flatten().map(|s| s.group).collect();
             }
             (base, static_base)
         };

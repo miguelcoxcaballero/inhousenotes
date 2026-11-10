@@ -12,6 +12,7 @@ forja_physics.workspace = true
 forja_assets.workspace = true
 forja_anim.workspace = true
 forja_world.workspace = true
+forja_city.workspace = true
 forja_render.workspace = true
 forja_input.workspace = true
 forja_gameplay.workspace = true
