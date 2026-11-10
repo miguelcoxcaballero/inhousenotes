@@ -7,33 +7,26 @@
 //!
 //! * the ground under each landmark is levelled to its street level (the
 //!   models have a flat base), blending back into the terrain around it;
-//! * the shells of the replaced buildings are left out;
-//! * each model is drawn with its own distance LODs near the camera and as
-//!   a far stand-in of a few thousand triangles beyond
-//!   [`LANDMARK_DETAIL`] HLOD distances; the game takes the full meshes off
-//!   the GPU while they are far and reads them back from the cache
-//!   ([`WorldDescription::stream_groups`]);
-//! * its collision mesh is kept for the game to add around the player.
-//!
-//! Building 63 landmarks takes minutes, so the built models are kept in
-//! the asset cache (see `landmark_models.rs`).
+//! * each landmark is a [`Site`] of the island: its buildings get one
+//!   shell of their own, which the game replaces with the model
+//!   (`sandbox::game::island`) at [`Placed::iso`];
+//! * [`Models`] gives the models prepared for an open world (smaller
+//!   textures, distance LODs, collision mesh), from the asset cache after
+//!   the first time.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use forja_math::{Iso, Mat4, Quat, Vec2, Vec3};
-use forja_physics::TriMesh;
 
 use super::data;
+use super::Site;
 use super::ground::{CELL, Ground, SEA};
-use crate::{WorldDescription, WorldError};
+use crate::WorldError;
 
 #[path = "landmark_models.rs"]
 mod models;
-use models::{load_models, read_meshes};
+pub use models::{Model, Models};
 
-/// Landmarks keep their full models within this many HLOD distances.
-pub const LANDMARK_DETAIL: f32 = 2.4;
 /// The ground is level this far around a footprint, then eases back into
 /// the terrain over [`BLEND`].
 const LEVEL: f32 = CELL * 1.5;
@@ -206,82 +199,48 @@ impl Set {
         levels
     }
 
-    /// OSM ids and footprints whose shells give way to the models.
-    pub fn replaced(&self) -> (Vec<u64>, Vec<Vec<Vec2>>) {
-        (self.placements.iter().flat_map(|p| p.replaces.iter().copied()).collect(), self.placements.iter().flat_map(|p| p.rings.iter().cloned()).collect())
+    /// A [`Site`] per landmark: its footprints and the island buildings it
+    /// replaces.
+    pub fn sites(&self) -> Vec<Site> {
+        self.placements.iter().map(|p| Site { rings: p.rings.clone(), osm: p.replaces.clone() }).collect()
     }
 
-    /// Adds the models to `w` (full model and far stand-in per landmark,
-    /// as far-distance groups after `*group`) and returns what the game
-    /// needs of them. `levels` from [`Set::level_ground`].
-    pub fn place(&self, levels: &[f32], w: &mut WorldDescription, group: &mut u32) -> Vec<Placed> {
-        let models = load_models(&self.dir, &self.placements.iter().map(|p| p.slug.clone()).collect::<Vec<_>>());
-        let mut out = Vec::new();
-        let (mut tris, mut far_tris, mut col_tris) = (0, 0, 0);
-        for ((p, m), &level) in self.placements.iter().zip(models).zip(levels) {
-            let Some(m) = m else { continue };
-            let pos = Vec3::new(p.pos.x, level + LIFT, p.pos.y);
-            let rot = Quat::from_rotation_y(p.rotation.to_radians());
-            let iso = Iso::new(pos, rot);
-            let mat = Mat4::from_rotation_translation(rot, pos);
-            *group += 1;
-            tris += m.scene.triangle_count();
-            far_tris += m.far.triangle_count();
-            col_tris += m.col_tris.len();
-            let near = w.placements.len();
-            w.lod_tags.push((near, *group, false));
-            let scene = w.add_scene(Arc::new(m.scene), mat);
-            if !m.far.meshes.is_empty() {
-                w.lod_tags.push((w.placements.len(), *group, true));
-                w.add_scene(Arc::new(m.far), mat);
-            }
-            w.lod_scales.push((*group, LANDMARK_DETAIL));
-            // The full model can leave the GPU while it is far: its meshes
-            // are read back from its cache entry.
-            if let Some(key) = m.cache_key {
-                w.stream_groups.push(crate::StreamGroup { group: *group, scenes: vec![scene], scale: LANDMARK_DETAIL, source: Arc::new(move || Some(vec![read_meshes(&key)?])) });
-            }
-            let corners = (0..8).map(|i| mat.transform_point3(Vec3::new(if i & 1 == 0 { m.bounds.0.x } else { m.bounds.1.x }, if i & 2 == 0 { m.bounds.0.y } else { m.bounds.1.y }, if i & 4 == 0 { m.bounds.0.z } else { m.bounds.1.z })));
-            let (lo, hi) = corners.fold((Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)), |(lo, hi), q| (lo.min(q), hi.max(q)));
-            out.push(Placed { slug: p.slug.clone(), name: p.name.clone(), iso, bounds: (lo, hi), group: *group, placement: near, collider: (!m.col_tris.is_empty()).then(|| Arc::new((m.col_verts, m.col_tris))) });
-        }
-        w.stats.push(("landmarks".into(), out.len()));
-        w.stats.push(("landmark triangles".into(), tris));
-        w.stats.push(("landmark far triangles".into(), far_tris));
-        w.stats.push(("landmark collision triangles".into(), col_tris));
-        out
+    /// Where each model stands. `levels` from [`Set::level_ground`];
+    /// `first_site`: index of the first landmark's site among the island's.
+    pub fn placed(&self, levels: &[f32], first_site: usize) -> Vec<Placed> {
+        self.placements
+            .iter()
+            .zip(levels)
+            .enumerate()
+            .map(|(i, (p, level))| Placed { slug: p.slug.clone(), name: p.name.clone(), iso: Iso::new(Vec3::new(p.pos.x, level + LIFT, p.pos.y), Quat::from_rotation_y(p.rotation.to_radians())), site: first_site + i, bounds: p.bounds() })
+            .collect()
     }
 }
 
-/// A landmark standing in the world.
-#[derive(Clone)]
+/// A landmark standing on the island: the game brings its model (see
+/// [`Models`]) as the detail that replaces the shell of its site.
+#[derive(Clone, Debug)]
 pub struct Placed {
     pub slug: String,
     pub name: String,
     /// Local-to-world transform of the model (its base on the ground).
     pub iso: Iso,
-    /// World bounds.
-    pub bounds: (Vec3, Vec3),
-    /// Its far-distance group.
-    pub group: u32,
-    /// Index of the full model's placement in the world's placements.
-    pub placement: usize,
-    /// Collision triangles in the landmark's frame (place the mesh with
-    /// [`Placed::iso`]); the game builds the mesh when the player is near.
-    pub collider: Option<Arc<(Vec<Vec3>, Vec<[u32; 3]>)>>,
+    /// Its site in `Island::sites`.
+    pub site: usize,
+    /// World `(x, z)` bounds of its footprint.
+    pub bounds: (Vec2, Vec2),
 }
 
 impl Placed {
-    /// The collision mesh (builds its tree: milliseconds to a tenth of a
-    /// second for the largest; call it off the frame).
-    pub fn collision_mesh(&self) -> Option<TriMesh> {
-        self.collider.as_ref().map(|c| TriMesh::new(c.0.clone(), c.1.clone()))
+    /// Local-to-world matrix of the model.
+    pub fn transform(&self) -> Mat4 {
+        Mat4::from_rotation_translation(self.iso.rot, self.iso.pos)
     }
 
-    /// Horizontal distance from `p` to the landmark's bounds.
+    /// Horizontal distance from `p` to the footprint's bounds.
     pub fn distance(&self, p: Vec3) -> f32 {
-        let q = p.clamp(self.bounds.0, self.bounds.1);
-        Vec2::new(p.x - q.x, p.z - q.z).length()
+        let q = Vec2::new(p.x, p.z);
+        q.distance(q.clamp(self.bounds.0, self.bounds.1))
     }
 }
 
@@ -348,67 +307,5 @@ mod tests {
         let step = before.iter().zip(&g.h).map(|(a, b)| (a - b).abs()).fold(0.0, f32::max);
         assert!(step < 6.0, "the ground moved {step} m");
         println!("levelled {moved} vertices, largest change {step:.2} m, worst outline error {worst:.3} m");
-    }
-
-    /// `cargo test --release -p forja_world model_sizes -- --ignored --nocapture`
-    #[test]
-    #[ignore = "builds every landmark (minutes); prints their sizes"]
-    fn model_sizes() {
-        let s = set();
-        let mut seen = std::collections::HashSet::new();
-        let (mut tex_bytes, mut total) = (0usize, [0usize; 5]);
-        for p in &s.placements {
-            let t = std::time::Instant::now();
-            let Some(m) = models::build_model(&s.dir.join(&p.slug)) else { continue };
-            let prims: Vec<&forja_assets::MeshData> = m.scene.meshes.iter().flatten().collect();
-            let verts: usize = prims.iter().map(|q| q.positions.len()).sum();
-            let low: usize = prims.iter().map(|q| q.lods.last().map_or(q.indices.len(), |l| l.len()) / 3).sum();
-            for t in m.scene.textures.iter().chain(&m.far.textures) {
-                if seen.insert(t.rgba8.as_ptr() as usize) {
-                    tex_bytes += t.rgba8.len();
-                }
-            }
-            let row = [m.scene.triangle_count(), verts, low, m.far.triangle_count(), m.col_tris.len()];
-            for k in 0..5 {
-                total[k] += row[k];
-            }
-            println!("{:34} {:7} tris {:7} verts, lowest LOD {:7}, far {:5} ({} mats), collider {:6} tris {:6} verts, {} materials, {:.1}s", p.slug, row[0], row[1], row[2], row[3], m.far.materials.len(), row[4], m.col_verts.len(), m.scene.materials.len(), t.elapsed().as_secs_f32());
-        }
-        println!("total: {} tris, {} verts, lowest LOD {}, far {}, collider {}; {} unique textures, {:.0} MB", total[0], total[1], total[2], total[3], total[4], seen.len(), tex_bytes as f64 / 1048576.0);
-    }
-
-    #[test]
-    #[ignore = "builds every landmark (minutes); prints their textures"]
-    fn texture_sizes() {
-        let s = set();
-        let mut by_ptr = std::collections::HashSet::new();
-        let mut buffers = 0;
-        let mut by_hash: std::collections::HashMap<u64, (String, u32, u32, usize)> = std::collections::HashMap::new();
-        for p in &s.placements {
-            // A library per landmark: the shared one keeps every texture.
-            let lib = forja_city::landmark::Library::new(forja_city::landmark::shared_library(&s.dir).kit);
-            let Ok(lm) = forja_city::landmark::load_with(&s.dir.join(&p.slug), &lib, Default::default()) else { continue };
-            by_ptr.clear();
-            for (i, t) in lm.scene.textures.iter().enumerate() {
-                buffers += 1;
-                if !by_ptr.insert(t.rgba8.as_ptr() as usize) {
-                    continue;
-                }
-                let role = lm.scene.materials.iter().find_map(|m| if m.base_color_tex == Some(i) { Some("color") } else if m.normal_tex == Some(i) { Some("normal") } else if m.metallic_roughness_tex == Some(i) { Some("orm") } else if m.emissive_tex == Some(i) { Some("emissive") } else { None }).unwrap_or("?");
-                let e = by_hash.entry(forja_assets::cache::fast_hash(&t.rgba8)).or_insert((format!("{} {role}", t.name), t.width, t.height, 0));
-                e.3 += 1;
-            }
-        }
-        let mut kinds: std::collections::BTreeMap<String, (usize, usize, usize)> = Default::default();
-        for (name, w, h, n) in by_hash.values() {
-            let e = kinds.entry(format!("{name} {w}x{h}")).or_default();
-            e.0 += 1;
-            e.1 += n;
-            e.2 += (*w as usize) * (*h as usize) * 4;
-        }
-        for (k, (unique, copies, bytes)) in &kinds {
-            println!("{k:60} {unique:4} unique {copies:4} buffers {:7.1} MB", *bytes as f64 / 1048576.0);
-        }
-        println!("{} buffers, {} unique by content, {:.0} MB unique", buffers, by_hash.len(), kinds.values().map(|k| k.2).sum::<usize>() as f64 / 1048576.0);
     }
 }

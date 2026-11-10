@@ -1482,6 +1482,9 @@ pub struct Renderer {
     /// CPU scopes of the last [`Renderer::render`].
     pub cpu: profiler::CpuScopes,
     statics: StaticScene,
+    /// Static layers added while the world runs (see
+    /// [`Renderer::add_static_layer`]); `None`: removed.
+    static_layers: Vec<Option<(StaticScene, u32)>>,
     cascade_cache: [CascadeCache; 4],
     /// Sun direction the shadow maps are fitted to: follows the sun in
     /// steps of 0.1° (stable shadows), so a moving sun does not make
@@ -2257,6 +2260,7 @@ impl Renderer {
             profiler: gpu_profiler,
             cpu: Default::default(),
             statics: StaticScene::default(),
+            static_layers: Vec::new(),
             cascade_cache: Default::default(),
             shadow_sun: Vec3::Y,
             texture_bytes: 0,
@@ -2306,6 +2310,7 @@ impl Renderer {
         self.vertex_pool = mesh_pool::MeshPool::new("vertex pool", wgpu::BufferUsages::VERTEX, std::mem::size_of::<Vertex>() as u32, 64 << 20);
         self.index_pool = mesh_pool::MeshPool::new("index pool", wgpu::BufferUsages::INDEX, 4, 32 << 20);
         self.statics = StaticScene::default();
+        self.static_layers.clear();
         self.scratch = Vec::new();
         self.last_batches = Default::default();
         self.mesh_bytes = 0;
@@ -3090,6 +3095,40 @@ impl Renderer {
     /// instances beyond [`RenderSettings::hlod_distance`].
     pub fn set_static_instances_lod(&mut self, instances: &[DrawInstance], lod: &[StaticLod]) {
         let t = std::time::Instant::now();
+        let items = self.static_items(instances, lod);
+        self.statics = StaticScene::build(items);
+        log::info!("static set: {} instances, {} parts in {} cells ({:.1} ms)", instances.len(), self.statics.items, self.statics.cell_count(), t.elapsed().as_secs_f32() * 1000.0);
+    }
+
+    /// Adds static instances next to the static set without rebuilding it
+    /// (content that arrives while the world runs: a landmark built in the
+    /// background, a streamed tile). The layer has its own culling grid;
+    /// it stays until [`Renderer::remove_static_layer`] or
+    /// [`Renderer::clear_scene`], also when the static set is replaced.
+    /// With `gate > 0` the layer is the detail of that far-distance group
+    /// of the static set: drawn only while the group is near (its stand-in
+    /// hidden). Returns the layer's id.
+    pub fn add_static_layer(&mut self, instances: &[DrawInstance], gate: u32) -> usize {
+        let layer = (StaticScene::build(self.static_items(instances, &[])), gate);
+        match self.static_layers.iter().position(Option::is_none) {
+            Some(i) => {
+                self.static_layers[i] = Some(layer);
+                i
+            }
+            None => {
+                self.static_layers.push(Some(layer));
+                self.static_layers.len() - 1
+            }
+        }
+    }
+
+    pub fn remove_static_layer(&mut self, id: usize) {
+        if let Some(l) = self.static_layers.get_mut(id) {
+            *l = None;
+        }
+    }
+
+    fn static_items(&self, instances: &[DrawInstance], lod: &[StaticLod]) -> Vec<StaticItem> {
         let mut items = Vec::new();
         for (ii, inst) in instances.iter().enumerate() {
             let Some(model) = self.models.get(inst.model.0 as usize) else { continue };
@@ -3117,8 +3156,7 @@ impl Renderer {
                 });
             }
         }
-        self.statics = StaticScene::build(items);
-        log::info!("static set: {} instances, {} parts in {} cells ({:.1} ms)", instances.len(), self.statics.items, self.statics.cell_count(), t.elapsed().as_secs_f32() * 1000.0);
+        items
     }
 
     /// Applies a graphics configuration: cost knobs immediately, shadow map
@@ -3373,7 +3411,7 @@ impl Renderer {
         let near = cam.near.max(0.1);
         // `shadow_distance <= 0` turns the sun (or moon) shadows off.
         let sun_shadows = env.shadow_distance > 0.0;
-        let mut nearest = if sun_shadows { self.statics.nearest_visible(&frustum.planes, cam.position, near * 1.2) } else { f32::INFINITY };
+        let mut nearest = if sun_shadows { self.static_layers.iter().flatten().filter(|l| l.1 == 0 || !self.statics.is_far(l.1)).fold(self.statics.nearest_visible(&frustum.planes, cam.position, near * 1.2), |n, l| n.min(l.0.nearest_visible(&frustum.planes, cam.position, near * 1.2))) } else { f32::INFINITY };
         if sun_shadows && nearest > near * 1.2 {
             for inst in &frame.instances {
                 let Some(model) = self.models.get(inst.model.0 as usize) else { continue };
@@ -3645,6 +3683,7 @@ impl Renderer {
             use rayon::prelude::*;
             let meshes = &self.meshes;
             let statics = &self.statics;
+            let layers = &self.static_layers;
             let main_view = static_scene::View { planes: &frustum.planes, eye: cam.position, min_radius_per_m: s.detail_cull_px / focal, min_radius: 0.0, lod_scale, texel_lod_scale: 0.0, shadow: false, skip: static_scene::role_bit(ShadowRole::Proxy), stable_lod: false };
             // (view, LOD bias) per list: the camera, then each shadow view.
             let mut views: Vec<Option<(static_scene::View, u32)>> = vec![Some((main_view, 0))];
@@ -3677,6 +3716,9 @@ impl Renderer {
                 if let Some((v, bias)) = view {
                     let bias = *bias;
                     statics.gather_into(&mut list.scratch, v, &|m, b| Self::lod_for(meshes, m, b, bias), &mut list.out, &mut list.batches);
+                    for (layer, _) in layers.iter().flatten().filter(|l| l.1 == 0 || !statics.is_far(l.1)) {
+                        layer.gather_into(&mut list.scratch, v, &|m, b| Self::lod_for(meshes, m, b, bias), &mut list.out, &mut list.batches);
+                    }
                     list.ms = t.elapsed().as_secs_f32() * 1000.0;
                 }
             });

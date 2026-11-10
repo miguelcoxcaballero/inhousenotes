@@ -239,6 +239,9 @@ fn fetch_missing_assets() {
 }
 
 /// Uploads new models and converts the scene into a render frame.
+/// Mesh bytes uploaded per frame while playing.
+const PLAY_UPLOAD_BYTES: usize = 6 << 20;
+
 struct Extract {
     handles: Vec<ModelHandle>,
     env_loaded: bool,
@@ -252,13 +255,15 @@ struct Extract {
     freed: usize,
     /// Streaming of the city tiles' block meshes (see `sandbox::stream`).
     stream: Option<sandbox::stream::Streamer>,
+    /// Static layers installed by key: renderer layer, own models, gate.
+    layers: std::collections::HashMap<u64, (usize, Vec<usize>, Option<u32>)>,
     /// CPU ms of the last [`Extract::frame`] by stage (frame trace).
     pub timings: [(&'static str, f32); 4],
 }
 
 impl Extract {
     fn new() -> Self {
-        Self { handles: Vec::new(), env_loaded: false, statics_uploaded: None, legacy: std::env::var_os("FORJA_LEGACY_STATICS").is_some(), upload_ms: 0.0, freed: 0, stream: None, timings: [("uploads", 0.0), ("statics", 0.0), ("stream", 0.0), ("instances", 0.0)] }
+        Self { handles: Vec::new(), env_loaded: false, statics_uploaded: None, legacy: std::env::var_os("FORJA_LEGACY_STATICS").is_some(), upload_ms: 0.0, freed: 0, stream: None, layers: Default::default(), timings: [("uploads", 0.0), ("statics", 0.0), ("stream", 0.0), ("instances", 0.0)] }
     }
 
     /// Uploads the models added since the last frame. The world's scenes
@@ -285,9 +290,7 @@ impl Extract {
                 .hlod_tiles
                 .iter()
                 .enumerate()
-                .map(|(k, tile)| (k as u32 + 1, tile.detail.clone().map(|i| d.placements[i].0).filter(|&s| d.scenes[s].name == "block").map(|s| gw.scene_base + s).collect(), 1.0, None))
-                // Landmarks and other large models with a far stand-in.
-                .chain(d.stream_groups.iter().map(|g| (g.group, g.scenes.iter().map(|s| gw.scene_base + s).collect(), g.scale, Some(g.source.clone()))))
+                .map(|(k, tile)| (k as u32 + 1, tile.detail.clone().map(|i| d.placements[i].0).filter(|&s| d.scenes[s].name == "block").map(|s| gw.scene_base + s).collect()))
                 .collect();
             self.stream = sandbox::stream::Streamer::new(tiles);
         }
@@ -296,12 +299,26 @@ impl Extract {
         let mut freed = 0usize;
         let handles = &mut self.handles;
         let mut upload = |rs: &mut RenderScene, mut world: Option<(&mut game::world::GameWorld, usize)>| {
+            let mut sent = 0usize;
+            let mut pruned = false;
             while handles.len() < n {
                 if deadline.is_some_and(|d| Instant::now() >= d) {
                     break;
                 }
+                // During play: a few megabytes of meshes per frame (content
+                // streamed in must not stall a frame).
+                if deadline.is_none() && world.is_none() && sent > PLAY_UPLOAD_BYTES {
+                    break;
+                }
                 let i = handles.len();
+                sent += rs.models[i].meshes.iter().flatten().map(|m| m.positions.len() * 48 + m.indices.len() * 4).sum::<usize>();
                 handles.push(renderer.upload_scene(&rs.models[i]));
+                if world.is_none() && rs.draw_only.remove(&i) {
+                    // Streamed content is only drawn: no CPU copy is kept
+                    // (nor its pixels in the renderer's upload cache).
+                    rs.models[i] = Arc::new(game::world::strip(&rs.models[i]).0);
+                    pruned = true;
+                }
                 if let Some((gw, base)) = world.as_mut()
                     && let Some(d) = i.checked_sub(*base).and_then(|j| gw.desc.scenes.get_mut(j))
                 {
@@ -320,6 +337,9 @@ impl Extract {
                         perf::trim_heap();
                     }
                 }
+            }
+            if pruned {
+                renderer.prune_texture_cache();
             }
         };
         if app.world.resources.get::<game::world::GameWorld>().is_some_and(|w| !w.released) {
@@ -407,6 +427,9 @@ impl Extract {
             for &(g, k) in &rs.static_lod_scale {
                 renderer.set_static_group_scale(g, k);
             }
+            for &g in &rs.static_not_ready {
+                renderer.set_static_group_ready(g, false);
+            }
             // An island's distant trees are left to the ground colour.
             renderer.settings.detail_cull_px = if app.world.resources.get::<game::island::IslandColliders>().is_some() { 1.6 } else { 0.6 };
             self.statics_uploaded = Some(key);
@@ -426,6 +449,42 @@ impl Extract {
         // Items listed in `volatile_statics` (signal heads) change at run
         // time and are submitted per frame instead.
         self.upload_statics(renderer, app);
+        // Content that arrived while playing: one layer per frame, once
+        // its models are on the GPU.
+        {
+            let rs = app.world.res_mut::<RenderScene>();
+            if let Some(k) = rs.static_layers.iter().position(|l| l.items.iter().all(|i| i.model < self.handles.len())) {
+                let layer = rs.static_layers.remove(k);
+                let items: Vec<DrawInstance> = layer.items.iter().map(|item| DrawInstance { model: self.handles[item.model], transform: item.transform, nodes: item.nodes.clone(), joints: None, tint: item.tint, cast_shadows: true, motion_id: 0 }).collect();
+                let id = renderer.add_static_layer(&items, layer.gate.unwrap_or(0));
+                if let Some(g) = layer.replaces {
+                    // Always "near": the group's stand-in is never drawn again.
+                    rs.static_lod_scale.push((g, 1.0e6));
+                    renderer.set_static_group_scale(g, 1.0e6);
+                }
+                for g in layer.replaces.into_iter().chain(layer.gate) {
+                    rs.static_not_ready.retain(|x| *x != g);
+                    renderer.set_static_group_ready(g, true);
+                }
+                if let Some(key) = layer.key {
+                    self.layers.insert(key, (id, layer.own_models.clone(), layer.gate));
+                }
+            }
+            for key in std::mem::take(&mut rs.drop_layers) {
+                if let Some((id, models, gate)) = self.layers.remove(&key) {
+                    renderer.remove_static_layer(id);
+                    for m in models {
+                        if let Some(h) = self.handles.get(m) {
+                            renderer.release_model(*h);
+                        }
+                    }
+                    if let Some(g) = gate {
+                        rs.static_not_ready.push(g);
+                        renderer.set_static_group_ready(g, false);
+                    }
+                }
+            }
+        }
         let rs = app.world.res::<RenderScene>();
         let t2 = Instant::now();
         self.timings[1].1 = (t2 - t1).as_secs_f32() * 1000.0;

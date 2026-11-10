@@ -89,6 +89,23 @@ impl RenderItem {
     }
 }
 
+/// Static items added to a running world (see
+/// [`RenderScene::static_layers`]).
+#[derive(Clone, Default)]
+pub struct StaticLayer {
+    pub items: Vec<RenderItem>,
+    /// A far-distance group this layer replaces: from then on the group
+    /// never shows its stand-in.
+    pub replaces: Option<u32>,
+    /// A far-distance group this layer is the detail of: drawn while the
+    /// group is near, the group's stand-in beyond.
+    pub gate: Option<u32>,
+    /// Name to drop the layer by ([`RenderScene::drop_layers`]).
+    pub key: Option<u64>,
+    /// Models only this layer uses: their meshes are freed with it.
+    pub own_models: Vec<usize>,
+}
+
 /// Everything the renderer needs, filled by the plugins every frame.
 #[derive(Default)]
 pub struct RenderScene {
@@ -106,6 +123,19 @@ pub struct RenderScene {
     /// Groups that switch at a multiple of the HLOD distance: `(group,
     /// scale)`.
     pub static_lod_scale: Vec<(u32, f32)>,
+    /// Far-distance groups kept at their stand-in whatever the distance
+    /// (their detail is not there yet).
+    pub static_not_ready: Vec<u32>,
+    /// Static items that arrived while the world runs (a landmark built in
+    /// the background): the renderer takes each as a layer of its own once
+    /// its models are uploaded, without rebuilding the static set.
+    pub static_layers: Vec<StaticLayer>,
+    /// Models that are only drawn: their CPU copy (vertices, textures) is
+    /// dropped once they are on the GPU.
+    pub draw_only: std::collections::HashSet<usize>,
+    /// Keys of installed layers to remove (their group goes back to its
+    /// stand-in).
+    pub drop_layers: Vec<u64>,
     pub dynamic: Vec<RenderItem>,
     pub lights: Vec<PointLight>,
     /// Physical point and spot lights of this frame (the city at night).
@@ -291,6 +321,11 @@ pub fn build_at(map: MapKind, paths: Paths, hour: Option<f32>) -> App {
         hud.messages.retain(|m| m.1 > 0.0);
         hud.hit_marker = (hud.hit_marker - dt * 4.0).max(0.0);
     });
+    if hour.is_none() && map == MapKind::Isla {
+        // An open landscape to the horizon: the physical sky, not the
+        // street photo (its buildings would stand behind the island).
+        app.world.res_mut::<env::TimeOfDay>().photo_sky = false;
+    }
     if let Some(h) = hour {
         let t = app.world.res_mut::<env::TimeOfDay>();
         t.hours = h;
