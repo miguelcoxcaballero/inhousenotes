@@ -1129,6 +1129,7 @@ dependencies = [
  "quick-xml 0.38.4",
  "rayon",
  "serde_json",
+ "toml",
 ]
 
 [[package]]

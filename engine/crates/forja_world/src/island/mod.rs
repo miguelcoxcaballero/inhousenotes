@@ -20,6 +20,7 @@
 pub mod data;
 pub mod flora;
 pub mod ground;
+pub mod landmarks;
 pub mod roads;
 pub mod shells;
 pub mod tex;
@@ -57,11 +58,15 @@ pub struct IslandWorld {
     /// is listed, get no shell.
     pub replaced: Vec<Vec<Vec2>>,
     pub replaced_osm: Vec<u64>,
+    /// The hand-modelled landmarks standing on the island (see
+    /// [`landmarks`]): the folder of their models, placed by
+    /// `landmarks.toml` in [`IslandWorld::dir`]. `None`: plain shells.
+    pub landmarks: Option<PathBuf>,
 }
 
 impl IslandWorld {
     pub fn new(data: &Path) -> Self {
-        Self { dir: data.join("maps/isla"), species: Some(data.join("flora/species.toml")).filter(|p| p.exists()), hour: None, trees: 1.0, replaced: Vec::new(), replaced_osm: Vec::new() }
+        Self { dir: data.join("maps/isla"), species: Some(data.join("flora/species.toml")).filter(|p| p.exists()), hour: None, trees: 1.0, replaced: Vec::new(), replaced_osm: Vec::new(), landmarks: Some(data.join("landmarks/valencia")).filter(|p| p.is_dir() && std::env::var_os("FORJA_NO_LANDMARKS").is_none()) }
     }
 }
 
@@ -90,6 +95,8 @@ pub struct Island {
     /// Far-distance groups the world uses (`1..=groups`); the game numbers
     /// its own after them.
     pub groups: u32,
+    /// The landmarks standing on the island (models, bounds, colliders).
+    pub landmarks: Vec<landmarks::Placed>,
 }
 
 impl Island {
@@ -396,7 +403,17 @@ impl WorldSource for IslandWorld {
         let d = IslandData::load(&self.dir)?;
         lap("map read");
         forja_assets::progress::stage("Levantando el relieve", 0.10);
-        let g = Ground::build(&d);
+        let mut g = Ground::build(&d);
+        // The landmarks: level ground under each, no shells in their place.
+        let lm = match &self.landmarks {
+            Some(dir) if self.dir.join("landmarks.toml").exists() => landmarks::Set::load(&self.dir.join("landmarks.toml"), dir).unwrap_or_else(|e| {
+                log::warn!("landmarks: {e}");
+                landmarks::Set::default()
+            }),
+            _ => landmarks::Set::default(),
+        };
+        let lm_levels = lm.level_ground(&mut g);
+        let g = g;
         lap("ground");
         let night = self.hour.map_or(0.0, |h| forja_city::NightState::at(h).dark);
         let mats = Materials::new(night);
@@ -465,7 +482,8 @@ impl WorldSource for IslandWorld {
         lap("roads");
         // Buildings.
         forja_assets::progress::stage("Levantando los edificios", 0.42);
-        let osm: std::collections::HashSet<u64> = self.replaced_osm.iter().copied().collect();
+        let (lm_osm, lm_rings) = lm.replaced();
+        let osm: std::collections::HashSet<u64> = self.replaced_osm.iter().copied().chain(lm_osm).collect();
         let removed: Vec<bool> = d
             .polys
             .par_iter()
@@ -477,7 +495,7 @@ impl WorldSource for IslandWorld {
                     return true;
                 }
                 let c = data::ring_centroid(&p.rings[0]);
-                self.replaced.iter().any(|r| data::point_in_ring(r, c))
+                self.replaced.iter().chain(&lm_rings).any(|r| data::point_in_ring(r, c))
             })
             .collect();
         let mut buildings: Vec<Building> = d.polys.par_iter().enumerate().filter(|(i, p)| p.kind == PolyKind::Building && !removed[*i]).map(|(i, p)| Building::new(i, p, &g)).collect();
@@ -509,6 +527,9 @@ impl WorldSource for IslandWorld {
         w.stats.push(("building tiles".into(), tiles.len()));
         w.stats.push(("shell triangles".into(), shell_tris));
         lap("buildings");
+        forja_assets::progress::stage("Colocando los monumentos", 0.47);
+        let placed = lm.place(&lm_levels, &mut w, &mut group);
+        lap("landmarks");
         // Trees.
         if self.trees > 0.0 {
             forja_assets::progress::stage("Plantando los árboles", 0.52);
@@ -547,7 +568,7 @@ impl WorldSource for IslandWorld {
         w.attribution.push("Isla Levante: map data © OpenStreetMap contributors, ODbL 1.0; barrios: Ajuntament de València, CC BY 4.0".into());
         let map = Arc::new(MapData::build(&d, &removed, start));
         let tile_index = tiles.iter().enumerate().map(|(i, t)| (t.key, i)).collect();
-        w.island = Some(Arc::new(Island { data: d, ground: g, buildings, tiles, tile_index, map, night, groups: group }));
+        w.island = Some(Arc::new(Island { data: d, ground: g, buildings, tiles, tile_index, map, night, groups: group, landmarks: placed }));
         log::info!("island: built in {:.2}s ({})", t0.elapsed().as_secs_f32(), w.stats.iter().map(|(k, v)| format!("{v} {k}")).collect::<Vec<_>>().join(", "));
         Ok(w)
     }

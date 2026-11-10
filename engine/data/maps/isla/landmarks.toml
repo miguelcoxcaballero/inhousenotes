@@ -1,0 +1,812 @@
+# Where the hand-modelled Valencia landmarks stand on the Isla Levante.
+# Written by tools/isla/isla_landmarks.py (do not edit): each landmark's real
+# footprint (data/landmarks/valencia/<slug>/footprint.json) fitted to the
+# island footprint of the same OSM id.
+#   pos       world x (east) and z (south) of the landmark's origin (m)
+#   rotation  degrees counter-clockwise seen from above
+#   residual  largest footprint vertex error of the fit (m), over `matched` vertices
+#   replaces  island buildings that give way to the model
+#   island    the origin in island metres (x east, y north); centre: of the footprint
+#   pin       the landmark's map pin in isla-v5/data/landmarks.json and its label, when it has one
+origin = [3478.569, 2582.763]
+
+[[landmark]]
+slug = "agora"
+name = "L'Àgora"
+pos = [2431.021, 1687.150]
+rotation = -0.0010
+residual = 0.0062
+matched = 38
+island = [5909.590, 895.613]
+centre = [5909.645, 895.618]
+label = "L’Àgora"
+pin = [5909.773, 896.458]
+replaces = ["way/37523471"]
+
+[[landmark]]
+slug = "ajuntament_de_valencia"
+name = "Ajuntament de Valencia"
+pos = [-0.420, -13.670]
+rotation = -0.0002
+residual = 0.0062
+matched = 56
+island = [3478.149, 2596.433]
+centre = [3473.309, 2598.618]
+label = "Ayuntamiento de Valencia"
+pin = [3498.926, 2598.497]
+replaces = ["relation/11174923"]
+
+[[landmark]]
+slug = "almodi"
+name = "Almodí de València"
+pos = [280.783, -765.743]
+rotation = -0.0003
+residual = 0.0030
+matched = 4
+island = [3759.352, 3348.506]
+centre = [3759.737, 3349.221]
+label = "Almudín"
+pin = [3759.791, 3347.465]
+replaces = ["way/227916537"]
+
+[[landmark]]
+slug = "ateneu_mercantil"
+name = "Ateneu Mercantil de València"
+pos = [114.211, -127.031]
+rotation = 0.0005
+residual = 0.0058
+matched = 36
+island = [3592.780, 2709.794]
+centre = [3593.040, 2708.529]
+label = "Ateneo Mercantil"
+pin = [3592.373, 2710.035]
+replaces = ["way/416210407"]
+
+[[landmark]]
+slug = "banc_de_valencia"
+name = "Edifici del Banc de València"
+pos = [333.190, -96.330]
+rotation = -0.0001
+residual = 0.0068
+matched = 129
+island = [3811.759, 2679.093]
+centre = [3809.974, 2683.143]
+label = "Banco de Valencia"
+pin = [3813.536, 2683.835]
+replaces = ["way/492626775"]
+
+[[landmark]]
+slug = "basilica_dels_desemparats"
+name = "Real Basilica de la Mare de Deu dels Desemparats"
+pos = [199.431, -729.201]
+rotation = 0.0011
+residual = 0.0066
+matched = 30
+island = [3678.000, 3311.964]
+centre = [3679.610, 3311.174]
+label = "Basílica de la Virgen de los Desamparados"
+pin = [3678.776, 3310.155]
+replaces = ["way/135630265"]
+
+[[landmark]]
+slug = "bombas_gens"
+name = "Bombas Gens"
+pos = [-707.219, -1732.231]
+rotation = 0.0010
+residual = 0.0070
+matched = 73
+island = [2771.350, 4314.994]
+centre = [2767.615, 4323.774]
+replaces = ["way/701982886", "way/701982887", "way/1550827168", "way/1550827170"]
+
+[[landmark]]
+slug = "casa_dels_dracs"
+name = "Casa dels Dracs"
+pos = [657.419, -55.560]
+rotation = 0.0036
+residual = 0.0064
+matched = 12
+island = [4135.988, 2638.323]
+centre = [4134.964, 2635.353]
+label = "Casa de los Dragones"
+pin = [4137.921, 2632.558]
+replaces = ["way/496338533"]
+
+[[landmark]]
+slug = "catedral_de_valencia"
+name = "Catedral de Valencia"
+pos = [180.411, -655.270]
+rotation = -0.0001
+residual = 0.0070
+matched = 158
+island = [3658.980, 3238.033]
+centre = [3656.305, 3234.658]
+label = "Catedral de Valencia"
+pin = [3655.641, 3234.847]
+replaces = ["way/135630267", "way/625039852"]
+
+[[landmark]]
+slug = "convent_del_carme"
+name = "Convent del Carme"
+pos = [-157.079, -1124.730]
+rotation = 0.0002
+residual = 0.0065
+matched = 70
+island = [3321.490, 3707.493]
+centre = [3317.485, 3708.178]
+label = "Centre del Carme"
+pin = [3329.323, 3709.475]
+replaces = ["relation/8082637"]
+
+[[landmark]]
+slug = "drassanes_del_grau"
+name = "Drassanes del Grau"
+pos = [3798.981, 824.331]
+rotation = -0.0001
+residual = 0.0059
+matched = 35
+island = [7277.550, 1758.432]
+centre = [7277.470, 1757.597]
+replaces = ["way/460056118", "way/460056119", "way/460056120", "way/460056121", "way/460056122"]
+
+[[landmark]]
+slug = "edifici_de_correus"
+name = "Edifici de Correus i Telegrafs"
+pos = [177.890, 22.980]
+rotation = -0.0002
+residual = 0.0066
+matched = 45
+island = [3656.459, 2559.783]
+centre = [3654.774, 2556.513]
+label = "Edificio de Correos"
+pin = [3657.775, 2556.380]
+replaces = ["way/513696236"]
+
+[[landmark]]
+slug = "edifici_del_rellotge"
+name = "Edifici del Rellotge"
+pos = [3949.812, 952.000]
+rotation = -0.0008
+residual = 0.0069
+matched = 18
+island = [7428.381, 1630.763]
+centre = [7428.026, 1629.843]
+label = "Edificio del Reloj · puerto"
+pin = [7438.530, 1630.423]
+replaces = ["relation/21033515"]
+
+[[landmark]]
+slug = "edifici_ferrer"
+name = "Edifici Ferrer"
+pos = [452.922, 272.849]
+rotation = 0.0034
+residual = 0.0039
+matched = 8
+island = [3931.491, 2309.914]
+centre = [3930.036, 2310.294]
+label = "Edificio Ferrer"
+pin = [3933.581, 2312.245]
+replaces = ["way/496518123"]
+
+[[landmark]]
+slug = "edifici_rialto"
+name = "Edifici Rialto"
+pos = [105.990, -154.920]
+rotation = 0.0003
+residual = 0.0076
+matched = 67
+island = [3584.559, 2737.683]
+centre = [3583.664, 2735.938]
+label = "Edificio Rialto"
+pin = [3588.325, 2736.153]
+replaces = ["way/416210393"]
+
+[[landmark]]
+slug = "el_patriarca"
+name = "Real Colegio Seminario de Corpus Christi (El Patriarca)"
+pos = [361.221, -329.730]
+rotation = 0.0016
+residual = 0.0061
+matched = 9
+island = [3839.790, 2912.493]
+centre = [3837.845, 2914.489]
+label = "Real Colegio del Patriarca"
+pin = [3824.547, 2914.930]
+replaces = ["relation/18681030"]
+
+[[landmark]]
+slug = "esglesia_del_temple"
+name = "Esglesia i Palau del Temple"
+pos = [489.880, -741.801]
+rotation = -0.0002
+residual = 0.0068
+matched = 20
+island = [3968.449, 3324.564]
+centre = [3972.748, 3323.224]
+label = "Palacio e Iglesia del Temple"
+pin = [3955.790, 3330.737]
+replaces = ["relation/11177870"]
+
+[[landmark]]
+slug = "estacio_del_nord"
+name = "Estacio del Nord"
+pos = [6.431, 388.620]
+rotation = 0.0002
+residual = 0.0072
+matched = 194
+island = [3485.000, 2194.143]
+centre = [3485.565, 2179.683]
+label = "Estación del Norte"
+pin = [3457.367, 2180.331]
+replaces = ["way/10153012"]
+
+[[landmark]]
+slug = "estadi_ciutat_de_valencia"
+name = "Estadi Ciutat de Valencia"
+pos = [1083.890, -2803.231]
+rotation = -0.0001
+residual = 0.0074
+matched = 84
+island = [4562.459, 5385.994]
+centre = [4562.399, 5384.444]
+label = "Estadio Ciutat de València"
+pin = [4502.180, 5382.085]
+replaces = ["relation/12211578"]
+
+[[landmark]]
+slug = "estadi_de_mestalla"
+name = "Estadi de Mestalla"
+pos = [1646.700, -583.540]
+rotation = -0.0001
+residual = 0.0066
+matched = 154
+island = [5125.269, 3166.303]
+centre = [5123.314, 3165.718]
+replaces = ["way/1122832534", "way/1239685453", "relation/7886308"]
+
+[[landmark]]
+slug = "finca_roja"
+name = "Finca Roja"
+pos = [-605.290, 767.510]
+rotation = 0.0000
+residual = 0.0071
+matched = 562
+island = [2873.279, 1815.253]
+centre = [2864.444, 1863.318]
+replaces = ["way/685809126", "way/685809127", "way/685809128", "way/685809130", "way/685809133", "way/685809136", "way/685809139", "way/685809145", "way/685809149", "way/685809154", "relation/10512381", "relation/10512385", "relation/10512383", "relation/10512382"]
+
+[[landmark]]
+slug = "hemisferic"
+name = "L'Hemisfèric"
+pos = [2065.221, 1391.400]
+rotation = -0.0009
+residual = 0.0074
+matched = 76
+island = [5543.790, 1191.363]
+centre = [5543.725, 1191.363]
+label = "L’Hemisfèric"
+pin = [5543.600, 1191.748]
+replaces = ["way/23433774"]
+
+[[landmark]]
+slug = "ivam"
+name = "IVAM - Institut Valencià d'Art Modern"
+pos = [-475.870, -1092.020]
+rotation = -0.0002
+residual = 0.0067
+matched = 37
+island = [3002.699, 3674.783]
+centre = [2998.229, 3675.978]
+label = "IVAM"
+pin = [3001.808, 3673.470]
+replaces = ["way/291006854", "way/1284622399"]
+
+[[landmark]]
+slug = "la_nau"
+name = "La Nau (Universitat de València)"
+pos = [376.662, -255.289]
+rotation = -0.0001
+residual = 0.0053
+matched = 8
+island = [3855.231, 2838.052]
+centre = [3854.041, 2835.727]
+label = "La Nau · Universitat"
+pin = [3837.563, 2836.087]
+replaces = ["relation/11164787"]
+
+[[landmark]]
+slug = "la_union_y_el_fenix"
+name = "Edifici La Unión y el Fénix"
+pos = [67.751, 216.920]
+rotation = -0.0008
+residual = 0.0070
+matched = 68
+island = [3546.320, 2365.843]
+centre = [3546.300, 2362.993]
+label = "La Unión y el Fénix"
+pin = [3546.044, 2363.625]
+replaces = ["way/409877331"]
+
+[[landmark]]
+slug = "llotja_de_la_seda"
+name = "Llotja de la Seda"
+pos = [-101.460, -510.960]
+rotation = -0.0010
+residual = 0.0065
+matched = 23
+island = [3377.109, 3093.723]
+centre = [3373.939, 3097.243]
+label = "Lonja de la Seda"
+pin = [3388.393, 3097.498]
+replaces = ["way/23377876"]
+
+[[landmark]]
+slug = "mercat_central"
+name = "Mercat Central"
+pos = [-149.419, -412.300]
+rotation = -0.0005
+residual = 0.0069
+matched = 37
+island = [3329.150, 2995.063]
+centre = [3334.485, 2994.743]
+label = "Mercado Central"
+pin = [3336.130, 2994.579]
+replaces = ["way/5007139"]
+
+[[landmark]]
+slug = "mercat_d_abastos"
+name = "Mercat d'Abastos de València"
+pos = [-928.150, 220.820]
+rotation = -0.0000
+residual = 0.0062
+matched = 44
+island = [2550.419, 2361.943]
+centre = [2550.909, 2362.223]
+label = "Mercado de Abastos"
+pin = [2550.718, 2362.196]
+replaces = ["way/243447549"]
+
+[[landmark]]
+slug = "mercat_de_colom"
+name = "Mercat de Colom"
+pos = [778.801, 66.740]
+rotation = 0.0008
+residual = 0.0070
+matched = 44
+island = [4257.370, 2516.023]
+centre = [4257.155, 2516.618]
+label = "Mercado de Colón"
+pin = [4258.426, 2516.771]
+replaces = ["way/10120283"]
+
+[[landmark]]
+slug = "mercat_de_russafa"
+name = "Mercat de Russafa"
+pos = [538.650, 840.200]
+rotation = -0.0007
+residual = 0.0074
+matched = 47
+island = [4017.219, 1742.563]
+centre = [4018.324, 1739.558]
+label = "Mercado de Ruzafa"
+pin = [4021.796, 1738.482]
+replaces = ["way/12403536"]
+
+[[landmark]]
+slug = "museu_de_belles_arts"
+name = "Museu de Belles Arts de València (Sant Pius V)"
+pos = [533.061, -1081.221]
+rotation = 0.0002
+residual = 0.0067
+matched = 83
+island = [4011.630, 3663.984]
+centre = [4008.320, 3658.164]
+label = "Museo de Bellas Artes · San Pío V"
+pin = [3993.925, 3658.097]
+replaces = ["relation/11026210"]
+
+[[landmark]]
+slug = "museu_de_les_ciencies"
+name = "Museu de les Ciències Príncep Felip"
+pos = [2264.570, 1478.970]
+rotation = -0.0000
+residual = 0.0059
+matched = 54
+island = [5743.139, 1103.793]
+centre = [5724.334, 1080.108]
+label = "Museu de les Ciències Príncipe Felipe"
+pin = [5771.558, 1080.631]
+replaces = ["relation/14693200"]
+
+[[landmark]]
+slug = "muvim"
+name = "MuVIM - Museu Valencià de la Il·lustració i de la Modernitat"
+pos = [-334.459, 17.089]
+rotation = 0.0008
+residual = 0.0065
+matched = 38
+island = [3144.110, 2565.674]
+centre = [3148.485, 2554.993]
+replaces = ["way/15218690"]
+
+[[landmark]]
+slug = "oceanografic"
+name = "L'Oceanogràfic"
+pos = [2724.370, 1741.540]
+rotation = -0.0001
+residual = 0.0065
+matched = 337
+island = [6202.939, 841.223]
+centre = [6083.109, 817.708]
+replaces = ["way/23433777", "way/23433778", "way/23433781", "way/23438995", "way/194346756", "way/194346757", "way/194346758", "way/454324310", "way/454324311", "way/454324313", "way/634990649", "way/634990650", "way/634992769", "way/1111483946", "way/1111511824"]
+
+[[landmark]]
+slug = "palau_arquebisbal"
+name = "Palau Arquebisbal de València"
+pos = [243.021, -620.531]
+rotation = -0.0004
+residual = 0.0065
+matched = 72
+island = [3721.590, 3203.294]
+centre = [3718.350, 3200.454]
+replaces = ["relation/17642970"]
+
+[[landmark]]
+slug = "palau_de_cervello"
+name = "Palau de Cervelló"
+pos = [584.821, -525.090]
+rotation = 0.0006
+residual = 0.0067
+matched = 25
+island = [4063.390, 3107.853]
+centre = [4064.570, 3113.213]
+label = "Palacio de Cervelló"
+pin = [4065.454, 3111.563]
+replaces = ["way/495233207"]
+
+[[landmark]]
+slug = "palau_de_congressos"
+name = "Palau de Congressos de València"
+pos = [-2206.009, -2875.410]
+rotation = -0.0004
+residual = 0.0068
+matched = 43
+island = [1272.560, 5458.173]
+centre = [1272.225, 5457.093]
+label = "Palacio de Congresos"
+pin = [1271.431, 5455.986]
+replaces = ["way/23761809"]
+
+[[landmark]]
+slug = "palau_de_justicia"
+name = "Palau de Justícia de València"
+pos = [654.113, -246.851]
+rotation = -0.0037
+residual = 0.0033
+matched = 4
+island = [4132.682, 2829.614]
+centre = [4132.642, 2829.574]
+label = "Palacio de Justicia · antigua Aduana"
+pin = [4132.372, 2829.570]
+replaces = ["relation/18681032"]
+
+[[landmark]]
+slug = "palau_de_l_almirall"
+name = "Palau de l'Almirall"
+pos = [322.261, -595.709]
+rotation = -0.0017
+residual = 0.0066
+matched = 30
+island = [3800.830, 3178.472]
+centre = [3803.585, 3175.267]
+label = "Palacio del Almirante"
+pin = [3795.706, 3172.972]
+replaces = ["way/218841696"]
+
+[[landmark]]
+slug = "palau_de_l_exposicio"
+name = "Palau de l'Exposició"
+pos = [1274.341, -450.191]
+rotation = -0.0017
+residual = 0.0054
+matched = 12
+island = [4752.910, 3032.954]
+centre = [4759.320, 3033.629]
+label = "Palacio de la Exposición"
+pin = [4742.679, 3033.508]
+replaces = ["way/150277194"]
+
+[[landmark]]
+slug = "palau_de_la_batlia"
+name = "Palau de la Batlia"
+pos = [34.679, -824.682]
+rotation = -0.0030
+residual = 0.0055
+matched = 7
+island = [3513.248, 3407.445]
+centre = [3515.099, 3409.484]
+label = "Palacio de la Baylía"
+pin = [3514.977, 3409.657]
+replaces = ["way/1303164127"]
+
+[[landmark]]
+slug = "palau_de_la_generalitat"
+name = "Palau de la Generalitat Valenciana"
+pos = [64.361, -769.239]
+rotation = 0.0020
+residual = 0.0059
+matched = 13
+island = [3542.930, 3352.002]
+centre = [3543.460, 3352.252]
+label = "Palau de la Generalitat"
+pin = [3543.487, 3352.829]
+replaces = ["relation/11137438"]
+
+[[landmark]]
+slug = "palau_de_la_musica"
+name = "Palau de la Música"
+pos = [1469.400, 357.350]
+rotation = -0.0022
+residual = 0.0062
+matched = 24
+island = [4947.969, 2225.413]
+centre = [4947.489, 2224.153]
+label = "Palau de la Música"
+pin = [4949.036, 2224.094]
+replaces = ["way/23167750", "way/23167751"]
+
+[[landmark]]
+slug = "palau_de_les_arts"
+name = "Palau de les Arts Reina Sofia"
+pos = [1885.620, 1245.390]
+rotation = -0.0002
+residual = 0.0066
+matched = 58
+island = [5364.189, 1337.373]
+centre = [5364.259, 1337.293]
+label = "Palau de les Arts Reina Sofía"
+pin = [5364.252, 1337.112]
+replaces = ["way/23433773"]
+
+[[landmark]]
+slug = "palau_del_marques_de_campo"
+name = "Palau del Marqués de Campo"
+pos = [293.791, -707.721]
+rotation = -0.0027
+residual = 0.0053
+matched = 5
+island = [3772.360, 3290.484]
+centre = [3770.065, 3290.829]
+label = "Palacio del Marqués de Campo"
+pin = [3780.429, 3290.866]
+replaces = ["relation/7286126"]
+
+[[landmark]]
+slug = "palau_del_marques_de_dos_aigues"
+name = "Palau del Marqués de Dosaigües"
+pos = [212.680, -315.200]
+rotation = -0.0004
+residual = 0.0068
+matched = 22
+island = [3691.249, 2897.963]
+centre = [3691.994, 2898.813]
+label = "Palacio del Marqués de Dos Aguas"
+pin = [3693.119, 2897.677]
+replaces = ["way/515082661"]
+
+[[landmark]]
+slug = "placa_de_bous"
+name = "Plaça de Bous de València"
+pos = [117.440, 342.400]
+rotation = 0.0000
+residual = 0.0069
+matched = 34
+island = [3596.009, 2240.363]
+centre = [3595.919, 2240.408]
+replaces = ["relation/12942182"]
+
+[[landmark]]
+slug = "roig_arena"
+name = "Roig Arena"
+pos = [1188.222, 2259.530]
+rotation = -0.0001
+residual = 0.0071
+matched = 30
+island = [4666.791, 323.233]
+centre = [4667.531, 319.118]
+label = "Roig Arena"
+pin = [4665.576, 316.321]
+replaces = ["way/1014385791"]
+
+[[landmark]]
+slug = "sant_esteve"
+name = "Església de Sant Esteve"
+pos = [340.031, -716.620]
+rotation = -0.0008
+residual = 0.0065
+matched = 31
+island = [3818.600, 3299.383]
+centre = [3821.310, 3298.323]
+label = "Iglesia de San Esteban"
+pin = [3821.287, 3299.858]
+replaces = ["way/279478350"]
+
+[[landmark]]
+slug = "sant_joan_de_l_hospital"
+name = "Església de Sant Joan de l'Hospital"
+pos = [363.711, -521.850]
+rotation = -0.0005
+residual = 0.0063
+matched = 38
+island = [3842.280, 3104.613]
+centre = [3841.455, 3100.608]
+label = "San Juan del Hospital"
+pin = [3840.105, 3101.577]
+replaces = ["way/514000994"]
+
+[[landmark]]
+slug = "sant_marti"
+name = "Església de Sant Martí"
+pos = [136.460, -390.060]
+rotation = 0.0009
+residual = 0.0065
+matched = 20
+island = [3615.029, 2972.823]
+centre = [3614.394, 2974.978]
+label = "Iglesia de San Martín"
+pin = [3613.537, 2979.709]
+replaces = ["way/661320825"]
+
+[[landmark]]
+slug = "sant_miquel_dels_reis"
+name = "Monestir de Sant Miquel dels Reis"
+pos = [617.501, -3299.570]
+rotation = 0.0004
+residual = 0.0067
+matched = 51
+island = [4096.070, 5882.333]
+centre = [4080.059, 5885.208]
+replaces = ["way/1247022587", "relation/2024883"]
+
+[[landmark]]
+slug = "sant_nicolau"
+name = "Església de Sant Nicolau"
+pos = [-146.260, -710.231]
+rotation = -0.0002
+residual = 0.0065
+matched = 43
+island = [3332.309, 3292.994]
+centre = [3333.924, 3294.369]
+label = "Iglesia de San Nicolás"
+pin = [3335.684, 3294.490]
+replaces = ["way/514601809"]
+
+[[landmark]]
+slug = "santa_caterina"
+name = "Església de Santa Caterina"
+pos = [71.640, -486.520]
+rotation = -0.0003
+residual = 0.0072
+matched = 79
+island = [3550.209, 3069.283]
+centre = [3550.109, 3070.518]
+label = "Iglesia de Santa Catalina"
+pin = [3549.646, 3070.545]
+replaces = ["way/135638445", "way/165580724"]
+
+[[landmark]]
+slug = "sants_joans"
+name = "Real Parroquia de los Santos Juanes"
+pos = [-172.680, -495.779]
+rotation = -0.0010
+residual = 0.0066
+matched = 51
+island = [3305.889, 3078.542]
+centre = [3306.359, 3079.653]
+label = "Iglesia de los Santos Juanes"
+pin = [3304.400, 3080.188]
+replaces = ["way/183237709"]
+
+[[landmark]]
+slug = "tabacalera"
+name = "Antiga Fàbrica de Tabacs"
+pos = [1360.131, -525.280]
+rotation = 0.0001
+residual = 0.0071
+matched = 24
+island = [4838.700, 3108.043]
+centre = [4839.445, 3109.898]
+label = "Fábrica de Tabacos"
+pin = [4835.442, 3096.855]
+replaces = ["relation/9603911"]
+
+[[landmark]]
+slug = "teatre_principal"
+name = "Teatre Principal de València"
+pos = [247.000, -124.419]
+rotation = 0.0004
+residual = 0.0059
+matched = 19
+island = [3725.569, 2707.182]
+centre = [3725.409, 2706.927]
+label = "Teatro Principal"
+pin = [3725.635, 2707.010]
+replaces = ["way/23377878"]
+
+[[landmark]]
+slug = "torre_de_franca"
+name = "Torre de França"
+pos = [2185.190, 1026.330]
+rotation = 0.0001
+residual = 0.0063
+matched = 45
+island = [5663.759, 1556.433]
+centre = [5667.319, 1555.268]
+label = "Torre de Francia"
+pin = [5657.475, 1554.773]
+replaces = ["way/298794518"]
+
+[[landmark]]
+slug = "torre_hilton"
+name = "Torre Hilton (Hotel Meliá València)"
+pos = [-2112.870, -2696.920]
+rotation = 0.0005
+residual = 0.0073
+matched = 78
+island = [1365.699, 5279.683]
+centre = [1364.049, 5279.138]
+label = "Torre Hilton · Meliá"
+pin = [1370.202, 5279.497]
+replaces = ["way/23761819"]
+
+[[landmark]]
+slug = "torres_de_quart"
+name = "Torres de Quart"
+pos = [-580.940, -654.480]
+rotation = -0.0012
+residual = 0.0066
+matched = 60
+island = [2897.629, 3237.243]
+centre = [2897.079, 3249.233]
+label = "Torres de Quart"
+pin = [2896.838, 3249.580]
+replaces = ["way/13073736"]
+
+[[landmark]]
+slug = "torres_de_serrans"
+name = "Torres de Serrans"
+pos = [88.071, -1058.980]
+rotation = -0.0024
+residual = 0.0072
+matched = 33
+island = [3566.640, 3641.743]
+centre = [3567.290, 3643.442]
+label = "Torres de Serranos"
+pin = [3551.814, 3644.246]
+replaces = ["way/9281502"]
+
+[[landmark]]
+slug = "umbracle"
+name = "L'Umbracle"
+pos = [2080.212, 1541.100]
+rotation = 0.0002
+residual = 0.0064
+matched = 12
+island = [5558.781, 1041.663]
+centre = [5558.746, 1041.693]
+label = "L’Umbracle"
+pin = [5560.993, 1039.956]
+replaces = ["way/23433784"]
+
+[[landmark]]
+slug = "veles_e_vents"
+name = "Edifici Veles e Vents"
+pos = [4604.420, 825.380]
+rotation = -0.0005
+residual = 0.0064
+matched = 11
+island = [8082.989, 1757.383]
+centre = [8083.024, 1757.413]
+label = "Veles e Vents"
+pin = [8083.019, 1757.408]
+replaces = ["way/23509879"]
