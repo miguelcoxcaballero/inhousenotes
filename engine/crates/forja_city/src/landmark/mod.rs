@@ -21,6 +21,7 @@ pub mod details;
 pub mod domes;
 pub mod earcut;
 pub mod facade;
+pub mod far;
 pub mod footprint;
 pub mod generic;
 pub mod masses;

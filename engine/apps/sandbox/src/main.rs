@@ -285,7 +285,9 @@ impl Extract {
                 .hlod_tiles
                 .iter()
                 .enumerate()
-                .map(|(k, tile)| (k as u32 + 1, tile.detail.clone().map(|i| d.placements[i].0).filter(|&s| d.scenes[s].name == "block").map(|s| gw.scene_base + s).collect()))
+                .map(|(k, tile)| (k as u32 + 1, tile.detail.clone().map(|i| d.placements[i].0).filter(|&s| d.scenes[s].name == "block").map(|s| gw.scene_base + s).collect(), 1.0, None))
+                // Landmarks and other large models with a far stand-in.
+                .chain(d.stream_groups.iter().map(|g| (g.group, g.scenes.iter().map(|s| gw.scene_base + s).collect(), g.scale, Some(g.source.clone()))))
                 .collect();
             self.stream = sandbox::stream::Streamer::new(tiles);
         }

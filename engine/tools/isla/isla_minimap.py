@@ -131,8 +131,24 @@ def add_poi(kind, name, x, y):
     pois.append((kind, q((x, y)), name))
 
 
+# The modelled landmarks first, at the centre of the footprint their model
+# stands on (data/maps/isla/landmarks.toml, next to the output); the pins of
+# landmarks.json that mark the same building are then duplicates.
+modelled = os.path.join(os.path.dirname(os.path.abspath(out)), "landmarks.toml")
+landmark_spots = []
+if os.path.exists(modelled):
+    import tomllib
+
+    for lm in tomllib.load(open(modelled, "rb")).get("landmark", []):
+        c = lm.get("centre") or lm.get("island")
+        if c:
+            add_poi(0, lm.get("label") or lm.get("name") or lm["slug"], c[0], c[1])
+            landmark_spots.append((c, lm.get("pin")))
+
 for lm in json.load(open(os.path.join(src, "landmarks.json"))):
     if lm.get("xy") and lm.get("name"):
+        if any(pin and math.hypot(pin[0] - lm["xy"][0], pin[1] - lm["xy"][1]) < 1.0 for _, pin in landmark_spots):
+            continue
         add_poi(0, lm["name"], lm["xy"][0], lm["xy"][1])
 
 for f in d["features"]:
