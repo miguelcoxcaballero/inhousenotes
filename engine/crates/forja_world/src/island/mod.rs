@@ -52,16 +52,35 @@ pub struct IslandWorld {
     pub hour: Option<f32>,
     /// Tree density (1 = full; 0 = none).
     pub trees: f32,
-    /// Footprints the caller replaces with its own models (landmarks):
-    /// buildings whose centroid lies in one of these rings, or whose OSM id
-    /// is listed, get no shell.
-    pub replaced: Vec<Vec<Vec2>>,
-    pub replaced_osm: Vec<u64>,
+    /// Places where the game puts a model of its own (landmarks): the
+    /// buildings of each site get a shell of their own, which the game
+    /// hides once its model is there (see [`Island::sites`]).
+    pub sites: Vec<Site>,
+}
+
+/// A place whose buildings a model replaces: the buildings with their
+/// centroid in one of `rings` (world `(x, z)`) or with an OSM id in `osm`
+/// (`way * 2`, `relation * 2 + 1`).
+#[derive(Clone, Debug, Default)]
+pub struct Site {
+    pub rings: Vec<Vec<Vec2>>,
+    pub osm: Vec<u64>,
+}
+
+/// The stand-in of a [`Site`] in the built world.
+#[derive(Clone, Copy, Debug)]
+pub struct SiteShell {
+    /// Far-distance group holding only the shell (as its stand-in): the
+    /// game keeps the group "not ready" while the shell must show and
+    /// makes it always near once the model replaces it.
+    pub group: u32,
+    /// Ground height under the site.
+    pub ground: f32,
 }
 
 impl IslandWorld {
     pub fn new(data: &Path) -> Self {
-        Self { dir: data.join("maps/isla"), species: Some(data.join("flora/species.toml")).filter(|p| p.exists()), hour: None, trees: 1.0, replaced: Vec::new(), replaced_osm: Vec::new() }
+        Self { dir: data.join("maps/isla"), species: Some(data.join("flora/species.toml")).filter(|p| p.exists()), hour: None, trees: 1.0, sites: Vec::new() }
     }
 }
 
@@ -73,6 +92,9 @@ pub struct BuildingTile {
     pub buildings: std::ops::Range<usize>,
     /// Index of its shell placement in the world's placements.
     pub placement: usize,
+    /// Far-distance group of the shell (its stand-in): the game brings the
+    /// tile's detailed facades as the group's detail (0: no shell).
+    pub group: u32,
     pub bounds: (Vec3, Vec3),
 }
 
@@ -90,6 +112,11 @@ pub struct Island {
     /// Far-distance groups the world uses (`1..=groups`); the game numbers
     /// its own after them.
     pub groups: u32,
+    /// Per [`IslandWorld::sites`] entry: its shell (`None` when no building
+    /// stands there).
+    pub sites: Vec<Option<SiteShell>>,
+    /// The shared materials (to mesh more shells at run time).
+    pub materials: Materials,
 }
 
 impl Island {
@@ -465,22 +492,16 @@ impl WorldSource for IslandWorld {
         lap("roads");
         // Buildings.
         forja_assets::progress::stage("Levantando los edificios", 0.42);
-        let osm: std::collections::HashSet<u64> = self.replaced_osm.iter().copied().collect();
-        let removed: Vec<bool> = d
-            .polys
-            .par_iter()
-            .map(|p| {
-                if p.kind != PolyKind::Building {
-                    return false;
-                }
-                if p.osm != 0 && osm.contains(&p.osm) {
-                    return true;
-                }
-                let c = data::ring_centroid(&p.rings[0]);
-                self.replaced.iter().any(|r| data::point_in_ring(r, c))
-            })
-            .collect();
-        let mut buildings: Vec<Building> = d.polys.par_iter().enumerate().filter(|(i, p)| p.kind == PolyKind::Building && !removed[*i]).map(|(i, p)| Building::new(i, p, &g)).collect();
+        let by_osm: HashMap<u64, u16> = self.sites.iter().enumerate().flat_map(|(k, s)| s.osm.iter().map(move |o| (*o, k as u16))).collect();
+        let site_of = |p: &data::Poly| -> Option<u16> {
+            if let Some(k) = by_osm.get(&p.osm).filter(|_| p.osm != 0) {
+                return Some(*k);
+            }
+            let c = data::ring_centroid(&p.rings[0]);
+            self.sites.iter().position(|s| s.rings.iter().any(|r| data::point_in_ring(r, c))).map(|k| k as u16)
+        };
+        let removed: Vec<bool> = vec![false; d.polys.len()];
+        let mut buildings: Vec<Building> = d.polys.par_iter().enumerate().filter(|(_, p)| p.kind == PolyKind::Building).map(|(i, p)| Building { site: site_of(p), ..Building::new(i, p, &g) }).collect();
         buildings.sort_by_key(|b| (b.tile(), b.poly));
         let mut tiles: Vec<BuildingTile> = Vec::new();
         let mut i = 0;
@@ -490,21 +511,46 @@ impl WorldSource for IslandWorld {
             while i < buildings.len() && buildings[i].tile() == key {
                 i += 1;
             }
-            tiles.push(BuildingTile { key, buildings: start..i, placement: 0, bounds: (Vec3::ZERO, Vec3::ZERO) });
+            tiles.push(BuildingTile { key, buildings: start..i, placement: 0, group: 0, bounds: (Vec3::ZERO, Vec3::ZERO) });
         }
-        let shell_scenes: Vec<Option<SceneData>> = tiles.par_iter().map(|t| mats.shell_scene(&buildings[t.buildings.clone()], &d.polys)).collect();
+        let shell_scenes: Vec<Option<SceneData>> = tiles
+            .par_iter()
+            .map(|t| {
+                let own: Vec<Building> = buildings[t.buildings.clone()].iter().filter(|b| b.site.is_none()).cloned().collect();
+                mats.shell_scene(&own, &d.polys)
+            })
+            .collect();
         let mut shell_tris = 0;
         let mut kept = Vec::with_capacity(tiles.len());
         for (mut t, s) in tiles.into_iter().zip(shell_scenes) {
-            let Some(s) = s else { continue };
+            let Some(s) = s else {
+                // Only site buildings: no shell, but they still collide.
+                t.placement = usize::MAX;
+                kept.push(t);
+                continue;
+            };
             shell_tris += s.triangle_count();
             let b = s.bounds();
             t.bounds = (b.min, b.max);
             t.placement = w.placements.len();
+            group += 1;
+            t.group = group;
+            w.lod_tags.push((t.placement, group, true));
+            w.lod_scales.push((group, FACADE_DETAIL));
             w.add_scene(Arc::new(s), Mat4::IDENTITY);
             kept.push(t);
         }
         let tiles = kept;
+        // Each site's own shell, until the game brings its model.
+        let mut sites: Vec<Option<SiteShell>> = vec![None; self.sites.len()];
+        for (k, slot) in sites.iter_mut().enumerate() {
+            let own: Vec<Building> = buildings.iter().filter(|b| b.site == Some(k as u16)).cloned().collect();
+            let Some(scene) = mats.shell_scene(&own, &d.polys) else { continue };
+            group += 1;
+            w.lod_tags.push((w.placements.len(), group, true));
+            w.add_scene(Arc::new(scene), Mat4::IDENTITY);
+            *slot = Some(SiteShell { group, ground: own.iter().map(|b| b.floor).fold(f32::MAX, f32::min) });
+        }
         w.stats.push(("buildings".into(), buildings.len()));
         w.stats.push(("building tiles".into(), tiles.len()));
         w.stats.push(("shell triangles".into(), shell_tris));
@@ -547,7 +593,7 @@ impl WorldSource for IslandWorld {
         w.attribution.push("Isla Levante: map data © OpenStreetMap contributors, ODbL 1.0; barrios: Ajuntament de València, CC BY 4.0".into());
         let map = Arc::new(MapData::build(&d, &removed, start));
         let tile_index = tiles.iter().enumerate().map(|(i, t)| (t.key, i)).collect();
-        w.island = Some(Arc::new(Island { data: d, ground: g, buildings, tiles, tile_index, map, night, groups: group }));
+        w.island = Some(Arc::new(Island { data: d, ground: g, buildings, tiles, tile_index, map, night, groups: group, sites, materials: mats }));
         log::info!("island: built in {:.2}s ({})", t0.elapsed().as_secs_f32(), w.stats.iter().map(|(k, v)| format!("{v} {k}")).collect::<Vec<_>>().join(", "));
         Ok(w)
     }
@@ -726,4 +772,7 @@ pub const TERRAIN_TILE: f32 = TILE;
 /// The terrain keeps its near meshes (textured land cover) within this
 /// many HLOD distances, streets and paths within [`STREET_DETAIL`].
 pub const TERRAIN_DETAIL: f32 = 2.0;
+/// Detailed facades replace a tile's shells within this many HLOD
+/// distances (150 m at the default 250 m).
+pub const FACADE_DETAIL: f32 = 0.6;
 pub const STREET_DETAIL: f32 = 5.0;
