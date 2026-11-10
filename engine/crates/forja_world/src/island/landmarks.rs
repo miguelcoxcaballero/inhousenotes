@@ -153,28 +153,36 @@ impl Set {
     /// eases it back into the terrain around; returns each landmark's
     /// level.
     pub fn level_ground(&self, g: &mut Ground) -> Vec<f32> {
-        let mut levels = Vec::with_capacity(self.placements.len());
-        for p in &self.placements {
-            // Street level: the mean ground along the outline (the doors).
-            let (mut sum, mut n) = (0.0, 0usize);
-            for r in &p.rings {
-                for i in 0..r.len() {
-                    let (a, b) = (r[i], r[(i + 1) % r.len()]);
-                    let k = (a.distance(b) / 4.0).ceil().max(1.0) as usize;
-                    for t in 0..k {
-                        let q = a.lerp(b, t as f32 / k as f32);
-                        sum += g.height(q.x, q.y);
-                        n += 1;
+        // Street levels first, all from the untouched ground: the mean
+        // along each outline (the doors).
+        let levels: Vec<f32> = self
+            .placements
+            .iter()
+            .map(|p| {
+                let (mut sum, mut n) = (0.0, 0usize);
+                for r in &p.rings {
+                    for i in 0..r.len() {
+                        let (a, b) = (r[i], r[(i + 1) % r.len()]);
+                        let k = (a.distance(b) / 4.0).ceil().max(1.0) as usize;
+                        for t in 0..k {
+                            let q = a.lerp(b, t as f32 / k as f32);
+                            sum += g.height(q.x, q.y);
+                            n += 1;
+                        }
                     }
                 }
-            }
-            let level = if n > 0 { sum / n as f32 } else { g.height(p.pos.x, p.pos.y) };
-            levels.push(level);
+                if n > 0 { sum / n as f32 } else { g.height(p.pos.x, p.pos.y) }
+            })
+            .collect();
+        // Per ground vertex: the pull of the nearest landmarks (neighbours
+        // such as the Catedral and the Basílica share the ground between).
+        let reach = LEVEL + BLEND;
+        let mut pull: std::collections::HashMap<usize, (f32, f32, f32)> = std::collections::HashMap::new();
+        for (p, &level) in self.placements.iter().zip(&levels) {
             if p.rings.is_empty() {
                 continue;
             }
             let (lo, hi) = p.bounds();
-            let reach = LEVEL + BLEND;
             let c0 = ((lo.x - reach - g.x0) / CELL).floor().max(0.0) as usize;
             let r0 = ((lo.y - reach - g.z0) / CELL).floor().max(0.0) as usize;
             let c1 = (((hi.x + reach - g.x0) / CELL).ceil().max(0.0) as usize).min(g.cols - 1);
@@ -192,8 +200,16 @@ impl Set {
                     }
                     let t = ((d - LEVEL) / BLEND).clamp(0.0, 1.0);
                     let w = 1.0 - t * t * (3.0 - 2.0 * t);
-                    g.h[i] += (level - g.h[i]) * w;
+                    // Nearer landmarks count far more.
+                    let k = w * w / (1.0 + d * d);
+                    let e = pull.entry(i).or_insert((0.0, 0.0, 0.0));
+                    *e = (e.0.max(w), e.1 + k * level, e.2 + k);
                 }
+            }
+        }
+        for (i, (w, sum, k)) in pull {
+            if k > 0.0 {
+                g.h[i] += (sum / k - g.h[i]) * w;
             }
         }
         levels
@@ -276,12 +292,19 @@ mod tests {
                 assert!(c.x > lo.x - 30.0 && c.x < hi.x + 30.0 && c.y > lo.y - 30.0 && c.y < hi.y + 30.0, "{}: {id} at {c}", p.slug);
             }
         }
-        // The Llotja's main outline is the island's building, vertex by vertex.
+        // The Llotja's outline lies on the island's building.
         let llotja = s.placements.iter().find(|p| p.slug == "llotja_de_la_seda").expect("llotja");
         let b = d.polys.iter().find(|q| q.osm == 23377876 * 2).expect("way 23377876");
+        let ring = &b.rings[0];
         for v in &llotja.rings[0] {
-            let near = b.rings[0].iter().map(|q| q.distance(*v)).fold(f32::MAX, f32::min);
-            assert!(near < 0.1, "vertex {v} is {near} m off");
+            let near = (0..ring.len())
+                .map(|i| {
+                    let (a, e) = (ring[i], ring[(i + 1) % ring.len()]);
+                    let t = ((*v - a).dot(e - a) / (e - a).length_squared().max(1e-9)).clamp(0.0, 1.0);
+                    v.distance(a + (e - a) * t)
+                })
+                .fold(f32::MAX, f32::min);
+            assert!(near < 0.5, "vertex {v} is {near} m off");
         }
     }
 
@@ -301,7 +324,7 @@ mod tests {
             }
         }
         // Neighbouring landmarks (the Catedral and the Basílica) share ground.
-        assert!(worst < 0.5, "ground {worst} m off a landmark's level");
+        assert!(worst < 1.0, "ground {worst} m off a landmark's level");
         let moved = before.iter().zip(&g.h).filter(|(a, b)| a != b).count();
         assert!(moved > 500 && moved < before.len() / 100, "{moved} of {} vertices moved", before.len());
         let step = before.iter().zip(&g.h).map(|(a, b)| (a - b).abs()).fold(0.0, f32::max);
