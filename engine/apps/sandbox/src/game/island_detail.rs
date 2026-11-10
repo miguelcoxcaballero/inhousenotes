@@ -57,7 +57,7 @@ pub const TILE_OUT: f32 = DETAIL_OUT + 110.0;
 /// Vertex and index data copied into the renderer per frame.
 pub const FILL_BYTES_PER_FRAME: u64 = 10 << 20;
 /// Size of the session's cell cache on disk.
-pub const CACHE_BYTES: u64 = 384 << 20;
+pub const CACHE_BYTES: u64 = 256 << 20;
 /// Built cells remembered while they are not shown.
 const KEPT_CELLS: usize = 160;
 
@@ -91,17 +91,34 @@ pub struct LayerSync {
 /// fill that has to wait waits with it, so a layer is never shown before
 /// its meshes are in.
 pub fn sync(state: &mut LayerSync, renderer: &mut Renderer, handles: &[ModelHandle], rs: &mut RenderScene) {
+    // The detail radius follows the graphics preset's facade distance
+    // (Low 90 m, Medium 120 m, High 150 m, Ultra 190 m).
+    rs.detail_radius = Some(if renderer.settings.hlod_distance <= 0.0 { DETAIL_IN } else { (renderer.settings.hlod_distance * 0.6).clamp(90.0, 190.0) });
     // CPU copies of models that are on the GPU now.
     let mut i = 0;
+    let mut freed = 0;
     while i < rs.strip_after_upload.len() {
         let m = rs.strip_after_upload[i];
         if m < handles.len() {
-            let (s, _) = super::world::strip(&rs.models[m]);
+            let (s, b) = super::world::strip(&rs.models[m]);
+            freed += b + rs.models[m].textures.iter().map(|t| t.rgba8.len()).sum::<usize>();
             rs.models[m] = Arc::new(s);
             rs.strip_after_upload.swap_remove(i);
         } else {
             i += 1;
         }
+    }
+    // The kit's pixels (hundreds of MB) leave with its first scene.
+    if freed > 64 << 20 {
+        renderer.prune_texture_cache();
+        // The pixels were allocated by the pool threads that decoded the
+        // kit: each returns its own pages.
+        rayon::broadcast(|_| crate::perf::trim_heap());
+        if let Some(pool) = forja_assets::threads::frame_pool() {
+            pool.broadcast(|_| crate::perf::trim_heap());
+        }
+        crate::perf::trim_heap();
+        log::info!("island detail: kit pixels released ({:.0} MB), resident {:.0} MB", freed as f64 / 1048576.0, crate::perf::resident_mb());
     }
     state.queue.extend(rs.layer_cmds.drain(..));
     if state.queue.is_empty() {
@@ -282,6 +299,9 @@ fn worker(kit: Arc<DetailKit>, island: Arc<Island>, index: Arc<DetailIndex>, spe
         if done.send(out).is_err() {
             break;
         }
+        // What earlier jobs allocated here and the main thread has since
+        // freed goes back to the system.
+        crate::perf::trim_heap();
     }
 }
 
@@ -361,11 +381,15 @@ pub struct IslandDetail {
     cells: HashMap<(i32, i32), Cell>,
     /// Builder module id -> render model.
     modules: HashMap<u32, usize>,
+    /// Modules by kind (scene name), for the log.
+    module_kinds: std::collections::BTreeMap<String, usize>,
     cars: Vec<CarModel>,
     in_flight: usize,
     /// Tiles whose cell shells the worker is meshing.
     shells_in_flight: usize,
     dir: Option<PathBuf>,
+    /// Held while the session lives (see [`session_dir`]).
+    _lock: Option<std::fs::File>,
     frame: u64,
     skip: Arc<HashSet<u32>>,
     skip_version: u32,
@@ -373,6 +397,9 @@ pub struct IslandDetail {
     /// Block until every wanted cell is in (captures, measurements).
     pub wait: bool,
     pub radius: (f32, f32),
+    /// The radius was set by hand (`FORJA_ISLA_DETAIL_M`): the graphics
+    /// preset does not change it.
+    radius_fixed: bool,
     pub stats: DetailStats,
     logged: (usize, usize),
 }
@@ -416,6 +443,8 @@ impl IslandDetail {
 
     fn apply_detail(&mut self, rs: &mut RenderScene, b: Built) {
         for (id, scene) in b.modules {
+            let kind = scene.name.split(|c: char| c == '_' || c == '(' || c.is_ascii_digit()).next().unwrap_or("").to_string();
+            *self.module_kinds.entry(kind).or_default() += 1;
             let m = rs.add_model(scene);
             rs.strip_after_upload.push(m);
             self.modules.insert(id, m);
@@ -515,6 +544,11 @@ impl IslandDetail {
     pub fn update(&mut self, rs: &mut RenderScene, eye: Vec3, skip: Option<&DetailSkip>) {
         let t = std::time::Instant::now();
         self.frame += 1;
+        if !self.radius_fixed
+            && let Some(r) = rs.detail_radius
+        {
+            self.radius = (r, r + 40.0);
+        }
         if let Some(s) = skip {
             let key = (s.version, s.polys.len(), s.osm.len(), s.rings.len());
             if key != self.skip_key {
@@ -538,22 +572,22 @@ impl IslandDetail {
             }
             self.receive(rs, d);
         }
-        loop {
-            self.step(rs, p);
-            if !self.wait || self.in_flight + self.shells_in_flight == 0 {
-                break;
-            }
-            // Captures: wait for the worker instead of the next frame.
-            let Ok(d) = self.done.recv() else { break };
-            self.receive(rs, d);
-        }
+        self.step(rs, p);
         self.stats.apply_ms_max = self.stats.apply_ms_max.max(t.elapsed().as_secs_f32() * 1000.0);
+        // Captures: wait for the worker instead of the next frames.
+        while self.wait && self.in_flight + self.shells_in_flight > 0 {
+            let Ok(d) = self.done.recv() else { break };
+            let t = std::time::Instant::now();
+            self.receive(rs, d);
+            self.step(rs, p);
+            self.stats.apply_ms_max = self.stats.apply_ms_max.max(t.elapsed().as_secs_f32() * 1000.0);
+        }
         let now = (self.stats.cells_detailed, self.stats.built + self.stats.reloaded);
         if now != self.logged && (self.frame % 30 == 0 || self.wait) && self.in_flight == 0 {
             self.logged = now;
             let s = &self.stats;
             log::info!(
-                "island detail: {} cells detailed ({} tiles split), {} buildings ({} detailed, {} shells, {} over budget), {} instances of {} modules, {:.2} M triangles at full detail, {} lights, {} cars; built {} (max {:.0} ms, mean {:.0} ms), reloaded {} (max {:.0} ms), main thread max {:.2} ms, cache {:.0} MB",
+                "island detail: {} cells detailed ({} tiles split), {} buildings ({} detailed, {} shells, {} over budget), {} instances of {} modules ({}), {:.2} M triangles at full detail, {} lights, {} cars; built {} (max {:.0} ms, mean {:.0} ms), reloaded {} (max {:.0} ms), main thread max {:.2} ms, cache {:.0} MB, resident {:.0} MB",
                 s.cells_detailed,
                 s.tiles_active,
                 s.buildings,
@@ -562,6 +596,7 @@ impl IslandDetail {
                 s.over_budget,
                 s.instances,
                 s.modules,
+                self.module_kinds.iter().map(|(k, n)| format!("{n} {k}")).collect::<Vec<_>>().join(", "),
                 s.triangles as f64 / 1e6,
                 s.lights,
                 s.cars,
@@ -571,7 +606,8 @@ impl IslandDetail {
                 s.reloaded,
                 s.reload_ms_max,
                 s.apply_ms_max,
-                s.cache_bytes as f64 / 1048576.0
+                s.cache_bytes as f64 / 1048576.0,
+                crate::perf::resident_mb()
             );
         }
     }
@@ -737,17 +773,26 @@ impl Drop for IslandDetail {
 
 static SESSION: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
-fn session_dir() -> Option<PathBuf> {
+/// The session's folder of the cell cache and the lock that marks it as
+/// in use. Folders whose lock nobody holds belong to sessions that are
+/// gone (a crash, a killed process) and are removed.
+fn session_dir() -> Option<(PathBuf, std::fs::File)> {
     let root = forja_assets::cache::dir()?.join("isla_detail");
-    // Folders of sessions that did not exit cleanly.
     for e in std::fs::read_dir(&root).into_iter().flatten().flatten() {
-        if e.metadata().and_then(|m| m.modified()).is_ok_and(|t| t.elapsed().is_ok_and(|a| a.as_secs() > 6 * 3600)) {
-            let _ = std::fs::remove_dir_all(e.path());
+        let path = e.path();
+        let stale = match std::fs::File::open(path.join("lock")) {
+            Ok(f) => f.try_lock().is_ok(),
+            Err(_) => e.metadata().and_then(|m| m.modified()).is_ok_and(|t| t.elapsed().is_ok_and(|a| a.as_secs() > 600)),
+        };
+        if stale {
+            let _ = std::fs::remove_dir_all(path);
         }
     }
     let dir = root.join(format!("{}-{}", std::process::id(), SESSION.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
     std::fs::create_dir_all(&dir).ok()?;
-    Some(dir)
+    let lock = std::fs::File::create(dir.join("lock")).ok()?;
+    lock.try_lock().ok()?;
+    Some((dir, lock))
 }
 
 fn car_models(rs: &mut RenderScene, paths: &Paths) -> Vec<CarModel> {
@@ -776,7 +821,19 @@ pub fn install(app: &mut App, hour: Option<f32>) {
     let t0 = std::time::Instant::now();
     let paths = app.world.res::<Paths>().clone();
     let styles = paths.data.join("city/styles.toml");
-    let kit = Arc::new(DetailKit::load(Some(&paths.downloaded).filter(|p| p.exists()).map(|p| p.as_path()), Some(styles.as_path()).filter(|p| p.exists()), hour));
+    let mut kit = DetailKit::load(Some(&paths.downloaded).filter(|p| p.exists()).map(|p| p.as_path()), Some(styles.as_path()).filter(|p| p.exists()), hour);
+    // The kit's textures go up with the world, under the loading screen,
+    // as one small scene; the kit then keeps placeholders for them (it
+    // lives as long as the island, and its pixels are a gigabyte).
+    {
+        let warm = Arc::new(kit.warm_scene());
+        let pairs = kit.hollow(&warm);
+        let rs = app.world.res_mut::<RenderScene>();
+        let m = rs.add_model(warm);
+        rs.strip_after_upload.push(m);
+        rs.texture_aliases = Some((m, pairs));
+    }
+    let kit = Arc::new(kit);
     let index = Arc::new(DetailIndex::new(&island));
     let species = Some(paths.data.join("flora/species.toml")).filter(|p| p.exists());
     let (jobs, jobs_rx) = channel();
@@ -789,10 +846,9 @@ pub fn install(app: &mut App, hour: Option<f32>) {
         }
     }
     let rs = app.world.res_mut::<RenderScene>();
-    // The kit's textures go up with the world, under the loading screen.
-    rs.add_model(Arc::new(kit.warm_scene()));
     let cars = if dress { car_models(rs, &paths) } else { Vec::new() };
     let radius = std::env::var("FORJA_ISLA_DETAIL_M").ok().and_then(|v| v.parse::<f32>().ok()).filter(|r| *r >= 40.0 && *r <= 600.0).map_or((DETAIL_IN, DETAIL_OUT), |r| (r, r + 40.0));
+    let (dir, lock) = session_dir().map_or((None, None), |(d, l)| (Some(d), Some(l)));
     let mut detail = IslandDetail {
         island,
         index,
@@ -801,30 +857,38 @@ pub fn install(app: &mut App, hour: Option<f32>) {
         tiles: HashMap::new(),
         cells: HashMap::new(),
         modules: HashMap::new(),
+        module_kinds: Default::default(),
         cars,
         in_flight: 0,
         shells_in_flight: 0,
-        dir: session_dir(),
+        dir,
+        _lock: lock,
         frame: 0,
         skip: Arc::new(HashSet::new()),
         skip_version: 0,
         skip_key: (0, 0, 0, 0),
         wait: std::env::var_os("FORJA_ISLA_DETAIL_WAIT").is_some(),
         radius,
+        radius_fixed: std::env::var_os("FORJA_ISLA_DETAIL_M").is_some(),
         stats: DetailStats::default(),
         logged: (0, 0),
     };
     // The cells around the start are asked for now: they build while the
     // rest of the game loads.
     let spawn = app.world.res::<GameWorld>().desc.spawn(SpawnKind::Player).map_or(Vec3::ZERO, |s| s.pos);
-    let wait = std::mem::replace(&mut detail.wait, false);
-    let skip = app.world.resources.get::<DetailSkip>().cloned();
-    detail.update(app.world.res_mut::<RenderScene>(), spawn, skip.as_ref());
-    detail.wait = wait;
+    if !detail.wait {
+        let skip = app.world.resources.get::<DetailSkip>().cloned();
+        detail.update(app.world.res_mut::<RenderScene>(), spawn, skip.as_ref());
+    }
     log::info!("island detail: kit and index in {:.2}s, {} cells with buildings, radius {:.0}/{:.0} m", t0.elapsed().as_secs_f32(), detail.index.cells.len(), radius.0, radius.1);
     app.insert_resource(detail);
     app.add_system(Stage::PreUpdate, "island_detail", |w| {
-        let eye = w.res::<RenderScene>().camera.position;
+        // The camera of the last frame; a fixed camera (captures,
+        // cinematics) is known before its first frame, and before any
+        // frame the player's start stands in.
+        let cam = w.res::<RenderScene>().camera.position;
+        let fixed = w.resources.get::<super::camera::CameraRig>().and_then(|r| r.fixed).map(|f| f.0);
+        let eye = fixed.unwrap_or(if cam == Vec3::ZERO { w.res::<GameWorld>().desc.spawn(SpawnKind::Player).map_or(cam, |s| s.pos) } else { cam });
         let skip = w.resources.get::<DetailSkip>().cloned();
         w.scope::<IslandDetail, _>(|w, d| d.update(w.res_mut::<RenderScene>(), eye, skip.as_ref()));
     });
