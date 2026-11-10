@@ -20,14 +20,11 @@
 //!   ids). Its buildings get no tile shell but one shell per site, the
 //!   stand-in of a far-distance group ([`Island::sites`], [`SiteShell`]);
 //!   every [`shells::Building`] carries its `site`. They still collide.
-//! * Per tile: every [`BuildingTile`] shell is the stand-in of its own
-//!   group ([`BuildingTile::group`], switching at [`FACADE_DETAIL`] HLOD
-//!   distances). The game adds the tile's detail as a static layer gated
-//!   by that group (`sandbox::game::RenderScene::static_layers`,
-//!   `StaticLayer::gate` / `replaces`) and the renderer swaps shell and
-//!   detail; until a layer arrives the group is kept "not ready" and shows
-//!   the shell. `sandbox::game::island` does both (facades from
-//!   `forja_city::building`, landmarks from `forja_city::landmark`).
+//! * Per tile: every [`BuildingTile`] shell has its own far-distance
+//!   group ([`BuildingTile::group`]) that the game hides while it draws
+//!   the tile's detail itself (`forja_render::Renderer::
+//!   set_static_group_hidden`; [`detail`] builds the facades and
+//!   `sandbox::game::island_detail` streams them as static layers).
 //!
 //! ## What is real and what is designed
 //!
@@ -46,6 +43,7 @@
 //! origin at the Plaça de l'Ajuntament, heights above sea level.
 
 pub mod data;
+pub mod detail;
 pub mod flora;
 pub mod ground;
 pub mod roads;
@@ -120,8 +118,9 @@ pub struct BuildingTile {
     pub buildings: std::ops::Range<usize>,
     /// Index of its shell placement in the world's placements.
     pub placement: usize,
-    /// Far-distance group of the shell (its stand-in): the game brings the
-    /// tile's detailed facades as the group's detail (0: no shell).
+    /// Far-distance group of that placement: never far, so the game can
+    /// hide the shells of a tile whose detail it draws itself
+    /// (`forja_render::Renderer::set_static_group_hidden`).
     pub group: u32,
     pub bounds: (Vec3, Vec3),
 }
@@ -143,8 +142,9 @@ pub struct Island {
     /// Per [`IslandWorld::sites`] entry: its shell (`None` when no building
     /// stands there).
     pub sites: Vec<Option<SiteShell>>,
-    /// The shared materials (to mesh more shells at run time).
-    pub materials: Materials,
+    /// The shells' texture, glow map and material, to mesh the shells of
+    /// part of a tile with ([`shells::tile_mesh`]).
+    pub shell: Arc<(TextureData, Option<TextureData>, MaterialData)>,
 }
 
 impl Island {
@@ -406,6 +406,11 @@ impl Materials {
         Materials { covers, cover_colors, surfaces, shell: Arc::new(tex::shell_material(night)) }
     }
 
+    /// A scene of `mesh` with the shells' material.
+    pub fn shell_mesh_scene(shell: &Arc<(TextureData, Option<TextureData>, MaterialData)>, mesh: MeshData) -> SceneData {
+        scene_of("isla_shells", vec![(shell.clone(), mesh)])
+    }
+
     /// The shell scene of a set of buildings (`None` without any).
     pub fn shell_scene(&self, buildings: &[Building], polys: &[data::Poly]) -> Option<SceneData> {
         let mesh = shells::tile_mesh(buildings, polys);
@@ -563,8 +568,8 @@ impl WorldSource for IslandWorld {
             t.placement = w.placements.len();
             group += 1;
             t.group = group;
-            w.lod_tags.push((t.placement, group, true));
-            w.lod_scales.push((group, FACADE_DETAIL));
+            w.lod_tags.push((t.placement, group, false));
+            w.lod_scales.push((group, SHELL_DETAIL));
             w.add_scene(Arc::new(s), Mat4::IDENTITY);
             kept.push(t);
         }
@@ -621,7 +626,7 @@ impl WorldSource for IslandWorld {
         w.attribution.push("Isla Levante: map data © OpenStreetMap contributors, ODbL 1.0; barrios: Ajuntament de València, CC BY 4.0".into());
         let map = Arc::new(MapData::build(&d, &removed, start));
         let tile_index = tiles.iter().enumerate().map(|(i, t)| (t.key, i)).collect();
-        w.island = Some(Arc::new(Island { data: d, ground: g, buildings, tiles, tile_index, map, night, groups: group, sites, materials: mats }));
+        w.island = Some(Arc::new(Island { data: d, ground: g, buildings, tiles, tile_index, map, night, groups: group, sites, shell: mats.shell.clone() }));
         log::info!("island: built in {:.2}s ({})", t0.elapsed().as_secs_f32(), w.stats.iter().map(|(k, v)| format!("{v} {k}")).collect::<Vec<_>>().join(", "));
         Ok(w)
     }
@@ -800,7 +805,6 @@ pub const TERRAIN_TILE: f32 = TILE;
 /// The terrain keeps its near meshes (textured land cover) within this
 /// many HLOD distances, streets and paths within [`STREET_DETAIL`].
 pub const TERRAIN_DETAIL: f32 = 2.0;
-/// Detailed facades replace a tile's shells within this many HLOD
-/// distances (150 m at the default 250 m).
-pub const FACADE_DETAIL: f32 = 0.6;
 pub const STREET_DETAIL: f32 = 5.0;
+/// Shell tiles are groups that never go far (they have no stand-in).
+pub const SHELL_DETAIL: f32 = 1.0e6;
