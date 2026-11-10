@@ -557,6 +557,75 @@ impl Kit {
         !self.pbr.is_empty()
     }
 
+    /// Every texture of the kit.
+    fn textures_mut(&mut self) -> Vec<&mut TextureData> {
+        let mut v: Vec<&mut TextureData> = Vec::new();
+        for s in self.pbr.values_mut() {
+            v.push(&mut s.color);
+            v.extend(s.normal.as_mut());
+            v.extend(s.orm.as_mut());
+            v.extend(s.emission.as_mut());
+        }
+        for s in self.tiles.values_mut().chain([&mut self.glass, &mut self.road_paint, &mut self.hdpe]) {
+            v.push(&mut s.color);
+            v.extend(s.normal.as_mut());
+            v.extend(s.orm.as_mut());
+        }
+        v.extend(self.signs.values_mut());
+        v.extend(self.ped.iter_mut());
+        v.extend(self.graffiti.iter_mut());
+        v.extend(self.awnings.iter_mut());
+        v.extend(self.plates.iter_mut());
+        v.extend(self.bike_lenses.iter_mut());
+        let d = &mut self.decals;
+        v.extend([&mut d.plinth, &mut d.wash, &mut d.streaks, &mut d.soot, &mut d.ground]);
+        v.extend([&mut self.shop_signs, &mut self.interiors, &mut self.shop_interiors, &mut self.shop_lights, &mut self.interior_ao, &mut self.interiors_lit, &mut self.curtains_lit, &mut self.shop_signs_lit, &mut self.street_atlas]);
+        v
+    }
+
+    /// Drops the pixels of the kit's textures that `uploaded` holds (a
+    /// scene the renderer has, or is about to have): each becomes a
+    /// placeholder of the same size and name with a four-byte buffer.
+    /// Returns `(original, placeholder)` pairs: once the renderer knows
+    /// each placeholder stands for its original (an alias in its texture
+    /// cache), scenes assembled from this kit draw as before and the kit
+    /// no longer keeps a gigabyte of pixels in memory. For a kit that
+    /// lives as long as the game (streamed city detail).
+    pub fn hollow_textures(&mut self, uploaded: &SceneData) -> Vec<(TextureData, TextureData)> {
+        let held: std::collections::HashSet<usize> = uploaded.textures.iter().map(|t| t.rgba8.as_ptr() as usize).collect();
+        let mut made: HashMap<(usize, bool), TextureData> = HashMap::new();
+        let mut pairs = Vec::new();
+        for t in self.textures_mut() {
+            let key = (t.rgba8.as_ptr() as usize, t.srgb);
+            if !held.contains(&key.0) || t.rgba8.len() <= 64 {
+                continue;
+            }
+            let ph = made.entry(key).or_insert_with(|| {
+                let ph = TextureData { name: t.name.clone(), width: t.width, height: t.height, rgba8: Arc::from(vec![0u8; 4]), srgb: t.srgb };
+                pairs.push((t.clone(), ph.clone()));
+                ph
+            });
+            *t = ph.clone();
+        }
+        let mut left: HashMap<usize, (usize, String)> = HashMap::new();
+        for t in self.textures_mut() {
+            if t.rgba8.len() > 64 {
+                left.insert(t.rgba8.as_ptr() as usize, (t.rgba8.len(), format!("{} {}x{}", t.name, t.width, t.height)));
+            }
+        }
+        let mut big: Vec<&(usize, String)> = left.values().collect();
+        big.sort_by(|a, b| b.0.cmp(&a.0));
+        log::info!(
+            "city kit: {} textures ({:.0} MB) left to the renderer, {} ({:.0} MB) kept: {}",
+            pairs.len(),
+            pairs.iter().map(|p| p.0.rgba8.len()).sum::<usize>() as f64 / 1048576.0,
+            left.len(),
+            left.values().map(|l| l.0).sum::<usize>() as f64 / 1048576.0,
+            big.iter().take(8).map(|l| l.1.as_str()).collect::<Vec<_>>().join(", ")
+        );
+        pairs
+    }
+
     fn set(&self, id: &str) -> Option<&PbrSet> {
         self.pbr.get(id)
     }
