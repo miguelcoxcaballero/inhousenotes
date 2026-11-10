@@ -127,8 +127,12 @@ enum Source {
 }
 
 struct Segment {
-    key: u32,
+    /// The draw key itself (not its index): segments of several scenes are
+    /// merged into one draw per key and LOD.
+    key: DrawKey,
     lod: u32,
+    /// Index of the scene the source indices refer to.
+    scene: u32,
     src: Source,
 }
 
@@ -160,6 +164,9 @@ pub(crate) struct StaticScene {
     not_ready: std::collections::HashSet<u32>,
     /// Groups that switch at a multiple of the HLOD distance.
     scale: std::collections::HashMap<u32, f32>,
+    /// Groups not drawn at all (their content is shown by a streamed
+    /// layer instead, see `Renderer::add_static_layer`).
+    hidden: std::collections::HashSet<u32>,
     /// Groups switched in the last [`StaticScene::update_groups`].
     pub switched: u32,
 }
@@ -309,6 +316,23 @@ impl StaticScene {
         }
     }
 
+    /// Hides or shows every item of `group`, whatever its distance.
+    pub fn set_hidden(&mut self, group: u32, hidden: bool) {
+        if hidden {
+            self.hidden.insert(group);
+        } else {
+            self.hidden.remove(&group);
+        }
+    }
+
+    pub fn take_hidden(&mut self) -> std::collections::HashSet<u32> {
+        std::mem::take(&mut self.hidden)
+    }
+
+    pub fn put_hidden(&mut self, hidden: std::collections::HashSet<u32>) {
+        self.hidden = hidden;
+    }
+
     /// Makes `group` switch at `scale` times the HLOD distance.
     pub fn set_scale(&mut self, group: u32, scale: f32) {
         self.scale.insert(group, scale);
@@ -365,15 +389,46 @@ impl StaticScene {
     /// applies any bias and clamps to the mesh's levels). Returns the number of instances emitted.
     #[cfg(test)]
     pub fn gather(&mut self, view: &View, lod_for: &(dyn Fn(u32, f32) -> u32 + Sync), out: &mut Vec<InstanceRaw>, batches: &mut Vec<Batch>) -> u32 {
-        self.gather_into(&mut GatherScratch::default(), view, lod_for, out, batches)
+        Self::gather_all(&[self], &mut GatherScratch::default(), view, lod_for, out, batches)
     }
 
-    /// [`StaticScene::gather`] with caller-owned working memory, so
-    /// several views can be gathered at once (the scene is only read).
-    pub fn gather_into(&self, sc: &mut GatherScratch, view: &View, lod_for: &(dyn Fn(u32, f32) -> u32 + Sync), out: &mut Vec<InstanceRaw>, batches: &mut Vec<Batch>) -> u32 {
+    /// Culls several scenes (the world's static set and its streamed
+    /// layers) for one view as if they were one: instances of the same
+    /// mesh and LOD from different scenes share a draw. The working memory is
+    /// the caller's, so several views can be gathered at once (the scenes
+    /// are only read).
+    pub fn gather_all(scenes: &[&StaticScene], sc: &mut GatherScratch, view: &View, lod_for: &(dyn Fn(u32, f32) -> u32 + Sync), out: &mut Vec<InstanceRaw>, batches: &mut Vec<Batch>) -> u32 {
+        sc.segments.clear();
+        sc.picked.clear();
+        for (i, s) in scenes.iter().enumerate() {
+            s.collect(i as u32, sc, view, lod_for);
+        }
         let GatherScratch { segments, picked } = sc;
-        segments.clear();
-        picked.clear();
+        segments.sort_unstable_by_key(|s| (s.key, s.lod));
+        let mut emitted = 0;
+        let mut i = 0;
+        while i < segments.len() {
+            let (key, lod) = (segments[i].key, segments[i].lod);
+            let first = out.len() as u32;
+            while i < segments.len() && segments[i].key == key && segments[i].lod == lod {
+                let raws = &scenes[segments[i].scene as usize].raws;
+                match segments[i].src {
+                    Source::Range(s, n) => out.extend_from_slice(&raws[s as usize..(s + n) as usize]),
+                    Source::Picked(s, n) => out.extend(picked[s as usize..(s + n) as usize].iter().map(|&k| raws[k as usize])),
+                }
+                i += 1;
+            }
+            let count = out.len() as u32 - first;
+            emitted += count;
+            batches.push(Batch { pipe: key.pipe, material: key.material, mesh: key.mesh, lod, skinned: false, first, count });
+        }
+        emitted
+    }
+
+    /// The visible runs of this scene for `view`, appended to `sc` as
+    /// segments tagged with `scene`.
+    fn collect(&self, scene: u32, sc: &mut GatherScratch, view: &View, lod_for: &(dyn Fn(u32, f32) -> u32 + Sync)) {
+        let GatherScratch { segments, picked } = sc;
         for (cell, inside) in self.blocks.iter().flat_map(|(bounds, range)| {
             let class = classify(view.planes, bounds);
             let cells = if class == 0 { &[][..] } else { &self.cells[range.start as usize..range.end as usize] };
@@ -386,7 +441,7 @@ impl StaticScene {
             let d = dist_to_aabb(view.eye, &cell.bounds).max(0.1);
             let min_r = (view.min_radius_per_m * d).max(view.min_radius);
             for run in &self.runs[cell.runs.start as usize..cell.runs.end as usize] {
-                if run.max_radius < min_r || (view.shadow && !run.casts) || run.role & view.skip != 0 || (run.group > 0 && self.groups.get(run.group as usize - 1).is_some_and(|g| g.1 != run.hlod)) {
+                if run.max_radius < min_r || (view.shadow && !run.casts) || run.role & view.skip != 0 || (run.group > 0 && (self.groups.get(run.group as usize - 1).is_some_and(|g| g.1 != run.hlod) || self.hidden.contains(&run.group))) {
                     continue;
                 }
                 let budget = |r: f32, d: f32| {
@@ -420,13 +475,13 @@ impl StaticScene {
                             let di = ((s.truncate() - view.eye).length() - r).max(0.1);
                             let p0 = picked.len() as u32;
                             picked.push(run.start + k as u32);
-                            segments.push(Segment { key: run.key, lod: lod_for(mesh, budget(r, di)), src: Source::Picked(p0, 1) });
+                            segments.push(Segment { key: self.keys[run.key as usize], lod: lod_for(mesh, budget(r, di)), scene, src: Source::Picked(p0, 1) });
                         }
                     }
                     continue;
                 }
                 if class == 2 && (!view.shadow || range[..n as usize].iter().all(|s| s.w >= 0.0)) {
-                    segments.push(Segment { key: run.key, lod, src: Source::Range(run.start, n) });
+                    segments.push(Segment { key: self.keys[run.key as usize], lod, scene, src: Source::Range(run.start, n) });
                 } else {
                     let p0 = picked.len() as u32;
                     for (k, s) in range[..n as usize].iter().enumerate() {
@@ -439,30 +494,11 @@ impl StaticScene {
                     }
                     let pn = picked.len() as u32 - p0;
                     if pn > 0 {
-                        segments.push(Segment { key: run.key, lod, src: Source::Picked(p0, pn) });
+                        segments.push(Segment { key: self.keys[run.key as usize], lod, scene, src: Source::Picked(p0, pn) });
                     }
                 }
             }
         }
-        segments.sort_unstable_by_key(|s| (s.key, s.lod));
-        let mut emitted = 0;
-        let mut i = 0;
-        while i < segments.len() {
-            let (key, lod) = (segments[i].key, segments[i].lod);
-            let first = out.len() as u32;
-            while i < segments.len() && segments[i].key == key && segments[i].lod == lod {
-                match segments[i].src {
-                    Source::Range(s, n) => out.extend_from_slice(&self.raws[s as usize..(s + n) as usize]),
-                    Source::Picked(s, n) => out.extend(picked[s as usize..(s + n) as usize].iter().map(|&k| self.raws[k as usize])),
-                }
-                i += 1;
-            }
-            let count = out.len() as u32 - first;
-            emitted += count;
-            let k = self.keys[key as usize];
-            batches.push(Batch { pipe: k.pipe, material: k.material, mesh: k.mesh, lod, skinned: false, first, count });
-        }
-        emitted
     }
 }
 

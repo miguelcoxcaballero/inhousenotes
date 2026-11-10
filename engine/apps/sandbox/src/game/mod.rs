@@ -8,6 +8,7 @@ pub mod crowd;
 pub mod env;
 pub mod humans;
 pub mod island;
+pub mod island_detail;
 pub mod people;
 pub mod player;
 pub mod props;
@@ -89,23 +90,6 @@ impl RenderItem {
     }
 }
 
-/// Static items added to a running world (see
-/// [`RenderScene::static_layers`]).
-#[derive(Clone, Default)]
-pub struct StaticLayer {
-    pub items: Vec<RenderItem>,
-    /// A far-distance group this layer replaces: from then on the group
-    /// never shows its stand-in.
-    pub replaces: Option<u32>,
-    /// A far-distance group this layer is the detail of: drawn while the
-    /// group is near, the group's stand-in beyond.
-    pub gate: Option<u32>,
-    /// Name to drop the layer by ([`RenderScene::drop_layers`]).
-    pub key: Option<u64>,
-    /// Models only this layer uses: their meshes are freed with it.
-    pub own_models: Vec<usize>,
-}
-
 /// Everything the renderer needs, filled by the plugins every frame.
 #[derive(Default)]
 pub struct RenderScene {
@@ -126,16 +110,6 @@ pub struct RenderScene {
     /// Far-distance groups kept at their stand-in whatever the distance
     /// (their detail is not there yet).
     pub static_not_ready: Vec<u32>,
-    /// Static items that arrived while the world runs (a landmark built in
-    /// the background): the renderer takes each as a layer of its own once
-    /// its models are uploaded, without rebuilding the static set.
-    pub static_layers: Vec<StaticLayer>,
-    /// Models that are only drawn: their CPU copy (vertices, textures) is
-    /// dropped once they are on the GPU.
-    pub draw_only: std::collections::HashSet<usize>,
-    /// Keys of installed layers to remove (their group goes back to its
-    /// stand-in).
-    pub drop_layers: Vec<u64>,
     pub dynamic: Vec<RenderItem>,
     pub lights: Vec<PointLight>,
     /// Physical point and spot lights of this frame (the city at night).
@@ -145,6 +119,18 @@ pub struct RenderScene {
     pub env: Environment,
     /// Equirectangular HDR photo used for image-based lighting.
     pub hdri: Option<PathBuf>,
+    /// Commands for the renderer's streamed static layers, applied in
+    /// order after the frame's uploads (see [`island_detail::sync`]).
+    pub layer_cmds: Vec<island_detail::LayerCmd>,
+    /// Radius (m) of the island's streamed detail for the renderer's
+    /// graphics settings (set by the frame extraction).
+    pub detail_radius: Option<f32>,
+    /// Models whose CPU copy is dropped once they are on the GPU.
+    pub strip_after_upload: Vec<usize>,
+    /// Textures that stand for the textures of a model once it is
+    /// uploaded: `(model, (original, placeholder) pairs)`, see
+    /// `forja_render::Renderer::alias_texture`.
+    pub texture_aliases: Option<(usize, Vec<(forja_assets::TextureData, forja_assets::TextureData)>)>,
 }
 
 impl RenderScene {
