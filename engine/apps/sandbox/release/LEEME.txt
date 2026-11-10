@@ -4,7 +4,28 @@ FORJA - version jugable (Windows)
 Mundo abierto en una ciudad procedural de Madrid y Valencia: camina, corre,
 conduce coches y usa armas e inventario.
 
-NOVEDADES (proxima version)
+NOVEDADES DE LA v0.1.7
+  - LA ISLA LEVANTE ENTERA: todo el mapa jugable sin huecos (Valencia, puerto,
+    Albufera, pueblos, montana y costa). Terreno real (IGN MDT25) y alturas de
+    edificios medidas con LiDAR (IGN PNOA) en Valencia; 43.800 edificios,
+    ~340.000 arboles y trafico y peatones en toda la isla.
+  - 63 EDIFICIOS EMBLEMATICOS de Valencia modelados a mano en su sitio real:
+    Llotja, Mercat Central, Catedral y Micalet, Torres de Serrans, Ciutat de
+    les Arts i les Ciencies, Estacio del Nord, Placa de Bous... El resto de la
+    ciudad usa los edificios procedurales, con fachadas, balcones y
+    mobiliario detallados alrededor del jugador.
+  - La primera vez que juegas, los monumentos se preparan en segundo plano
+    (unos minutos); mientras tanto se ve un volumen simple en su lugar.
+  - Carreteras lisas: los coches ya no se paran en seco con pequenos baches ni
+    juntas, y los puentes llegan enrasados.
+  - Conduccion mas realista: el coche ya no pierde el control facilmente.
+  - Cielo fisico en toda la isla.
+
+NOVEDADES DE LA v0.1.6
+  - El contenido (texturas, personajes, coches) viene dentro del ZIP: no hay
+    descargas al arrancar.
+
+NOVEDADES DEL RADAR (v0.1.7)
   - RADAR como el de GTA V, abajo a la izquierda: gira con la camara, plano a
     pie e inclinado en coche, se aleja con la velocidad, flecha del jugador,
     N en el borde, monumentos, hospitales, policia, mercados, gasolineras y
