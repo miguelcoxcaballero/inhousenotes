@@ -1482,6 +1482,9 @@ pub struct Renderer {
     /// CPU scopes of the last [`Renderer::render`].
     pub cpu: profiler::CpuScopes,
     statics: StaticScene,
+    /// Streamed layers of static instances ([`Renderer::add_static_layer`]):
+    /// the scene and whether it is drawn; `None` for a removed layer.
+    layers: Vec<Option<(StaticScene, bool)>>,
     cascade_cache: [CascadeCache; 4],
     /// Sun direction the shadow maps are fitted to: follows the sun in
     /// steps of 0.1° (stable shadows), so a moving sun does not make
@@ -2257,6 +2260,7 @@ impl Renderer {
             profiler: gpu_profiler,
             cpu: Default::default(),
             statics: StaticScene::default(),
+            layers: Vec::new(),
             cascade_cache: Default::default(),
             shadow_sun: Vec3::Y,
             texture_bytes: 0,
@@ -2306,6 +2310,7 @@ impl Renderer {
         self.vertex_pool = mesh_pool::MeshPool::new("vertex pool", wgpu::BufferUsages::VERTEX, std::mem::size_of::<Vertex>() as u32, 64 << 20);
         self.index_pool = mesh_pool::MeshPool::new("index pool", wgpu::BufferUsages::INDEX, 4, 32 << 20);
         self.statics = StaticScene::default();
+        self.layers = Vec::new();
         self.scratch = Vec::new();
         self.last_batches = Default::default();
         self.mesh_bytes = 0;
@@ -3090,6 +3095,17 @@ impl Renderer {
     /// instances beyond [`RenderSettings::hlod_distance`].
     pub fn set_static_instances_lod(&mut self, instances: &[DrawInstance], lod: &[StaticLod]) {
         let t = std::time::Instant::now();
+        let items = self.static_items(instances, lod);
+        // Streamed layers and the groups they stand in for outlive a
+        // rebuild of the static set.
+        let hidden = self.statics.take_hidden();
+        self.statics = StaticScene::build(items);
+        self.statics.put_hidden(hidden);
+        log::info!("static set: {} instances, {} parts in {} cells ({:.1} ms)", instances.len(), self.statics.items, self.statics.cell_count(), t.elapsed().as_secs_f32() * 1000.0);
+    }
+
+    /// World-space parts of `instances` for a static culling grid.
+    fn static_items(&self, instances: &[DrawInstance], lod: &[StaticLod]) -> Vec<StaticItem> {
         let mut items = Vec::new();
         for (ii, inst) in instances.iter().enumerate() {
             let Some(model) = self.models.get(inst.model.0 as usize) else { continue };
@@ -3117,8 +3133,53 @@ impl Renderer {
                 });
             }
         }
-        self.statics = StaticScene::build(items);
-        log::info!("static set: {} instances, {} parts in {} cells ({:.1} ms)", instances.len(), self.statics.items, self.statics.cell_count(), t.elapsed().as_secs_f32() * 1000.0);
+        items
+    }
+
+    /// Adds a layer of static instances next to the world's static set:
+    /// content streamed in at run time (the detailed buildings and street
+    /// furniture of the tiles around the player). A layer is culled and
+    /// batched with the static set (same meshes share draws), can be
+    /// shown or hidden as a whole and removed again; the static set itself
+    /// is not rebuilt. Returns its id.
+    pub fn add_static_layer(&mut self, instances: &[DrawInstance], visible: bool) -> u32 {
+        let scene = StaticScene::build(self.static_items(instances, &[]));
+        match self.layers.iter().position(|l| l.is_none()) {
+            Some(i) => {
+                self.layers[i] = Some((scene, visible));
+                i as u32
+            }
+            None => {
+                self.layers.push(Some((scene, visible)));
+                self.layers.len() as u32 - 1
+            }
+        }
+    }
+
+    /// Shows or hides a layer of [`Renderer::add_static_layer`].
+    pub fn set_static_layer_visible(&mut self, layer: u32, visible: bool) {
+        if let Some(Some(l)) = self.layers.get_mut(layer as usize) {
+            l.1 = visible;
+        }
+    }
+
+    pub fn remove_static_layer(&mut self, layer: u32) {
+        if let Some(l) = self.layers.get_mut(layer as usize) {
+            *l = None;
+        }
+    }
+
+    /// Hides (or shows again) every static instance of a far-distance
+    /// group, whatever its distance: a streamed layer draws that content
+    /// instead.
+    pub fn set_static_group_hidden(&mut self, group: u32, hidden: bool) {
+        self.statics.set_hidden(group, hidden);
+    }
+
+    /// `(layers, instances parts in them, parts in the visible ones)`.
+    pub fn static_layer_stats(&self) -> (usize, usize, usize) {
+        let live = self.layers.iter().flatten();
+        (live.clone().count(), live.clone().map(|l| l.0.items).sum(), live.filter(|l| l.1).map(|l| l.0.items).sum())
     }
 
     /// Applies a graphics configuration: cost knobs immediately, shadow map
@@ -3644,7 +3705,9 @@ impl Renderer {
         {
             use rayon::prelude::*;
             let meshes = &self.meshes;
-            let statics = &self.statics;
+            let mut scenes: Vec<&StaticScene> = vec![&self.statics];
+            scenes.extend(self.layers.iter().flatten().filter(|l| l.1).map(|l| &l.0));
+            let scenes = &scenes[..];
             let main_view = static_scene::View { planes: &frustum.planes, eye: cam.position, min_radius_per_m: s.detail_cull_px / focal, min_radius: 0.0, lod_scale, texel_lod_scale: 0.0, shadow: false, skip: static_scene::role_bit(ShadowRole::Proxy), stable_lod: false };
             // (view, LOD bias) per list: the camera, then each shadow view.
             let mut views: Vec<Option<(static_scene::View, u32)>> = vec![Some((main_view, 0))];
@@ -3676,7 +3739,7 @@ impl Renderer {
                 list.ms = 0.0;
                 if let Some((v, bias)) = view {
                     let bias = *bias;
-                    statics.gather_into(&mut list.scratch, v, &|m, b| Self::lod_for(meshes, m, b, bias), &mut list.out, &mut list.batches);
+                    StaticScene::gather_all(scenes, &mut list.scratch, v, &|m, b| Self::lod_for(meshes, m, b, bias), &mut list.out, &mut list.batches);
                     list.ms = t.elapsed().as_secs_f32() * 1000.0;
                 }
             });

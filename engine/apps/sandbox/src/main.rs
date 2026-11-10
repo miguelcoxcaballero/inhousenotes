@@ -252,13 +252,15 @@ struct Extract {
     freed: usize,
     /// Streaming of the city tiles' block meshes (see `sandbox::stream`).
     stream: Option<sandbox::stream::Streamer>,
+    /// The island's streamed detail layers (see `game::island_detail`).
+    layers: game::island_detail::LayerSync,
     /// CPU ms of the last [`Extract::frame`] by stage (frame trace).
     pub timings: [(&'static str, f32); 4],
 }
 
 impl Extract {
     fn new() -> Self {
-        Self { handles: Vec::new(), env_loaded: false, statics_uploaded: None, legacy: std::env::var_os("FORJA_LEGACY_STATICS").is_some(), upload_ms: 0.0, freed: 0, stream: None, timings: [("uploads", 0.0), ("statics", 0.0), ("stream", 0.0), ("instances", 0.0)] }
+        Self { handles: Vec::new(), env_loaded: false, statics_uploaded: None, legacy: std::env::var_os("FORJA_LEGACY_STATICS").is_some(), upload_ms: 0.0, freed: 0, stream: None, layers: Default::default(), timings: [("uploads", 0.0), ("statics", 0.0), ("stream", 0.0), ("instances", 0.0)] }
     }
 
     /// Uploads the models added since the last frame. The world's scenes
@@ -424,6 +426,7 @@ impl Extract {
         // Items listed in `volatile_statics` (signal heads) change at run
         // time and are submitted per frame instead.
         self.upload_statics(renderer, app);
+        game::island_detail::sync(&mut self.layers, renderer, &self.handles, app.world.res_mut::<RenderScene>());
         let rs = app.world.res::<RenderScene>();
         let t2 = Instant::now();
         self.timings[1].1 = (t2 - t1).as_secs_f32() * 1000.0;
