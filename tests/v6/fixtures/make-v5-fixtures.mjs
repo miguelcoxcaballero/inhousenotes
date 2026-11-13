@@ -367,6 +367,15 @@ async function home(name, scenes = ['template']) {
   return t;
 }
 
+/**
+ * The app is closed: its document unloads and the Web Locks it held (its `sync` lease) are released a moment later, in
+ * real time. Whatever is started next must not find them still held, so this returns only once they are gone.
+ */
+async function closeApp(t) {
+  await t.page.goto(`${server.url}/__seed`, { waitUntil: 'commit' });
+  while (await t.page.evaluate(async () => (await navigator.locks.query()).held.length > 0)) await new Promise(resolve => setTimeout(resolve, 20));
+}
+
 const storage = {
   // A Drive document edited while offline: offline snapshot + outbox row, nothing uploaded.
   async 'offline-dirty'() {
@@ -433,9 +442,12 @@ const storage = {
     await t.advance(3000, { step: 100 });
     return t;
   },
-  // Offline edits, closed to Home; meanwhile another device replaced the Drive revision (R1). The app is started
-  // again online, and its outbox runner writes both full PDFs to `recoveries` before it merges; the upload itself
-  // never completes. NOT reproducible byte for byte (see UNSTABLE below): made once, on request only.
+  // Offline edits, closed to Home, app closed; meanwhile another device replaced the Drive revision (R1). A minute
+  // later the device is online and Android's background processor runs the outbox (as in `background-worker`): it
+  // finds Drive changed underneath the draft and writes both full PDFs to `recoveries` (`localBlob` + `remoteBlob`)
+  // before it merges; the upload of the merged document never completes. (The same row is written when the app
+  // itself is started again, but there the outbox runner races the library refresh in real time; the processor
+  // has no library refresh, so this dump is reproducible.)
   async 'recovery-conflict'() {
     const t = await openScene('recovery-conflict', 'r0');
     t.mock.offline = true;
@@ -443,35 +455,34 @@ const storage = {
     await t.advance(12_000, { step: 100 });
     await t.click('#btn-drive-home');
     await t.advance(3000, { step: 100 });
+    await closeApp(t);
     t.mock.drive.handle({ method: 'PATCH', url: 'https://www.googleapis.com/upload/drive/v3/files/scene-r0?uploadType=media', headers: { authorization: `Bearer ${t.mock.drive.accounts.get(ANA).token}`, 'content-type': 'application/pdf' }, body: fs.readFileSync(path.join(HERE, 'v5', 'r1.pdf')) });
+    await t.advance(60_000, { step: 5000 });   // the closed app's `sync` lease (45 s) has run out
     t.mock.inject({ path: '/upload/drive/', times: Infinity, hold: true });
     t.mock.offline = false;
-    // The closed document's Web Locks (its `sync` lease) are released a moment after it unloads, in real time; the new
-    // one must not find them still held, so it starts only once they are gone.
-    await t.page.goto(`${server.url}/__seed`, { waitUntil: 'commit' });
-    while (await t.page.evaluate(async () => (await navigator.locks.query()).held.length > 0)) await new Promise(resolve => setTimeout(resolve, 20));
-    await t.page.goto(`${server.url}/?e2e=1`, { waitUntil: 'commit' });
-    await t.advance(90_000, { step: 250 });
-    const rows = await t.job(async () => (await InhouseOfflineStore.list('recoveries', InhouseOfflineLibrary.account())).filter(r => r.localBlob && r.remoteBlob).length).catch(() => -1);
-    if (rows !== 1) { await t.stop(); throw new Error(`recovery-conflict: the outbox runner lost the start-up race this time (conflict rows: ${rows}); run it again`); }
+    await t.page.goto(`${server.url}/?inhouse_app=1&offline-worker=1&e2e=1`, { waitUntil: 'commit' });
+    await t.advance(30_000, { step: 100 });
     return t;
   },
-  // The hidden background processor as the Android host runs it (`/?offline-worker=1`): its own `background-`
-  // databases and localStorage keys next to the foreground ones, with an upload still in flight.
+  // The hidden background processor as the Android host runs it while the app is closed (`/?inhouse_app=1&
+  // offline-worker=1`, WorkManager's headless WebView). The user writes offline and closes the app at once: the draft
+  // is in the outbox, its upload PDF not built yet. Six minutes later (the closed editor's 5-minute lease has run
+  // out) the device is online and the processor starts: it loads the draft into its own `background-` database and
+  // localStorage keys, builds the PDF and begins the upload, which is still in flight when the dump is taken.
   async 'background-worker'() {
     const t = await openScene('background-worker', 'r0');
     t.mock.offline = true;
-    await write(t, { rows: 1, perRow: 2, y: 420 });
-    await t.advance(12_000, { step: 100 });
-    await t.click('#btn-drive-home');
-    await t.advance(3000, { step: 100 });
+    await write(t, { rows: 1, perRow: 2, y: 420, settle: false });
+    await t.advance(300);
+    const draft = await t.page.evaluate(async () => { const doc = await InhouseOfflineStore.read('documents', InhouseOfflineLibrary.account(), 'scene-r0'); return doc && { dirty: doc.dirty, snapshot: !!doc.snapshot, built: doc.preparedGeneration === doc.generation }; });
+    if (!draft?.dirty || !draft.snapshot || draft.built) { await t.stop(); throw new Error(`background-worker: the draft must be dirty and not built when the app closes: ${JSON.stringify(draft)}`); }
+    await closeApp(t);
+    await t.advance(6 * 60_000, { step: 5000 });
+    // Only uploads are held; everything before them (profile, metadata, conditional token) is answered.
     t.mock.inject({ path: '/upload/drive/', times: Infinity, hold: true });
     t.mock.offline = false;
-    const worker = await t.context.newPage();
-    await worker.goto(`${server.url}/?inhouse_app=1&offline-worker=1&e2e=1`, { waitUntil: 'commit' });
-    // Two pages, two clocks: they take turns, each idle before the other moves.
-    for (let ms = 0; ms < 40_000; ms += 250) { await t.advance(250, { step: 250 }); await t.advance(250, { step: 250, page: worker }); }
-    t.extraPages = [worker];
+    await t.page.goto(`${server.url}/?inhouse_app=1&offline-worker=1&e2e=1`, { waitUntil: 'commit' });
+    await t.advance(20_000, { step: 100 });
     return t;
   },
   // Page bodies checkpointed by the processing worker: `__inkCheckpoint` with codec `xor-v1`.
@@ -485,17 +496,11 @@ const storage = {
 
 // Revisions another device wrote to Drive during the scenario: their strokes are not this device's unsynced work.
 const ALSO_ON_DRIVE = { 'recovery-conflict': ['r1'] };
-// Scenarios whose result depends on which of 5.18.0's start-up flows (library refresh, outbox runner, each a chain of
-// IndexedDB, lock and worker round trips) wins a real-time race within one instant of fake time. Their committed dump
-// is a sample of one run: generated only when named with `--only`, never compared by `--check`.
-const UNSTABLE = new Set(['recovery-conflict']);
-
 async function makeStorage() {
   const dir = path.join(OUT, 'storage');
   fs.mkdirSync(dir, { recursive: true });
   for (const [name, run] of Object.entries(storage)) {
-    if (ONLY.length ? !ONLY.includes(name) : UNSTABLE.has(name)) continue;
-    if (CHECK && UNSTABLE.has(name)) { console.log(`storage/${name}: not reproducible byte for byte, skipped by --check`); continue; }
+    if (ONLY.length && !ONLY.includes(name)) continue;
     const t = await run();
     try {
       if (process.env.IHN_DET_TRAIL) fs.writeFileSync(path.join(dir, `${name}.trail.txt`), (await t.page.evaluate(() => self.__ihnDet.trail)).join('\n') + '\n');   // debugging aid, see determinism-init.js
@@ -514,6 +519,22 @@ async function makeStorage() {
         unsyncedStrokeIds: live.pages.flatMap(p => p.strokeIds).filter(id => !known.has(id)), editorOpen: live.editorOpen, offline: live.offline,
         stores, inkCodecs: codecs, localStorageKeys: Object.keys(dump.localStorage), sessionStorageKeys: Object.keys(dump.sessionStorage),
         driveRequests: t.mock.drive.log.filter(l => l.method !== 'GET').map(l => `${l.method} ${l.path} ${l.status}`) };
+      if (name === 'recovery-conflict') {
+        // What this fixture exists for: one conflict row holding both complete PDFs.
+        const rows = dump.indexedDB.find(db => db.name === 'inhouse-offline-v1').stores.find(s => s.name === 'recoveries').records.map(r => r.value).filter(row => row?.localBlob && row.remoteBlob);
+        if (rows.length !== 1) throw new Error(`recovery-conflict: expected one row with localBlob and remoteBlob, found ${rows.length}`);
+        expect.conflict = { recoveryKey: rows[0].id ?? null, fileId: rows[0].fileId ?? null, remoteFixture: 'r1' };
+      }
+      if (name === 'background-worker') {
+        // What this fixture exists for: the processor's own database and keys, populated, next to the foreground ones.
+        const background = stores['background-notebook-data-db-v1'] || {}, keys = Object.keys(dump.localStorage).filter(key => key.startsWith('background-'));
+        if (!(background.pages > 0) || !(background.snapshots > 0) || !keys.includes('background-notebook-data-v3') || !(stores['notebook-data-db-v1']?.pages > 0))
+          throw new Error(`background-worker: the background- variant is missing or empty: ${JSON.stringify({ background, keys })}`);
+        const sync = dump.indexedDB.find(db => db.name === 'inhouse-offline-v1').stores.find(s => s.name === 'leases').records.some(r => r.value?.id === 'sync' && r.value.owner);
+        const uploads = t.mock.calls.filter(call => !call.status && call.path.includes('/upload/drive/')).map(call => `${call.method} ${call.path}`);
+        if (!sync || !uploads.some(call => call.endsWith(`/files/${live.driveFileId}`))) throw new Error(`background-worker: the processor is not uploading (sync lease: ${sync}, held uploads: ${uploads.join(', ')})`);
+        expect.background = { database: 'background-notebook-data-db-v1', stores: background, localStorageKeys: keys, syncLeaseHeld: sync, uploadsInFlight: uploads };
+      }
       fs.writeFileSync(path.join(dir, `${name}.dump.json`), JSON.stringify(dump) + '\n');
       fs.writeFileSync(path.join(dir, `${name}.expect.json`), JSON.stringify(expect, null, 1) + '\n');
       console.log(`storage/${name}: ${(JSON.stringify(dump).length / 1024).toFixed(0)} KiB — doc ${live.driveFileId}, ${expect.unsyncedStrokeIds.length} unsynced strokes, codecs [${codecs}], stores ${JSON.stringify(stores)}${t.problems.length ? ' problems: ' + t.problems.join('; ') : ''}`);

@@ -4,6 +4,10 @@
 //
 //   node tests/v6/fixtures/record-traces.mjs [--only dense-page,ink-pen] [--check] [--out dir]
 //
+// Scenes: dense-page, dense-page-erase (full and damage repaint), thumbnails (Pages panel), page-preview and
+// page-preview-images (the preview kept for a released page), scroll-preview (the scroll-preview queue over several
+// pages), template-backgrounds, ink-pen, ink-highlighter.
+//
 // File format (normalize.mjs `stringifyTrace`): {"scene", "app", "viewport", "dpr", "input"?, "surfaces":[{"label",
 // "kind", "width", "height", "ops":[[name, ...args]]}]}, one op per line. Numbers are "~" + the 16 hex digits of their
 // IEEE-754 bits; see trace-init.js for the other argument forms. Surfaces are sorted by label; `offscreen#k` are
@@ -59,7 +63,8 @@ const scenes = {
     out['dense-page-erase'] = { trace: await take(t), input };
   },
 
-  // Thumbnails: the Pages panel of the template notebook (page previews drawn into their own canvases).
+  // Thumbnails, part 1: the Pages panel of the template notebook (page previews drawn into their own canvases).
+  // Parts 2 and 3 are the page-preview and scroll-preview scenes below.
   async thumbnails(t, out) {
     await t.open({ account: ANA, scene: 'template', settleMs: 6000 });
     await t.click('#mode-toggle-btn');
@@ -68,6 +73,29 @@ const scenes = {
     await t.click('#btn-edit-pages');
     await t.advance(2500);
     out.thumbnails = { trace: await take(t) };
+  },
+
+  // Page previews (`renderPagePreview`: PAGE_PREVIEW_SCALE canvas, JPEG 0.6), the picture a page keeps when its
+  // canvas is released: five pages of the 20-page notebook, then (second file) pages with inline images.
+  async 'page-preview'(t, out) { out['page-preview'] = await pagePreviews(t, 'dense-20', [0, 1, 2, 9, 19]); },
+  async 'page-preview-images'(t, out) { out['page-preview-images'] = await pagePreviews(t, 'inline-images', null); },
+
+  // Scroll previews (`processScrollPagePreview`: min(.25, 320/w, 440/h) canvas, JPEG 0.65): the queue working through
+  // the pages of the 20-page notebook that come into view while the user scrolls down with the wheel.
+  async 'scroll-preview'(t, out) {
+    await t.open({ account: ANA, scene: 'dense-20', settleMs: 8000 });
+    await reset(t);
+    await t.page.mouse.move(640, 500);
+    // One wheel notch moves the document 100 px: twelve of them bring the next page into view, then the user rests
+    // (the queue waits until the viewport is still) — four times, and each page that came into view gets its preview.
+    const input = [];
+    for (let block = 0; block < 4; block++) {
+      for (let notch = 0; notch < 12; notch++) { await t.wheel(0, 900); await t.advance(60); input.push({ wheel: [0, 900], thenMs: notch < 11 ? 60 : 2560 }); }
+      await t.advance(2500);
+    }
+    const made = await t.page.evaluate(() => state.pages.filter(page => page.preview).length);
+    if (made < 6) throw new Error(`scroll preview: only ${made} pages have a preview`);
+    out['scroll-preview'] = { trace: await take(t), input };
   },
 
   // Template backgrounds at every backing scale the editor uses (2, 2.25, …, 6), and the agenda and diary templates.
@@ -92,6 +120,26 @@ const scenes = {
   async 'ink-pen'(t, out) { await liveInk(t, out, 'ink-pen', 'pen'); },
   async 'ink-highlighter'(t, out) { await liveInk(t, out, 'ink-highlighter', 'highlighter'); }
 };
+
+/** `renderPagePreview` of the given pages (null: all) of a Drive fixture, each on fully loaded page data. */
+async function pagePreviews(t, scene, pages) {
+  await t.open({ account: ANA, scene, settleMs: 8000 });
+  await t.advance(4000);
+  await reset(t);
+  const input = await t.job(async wanted => {
+    const done = [];
+    for (const index of wanted || state.pages.map((_, i) => i)) {
+      if (!isPageLoaded(state.pages[index])) await ensurePageDataLoaded(index, { keepLoaded: true });
+      const page = state.pages[index], sources = [page.backgroundImage, ...(page.images || []).map(image => image.src)].filter(Boolean);
+      await Promise.all(sources.map(async src => { const image = getCachedImage(src); if (!image.complete || !image.naturalWidth) await image.decode(); }));
+      const url = renderPagePreview(index);
+      done.push({ page: index, strokes: page.strokes.length, images: (page.images || []).length, jpeg: !!url && url.startsWith('data:image/jpeg') });
+    }
+    return done;
+  }, pages);
+  if (!input.length || input.some(row => !row.jpeg)) throw new Error(`page preview not rendered: ${JSON.stringify(input)}`);
+  return { trace: await take(t), input };
+}
 
 async function liveInk(t, out, name, tool) {
   await localEditor(t);
