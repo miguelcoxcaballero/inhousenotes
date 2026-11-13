@@ -1000,7 +1000,8 @@ mod tests {
         click(&mut app, &mut host, L_PROFILE_EDITOR, Ui::BTN_DRIVE_PROFILE_EDITOR);
         assert_eq!(
             out(&mut host),
-            format!("class {home} \"hidden\" 1\nattr {} \"aria-expanded\" \"false\"\nclass {editor} \"hidden\" 0\nattr {} \"aria-expanded\" \"true\"\n", Ui::BTN_DRIVE_PROFILE.0, Ui::BTN_DRIVE_PROFILE_EDITOR.0)
+            // (The statistics line is `doc::stats`, following `sig::MENU`.)
+            format!("class {home} \"hidden\" 1\nattr {} \"aria-expanded\" \"false\"\nclass {editor} \"hidden\" 0\nattr {} \"aria-expanded\" \"true\"\ntext {} \"0 pages · 0 strokes\"\n", Ui::BTN_DRIVE_PROFILE.0, Ui::BTN_DRIVE_PROFILE_EDITOR.0, Ui::DOC_STATS.0)
         );
         assert_eq!(signals(&mut app).last(), Some(&(sig::MENU, "editor".to_string())));
         // A click inside the menu keeps it; a click elsewhere or Escape closes it.
@@ -1101,7 +1102,8 @@ mod tests {
         let text = out(&mut host);
         let i = Ui::SAVE_INDICATOR.0;
         assert!(text.starts_with(&format!("class {i} \"paused\" 1\nclass {i} \"building\" 0\n")));
-        assert!(text.ends_with(&format!("class {i} \"error\" 0\nprop {i} \"title\" \"Drive sign-in needed to keep syncing\"\nattr {i} \"aria-label\" \"Drive sign-in needed to keep syncing\"\n")));
+        // (`doc::save_state` then corrects the class and the tooltip, as 5.18.0 `refreshSaveIndicatorState` does.)
+        assert!(text.contains(&format!("class {i} \"error\" 0\nprop {i} \"title\" \"Drive sign-in needed to keep syncing\"\nattr {i} \"aria-label\" \"Drive sign-in needed to keep syncing\"\n")));
 
         // A touch or pen release blurs the pressed button in the next frame; a mouse release does not.
         let pointer = |app: &mut App, host: &mut FakeHost, ptype: u8| {
