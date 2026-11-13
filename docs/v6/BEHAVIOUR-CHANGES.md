@@ -121,7 +121,7 @@ Notes" folder lookup matches a folder of that name anywhere in Drive; Import PDF
 Approval checklist for release: the user approves §2, §3 (including §3.1) and any §5 changes; W6.1's parity report
 lists every state that differs and the id that explains it.
 
-## 5. N-2 — exact strings of the save indicator and the save-details popup (appended by W3.1)
+## 6. N-2 — exact strings of the save indicator and the save-details popup (appended by W3.1)
 
 Source: `rust/crates/ihn-app/src/doc/save_state.rs` (`derive`, `present`); 5.18.0: `getSavePresentation`,
 `renderSaveDebugPopup`. Markup, class names, row order (`This device`, `Google Drive`) and every string not listed

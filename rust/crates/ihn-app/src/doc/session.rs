@@ -166,8 +166,9 @@ pub struct State {
     compact_req: u32,
     asset_req: u32,
     net_req: u32,
-    /// Hashes of the asset read in flight, in request order.
+    /// Hashes of the asset read in flight, in request order, and whether a record patch precedes them.
     asset_wanted: Vec<Hash>,
+    asset_skip: bool,
 }
 
 /// Local inputs of the save presentation (`doc::save_state`).
@@ -733,6 +734,8 @@ pub fn compact(app: &mut App, host: &mut dyn Host, force: bool) {
 pub fn close(app: &mut App, host: &mut dyn Host) {
     let st = &mut app.st.doc_session;
     st.load = None;
+    st.later.clear();
+    st.asset_req = 0;
     let net = std::mem::take(&mut st.net_req);
     if net != 0 {
         locks::release(host, net);
@@ -850,6 +853,7 @@ fn loaded(app: &mut App, host: &mut dyn Host, io: Option<&crate::abi::Io>) {
         let req = app.req(Mod::DocSession);
         app.st.doc_session.asset_req = req;
         app.st.doc_session.asset_wanted = wanted;
+        app.st.doc_session.asset_skip = stored;
         // The asset handles arrive before `notify`: the caller sees the session with its stored assets.
         app.st.doc_session.later.push((l.notify, if local { LOADED_LOCAL } else { LOADED_EMPTY }));
         store::tx(app, host, req, t);
@@ -865,15 +869,17 @@ fn assets_read(app: &mut App, host: &mut dyn Host, io: &crate::abi::Io) {
     let st = &mut app.st.doc_session;
     let (wanted, mut reply) = (std::mem::take(&mut st.asset_wanted), Reply::new(io));
     if let (true, Some(s)) = (reply.ok(), st.s.as_mut()) {
-        if s.record_stored {
+        if st.asset_skip {
             reply.skip();
         }
         for hash in wanted {
             let record = reply.value();
             let mut handles = Vec::new();
             record.get("blob").handles(&mut handles);
-            if let Some(&blob) = handles.first() {
-                s.asset_add(hash, blob);
+            for (i, &blob) in handles.iter().enumerate() {
+                if i > 0 || !s.asset_add(hash, blob) {
+                    host.out().obj_release(blob);
+                }
             }
         }
     }
