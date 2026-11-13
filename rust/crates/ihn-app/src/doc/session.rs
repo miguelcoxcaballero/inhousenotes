@@ -19,11 +19,11 @@ use crate::store::{self, locks, Reply, Tx as StoreTx};
 use crate::testapi::json_str;
 use crate::{auth, shell, App, Host};
 use ihn_core::doc::{Author, BlobHandle, Changes, Compacted, Doc, PeerRef, ReceiveResult, Replica, SyncStatus, Tx};
-use ihn_core::id::{ActorId, DocId, Hash, Id, IdGen, IdMap};
+use ihn_core::id::{ActorId, DocId, Hash, Id, IdGen};
 use ihn_core::op::{Background, Batch, Body, Op};
 use ihn_core::snapshot::{self, BatchDecoder, EncodedBatch, EncodedSnapshot, Loader};
 use ihn_core::stamp::VersionVector;
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::VecDeque;
 
 /// Broadcasts of the document modules (`Event::Msg`, sent with `shell::signal`).
 pub mod sig {
@@ -63,8 +63,40 @@ const W_COMPACT: u32 = tag(Mod::DocSession, 2);
 const W_DRAIN: u32 = tag(Mod::DocSession, 3);
 
 struct Entry {
-    bytes: Vec<u8>,
+    actor: u64,
+    seq: u32,
     clock: u64,
+    bytes: Vec<u8>,
+}
+
+/// The journal in memory, sorted by `(actor, seq)` (sorted vectors, not maps: every map type costs wasm bytes).
+#[derive(Default)]
+struct Journal {
+    e: Vec<Entry>,
+    bytes: usize,
+}
+
+impl Journal {
+    fn find(&self, actor: u64, seq: u32) -> Result<usize, usize> { self.e.binary_search_by(|e| (e.actor, e.seq).cmp(&(actor, seq))) }
+    fn has(&self, actor: u64, seq: u32) -> bool { self.find(actor, seq).is_ok() }
+    fn put(&mut self, actor: u64, seq: u32, clock: u64, bytes: Vec<u8>) {
+        self.bytes += bytes.len();
+        let entry = Entry { actor, seq, clock, bytes };
+        match self.find(actor, seq) {
+            Ok(i) => self.bytes -= std::mem::replace(&mut self.e[i], entry).bytes.len(),
+            Err(i) => self.e.insert(i, entry),
+        }
+    }
+}
+
+/// `actor → seq` pairs sorted by actor.
+type Through = Vec<(u64, u32)>;
+fn through_of(t: &Through, actor: u64) -> Option<u32> { t.binary_search_by_key(&actor, |e| e.0).ok().map(|i| t[i].1) }
+fn through_set(t: &mut Through, actor: u64, seq: u32) {
+    match t.binary_search_by_key(&actor, |e| e.0) {
+        Ok(i) => t[i].1 = seq,
+        Err(i) => t.insert(i, (actor, seq)),
+    }
 }
 
 /// A remote batch being decoded and applied in slices.
@@ -92,21 +124,21 @@ pub struct Session {
     /// Size of the Drive file last downloaded (5.18.0 `state.lastExportSize`), 0 = unknown.
     pub export_size: f64,
     record_stored: bool,
-    journal: BTreeMap<(u64, u32), Entry>,
-    journal_bytes: usize,
+    journal: Journal,
     uncommitted: u32,
     failed: bool,
     saved_at: f64,
     outbox: Vec<EncodedBatch>,
     queue: VecDeque<Vec<u8>>,
-    queued_keys: BTreeSet<(u64, u32)>,
+    queued_keys: Vec<(u64, u32)>,
     partial: Option<Partial>,
     covered: VersionVector,
-    chunks: IdMap<u32>,
+    /// Page → chunk number.
+    chunks: Vec<(Id, u32)>,
     next_chunk: u32,
     full_compact: bool,
     record_dirty: bool,
-    assets: HashMap<Hash, BlobHandle>,
+    assets: Vec<(Hash, BlobHandle)>,
     new_assets: Vec<(Hash, BlobHandle, String, f64)>,
     pending: StoreTx,
     changes: Changes,
@@ -129,7 +161,7 @@ pub struct State {
     load: Option<Load>,
     later: Vec<(u32, i32)>,
     /// Local appends in flight: request → the batches they carry.
-    appends: HashMap<u32, (Vec<EncodedBatch>, bool)>,
+    appends: Vec<(u32, Vec<EncodedBatch>, bool)>,
     compact_req: u32,
     asset_req: u32,
     net_req: u32,
@@ -179,21 +211,20 @@ impl Session {
             net_holder: false,
             export_size: 0.0,
             record_stored: false,
-            journal: BTreeMap::new(),
-            journal_bytes: 0,
+            journal: Journal::default(),
             uncommitted: 0,
             failed: false,
             saved_at: 0.0,
             outbox: Vec::new(),
             queue: VecDeque::new(),
-            queued_keys: BTreeSet::new(),
+            queued_keys: Vec::new(),
             partial: None,
             covered: VersionVector::default(),
-            chunks: IdMap::default(),
+            chunks: Vec::new(),
             next_chunk: 1,
             full_compact: false,
             record_dirty: false,
-            assets: HashMap::new(),
+            assets: Vec::new(),
             new_assets: Vec::new(),
             pending: StoreTx::new(),
             changes: Changes::default(),
@@ -207,15 +238,10 @@ impl Session {
     /// Own batches not sealed in the relay, by the persisted seal (used until a sync engine reports its own count).
     pub fn unsealed_local(&self) -> u32 {
         let inst = self.author.as_ref().map(|a| a.actor.inst());
-        self.journal.keys().filter(|&&(actor, seq)| Some(ActorId(actor).inst()) == inst && self.record.relay.sealed.get(actor).is_none_or(|&sealed| seq > sealed)).count() as u32
+        self.journal.e.iter().filter(|e| Some(ActorId(e.actor).inst()) == inst && self.record.relay.sealed.get(e.actor).is_none_or(|&sealed| e.seq > sealed)).count() as u32
     }
 
-    fn journal_put(&mut self, actor: u64, seq: u32, clock: u64, bytes: Vec<u8>) {
-        self.journal_bytes += bytes.len();
-        if let Some(old) = self.journal.insert((actor, seq), Entry { bytes, clock }) {
-            self.journal_bytes -= old.bytes.len();
-        }
-    }
+    fn journal_put(&mut self, actor: u64, seq: u32, clock: u64, bytes: Vec<u8>) { self.journal.put(actor, seq, clock, bytes) }
 
     fn note(&mut self, c: Changes) {
         let m = &mut self.changes;
@@ -229,24 +255,38 @@ impl Session {
     }
 
     /// Asset hashes the document refers to: page backgrounds and images that are not deleted.
-    pub fn referenced_assets(&self) -> BTreeSet<Hash> {
-        let mut out = BTreeSet::new();
+    pub fn referenced_assets(&self) -> Vec<Hash> {
+        let mut out: Vec<Hash> = Vec::new();
+        let mut add = |h: Hash| {
+            if !out.contains(&h) {
+                out.push(h);
+            }
+        };
         for page in self.doc.pages.values() {
             match page.background.v {
-                Background::Pdf { asset, .. } | Background::Custom { asset } => drop(out.insert(asset)),
+                Background::Pdf { asset, .. } | Background::Custom { asset } => add(asset),
                 Background::Template => {}
             }
         }
         for item in self.doc.items.values() {
             if let (false, Body::Image { asset, .. }) = (item.deleted.v, &item.body.v) {
-                out.insert(*asset);
+                add(*asset);
             }
         }
         out
     }
 
     /// The blob handle of a stored asset.
-    pub fn asset_blob(&self, h: &Hash) -> Option<BlobHandle> { self.assets.get(h).copied() }
+    pub fn asset_blob(&self, h: &Hash) -> Option<BlobHandle> { self.assets.iter().find(|a| a.0 == *h).map(|a| a.1) }
+
+    /// Remembers the blob of an asset; false when it was known.
+    fn asset_add(&mut self, h: Hash, blob: BlobHandle) -> bool {
+        let new = self.asset_blob(&h).is_none();
+        if new {
+            self.assets.push((h, blob));
+        }
+        new
+    }
 
     /// Decodes and applies queued remote batches until `budget_ms` of `now()` time is used. Returns true when the
     /// queue is empty.
@@ -281,7 +321,7 @@ impl Session {
                     if let Some(author) = &mut self.author {
                         author.clock.observe(b.max_clock(), wall);
                     }
-                    self.queued_keys.remove(&(b.actor.0, b.seq));
+                    self.queued_keys.retain(|k| *k != (b.actor.0, b.seq));
                     if self.persistent {
                         self.pending.ops_put(&self.doc_id, b.actor.0, b.seq, &p.bytes);
                     }
@@ -297,29 +337,39 @@ impl Session {
     }
 
     /// The journal prefixes compaction may delete: `actor → through`.
-    fn trimmable(&self, wall: u64) -> BTreeMap<u64, u32> {
+    fn trimmable(&self, wall: u64) -> Through {
         let own = self.author.as_ref().map(|a| a.actor.inst());
-        let (mut through, mut stopped, mut left) = (BTreeMap::new(), BTreeSet::new(), self.journal_bytes);
-        for (&(actor, seq), e) in &self.journal {
-            if stopped.contains(&actor) {
+        let (mut through, mut stopped, mut left) = (Through::new(), None, self.journal.bytes);
+        for e in &self.journal.e {
+            if stopped == Some(e.actor) {
                 continue;
             }
             let old = e.clock.saturating_add(JOURNAL_MAX_AGE_MS) < wall;
-            if self.doc.vv.contains(ActorId(actor), seq) && (old || self.covered.contains(ActorId(actor), seq)) {
-                through.insert(actor, seq);
+            if self.doc.vv.contains(ActorId(e.actor), e.seq) && (old || self.covered.contains(ActorId(e.actor), e.seq)) {
+                through_set(&mut through, e.actor, e.seq);
                 left -= e.bytes.len();
             } else {
-                stopped.insert(actor);
+                stopped = Some(e.actor);
             }
         }
         // The 8 MiB cap: the oldest received batches go first, own ones last.
         while left > JOURNAL_MAX_BYTES {
-            let next = |actor: u64| self.journal.range((actor, through.get(&actor).map_or(0, |t| t + 1))..=(actor, u32::MAX)).next();
-            let actors: BTreeSet<u64> = self.journal.keys().map(|k| k.0).collect();
-            let head = actors.iter().filter_map(|&a| next(a).map(|(k, e)| (Some(ActorId(a).inst()) == own, e.clock, *k, e.bytes.len()))).min();
-            let Some((_, _, (actor, seq), size)) = head else { break };
-            through.insert(actor, seq);
-            left -= size;
+            let (mut best, mut seen): (Option<(bool, u64, usize)>, Option<u64>) = (None, None);
+            for (i, e) in self.journal.e.iter().enumerate() {
+                // The head of each actor: its first entry beyond what is already trimmed.
+                if seen == Some(e.actor) || through_of(&through, e.actor).is_some_and(|t| e.seq <= t) {
+                    continue;
+                }
+                seen = Some(e.actor);
+                let key = (Some(ActorId(e.actor).inst()) == own, e.clock);
+                if best.is_none_or(|b| key < (b.0, b.1)) {
+                    best = Some((key.0, key.1, i));
+                }
+            }
+            let Some((_, _, i)) = best else { break };
+            let e = &self.journal.e[i];
+            through_set(&mut through, e.actor, e.seq);
+            left -= e.bytes.len();
         }
         through
     }
@@ -341,11 +391,11 @@ impl Replica for Rep<'_> {
     fn batches_since(&self, have: &VersionVector, max_bytes: usize) -> Result<Vec<EncodedBatch>, Compacted> {
         let (s, mut out, mut size) = (&*self.s, Vec::new(), 0);
         let pairs = s.doc.vv.iter().flat_map(|(a, top)| (have.get(a) + 1..=top).map(move |seq| (a, seq))).chain(s.doc.vv.extras());
-        if pairs.filter(|&(a, seq)| !have.contains(a, seq)).any(|(a, seq)| !s.journal.contains_key(&(a.0, seq))) {
+        if pairs.filter(|&(a, seq)| !have.contains(a, seq)).any(|(a, seq)| !s.journal.has(a.0, seq)) {
             return Err(Compacted);
         }
-        for (&(actor, seq), e) in &s.journal {
-            if have.contains(ActorId(actor), seq) || !s.doc.vv.contains(ActorId(actor), seq) {
+        for e in &s.journal.e {
+            if have.contains(ActorId(e.actor), e.seq) || !s.doc.vv.contains(ActorId(e.actor), e.seq) {
                 continue;
             }
             if !out.is_empty() && size + e.bytes.len() > max_bytes {
@@ -359,10 +409,12 @@ impl Replica for Rep<'_> {
 
     fn receive(&mut self, b: &[EncodedBatch], _from: PeerRef) -> ReceiveResult {
         let (s, mut r) = (&mut *self.s, ReceiveResult::default());
-        let before = s.doc.vv.clone();
         for eb in b {
             match eb.header() {
-                Some((actor, seq, _)) if seq > 0 && !s.doc.vv.contains(actor, seq) && s.queued_keys.insert((actor.0, seq)) => s.queue.push_back(eb.0.clone()),
+                Some((actor, seq, _)) if seq > 0 && !s.doc.vv.contains(actor, seq) && !s.queued_keys.contains(&(actor.0, seq)) => {
+                    s.queued_keys.push((actor.0, seq));
+                    s.queue.push_back(eb.0.clone());
+                }
                 _ => r.duplicate += 1,
             }
         }
@@ -370,10 +422,11 @@ impl Replica for Rep<'_> {
         s.drain(self.host, if self.contact { CONTACT_BUDGET_MS } else { f64::INFINITY });
         r.queued = s.queue.len() as u32 + s.partial.is_some() as u32;
         r.applied = mark.1.saturating_sub(r.queued);
-        r.changed_pages = s.changes.pages[mark.0..].to_vec();
-        r.changed_pages.sort_unstable();
-        r.changed_pages.dedup();
-        debug_assert!(s.doc.vv.covers(&before));
+        for page in &s.changes.pages[mark.0..] {
+            if !r.changed_pages.contains(page) {
+                r.changed_pages.push(*page);
+            }
+        }
         r
     }
 
@@ -391,10 +444,10 @@ impl Replica for Rep<'_> {
         ReceiveResult { applied: 1, duplicate: 0, queued: 0, changed_pages: pages }
     }
 
-    fn missing_assets(&self) -> Vec<Hash> { self.s.referenced_assets().into_iter().filter(|h| !self.s.assets.contains_key(h)).collect() }
+    fn missing_assets(&self) -> Vec<Hash> { self.s.referenced_assets().into_iter().filter(|h| self.s.asset_blob(h).is_none()).collect() }
 
     fn put_asset(&mut self, h: Hash, bytes: BlobHandle) {
-        if self.s.assets.insert(h, bytes).is_none() {
+        if self.s.asset_add(h, bytes) {
             self.s.new_assets.push((h, bytes, String::new(), -1.0));
         }
     }
@@ -515,7 +568,7 @@ pub fn edit(app: &mut App, host: &mut dyn Host, f: impl FnOnce(&mut Tx)) -> Opti
         }
         s.uncommitted += 1;
         let req = app.req(Mod::DocSession);
-        app.st.doc_session.appends.insert(req, (vec![encoded], with_record));
+        app.st.doc_session.appends.push((req, vec![encoded], with_record));
         store::tx(app, host, req, t);
     } else {
         // Degraded storage: the in-memory journal holds the batch and the relay seal is the durability point.
@@ -558,7 +611,7 @@ fn appended(app: &mut App, host: &mut dyn Host, (batches, with_record): (Vec<Enc
 /// Stores an asset of the open document (image bytes, a source PDF) and keeps its blob handle.
 pub fn put_asset(app: &mut App, host: &mut dyn Host, hash: Hash, blob: BlobHandle, mime: &str, size: f64) {
     let Some(s) = get_mut(app) else { return };
-    if s.assets.insert(hash, blob).is_none() {
+    if s.asset_add(hash, blob) {
         s.new_assets.push((hash, blob, mime.into(), size));
     }
     after(app, host);
@@ -609,7 +662,7 @@ pub fn compact(app: &mut App, host: &mut dyn Host, force: bool) {
     let (mut pages, header) = s.doc.take_dirty();
     if std::mem::take(&mut s.full_compact) {
         pages = s.doc.chunk_pages();
-        pages.extend(s.chunks.keys().copied());
+        pages.extend(s.chunks.iter().map(|c| c.0));
         pages.sort_unstable();
         pages.dedup();
     }
@@ -629,30 +682,33 @@ pub fn compact(app: &mut App, host: &mut dyn Host, force: bool) {
     }
     t.chunk_put(&s.doc_id, 0, &snapshot::encode_header(&s.doc));
     for page in pages {
+        let at = s.chunks.iter().position(|c| c.0 == page);
         if s.doc.chunk_items(page).is_empty() {
-            if let Some(chunk) = s.chunks.remove(&page) {
-                t.chunk_del(&s.doc_id, chunk);
+            if let Some(at) = at {
+                t.chunk_del(&s.doc_id, s.chunks.swap_remove(at).1);
             }
         } else {
-            let next = &mut s.next_chunk;
-            let chunk = *s.chunks.entry(page).or_insert_with(|| {
-                *next += 1;
-                *next - 1
+            let chunk = at.map(|at| s.chunks[at].1).unwrap_or_else(|| {
+                s.next_chunk += 1;
+                s.chunks.push((page, s.next_chunk - 1));
+                s.next_chunk - 1
             });
             t.chunk_put(&s.doc_id, chunk, &snapshot::encode_chunk(&s.doc, page));
         }
     }
-    for (&actor, &seq) in &through {
+    for &(actor, seq) in &through {
         t.ops_trim(&s.doc_id, actor, seq);
     }
-    let Session { journal, journal_bytes, .. } = s;
-    journal.retain(|&(actor, seq), e| {
-        let keep = through.get(&actor).is_none_or(|&t| seq > t);
+    let journal = &mut s.journal;
+    let mut freed = 0;
+    journal.e.retain(|e| {
+        let keep = through_of(&through, e.actor).is_none_or(|t| e.seq > t);
         if !keep {
-            *journal_bytes -= e.bytes.len();
+            freed += e.bytes.len();
         }
         keep
     });
+    journal.bytes -= freed;
     let req = app.req(Mod::DocSession);
     app.st.doc_session.compact_req = req;
     store::tx(app, host, req, t);
@@ -738,7 +794,7 @@ fn loaded(app: &mut App, host: &mut dyn Host, io: Option<&crate::abi::Io>) {
         for &(id, bytes) in &chunks {
             ok &= if id == 0 { loader.header(bytes).is_ok() } else { loader.chunk(bytes).is_ok() };
             if let (true, Some(page)) = (id != 0, bytes.get(1..17)) {
-                s.chunks.insert(Id(u128::from_le_bytes(page.try_into().unwrap())), id);
+                s.chunks.push((Id(u128::from_le_bytes(page.try_into().unwrap())), id));
                 s.next_chunk = s.next_chunk.max(id + 1);
             }
         }
@@ -804,7 +860,7 @@ fn assets_read(app: &mut App, host: &mut dyn Host, io: &crate::abi::Io) {
             let mut handles = Vec::new();
             record.get("blob").handles(&mut handles);
             if let Some(&blob) = handles.first() {
-                s.assets.insert(hash, blob);
+                s.asset_add(hash, blob);
             }
         }
     }
@@ -847,8 +903,9 @@ fn route_io(app: &mut App, host: &mut dyn Host, io: &crate::abi::Io) {
         } else {
             loaded(app, host, Some(io));
         }
-    } else if let Some(batches) = st.appends.remove(&io.req) {
-        appended(app, host, batches, io);
+    } else if let Some(at) = st.appends.iter().position(|a| a.0 == io.req) {
+        let (_, batches, with_record) = st.appends.swap_remove(at);
+        appended(app, host, (batches, with_record), io);
     } else if io.req == st.compact_req {
         st.compact_req = 0;
         if io.status < 0 {
@@ -918,11 +975,11 @@ fn state_json(app: &App) -> String {
     let snap = snapshot::encode(&s.doc).0;
     let mut vv = ihn_core::codec::Writer::default();
     s.doc.vv.encode(&mut vv);
-    let missing = s.referenced_assets().iter().filter(|h| !s.assets.contains_key(*h)).count();
+    let missing = s.referenced_assets().iter().filter(|h| s.asset_blob(h).is_none()).count();
     format!(
         "{{\"docId\":{},\"account\":{},\"pages\":{},\"items\":{},\"live\":{},\"name\":{},\"vv\":{},\"snapshot\":\"{:032x}\",\"snapshotBytes\":{},\"canEdit\":{},\"writable\":{},\"persistent\":{},\"netHolder\":{},\"journal\":{},\"uncommitted\":{},\"failed\":{},\"assets\":{},\"missing\":{}}}",
         json_str(&s.doc_id), json_str(&s.account), s.doc.order().len(), s.doc.items.len(), s.doc.items.values().filter(|i| i.is_live()).count(), json_str(&s.doc.name.v),
-        json_str(&ihn_core::codec::b64_encode(&vv.buf, false)), ihn_core::id::fnv1a128(&snap), snap.len(), s.can_edit, s.writable(), s.persistent, s.net_holder, s.journal.len(), s.uncommitted, s.failed, s.assets.len(), missing
+        json_str(&ihn_core::codec::b64_encode(&vv.buf, false)), ihn_core::id::fnv1a128(&snap), snap.len(), s.can_edit, s.writable(), s.persistent, s.net_holder, s.journal.e.len(), s.uncommitted, s.failed, s.assets.len(), missing
     )
 }
 
@@ -973,10 +1030,10 @@ mod tests {
     }
     fn stroke(app: &mut App, host: &mut dyn Host, x: f64) -> Edit {
         let page = get(app).unwrap().doc.order()[0];
-        edit(app, host, |tx| drop(tx.add_stroke(page, pen(&[x, 10.0, x + 40.0, 80.0])))).expect("a writable session")
+        edit(app, host, |tx| _ = tx.add_stroke(page, pen(&[x, 10.0, x + 40.0, 80.0]))).expect("a writable session")
     }
     fn first_page(app: &mut App, host: &mut FakeHost) {
-        edit(app, host, |tx| drop(tx.page_new(None, Template::Default, A4, Background::Template))).expect("a writable session");
+        edit(app, host, |tx| _ = tx.page_new(None, Template::Default, A4, Background::Template)).expect("a writable session");
     }
     fn snap(app: &App) -> Vec<u8> { snapshot::encode(&get(app).unwrap().doc).0 }
     fn work(app: &mut App, host: &mut FakeHost) {
@@ -1059,7 +1116,7 @@ mod tests {
         open(&mut app, &mut host, &mut db);
         assert_eq!(snap(&app), before, "chunks + journal replay give the same canonical bytes");
         let s = get(&app).unwrap();
-        assert_eq!((s.author.as_ref().unwrap().seq, s.journal.len()), (3, 3));
+        assert_eq!((s.author.as_ref().unwrap().seq, s.journal.e.len()), (3, 3));
         // The next batch continues seq, ids and the clock.
         let next = stroke(&mut app, &mut host, 3.0);
         assert_eq!(next.seq, 4);
@@ -1070,7 +1127,7 @@ mod tests {
         with_replica(&mut app, &mut host, |r| r.retain(&vv));
         compact(&mut app, &mut host, false);
         db.pump(&mut app, &mut host);
-        assert_eq!((db.dbs[store::DB_NAME][2].len(), get(&app).unwrap().journal.len()), (0, 0));
+        assert_eq!((db.dbs[store::DB_NAME][2].len(), get(&app).unwrap().journal.e.len()), (0, 0));
         let have = VersionVector::default();
         assert_eq!(with_replica(&mut app, &mut host, |r| r.batches_since(&have, 1 << 20)), Some(Err(Compacted)));
         assert_eq!(with_replica(&mut app, &mut host, |r| r.batches_since(&vv, 1 << 20)), Some(Ok(Vec::new())));
@@ -1113,7 +1170,7 @@ mod tests {
         let transactions = db.transactions;
         stroke(&mut app, &mut host, 2.0);
         assert_eq!((drain_local(&mut app).len(), db.transactions), (1, transactions));
-        assert_eq!(get(&app).unwrap().journal.len(), 3);
+        assert_eq!(get(&app).unwrap().journal.e.len(), 3);
     }
 
     #[test]
@@ -1196,9 +1253,9 @@ mod tests {
         }
         // 12 MiB with a cap of 8: the two oldest received batches go, the own one stays.
         let t = s.trimmable(60);
-        assert_eq!(t.into_iter().collect::<Vec<_>>(), [(0x2200, 1), (0x3300, 1)]);
+        assert_eq!(t, [(0x2200, 1), (0x3300, 1)]);
         // Age: everything older than a day goes, whoever wrote it.
         let t = s.trimmable(40 + JOURNAL_MAX_AGE_MS);
-        assert_eq!(t.into_iter().collect::<Vec<_>>(), [(0x2200, 2), (0x3300, 1)]);
+        assert_eq!(t, [(0x2200, 2), (0x3300, 1)]);
     }
 }
