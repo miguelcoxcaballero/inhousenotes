@@ -26,13 +26,20 @@
   const token = Math.random().toString(36).slice(2, 10);   // the browser's own randomness: names this page's workers
   let state = (g.__IHN_DET_SEED__ >>> 0) || 0x1badc0de;
   const next = () => { state ^= state << 13; state >>>= 0; state ^= state >>> 17; state ^= state << 5; state >>>= 0; return state; };
-  const det = g.__ihnDet = { busy: 0, events: 0, next, changed: null };
-  const begin = () => { det.busy++; det.events++; };
-  const end = () => { det.busy--; det.events++; if (det.changed) det.changed(); };
-  const track = promise => { begin(); Promise.resolve(promise).then(end, end); return promise; };
+  const det = g.__ihnDet = { busy: 0, net: 0, events: 0, next, changed: null };
+  // `__IHN_DET_TRAIL__` (harness: IHN_DET_TRAIL=1) keeps a log "<fake ms> <what>" of everything counted here; two runs'
+  // trails differ first where a run-to-run difference begins.
+  const trail = g.__IHN_DET_TRAIL__ ? (det.trail = []) : null;
+  const note = what => { if (trail) trail.push(`${Date.now()} ${what}`); };
+  // `net` is the part of `busy` that is a request on the wire (it may be waiting at the mock's gate on purpose).
+  const wire = what => what === 'fetch' || what === 'XMLHttpRequest';
+  const begin = what => { det.busy++; if (wire(what)) det.net++; det.events++; note(`+${what}`); };
+  const end = what => { det.busy--; if (wire(what)) det.net--; det.events++; note(`-${what}`); if (det.changed) det.changed(); };
+  const track = (promise, what) => { begin(what); const done = () => end(what); Promise.resolve(promise).then(done, done); return promise; };
 
-  Math.random = () => next() / 4294967296;
+  Math.random = () => { note('random'); return next() / 4294967296; };
   const fill = array => {
+    note('randomValues');
     const view = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
     for (let i = 0; i < view.length; i++) view[i] = next() & 255;
     return array;
@@ -52,7 +59,7 @@
   const wrapAsync = (owner, name) => {
     const original = owner && owner[name];
     if (typeof original !== 'function') return;
-    owner[name] = function (...args) { return track(original.apply(this, args)); };
+    owner[name] = function (...args) { return track(original.apply(this, args), name); };
   };
   wrapAsync(g, 'fetch');
   wrapAsync(g, 'createImageBitmap');
@@ -72,8 +79,8 @@
       const callback = args[args.length - 1];
       if (typeof callback !== 'function') return request.apply(this, args);
       let open = true;
-      const close = () => { if (open) { open = false; end(); } };
-      begin();
+      const close = () => { if (open) { open = false; end('lock'); } };
+      begin('lock');
       args[args.length - 1] = lock => { close(); return callback(lock); };
       const result = request.apply(this, args);
       result.then(close, close);
@@ -83,26 +90,27 @@
   // A MessageChannel hop is a real task too (5.18.0 yields with one); every post counts as activity, so a chain of
   // hops is never mistaken for an idle page. The harness' own probe uses the native method.
   const nativePost = g.MessagePort && g.MessagePort.prototype.postMessage;
-  if (nativePost) g.MessagePort.prototype.postMessage = function (...args) { det.events++; return nativePost.apply(this, args); };
+  if (nativePost) g.MessagePort.prototype.postMessage = function (...args) { det.events++; note('port.post'); return nativePost.apply(this, args); };
   // An image that is not in the document (`new Image()` + onload) is pending from `src = …` to its load/error event.
   det.loads = 0;
   const srcOf = g.HTMLImageElement && Object.getOwnPropertyDescriptor(g.HTMLImageElement.prototype, 'src');
   if (srcOf && srcOf.set) Object.defineProperty(g.HTMLImageElement.prototype, 'src', { ...srcOf, set(value) {
     if (value && !this.isConnected && this.loading !== 'lazy') {
-      det.loads++; det.events++;
-      const done = () => { this.removeEventListener('load', done); this.removeEventListener('error', done); det.loads--; det.events++; };
+      det.loads++; det.events++; note('+image');
+      const done = () => { this.removeEventListener('load', done); this.removeEventListener('error', done); det.loads--; det.events++; note('-image'); };
       this.addEventListener('load', done); this.addEventListener('error', done);
     }
     srcOf.set.call(this, value);
   } });
   if (g.HTMLCanvasElement) {
     const toBlob = g.HTMLCanvasElement.prototype.toBlob;
-    g.HTMLCanvasElement.prototype.toBlob = function (callback, ...rest) { begin(); return toBlob.call(this, blob => { end(); callback(blob); }, ...rest); };
+    g.HTMLCanvasElement.prototype.toBlob = function (callback, ...rest) { begin('toBlob'); return toBlob.call(this, blob => { end('toBlob'); callback(blob); }, ...rest); };
   }
   if (g.OffscreenCanvas) wrapAsync(g.OffscreenCanvas.prototype, 'convertToBlob');
   const once = (target, names) => {
-    begin();
-    const done = () => { for (const name of names) target.removeEventListener(name, done); end(); };
+    const what = (target.constructor && target.constructor.name) || 'request';
+    begin(what);
+    const done = () => { for (const name of names) target.removeEventListener(name, done); end(what); };
     for (const name of names) target.addEventListener(name, done);
   };
   if (g.XMLHttpRequest) {
@@ -170,10 +178,11 @@
         this.addEventListener('message', event => {
           det.events++;
           const ack = event.data && event.data.__ihnDetAck, w = owed.get(id);
+          note(typeof ack === 'number' ? `worker.idle ${ack}` : 'worker.message');
           if (typeof ack === 'number') { event.stopImmediatePropagation(); if (w) w.acked = Math.max(w.acked, Math.min(w.posted, ack)); }
         });
       }
-      postMessage(...args) { const w = owed.get(this.__ihnId); if (w) w.posted++; det.events++; return super.postMessage(...args); }
+      postMessage(...args) { const w = owed.get(this.__ihnId); if (w) w.posted++; det.events++; note('worker.post'); return super.postMessage(...args); }
       terminate() { owed.delete(this.__ihnId); det.events++; return super.terminate(); }
     };
   }
@@ -182,7 +191,7 @@
   const facts = () => {
     let images = det.loads;
     if (g.document) for (const img of g.document.images) if (!img.complete) images++;
-    return { busy: det.busy, workers: det.workers(), events: det.events, dirty: det.dirty, images, fonts: g.document && g.document.fonts ? g.document.fonts.status === 'loading' : false,
+    return { busy: det.busy, net: det.net, workers: det.workers(), events: det.events, dirty: det.dirty, images, fonts: g.document && g.document.fonts ? g.document.fonts.status === 'loading' : false,
       ready: g.document ? g.document.readyState : 'complete' };
   };
   // Style recalculation, transition starts, animation events and observer callbacks happen in rendering frames, which

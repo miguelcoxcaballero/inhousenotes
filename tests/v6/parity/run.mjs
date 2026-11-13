@@ -90,7 +90,7 @@ export class Driver {
       } catch { await route.abort().catch(() => {}); }
     });
     // Order matters: determinism-init keeps the native rAF, then the clock replaces the timers.
-    await this.context.addInitScript(`self.__IHN_DET_SEED__ = ${this.seed};\n${DET_INIT}`);
+    await this.context.addInitScript(`self.__IHN_DET_SEED__ = ${this.seed};${process.env.IHN_DET_TRAIL ? ' self.__IHN_DET_TRAIL__ = 1;' : ''}\n${DET_INIT}`);
     // Playwright logs both calls with the wall time they were made at, and a document loaded later replays the gap
     // between them (a few real ms, different every run) into the clock's tick counter, which decides the phase of
     // its 16 ms animation frames. Both calls therefore see one wall time (the Playwright server runs in this process).
@@ -116,32 +116,33 @@ export class Driver {
     await this.context?.close().catch(() => {});
   }
 
-  async #facts(frames) {
-    try { return await this.page.evaluate(count => self.__ihnDet ? (count ? self.__ihnDet.frames(count) : self.__ihnDet.probe()) : null, frames); }
+  async #facts(frames, page) {
+    try { return await page.evaluate(count => self.__ihnDet ? (count ? self.__ihnDet.frames(count) : self.__ihnDet.probe()) : null, frames); }
     catch { return null; }   // navigating
   }
   /**
    * Waits (real time, fake time frozen) until nothing the clock does not own is in flight: mocked requests, fetches,
    * IndexedDB, decoding, fonts, worker replies. `frames` also runs two real frames first (observers, paint).
    */
-  async settle({ frames = true } = {}) {
+  async settle({ frames = true, page = this.page } = {}) {
     const started = Date.now(), mock = this.mock;
     let stable = 0, last = -1, workerSince = 0, dirty = false, first = true;
     for (;;) {
       const activity = mock.activity;
       // A changed document gets one real frame (see determinism-init.js); a capture point gets two.
-      const facts = await this.#facts(frames && first ? 2 : dirty ? 1 : 0);
+      const facts = await this.#facts(frames && first ? 2 : dirty ? 1 : 0, page);
       first = false; dirty = !!facts?.dirty;
-      // Requests waiting at the gate (or held by a rule) are the only work allowed to be outstanding.
+      // Requests waiting at the gate (or held by a rule) are the only work allowed to be outstanding: nothing else
+      // may be in flight (`busy` beyond `net`), whoever the waiting requests belong to (a worker's are not the page's).
       const waitingFetch = mock.gated.filter(g => g.fetch).length + mock.held.length, waitingImages = mock.gated.filter(g => g.image).length, waitingFonts = mock.gated.filter(g => g.font).length;
       const loading = mock.gated.length - waitingFetch + mock.held.length > 0;
-      let idle = !!facts && !mock.pending && facts.busy <= waitingFetch && (!facts.images || waitingImages > 0) && (!facts.fonts || waitingFonts > 0) && (facts.ready === 'complete' || loading)
+      let idle = !!facts && !mock.pending && facts.busy === facts.net && facts.net <= waitingFetch && (!facts.images || waitingImages > 0) && (!facts.fonts || waitingFonts > 0) && (facts.ready === 'complete' || loading)
         && activity === mock.activity && facts.events === last && !facts.dirty;
       if (idle && facts.workers > 0) {
         // A worker owes an answer. Instrumented workers report when they are done; one that stays silent for 1.5 s
         // is taken to have a protocol without replies and is not waited for again until it is sent more work.
         idle = false; workerSince ||= Date.now();
-        if (Date.now() - workerSince > 1500) { await this.page.evaluate(() => self.__ihnDet.forgive()).catch(() => {}); workerSince = 0; }
+        if (Date.now() - workerSince > 1500) { await page.evaluate(() => self.__ihnDet.forgive()).catch(() => {}); workerSince = 0; }
       } else if (facts && facts.events !== last) workerSince = 0;
       last = facts ? facts.events : -1;
       if (idle && ++stable >= 2) {
@@ -163,24 +164,27 @@ export class Driver {
    * (a request, IndexedDB, a worker message, a decode, a DOM change); the harness then waits until that has finished
    * before time moves again. All real work therefore completes at one fixed fake millisecond, whatever the machine's
    * speed: Playwright's own `runFor` yields to real tasks between two timers of a slice, which lets a worker reply
-   * decide which `Date.now()` a later callback sees.
+   * decide which `Date.now()` a later callback sees. `page`: another page of the context (each page has its own
+   * clock; the main page's time is the one new documents start from).
    */
-  async advance(ms, { step = 20 } = {}) {
+  async advance(ms, { step = 20, page = this.page } = {}) {
     // A callback chain that re-arms itself with a 0 ms timer and starts real work every time (a poll loop waiting for
     // something that needs time to pass) would pin the clock: after three chunks without progress the page is made
     // to move by at least 1, 2, 4 … `step` ms per chunk until a chunk gets further by itself.
     let stall = 0;
     for (let left = ms; left > 0;) {
-      await this.settle({ frames: false });
+      await this.settle({ frames: false, page });
       const least = stall < 3 ? 0 : Math.min(step, left, 2 ** (stall - 3));
-      let used = await this.page.evaluate(([budget, slice, min]) => self.__ihnDet && self.__ihnDet.run ? self.__ihnDet.run(budget, slice, min) : -1, [left, step, least]).catch(() => -1);
+      let used = await page.evaluate(([budget, slice, min]) => self.__ihnDet && self.__ihnDet.run ? self.__ihnDet.run(budget, slice, min) : -1, [left, step, least]).catch(() => -1);
+      if (used < 0 && page !== this.page) throw new Error('advance: the second page has no clock');
       if (used < 0) { used = Math.min(step, left); await this.page.clock.runFor(used); }   // no clock in this document yet
       // What Playwright's runFor does besides running: a document loaded later replays the log to reach the same time.
-      else if (used > 0) await this.context.addInitScript(`globalThis.__pwClock && globalThis.__pwClock.controller.log('runFor', ${Date.now()}, ${used});`);
+      else if (used > 0 && page === this.page) await this.context.addInitScript(`globalThis.__pwClock && globalThis.__pwClock.controller.log('runFor', ${Date.now()}, ${used});`);
       stall = used <= least ? stall + 1 : 0;
-      this.elapsed += used; left -= used;
+      if (page === this.page) this.elapsed += used;
+      left -= used;
     }
-    await this.settle();
+    await this.settle({ page });
   }
   /** Advances until `predicate()` (in the page) is true, in `step` slices, at most `timeout` fake ms. */
   async until(predicate, { timeout = 10_000, step = 100, arg } = {}) {

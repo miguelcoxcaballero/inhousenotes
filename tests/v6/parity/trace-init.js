@@ -46,7 +46,7 @@
     if (id === undefined) {
       id = 'c' + trace.surfaces.length;
       surfaceIds.set(canvas, id);
-      trace.surfaces.push({ id, kind: g.HTMLCanvasElement && canvas instanceof g.HTMLCanvasElement ? 'canvas' : 'offscreen', ref: new WeakRef(canvas) });
+      trace.surfaces.push({ id, kind: g.HTMLCanvasElement && canvas instanceof g.HTMLCanvasElement ? 'canvas' : 'offscreen', ref: new WeakRef(canvas), width: canvas.width, height: canvas.height });
     }
     return id;
   };
@@ -145,7 +145,8 @@
       const d = Object.getOwnPropertyDescriptor(proto, name);
       if (!d || !d.set) continue;
       const set = d.set;
-      d.set = function (value) { if (trace.enabled) push([surfaceOf(this), 'set:' + name, enc(Number(value))]); return set.call(this, value); };
+      // The size is remembered with the surface: at take() the canvas may be garbage (when is the collector's business).
+      d.set = function (value) { const id = surfaceOf(this); if (trace.enabled) push([id, 'set:' + name, enc(Number(value))]); set.call(this, value); trace.surfaces[Number(id.slice(1))][name] = d.get.call(this); };
       Object.defineProperty(proto, name, d);
     }
     for (const name of methods) {
@@ -177,7 +178,7 @@
   /** Snapshot of the log. `clear` starts a new log afterwards (surface, path and ref numbering continue). */
   trace.take = ({ clear = false } = {}) => {
     const out = {
-      surfaces: trace.surfaces.map(s => { const canvas = s.ref.deref(); return { id: s.id, kind: s.kind, label: s.kind === 'canvas' ? label(canvas) : null, width: canvas ? canvas.width : null, height: canvas ? canvas.height : null }; }),
+      surfaces: trace.surfaces.map(s => { const canvas = s.ref.deref(); return { id: s.id, kind: s.kind, label: s.kind === 'canvas' ? label(canvas) : null, width: s.width, height: s.height }; }),
       paths: Object.fromEntries(Array.from(trace.used.values(), p => [p.id, p.ops.slice()])),
       ops: trace.ops.slice(), times: trace.timing ? trace.times.slice() : undefined
     };
