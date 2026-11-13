@@ -1,0 +1,210 @@
+{
+ "app": "5.18.0",
+ "exportName": "Template notebook",
+ "pageCount": 3,
+ "strokeCount": 18,
+ "imageCount": 0,
+ "hasLegacyBakedOverlay": false,
+ "cleanOriginalBytes": 0,
+ "versions": [
+  {
+   "id": "v_mvuswtxk_mohkbmm6",
+   "originId": "v_mvuswtxk_mohkbmm6",
+   "ts": 1793354408840,
+   "summary": "+3 pages, +18 strokes",
+   "kind": "autosave",
+   "isMilestone": false,
+   "schemaVersion": 3,
+   "parentId": null,
+   "contentHash": "qrqi5c:bct",
+   "deviceId": "cmfn2cwgy",
+   "exportName": "Template notebook",
+   "pageCount": 3
+  }
+ ],
+ "pages": [
+  {
+   "pageId": "pg_mvuswpfc_hyj0jmgnr",
+   "pageWidth": 794,
+   "pageHeight": 1123,
+   "templateKind": "default",
+   "backgroundSource": "template",
+   "pdfPageIndex": null,
+   "backgroundImage": null,
+   "sidePanel": null,
+   "strokes": [
+    [
+     "mvuswpqg-upvvqw2py",
+     "pen",
+     "#4D4D4D",
+     2,
+     18
+    ],
+    [
+     "mvuswpxk-9rjb62mvd",
+     "pen",
+     "#4D4D4D",
+     2,
+     18
+    ],
+    [
+     "mvuswq4o-swe2z5vpv",
+     "pen",
+     "#4D4D4D",
+     2,
+     18
+    ],
+    [
+     "mvuswqbs-te78mibq9",
+     "pen",
+     "#4D4D4D",
+     2,
+     18
+    ],
+    [
+     "mvuswqiw-gnvrfezs9",
+     "pen",
+     "#4D4D4D",
+     2,
+     18
+    ],
+    [
+     "mvuswqq0-v01skop31",
+     "pen",
+     "#4D4D4D",
+     2,
+     18
+    ],
+    [
+     "mvuswqx4-xuso7jkly",
+     "pen",
+     "#4D4D4D",
+     2,
+     18
+    ],
+    [
+     "mvuswr48-m1i3era0h",
+     "pen",
+     "#4D4D4D",
+     2,
+     18
+    ],
+    [
+     "mvuswrbc-my9u9mf99",
+     "pen",
+     "#4D4D4D",
+     2,
+     18
+    ],
+    [
+     "mvuswrig-r02o39odw",
+     "pen",
+     "#4D4D4D",
+     2,
+     18
+    ],
+    [
+     "mvuswrpk-gq0d3xlta",
+     "pen",
+     "#4D4D4D",
+     2,
+     18
+    ],
+    [
+     "mvuswrwo-4lok0hzss",
+     "pen",
+     "#4D4D4D",
+     2,
+     18
+    ],
+    [
+     "mvuswsq0-7pj6b5gpj",
+     "highlighter",
+     "#ffde00",
+     16,
+     12
+    ],
+    [
+     "mvuswsx4-gae7v51mg",
+     "highlighter",
+     "#ffde00",
+     16,
+     14
+    ],
+    [
+     "mvuswt48-cw6ofkrco",
+     "highlighter",
+     "#ffde00",
+     16,
+     13
+    ]
+   ],
+   "pointsSha256": "ed541db27a7f17a56ab0eda2a7ba54a88d55bfb19b3728a770b9dfafe843dc33",
+   "images": [],
+   "deletedStrokeIds": [],
+   "legacyCoverStrokes": []
+  },
+  {
+   "pageId": "pg_mvuswpfc_ftpy03gy2",
+   "pageWidth": 794,
+   "pageHeight": 1123,
+   "templateKind": "default",
+   "backgroundSource": "template",
+   "pdfPageIndex": null,
+   "backgroundImage": null,
+   "sidePanel": null,
+   "strokes": [
+    [
+     "tpl-p2-a",
+     "pen",
+     "#1a1a1a",
+     2,
+     40
+    ],
+    [
+     "tpl-p2-b",
+     "pen",
+     "#c62828",
+     3,
+     40
+    ],
+    [
+     "tpl-p2-hl",
+     "highlighter",
+     "#ffeb3b",
+     14,
+     30
+    ]
+   ],
+   "pointsSha256": "d83624b340921e6b4e8478756336bf17d8955c934496fa9f82c2a9a2a90342fc",
+   "images": [],
+   "deletedStrokeIds": [],
+   "legacyCoverStrokes": []
+  },
+  {
+   "pageId": "pg_mvuswpfc_0bdlxkcza",
+   "pageWidth": 794,
+   "pageHeight": 1123,
+   "templateKind": "default",
+   "backgroundSource": "template",
+   "pdfPageIndex": null,
+   "backgroundImage": null,
+   "sidePanel": null,
+   "strokes": [],
+   "pointsSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "images": [],
+   "deletedStrokeIds": [],
+   "legacyCoverStrokes": []
+  }
+ ],
+ "keywordSections": [
+  "STROKES_Z",
+  "IH_NORM",
+  "IH_OVERLAY_REFS",
+  "IH_STRUCT",
+  "IH_FIELDS",
+  "IH_SYNC",
+  "IH_VERSIONS"
+ ],
+ "pdfBytes": 241377
+}

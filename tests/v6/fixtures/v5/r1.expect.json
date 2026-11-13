@@ -1,0 +1,125 @@
+{
+ "app": "5.18.0",
+ "exportName": "Revisions",
+ "pageCount": 2,
+ "strokeCount": 8,
+ "imageCount": 0,
+ "hasLegacyBakedOverlay": false,
+ "cleanOriginalBytes": 0,
+ "versions": [
+  {
+   "id": "v_mvuswpqg_q83lb39h",
+   "originId": "v_mvuswpqg_q83lb39h",
+   "ts": 1793354404900,
+   "summary": "-1 stroke, 1 page setting changed",
+   "kind": "autosave",
+   "isMilestone": false,
+   "schemaVersion": 3,
+   "parentId": "v_mvuswpqg_q83lb39h",
+   "contentHash": "tzbq5r:69o",
+   "deviceId": "c2kvuw6ov",
+   "exportName": "Revisions",
+   "pageCount": 2
+  }
+ ],
+ "pages": [
+  {
+   "pageId": "pg_mvuswpfc_ry7x67vru",
+   "pageWidth": 794,
+   "pageHeight": 1123,
+   "templateKind": "default",
+   "backgroundSource": "template",
+   "pdfPageIndex": null,
+   "backgroundImage": null,
+   "sidePanel": null,
+   "strokes": [
+    [
+     "rev-s1",
+     "pen",
+     "#1a1a1a",
+     2,
+     30
+    ],
+    [
+     "rev-s3",
+     "pen",
+     "#1a1a1a",
+     2,
+     30
+    ],
+    [
+     "rev-s4",
+     "pen",
+     "#1a1a1a",
+     2,
+     30
+    ],
+    [
+     "rev-s6",
+     "pen",
+     "#1a1a1a",
+     2,
+     30
+    ],
+    [
+     "rev-s10",
+     "pen",
+     "#2e7d32",
+     2,
+     30
+    ]
+   ],
+   "pointsSha256": "0f9bae0b9a358ea324cf33fd3d78eb28a533719ce9d2f1360541f8dfc3a4613c",
+   "images": [],
+   "deletedStrokeIds": [],
+   "legacyCoverStrokes": []
+  },
+  {
+   "pageId": "pg_mvuswpfc_xe0qtsb3b",
+   "pageWidth": 559,
+   "pageHeight": 794,
+   "templateKind": "default",
+   "backgroundSource": "template",
+   "pdfPageIndex": null,
+   "backgroundImage": null,
+   "sidePanel": null,
+   "strokes": [
+    [
+     "rev-s7",
+     "pen",
+     "#1565c0",
+     2,
+     30
+    ],
+    [
+     "rev-s8",
+     "pen",
+     "#1565c0",
+     2,
+     30
+    ],
+    [
+     "rev-s9",
+     "pen",
+     "#1565c0",
+     2,
+     30
+    ]
+   ],
+   "pointsSha256": "9688c24f14cedde150a475904155837429e17559a6113ffae7431e408d046a06",
+   "images": [],
+   "deletedStrokeIds": [],
+   "legacyCoverStrokes": []
+  }
+ ],
+ "keywordSections": [
+  "STROKES_Z",
+  "IH_NORM",
+  "IH_OVERLAY_REFS",
+  "IH_STRUCT",
+  "IH_FIELDS",
+  "IH_SYNC",
+  "IH_VERSIONS"
+ ],
+ "pdfBytes": 289430
+}

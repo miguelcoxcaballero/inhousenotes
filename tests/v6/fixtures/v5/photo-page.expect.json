@@ -1,0 +1,83 @@
+{
+ "app": "5.18.0",
+ "exportName": "Photo page",
+ "pageCount": 2,
+ "strokeCount": 2,
+ "imageCount": 0,
+ "hasLegacyBakedOverlay": false,
+ "cleanOriginalBytes": 175065,
+ "versions": [
+  {
+   "id": "v_mvuswqco_j0rrih4v",
+   "originId": "v_mvuswqco_j0rrih4v",
+   "ts": 1793354404200,
+   "summary": "+2 pages, +2 strokes",
+   "kind": "autosave",
+   "isMilestone": false,
+   "schemaVersion": 3,
+   "parentId": null,
+   "contentHash": "l11r23:1pu",
+   "deviceId": "cvobbwzmy",
+   "exportName": "Photo page",
+   "pageCount": 2
+  }
+ ],
+ "pages": [
+  {
+   "pageId": "pg_mvuswpfc_csygr6ik8",
+   "pageWidth": 794,
+   "pageHeight": 1123,
+   "templateKind": "default",
+   "backgroundSource": "template",
+   "pdfPageIndex": null,
+   "backgroundImage": null,
+   "sidePanel": null,
+   "strokes": [
+    [
+     "photo-first",
+     "pen",
+     "#1a1a1a",
+     2,
+     20
+    ]
+   ],
+   "pointsSha256": "2ad75dfd19d0912fe8cfe43816bbcf0d6525b7236a2f902429b70a16fe01ec98",
+   "images": [],
+   "deletedStrokeIds": [],
+   "legacyCoverStrokes": []
+  },
+  {
+   "pageId": "pg_mvuswpqg_3fkqief6a",
+   "pageWidth": 794,
+   "pageHeight": 1123,
+   "templateKind": "default",
+   "backgroundSource": "pdf",
+   "pdfPageIndex": 2,
+   "backgroundImage": "67e01888d1be0220e0995cc78e8f077f8d5e56103fd78d0b5eb2d5f26d6fe1ce",
+   "sidePanel": null,
+   "strokes": [
+    [
+     "photo-ink",
+     "pen",
+     "#ffffff",
+     3,
+     30
+    ]
+   ],
+   "pointsSha256": "b65d58a183baf8c34d99dd73f7cb77ab4359bb449d6608539230a99f504377ae",
+   "images": [],
+   "deletedStrokeIds": [],
+   "legacyCoverStrokes": []
+  }
+ ],
+ "keywordSections": [
+  "STROKES_Z",
+  "IH_NORM",
+  "IH_OVERLAY_REFS",
+  "IH_STRUCT",
+  "IH_FIELDS",
+  "IH_SYNC",
+  "IH_VERSIONS"
+ ],
+ "pdfBytes": 175081
+}
