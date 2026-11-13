@@ -336,6 +336,8 @@ impl Tx {
 
     // ---- assets: hash → {blob, mime, size, refs, remap?} ----
 
+    /// The asset record; its `blob` is a new JS object handle each time, for the caller to release
+    /// (`Value::handles`, `OutBuf::obj_release`).
     pub fn asset_get(&mut self, hash: &[u8; 32]) { self.get(Store::Assets, Key::Str(&sv::hex(hash))); }
     /// Stores an asset unless it is already there (content-addressed: same hash, same bytes). `blob` is the JS
     /// object handle of the `Blob`; the caller keeps owning the handle. New assets start with `refs` 0.

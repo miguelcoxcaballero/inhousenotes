@@ -188,14 +188,16 @@ export default function install(host) {
     };
     run(0);
   };
-  // Opens without creating or upgrading: null when the database does not exist.
+  // Opens without creating or upgrading: null when the database does not exist. A connection that arrives after
+  // the timeout is closed at once, so it can never block a 5.x tab.
   const openExisting = async name => {
     if (indexedDB.databases && !(await indexedDB.databases()).some(db => db.name === name)) return null;
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(name);
-      const timer = setTimeout(() => reject(new Error(`Timed out opening ${name}`)), 5000);
+      let late = false;
+      const timer = setTimeout(() => { late = true; reject(new Error(`Timed out opening ${name}`)); }, 5000);
       request.onupgradeneeded = () => request.transaction.abort();
-      request.onsuccess = () => { clearTimeout(timer); resolve(request.result); };
+      request.onsuccess = () => { clearTimeout(timer); if (late) request.result.close(); else resolve(request.result); };
       request.onerror = event => {
         event.preventDefault();
         clearTimeout(timer);
@@ -213,6 +215,7 @@ export default function install(host) {
     (async () => {
       const db = await openExisting(name);
       if (!db) return host.io(req, ST.MISSING);
+      db.onversionchange = () => db.close(); // a 5.x tab upgrading wins; the read fails and is retried by Rust
       try { await work(db); } finally { db.close(); }
     })().catch(error => fail(req, error, held));
   };

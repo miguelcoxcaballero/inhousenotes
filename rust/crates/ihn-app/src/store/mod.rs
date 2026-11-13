@@ -262,6 +262,10 @@ fn dispatch(app: &mut App, host: &mut dyn Host, c: usize, job: Job) {
 }
 
 fn send(app: &mut App, host: &mut dyn Host, c: usize, job: Job) {
+    if job.tx.is_empty() {
+        // IndexedDB has no transaction over zero stores: nothing to do is a success.
+        return later(app, host, job.caller, status::OK);
+    }
     let wire = app.req(Mod::Store);
     let id = conn(app, c).id;
     let out = host.out();
@@ -806,6 +810,13 @@ mod tests {
         assert_eq!(db.opened.len(), 2);
         assert!([a, b, c].iter().all(|r| db.take(*r).unwrap().0 == status::OK));
         assert_eq!(health(&app), Health::Ready);
+    }
+
+    #[test]
+    fn an_empty_transaction_succeeds_without_reaching_the_host() {
+        let (mut app, mut host, mut db) = boot();
+        assert_eq!(run_on(&mut app, &mut host, &mut db, Tx::new()), (status::OK, Vec::new()));
+        assert_eq!((db.transactions, health(&app)), (0, Health::Ready));
     }
 
     #[test]
