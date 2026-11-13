@@ -9,7 +9,7 @@
 //! `Life` and `Msg` events are broadcast to every module in table order. Modules call each other directly through
 //! their public functions; nothing else needs `app.rs` to change.
 
-use crate::abi::{self, fx, life, mode, tag, tag_mod, Config, Event, Node, OutBuf};
+use crate::abi::{self, fx, life, mode, ptr, tag, tag_mod, Config, Event, Node, OutBuf};
 use crate::host::Host;
 use crate::ui_ids::Ui;
 use std::collections::VecDeque;
@@ -139,8 +139,13 @@ struct Job {
 /// Timers, frames, idle slots and input-priority gating of background work.
 ///
 /// The gating is the 5.18.0 `document_work.rs` policy: a deferred job runs once input has been quiet for its
-/// `quiet_ms` and nothing is busy; while busy the queue is re-polled every 100 ms; hidden/exiting pages bypass the
-/// wait; at most eight jobs resume per turn; a job bound to a session that ended is handed back as stale.
+/// `quiet_ms` and nothing is busy; hidden/exiting pages bypass the wait; at most eight jobs resume per turn; a job
+/// bound to a session that ended is handed back as stale.
+///
+/// One host timer (`WORK_TIMER`) polls the queue. Input never touches it (ARCHITECTURE §0.6): activity and
+/// `set_busy(.., true)` only postpone work, so the pending timer is left alone and the delay is recomputed when it
+/// fires; while something is busy no timer runs at all (5.18.0 re-polled every 100 ms) and the poll is armed when
+/// the last module stops being busy. The timer is set again only when work could start earlier than it is armed for.
 // v5: rust-core/src/document_work.rs:WorkQueue::poll
 #[derive(Default)]
 pub struct Sched {
@@ -152,7 +157,10 @@ pub struct Sched {
     exiting: bool,
     session: u32,
     jobs: VecDeque<Job>,
+    /// Work may be able to start earlier than the timer is armed for: `App::after` checks.
     rearm: bool,
+    /// `Host::now` time at which the pending `WORK_TIMER` fires.
+    armed: Option<f64>,
 }
 
 impl Sched {
@@ -179,31 +187,31 @@ impl Sched {
     }
     pub fn idle_cancel(&mut self, out: &mut OutBuf, id: u32) { out.fx_id(fx::IDLE_CANCEL, id); }
 
-    /// Records user input at `now` (`host.now()`). Pointer events do this automatically.
-    pub fn activity(&mut self, now: f64) {
-        self.last_activity = now;
-        self.rearm = !self.jobs.is_empty();
-    }
+    /// Records user input at `t` (an event `timeStamp` or `host.now()`). Contact pointer events do this
+    /// automatically (see `App::dispatch`); modules call it for the other 5.18.0 activity sources (`touchstart`,
+    /// `touchmove`, `wheel`, `keydown`) with `DomEvent::t`.
+    // v5: app-v5.js:noteRecentUserActivity
+    pub fn activity(&mut self, t: f64) { self.last_activity = self.last_activity.max(t); }
     /// Milliseconds since the last recorded input.
     pub fn quiet_for(&self, now: f64) -> f64 { (now - self.last_activity).max(0.0) }
     /// Marks module `m` as interacting (pen in contact, gesture running, parent busy): deferred work waits.
     pub fn set_busy(&mut self, m: Mod, on: bool) {
         let bit = 1 << m as u32;
         self.busy = if on { self.busy | bit } else { self.busy & !bit };
-        self.rearm = !self.jobs.is_empty();
+        self.rearm |= self.busy == 0;
     }
     pub fn is_busy(&self) -> bool { self.busy != 0 }
     /// Explicit exit (Home button, export on exit): deferred work runs at once, like a hidden page.
     pub fn set_exiting(&mut self, on: bool) {
         self.exiting = on;
-        self.rearm = !self.jobs.is_empty();
+        self.rearm |= on;
     }
     /// The current document session; jobs deferred with `bound == true` are dropped as stale when it changes.
     pub fn session(&self) -> u32 { self.session }
     /// Starts a new session (document opened or closed).
     pub fn new_session(&mut self) -> u32 {
         self.session += 1;
-        self.rearm = !self.jobs.is_empty();
+        self.rearm = true;
         self.session
     }
     /// Queues background work: `Event::Work { id, stale }` is delivered to the module of `id` once input has been
@@ -234,18 +242,27 @@ impl Sched {
         self.next_delay(now)
     }
 
-    /// Delay until the earliest waiting job could run: 1 ms for stale or already-runnable jobs, 100 ms while busy.
+    /// Delay until the earliest waiting job could run: 1 ms for stale or already-runnable jobs; jobs that wait for
+    /// a busy module have none (`set_busy(.., false)` asks again).
     fn next_delay(&self, now: f64) -> Option<f64> {
         let (bypass, elapsed) = (self.hidden || self.exiting, self.quiet_for(now));
-        self.jobs.iter().map(|job| {
+        self.jobs.iter().filter_map(|job| {
             if (job.session != u32::MAX && job.session != self.session) || bypass {
-                1.0
+                Some(1.0)
             } else if self.busy != 0 {
-                100.0
+                None
             } else {
-                (job.quiet_ms - elapsed).max(1.0)
+                Some((job.quiet_ms - elapsed).max(1.0))
             }
         }).reduce(f64::min)
+    }
+
+    /// Arms the poll timer for `now + delay` unless it is already due by then.
+    fn arm(&mut self, out: &mut OutBuf, now: f64, delay: f64) {
+        if self.armed.is_none_or(|at| now + delay < at) {
+            self.armed = Some(now + delay);
+            timer_set(out, WORK_TIMER, delay, false);
+        }
     }
 }
 
@@ -259,7 +276,8 @@ fn timer_set(out: &mut OutBuf, id: u32, ms: f64, repeat: bool) {
 
 /// The application.
 pub struct App {
-    /// Boot configuration, kept current for viewport, DPR and the `ONLINE` / `HIDDEN` / `DARK_SCHEME` flags.
+    /// Boot configuration, kept current for viewport, DPR and the `ONLINE` / `HIDDEN` / `DARK_SCHEME` /
+    /// `REDUCED_MOTION` flags.
     pub cfg: Config,
     pub sched: Sched,
     /// Module states.
@@ -336,7 +354,12 @@ impl App {
         let owner = match *event {
             Event::Dom(e) => e.listener,
             Event::Pointer(p) => {
-                self.sched.activity(host.now());
+                // v5: app-v5.js § init "Global hard interrupt" — pointerdown, and pointermove only in contact
+                // (buttons, pressure or touch); hovering is not activity.
+                let contact = p.raw.buttons != 0 || p.raw.pressure > 0.0 || p.ptype == ptr::TOUCH;
+                if p.kind == ptr::DOWN || (contact && matches!(p.kind, ptr::MOVE | ptr::RAW_UPDATE)) {
+                    self.sched.activity(p.raw.t);
+                }
                 p.listener
             }
             Event::Timer(WORK_TIMER) => return self.run_work(host),
@@ -375,6 +398,7 @@ impl App {
             life::ONLINE => flag(mode::ONLINE, true),
             life::OFFLINE => flag(mode::ONLINE, false),
             life::SCHEME => flag(mode::DARK_SCHEME, l.a != 0.0),
+            life::MOTION => flag(mode::REDUCED_MOTION, l.a != 0.0),
             life::RESIZE => {
                 self.cfg.viewport = (l.a, l.b);
                 self.cfg.dpr = l.c;
@@ -384,12 +408,13 @@ impl App {
         let hidden = self.cfg.has(mode::HIDDEN);
         if hidden != self.sched.hidden {
             self.sched.hidden = hidden;
-            self.sched.rearm = !self.sched.jobs.is_empty();
+            self.sched.rearm |= hidden;
         }
     }
 
     fn run_work(&mut self, host: &mut dyn Host) -> u32 {
         let mut due = Vec::new();
+        self.sched.armed = None;
         let delay = self.sched.poll(host.now(), &mut due);
         for (id, stale) in due {
             if let Some(module) = MODULES.get(tag_mod(id)) {
@@ -403,9 +428,10 @@ impl App {
 
     /// Bookkeeping after every entry from the host: (re)arm the deferred-work poll and report readiness.
     fn after(&mut self, host: &mut dyn Host) {
-        if std::mem::take(&mut self.sched.rearm) {
-            if let Some(delay) = self.sched.next_delay(host.now()) {
-                timer_set(host.out(), WORK_TIMER, delay, false);
+        if std::mem::take(&mut self.sched.rearm) && !self.sched.jobs.is_empty() {
+            let now = host.now();
+            if let Some(delay) = self.sched.next_delay(now) {
+                self.sched.arm(host.out(), now, delay);
             }
         }
         if self.booted && !self.ready && self.ready_holds == 0 {
@@ -528,7 +554,7 @@ mod tests {
         assert!(!s.defer(1, 1200.0, true) && !s.defer(99, -1.0, true) && !s.defer(99, 60001.0, true));
         let mut due = Vec::new();
         s.set_busy(Mod::EditorInput, true);
-        assert_eq!((s.poll(5000.0, &mut due), due.len()), (Some(100.0), 0));
+        assert_eq!((s.poll(5000.0, &mut due), due.len()), (None, 0)); // v5 re-polled after 100 ms; v6 waits for set_busy(false)
         s.set_busy(Mod::EditorInput, false);
         s.activity(4900.0);
         assert_eq!((s.poll(5000.0, &mut due), due.len()), (Some(1100.0), 0));
@@ -573,6 +599,90 @@ mod tests {
         assert!(app.sched.jobs.is_empty());
     }
 
+    fn pointer(app: &mut App, host: &mut FakeHost, kind: u8, ptype: u8, t: f64, pressure: f32, buttons: u32) {
+        let mut w = Writer::default();
+        w.u32(tag(Mod::EditorInput, 1));
+        w.u32(30);
+        w.u8(kind);
+        w.u8(ptype);
+        w.i32(1);
+        w.i32(0);
+        w.u32(0);
+        w.f64(10.0);
+        w.f64(10.0);
+        w.f64(t);
+        w.f32(pressure);
+        w.f32(0.0);
+        w.f32(0.0);
+        w.u32(buttons);
+        w.u32(0);
+        w.u32(0);
+        app.event(host, abi::kind::POINTER, &w.buf);
+    }
+
+    /// ARCHITECTURE §0.6 / §14: a pen stream writes nothing to the out-buffer, however much work is queued.
+    #[test]
+    fn pointer_samples_never_touch_the_work_timer() {
+        let (mut app, mut host) = (App::new(config()), FakeHost::default());
+        app.init(&mut host);
+        host.take();
+        host.now = 1000.0;
+        app.sched.activity(1000.0);
+        assert!(app.sched.defer(tag(Mod::Store, 1), 180.0, false));
+        timer(&mut app, &mut host, tag(Mod::Shell, 1));
+        assert_eq!(host.take(), format!("timer_set {WORK_TIMER} 180 0\n"));
+
+        // Pen down: the editor is busy for the whole stroke.
+        pointer(&mut app, &mut host, ptr::DOWN, ptr::PEN, 1010.0, 0.5, 1);
+        app.sched.set_busy(Mod::EditorInput, true);
+        for i in 0..50 {
+            pointer(&mut app, &mut host, ptr::MOVE, ptr::PEN, 1014.0 + 4.0 * i as f64, 0.5, 1);
+            pointer(&mut app, &mut host, ptr::RAW_UPDATE, ptr::PEN, 1015.0 + 4.0 * i as f64, 0.5, 1);
+        }
+        assert_eq!(host.take(), "");
+        assert_eq!(app.sched.last_activity, 1211.0);
+        // The timer armed before the stroke fires once and is not renewed while the pen is down.
+        host.now = 1180.0;
+        timer(&mut app, &mut host, WORK_TIMER);
+        assert_eq!(host.take(), "");
+        // Pen up: the poll is armed for the quiet time that is left.
+        host.now = 1300.0;
+        pointer(&mut app, &mut host, ptr::UP, ptr::PEN, 1300.0, 0.0, 0);
+        app.sched.set_busy(Mod::EditorInput, false);
+        timer(&mut app, &mut host, tag(Mod::Shell, 1));
+        assert_eq!(host.take(), format!("timer_set {WORK_TIMER} 91 0\n"));
+        // Later entries do not set it again, and an earlier deadline replaces it.
+        timer(&mut app, &mut host, tag(Mod::Shell, 1));
+        assert_eq!(host.take(), "");
+        assert!(app.sched.defer(tag(Mod::Store, 2), 0.0, false));
+        timer(&mut app, &mut host, tag(Mod::Shell, 1));
+        assert_eq!(host.take(), format!("timer_set {WORK_TIMER} 1 0\n"));
+        host.now = 1391.0;
+        timer(&mut app, &mut host, WORK_TIMER);
+        assert_eq!(host.take(), "");
+        assert!(app.sched.jobs.is_empty() && app.sched.armed.is_none());
+    }
+
+    // v5: app-v5.js § init onMoveInterrupt — a pointermove without buttons, pressure or touch is not activity.
+    #[test]
+    fn only_contact_pointer_events_count_as_activity() {
+        let (mut app, mut host) = (App::new(config()), FakeHost::default());
+        app.init(&mut host);
+        let mut last = |kind, ptype, t, pressure, buttons| {
+            pointer(&mut app, &mut host, kind, ptype, t, pressure, buttons);
+            app.sched.last_activity
+        };
+        assert_eq!(last(ptr::MOVE, ptr::MOUSE, 100.0, 0.0, 0), 0.0);
+        assert_eq!(last(ptr::MOVE, ptr::PEN, 110.0, 0.0, 0), 0.0); // hovering pen
+        assert_eq!(last(ptr::ENTER, ptr::MOUSE, 120.0, 0.0, 0), 0.0);
+        assert_eq!(last(ptr::UP, ptr::MOUSE, 130.0, 0.0, 0), 0.0);
+        assert_eq!(last(ptr::MOVE, ptr::MOUSE, 140.0, 0.5, 1), 140.0);
+        assert_eq!(last(ptr::MOVE, ptr::PEN, 150.0, 0.2, 0), 150.0);
+        assert_eq!(last(ptr::MOVE, ptr::TOUCH, 160.0, 0.0, 0), 160.0);
+        assert_eq!(last(ptr::DOWN, ptr::MOUSE, 170.0, 0.0, 0), 170.0);
+        assert_eq!(last(ptr::MOVE, ptr::MOUSE, 165.0, 0.5, 1), 170.0); // never moves backwards
+    }
+
     #[test]
     fn lifecycle_updates_config() {
         let (mut app, mut host) = (App::new(config()), FakeHost::default());
@@ -590,6 +700,10 @@ mod tests {
         assert_eq!((app.cfg.viewport, app.cfg.dpr), ((360.0, 800.0), 3.0));
         life(&mut app, &mut host, life::OFFLINE, 0.0, 0.0, 0.0);
         assert!(!app.cfg.has(mode::ONLINE));
+        life(&mut app, &mut host, life::MOTION, 1.0, 0.0, 0.0);
+        assert!(app.cfg.has(mode::REDUCED_MOTION));
+        life(&mut app, &mut host, life::MOTION, 0.0, 0.0, 0.0);
+        assert!(!app.cfg.has(mode::REDUCED_MOTION));
         life(&mut app, &mut host, life::VISIBILITY, 1.0, 0.0, 0.0);
         assert!(app.cfg.has(mode::HIDDEN) && app.sched.hidden);
         life(&mut app, &mut host, life::VISIBILITY, 0.0, 0.0, 0.0);

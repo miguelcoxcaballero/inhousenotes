@@ -8,11 +8,21 @@ const POINTER_KIND = {
   pointerout: 8, pointerrawupdate: 9, lostpointercapture: 10, gotpointercapture: 11
 };
 const POINTER_TYPE = { mouse: 1, pen: 2, touch: 3 };
+// `abi::ety`; a cargo test compares this table with the Rust one.
+const DOM_TYPE = {
+  click: 1, dblclick: 2, keydown: 3, keyup: 4, input: 5, change: 6, submit: 7, focus: 8, blur: 9, focusin: 10,
+  focusout: 11, scroll: 12, wheel: 13, touchstart: 14, touchmove: 15, touchend: 16, touchcancel: 17, dragenter: 18,
+  dragover: 19, dragleave: 20, drop: 21, paste: 22, copy: 23, cut: 24, animationend: 25, transitionend: 26, load: 27,
+  error: 28, abort: 29, finish: 30, cancel: 31, close: 32, contextmenu: 33, mousedown: 34, mouseup: 35,
+  mousemove: 36, mouseenter: 37, mouseleave: 38, resize: 39, scrollend: 40, toggle: 41, selectionchange: 42,
+  beforeinput: 43, compositionend: 44, 'ihn-resize': 64, 'ihn-mutation': 65
+};
 
 export default function install(host) {
   // Handles are chosen by Rust: 1..4 fixed, 16.. the ids of index.html, 1024.. dynamic.
   const nodes = [null, document, window, document.documentElement, document.body];
   const listeners = new Map();
+  const observers = new Map();
   // node → its handle, or an array when Rust holds several handles to one node (a `Ui` id that is also queried).
   const handles = new WeakMap();
   const forget = h => {
@@ -45,7 +55,8 @@ export default function install(host) {
   const flags = (event, found) => (event.ctrlKey ? 1 : 0) | (event.shiftKey ? 2 : 0) | (event.altKey ? 4 : 0)
     | (event.metaKey ? 8 : 0) | (event.isComposing ? 16 : 0) | (event.repeat ? 32 : 0)
     | (event.target?.checked === true ? 64 : 0) | (event.isTrusted ? 128 : 0) | (event.isPrimary ? 256 : 0)
-    | (found.length && nodes[found[0]] === event.target ? 512 : 0);
+    | (found.length && nodes[found[0]] === event.target ? 512 : 0)
+    | (event.dataTransfer && Array.from(event.dataTransfer.types || []).includes('Files') ? 1024 : 0);
   const sample = (w, e) => w.f64(e.clientX).f64(e.clientY).f64(e.timeStamp).f32(e.pressure).f32(e.tiltX).f32(e.tiltY).u32(e.buttons);
   const touches = (w, list) => {
     w.u32(list ? list.length : 0);
@@ -68,7 +79,7 @@ export default function install(host) {
   }
 
   function encodeDom(id, h, event) {
-    const found = path(event.target);
+    const found = path(event.target), related = path(event.relatedTarget);
     const target = event.target;
     const key = event.key || '', code = event.code || '';
     const raw = target && typeof target.value === 'string' ? target.value : event.animationName || event.propertyName || '';
@@ -76,16 +87,24 @@ export default function install(host) {
     const data = event.dataTransfer?.files?.length ? event.dataTransfer.files
       : event.clipboardData || (target?.files?.length ? target.files : null);
     const count = (event.touches?.length || 0) + (event.changedTouches?.length || 0);
-    const w = host.writer.begin(96 + (key.length + code.length + value.length) * 3 + found.length * 4 + count * 20);
-    w.u32(id).u32(h).u32(flags(event, found)).i32(event.button ?? 0).u32(event.buttons || 0)
+    const w = host.writer.begin(112 + (key.length + code.length + value.length) * 3 + (found.length + related.length) * 4 + count * 20);
+    w.u32(id).u32(h).u8(DOM_TYPE[event.type] || 0).u32(flags(event, found)).f64(event.timeStamp ?? performance.now())
+      .i32(event.button ?? 0).u32(event.buttons || 0)
       .f64(event.clientX || 0).f64(event.clientY || 0).f64(event.deltaX || 0).f64(event.deltaY || 0)
       .u32(event.deltaMode || 0).i32(event.detail | 0).u8(POINTER_TYPE[event.pointerType] || 0).u32(host.hold(data))
       .str(key).str(code).str(value).u32(found.length);
     for (const handle of found) w.u32(handle);
+    w.u32(related.length);
+    for (const handle of related) w.u32(handle);
     touches(w, event.touches);
     touches(w, event.changedTouches);
     return w;
   }
+
+  const dispatch = (id, h, kind, event) => host.enter(() => {
+    const w = kind ? encodePointer(id, h, kind, event) : encodeDom(id, h, event);
+    return host.ex.ihn_event(kind ? KIND_POINTER : KIND_DOM, w.base, w.length);
+  });
 
   function listen(h, type, id, bits) {
     const node = nodes[h];
@@ -96,13 +115,12 @@ export default function install(host) {
     else if (bits & 8) options.passive = false;
     const fn = event => {
       if (options.once) listeners.delete(id);
-      const result = host.enter(() => {
-        const w = kind ? encodePointer(id, h, kind, event) : encodeDom(id, h, event);
-        return host.ex.ihn_event(kind ? KIND_POINTER : KIND_DOM, w.base, w.length);
-      });
+      const result = dispatch(id, h, kind, event);
+      if (!result) return;
       if (result & 1) event.preventDefault();
       if (result & 2) event.stopPropagation();
       if (result & 4) event.stopImmediatePropagation();
+      if (result & 8 && event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
     };
     unlisten(id);
     listeners.set(id, { node, type, fn, capture: options.capture });
@@ -114,6 +132,43 @@ export default function install(host) {
     entry.node.removeEventListener(entry.type, entry.fn, { capture: entry.capture });
     listeners.delete(id);
   }
+  // One observer per listener id; further `observe` ops with that id add nodes to it. Each callback is one event.
+  function observe(h, id, what, filter) {
+    const node = nodes[h];
+    if (!node) return;
+    let observer = observers.get(id);
+    if (!observer) {
+      const Observer = what ? window.MutationObserver : window.ResizeObserver;
+      if (!Observer) return; // v5: `typeof ResizeObserver !== 'undefined'`
+      const type = what ? 'ihn-mutation' : 'ihn-resize';
+      observer = new Observer(entries => dispatch(id, h, 0, { type, target: entries[0]?.target }));
+      observers.set(id, observer);
+    }
+    if (!what) return observer.observe(node);
+    const options = { attributes: !!(what & 1), childList: !!(what & 2), subtree: !!(what & 4), characterData: !!(what & 8) };
+    if (filter) options.attributeFilter = filter.split(',');
+    observer.observe(node, options);
+  }
+  function unobserve(id) {
+    observers.get(id)?.disconnect();
+    observers.delete(id);
+  }
+  // `Host::ask` (ops 16.. of the `host_intl` import): synchronous platform reads answered as text.
+  host.ask = (op, fields) => {
+    switch (op) {
+      case 16: {
+        const node = nodes[fields[0]];
+        if (!(node instanceof Element)) return '';
+        const style = getComputedStyle(node);
+        return fields[1].includes('-') ? style.getPropertyValue(fields[1]) : String(style[fields[1]] ?? '');
+      }
+      case 17: return matchMedia(fields[0]).matches ? '1' : '0';
+      case 18: return path(document.elementFromPoint(Number(fields[0]), Number(fields[1]))).join(',');
+      case 19: return path(document.activeElement).join(',');
+      case 20: return nodes[fields[0]]?.hasPointerCapture?.(Number(fields[1])) ? '1' : '0';
+      default: return null;
+    }
+  };
   function insertHtml(h, parent, before, html) {
     if (!parent) return set(h, null);
     const template = document.createElement('template');
@@ -187,6 +242,8 @@ export default function install(host) {
     },
     [DOM | 25]: r => nodes[r.u32()]?.click?.(),
     [DOM | 26]: r => { const node = nodes[r.u32()], html = r.str(); if (node) node.innerHTML = html; },
-    [DOM | 27]: r => nodes[r.u32()]?.select?.()
+    [DOM | 27]: r => nodes[r.u32()]?.select?.(),
+    [DOM | 28]: r => observe(r.u32(), r.u32(), r.u8(), r.str()),
+    [DOM | 29]: r => unobserve(r.u32())
   };
 }

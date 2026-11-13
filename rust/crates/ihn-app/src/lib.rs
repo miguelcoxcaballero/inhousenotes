@@ -27,5 +27,5 @@ pub mod updater;
 pub use abi::{tag, tag_local, tag_mod, Config, DomEvent, Event, Io, Life, Msg, Node, OutBuf, PointerBatch, Sample};
 pub use app::{App, Mod, Sched};
 pub use dom::{Dialog, Prop, Scroll};
-pub use host::{Host, IntlOp, LsOp, Metric, Rect};
+pub use host::{Ask, Host, IntlOp, LsOp, Metric, Rect};
 pub use ui_ids::Ui;

@@ -6,11 +6,12 @@
 //!
 //! The module is single-threaded and the host never re-enters an export while another one runs (events that fire
 //! during a call are queued by `host/main.js`), except for `ihn_out_ptr`/`ihn_out_len`/`ihn_out_reset`, which the
-//! host calls from inside `host_flush`/`host_rect`/`host_metric`; those touch only the out-buffer.
+//! host calls from inside `host_flush`/`host_rect`/`host_metric` and the `Ask` ops of `host_intl`; those touch only
+//! the out-buffer.
 #![cfg(target_arch = "wasm32")]
 
 use ihn_app::abi::{mode, Config, Node, OutBuf, IHN_ABI, INTL_CAP};
-use ihn_app::{App, Host, IntlOp, LsOp, Metric, Rect};
+use ihn_app::{App, Ask, Host, IntlOp, LsOp, Metric, Rect};
 use std::ptr::addr_of_mut;
 
 #[link(wasm_import_module = "env")]
@@ -25,7 +26,8 @@ extern "C" {
     /// Set (value = `vptr..vlen`) and remove: 0, or -1 when storage threw.
     fn host_ls(op: u32, kptr: *const u8, klen: usize, vptr: *mut u8, vlen: usize) -> i32;
     /// Input at `ptr..len` in a buffer of `max(len, INTL_CAP)` bytes; the result (truncated to that capacity) is
-    /// written at `ptr` and its length returned, or -1.
+    /// written at `ptr` and its length returned, or -1. Ops `0..16` are `IntlOp`; ops `16..` are `Ask` (the host
+    /// applies the out-buffer first).
     fn host_intl(op: u32, ptr: *mut u8, len: usize) -> i32;
     fn host_log(level: u32, ptr: *const u8, len: usize);
 }
@@ -73,14 +75,17 @@ impl Host for Wasm {
             buf.resize(n, 0);
         }
     }
-    fn intl(&mut self, op: IntlOp, input: &str) -> String {
-        let mut buf = vec![0u8; input.len().max(INTL_CAP)];
-        buf[..input.len()].copy_from_slice(input.as_bytes());
-        let n = unsafe { host_intl(op as u32, buf.as_mut_ptr(), input.len()) };
-        buf.truncate(usize::try_from(n).unwrap_or(0).min(buf.len()));
-        String::from_utf8_lossy(&buf).into_owned()
-    }
+    fn intl(&mut self, op: IntlOp, input: &str) -> String { text(op as u32, input) }
+    fn ask(&mut self, q: Ask, input: &str) -> String { text(q as u32, input) }
     fn log(&mut self, level: u32, msg: &str) { unsafe { host_log(level, msg.as_ptr(), msg.len()) } }
+}
+
+fn text(op: u32, input: &str) -> String {
+    let mut buf = vec![0u8; input.len().max(INTL_CAP)];
+    buf[..input.len()].copy_from_slice(input.as_bytes());
+    let n = unsafe { host_intl(op, buf.as_mut_ptr(), input.len()) };
+    buf.truncate(usize::try_from(n).unwrap_or(0).min(buf.len()));
+    String::from_utf8_lossy(&buf).into_owned()
 }
 
 unsafe fn bytes<'a>(ptr: *const u8, len: usize) -> &'a [u8] {

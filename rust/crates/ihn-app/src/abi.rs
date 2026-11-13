@@ -17,7 +17,12 @@
 //!
 //! # Events (JS → Rust)
 //! `ihn_event(kind, ptr, len) -> u32`; the result is a set of [`ret`] bits. Payload layouts are the `decode_*`
-//! functions below (`encodeDom`/`encodePointer` in `host/main.js`).
+//! functions below (`encodeDom`/`encodePointer` in `host/dom.js`).
+//!
+//! # Synchronous reads
+//! The nine imports are listed in `ihn-wasm`. Layout numbers go through `host_metric` ([`crate::host::Metric`]);
+//! computed style, media queries, hit testing, the focused element and pointer capture go through the text channel
+//! of `host_intl` ([`crate::host::Ask`], ops `16..`).
 
 use crate::app::Mod;
 use ihn_core::codec::{Reader, Writer};
@@ -60,6 +65,82 @@ pub mod dom_op {
     pub const CLICK: u8 = 25;
     pub const HTML: u8 = 26;
     pub const SELECT: u8 = 27;
+    pub const OBSERVE: u8 = 28;
+    pub const UNOBSERVE: u8 = 29;
+}
+
+/// `observe` kinds: [`observe::RESIZE`] alone, or a set of the `MutationObserver` options.
+pub mod observe {
+    /// `ResizeObserver`.
+    pub const RESIZE: u8 = 0;
+    pub const ATTRIBUTES: u8 = 1;
+    pub const CHILD_LIST: u8 = 2;
+    pub const SUBTREE: u8 = 4;
+    pub const CHARACTER_DATA: u8 = 8;
+}
+
+macro_rules! event_types {
+    ($($name:ident $js:literal $code:literal;)*) => {
+        /// [`DomEvent::ty`]: the `event.type` code (`DOM_TYPE` in `host/dom.js`; a cargo test compares the two
+        /// tables). A type that is not listed arrives as [`ety::OTHER`]; `pointer*` types have [`ptr`] codes.
+        pub mod ety {
+            pub const OTHER: u8 = 0;
+            $(pub const $name: u8 = $code;)*
+            /// A `ResizeObserver` callback ([`crate::abi::OutBuf::observe`]).
+            pub const RESIZE_OBSERVED: u8 = 64;
+            /// A `MutationObserver` callback.
+            pub const MUTATION_OBSERVED: u8 = 65;
+            #[cfg(test)]
+            pub const NAMES: &[(&str, u8)] = &[$(($js, $code)),*];
+        }
+    };
+}
+
+event_types! {
+    CLICK "click" 1;
+    DBLCLICK "dblclick" 2;
+    KEYDOWN "keydown" 3;
+    KEYUP "keyup" 4;
+    INPUT "input" 5;
+    CHANGE "change" 6;
+    SUBMIT "submit" 7;
+    FOCUS "focus" 8;
+    BLUR "blur" 9;
+    FOCUSIN "focusin" 10;
+    FOCUSOUT "focusout" 11;
+    SCROLL "scroll" 12;
+    WHEEL "wheel" 13;
+    TOUCHSTART "touchstart" 14;
+    TOUCHMOVE "touchmove" 15;
+    TOUCHEND "touchend" 16;
+    TOUCHCANCEL "touchcancel" 17;
+    DRAGENTER "dragenter" 18;
+    DRAGOVER "dragover" 19;
+    DRAGLEAVE "dragleave" 20;
+    DROP "drop" 21;
+    PASTE "paste" 22;
+    COPY "copy" 23;
+    CUT "cut" 24;
+    ANIMATIONEND "animationend" 25;
+    TRANSITIONEND "transitionend" 26;
+    LOAD "load" 27;
+    ERROR "error" 28;
+    ABORT "abort" 29;
+    FINISH "finish" 30;
+    CANCEL "cancel" 31;
+    CLOSE "close" 32;
+    CONTEXTMENU "contextmenu" 33;
+    MOUSEDOWN "mousedown" 34;
+    MOUSEUP "mouseup" 35;
+    MOUSEMOVE "mousemove" 36;
+    MOUSEENTER "mouseenter" 37;
+    MOUSELEAVE "mouseleave" 38;
+    RESIZE "resize" 39;
+    SCROLLEND "scrollend" 40;
+    TOGGLE "toggle" 41;
+    SELECTIONCHANGE "selectionchange" 42;
+    BEFOREINPUT "beforeinput" 43;
+    COMPOSITIONEND "compositionend" 44;
 }
 
 /// Effect family ops implemented by `host/main.js` (core, 3.1 and 3.7). Other ranges belong to their executors.
@@ -107,6 +188,8 @@ pub mod ret {
     pub const PREVENT_DEFAULT: u32 = 1;
     pub const STOP_PROPAGATION: u32 = 2;
     pub const STOP_IMMEDIATE: u32 = 4;
+    /// `event.dataTransfer.dropEffect = 'copy'` (drag events).
+    pub const DROP_COPY: u32 = 8;
 }
 
 /// `listen` flags.
@@ -127,6 +210,8 @@ pub mod mode {
     pub const ONLINE: u32 = 16;
     pub const DARK_SCHEME: u32 = 32;
     pub const HIDDEN: u32 = 64;
+    /// `prefers-reduced-motion: reduce` matches.
+    pub const REDUCED_MOTION: u32 = 128;
 }
 
 /// [`DomEvent::flags`] and [`PointerBatch::flags`].
@@ -142,6 +227,8 @@ pub mod ev {
     pub const PRIMARY: u32 = 256;
     /// `event.target` is itself `path[0]` (not merely a descendant of it).
     pub const EXACT: u32 = 512;
+    /// `event.dataTransfer.types` includes `'Files'`.
+    pub const DT_FILES: u32 = 1024;
 }
 
 /// [`PointerBatch::kind`].
@@ -187,6 +274,8 @@ pub mod life {
     pub const STORAGE: u8 = 12;
     /// Android `resume` document event.
     pub const RESUME: u8 = 13;
+    /// `a` = 1 when `prefers-reduced-motion: reduce` matches.
+    pub const MOTION: u8 = 14;
 }
 
 /// [`Msg::chan`].
@@ -354,17 +443,21 @@ impl<'a> Touches<'a> {
 
 /// A DOM event other than `pointer*` (kind `DOM`).
 ///
-/// Payload: `u32 listener, u32 node, u32 flags, i32 button, u32 buttons, f64 x, f64 y, f64 dx, f64 dy,
-/// u32 delta_mode, i32 detail, u8 ptype, u32 obj, str key, str code, str value, u32 n + n×u32 path,
-/// u32 n + n×20 touches, u32 n + n×20 changed touches`.
+/// Payload: `u32 listener, u32 node, u8 type, u32 flags, f64 t, i32 button, u32 buttons, f64 x, f64 y, f64 dx,
+/// f64 dy, u32 delta_mode, i32 detail, u8 ptype, u32 obj, str key, str code, str value, u32 n + n×u32 path,
+/// u32 n + n×u32 related path, u32 n + n×20 touches, u32 n + n×20 changed touches`.
 #[derive(Clone, Copy)]
 pub struct DomEvent<'a> {
     /// The id given to `listen`.
     pub listener: u32,
-    /// The node the listener is attached to (`currentTarget`).
+    /// The node the listener is attached to (`currentTarget`); for observer callbacks, the first node observed.
     pub node: Node,
+    /// [`ety`] code of `event.type`.
+    pub ty: u8,
     /// [`ev`] bits.
     pub flags: u32,
+    /// `event.timeStamp` (the clock of `Host::now`).
+    pub t: f64,
     pub button: i32,
     pub buttons: u32,
     /// `clientX` / `clientY`.
@@ -387,6 +480,9 @@ pub struct DomEvent<'a> {
     pub value: &'a str,
     /// Known nodes from `event.target` upwards (nearest first).
     pub path: Handles<'a>,
+    /// Known nodes from `event.relatedTarget` upwards (empty when there is none): `related.contains(node)` is
+    /// `node.contains(event.relatedTarget)`.
+    pub related: Handles<'a>,
     pub touches: Touches<'a>,
     pub changed_touches: Touches<'a>,
 }
@@ -397,7 +493,9 @@ impl<'a> DomEvent<'a> {
         Some(DomEvent {
             listener: r.u32()?,
             node: Node(r.u32()?),
+            ty: r.u8()?,
             flags: r.u32()?,
+            t: r.f64()?,
             button: r.i32()?,
             buttons: r.u32()?,
             x: r.f64()?,
@@ -412,6 +510,7 @@ impl<'a> DomEvent<'a> {
             code: r.str()?,
             value: r.str()?,
             path: handles(&mut r)?,
+            related: handles(&mut r)?,
             touches: {
                 let n = r.u32()? as usize;
                 Touches(r.take(n.checked_mul(20)?)?)
@@ -671,7 +770,9 @@ mod tests {
         let mut w = Writer::default();
         w.u32(7);
         w.u32(20);
-        w.u32(ev::SHIFT | ev::EXACT);
+        w.u8(ety::DRAGLEAVE);
+        w.u32(ev::SHIFT | ev::EXACT | ev::DT_FILES);
+        w.f64(1234.5);
         w.i32(-1);
         w.u32(2);
         for v in [10.5, 20.5, 1.0, -120.0] {
@@ -687,6 +788,8 @@ mod tests {
         w.u32(2);
         w.u32(1500);
         w.u32(20);
+        w.u32(1);
+        w.u32(21);
         for n in [1u32, 0] {
             w.u32(n);
             for _ in 0..n {
@@ -699,7 +802,9 @@ mod tests {
         assert_eq!((e.listener, e.node, e.button, e.buttons, e.delta_mode, e.detail, e.ptype, e.obj), (7, Node(20), -1, 2, 1, 3, 3, 99));
         assert_eq!((e.x, e.y, e.dx, e.dy), (10.5, 20.5, 1.0, -120.0));
         assert_eq!((e.key, e.code, e.value), ("Enter", "NumpadEnter", "típed"));
-        assert!(e.has(ev::SHIFT) && e.has(ev::EXACT) && !e.has(ev::CTRL));
+        assert!(e.has(ev::SHIFT) && e.has(ev::EXACT) && e.has(ev::DT_FILES) && !e.has(ev::CTRL));
+        assert_eq!((e.ty, e.t), (ety::DRAGLEAVE, 1234.5));
+        assert!(e.related.contains(Node(21)) && !e.related.contains(Node(20)));
         assert_eq!(e.path.iter().collect::<Vec<_>>(), [Node(1500), Node(20)]);
         assert!(e.path.contains(Node(20)) && !e.path.contains(Node(21)) && e.path.first() == Node(1500));
         assert_eq!(e.touches.iter().collect::<Vec<_>>(), [Touch { id: 4, x: 1.0, y: 2.0 }]);
@@ -707,6 +812,30 @@ mod tests {
         for cut in 0..w.buf.len() {
             assert!(Event::decode(kind::DOM, &w.buf[..cut]).is_none());
         }
+    }
+
+    /// `host/dom.js` mirrors the event type codes; a drifted table would silently misroute events.
+    #[test]
+    fn event_type_codes_match_the_host() {
+        let js = include_str!("../../../../host/dom.js");
+        let table = js.split("const DOM_TYPE = {").nth(1).and_then(|s| s.split("};").next()).expect("DOM_TYPE in host/dom.js");
+        let mut host: Vec<(String, u8)> = table
+            .split(',')
+            .map(|entry| {
+                let (name, code) = entry.trim().split_once(':').expect("name: code");
+                (name.trim().trim_matches('\'').to_string(), code.trim().parse().expect("code"))
+            })
+            .collect();
+        let mut rust: Vec<(String, u8)> = ety::NAMES.iter().map(|&(n, c)| (n.to_string(), c)).collect();
+        rust.push(("ihn-resize".into(), ety::RESIZE_OBSERVED));
+        rust.push(("ihn-mutation".into(), ety::MUTATION_OBSERVED));
+        host.sort();
+        rust.sort();
+        assert_eq!(host, rust);
+        let mut codes: Vec<u8> = rust.iter().map(|e| e.1).collect();
+        codes.dedup();
+        assert_eq!(codes.len(), rust.len(), "duplicate event type code");
+        assert!(!codes.contains(&ety::OTHER));
     }
 
     #[test]

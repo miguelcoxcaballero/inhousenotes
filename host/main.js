@@ -9,8 +9,8 @@
 const IHN_ABI = 6;
 const IMPORTS = ['host_flush', 'host_rect', 'host_metric', 'host_now', 'host_time', 'host_random', 'host_ls', 'host_intl', 'host_log'];
 const KIND = { DOM: 1, POINTER: 2, TIMER: 4, IDLE: 5, IO: 6, LIFECYCLE: 7, MESSAGE: 8, TEST: 9 };
-const MODE = { APP: 1, HEADLESS: 2, E2E: 4, WORKER: 8, ONLINE: 16, DARK: 32, HIDDEN: 64 };
-const LIFE = { VISIBILITY: 1, PAGEHIDE: 2, BEFOREUNLOAD: 3, ONLINE: 4, OFFLINE: 5, RESIZE: 6, FULLSCREEN: 7, SCHEME: 8, BLUR: 9, FOCUS: 10, PAGESHOW: 11, STORAGE: 12, RESUME: 13 };
+const MODE = { APP: 1, HEADLESS: 2, E2E: 4, WORKER: 8, ONLINE: 16, DARK: 32, HIDDEN: 64, REDUCED_MOTION: 128 };
+const LIFE = { VISIBILITY: 1, PAGEHIDE: 2, BEFOREUNLOAD: 3, ONLINE: 4, OFFLINE: 5, RESIZE: 6, FULLSCREEN: 7, SCHEME: 8, BLUR: 9, FOCUS: 10, PAGESHOW: 11, STORAGE: 12, RESUME: 13, MOTION: 14 };
 const CHAN = { WORKER: 3, WORKER_ERROR: 4, SERVICE_WORKER: 5 };
 const FX = 3 << 8;
 const EXECUTORS = ['dom', 'canvas', 'idb', 'fetch', 'pdf', 'peer', 'platform'];
@@ -295,9 +295,13 @@ function imports(host) {
         return bytes.length;
       } catch (_) { return -1; }
     },
+    // Ops 0..15 are Intl; ops 16.. are `Host::ask` (computed style, media queries, hit test…), answered by
+    // host/dom.js after the pending records are applied.
     host_intl: (op, ptr, len) => {
       try {
-        const result = intl(op, decoder.decode(host.u8(ptr, len)).split('\0'));
+        if (op >= 16) host.applyOut();
+        const fields = decoder.decode(host.u8(ptr, len)).split('\0');
+        const result = op >= 16 ? host.ask(op, fields) : intl(op, fields);
         if (result === null) return -1;
         return encoder.encodeInto(result, host.u8(ptr, Math.max(len, 1024))).written;
       } catch (_) { return -1; }
@@ -328,6 +332,8 @@ function lifecycle(host) {
   }
   const scheme = matchMedia('(prefers-color-scheme: dark)');
   scheme.addEventListener?.('change', () => host.life(LIFE.SCHEME, scheme.matches ? 1 : 0));
+  const motion = matchMedia('(prefers-reduced-motion: reduce)');
+  motion.addEventListener?.('change', () => host.life(LIFE.MOTION, motion.matches ? 1 : 0));
 }
 
 // The v6 service worker lives at the URL every 5.x page registered (ARCHITECTURE §12). Each v6 window announces
@@ -402,6 +408,7 @@ async function boot() {
     | (config.params.has('offline-worker') ? MODE.HEADLESS : 0)
     | (navigator.onLine === false ? 0 : MODE.ONLINE)
     | (matchMedia('(prefers-color-scheme: dark)').matches ? MODE.DARK : 0)
+    | (matchMedia('(prefers-reduced-motion: reduce)').matches ? MODE.REDUCED_MOTION : 0)
     | (document.visibilityState === 'hidden' ? MODE.HIDDEN : 0);
   if (config.e2e) (await import(asset('host/test-api.js'))).default(host, { KIND, IMPORTS });
   lifecycle(host);

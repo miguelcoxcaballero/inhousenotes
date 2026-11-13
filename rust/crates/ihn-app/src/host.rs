@@ -78,6 +78,25 @@ pub enum IntlOp {
     Number = 4,
 }
 
+/// Synchronous platform questions answered as text through the `host_intl` import (ops `16..`); each implies a
+/// flush. Use the typed methods of [`Host`] (`style`, `media`, `hit`, `active`, `has_capture`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u32)]
+pub enum Ask {
+    /// `handle \0 property` → `getComputedStyle(node)[property]` (`getPropertyValue` for names containing `-`).
+    Style = 16,
+    /// `query` → `matchMedia(query).matches` as `"1"` / `"0"`.
+    Media = 17,
+    /// `x \0 y` → the known handles from `document.elementFromPoint(x, y)` upwards, comma-separated.
+    Hit = 18,
+    /// The known handles from `document.activeElement` upwards, comma-separated.
+    Active = 19,
+    /// `handle \0 pointerId` → `node.hasPointerCapture(pointerId)` as `"1"` / `"0"`.
+    Capture = 20,
+}
+
+fn nodes(list: &str) -> Vec<Node> { list.split(',').filter_map(|h| h.parse().ok()).map(Node).collect() }
+
 pub trait Host {
     /// DOM / canvas / effect records.
     fn out(&mut self) -> &mut OutBuf;
@@ -100,6 +119,24 @@ pub trait Host {
     fn intl(&mut self, op: IntlOp, input: &str) -> String;
     /// `console.debug/info/warn/error` (`level` 0..=3). Not part of the §3.4 sketch; maps to the `host_log` import.
     fn log(&mut self, level: u32, msg: &str);
+    /// The text answer to a platform question (implies flush); empty when the host cannot answer.
+    fn ask(&mut self, q: Ask, input: &str) -> String;
+
+    /// `getComputedStyle(h)[prop]` (`"gridTemplateColumns"`, `"transform"`, `"display"`, `"--custom"`, …); empty
+    /// for a missing node. Read it when 5.18.0 does, never per pointer sample.
+    fn style(&mut self, h: Node, prop: &str) -> String { self.ask(Ask::Style, &format!("{}\0{prop}", h.0)) }
+    /// `matchMedia(query).matches`. The colour scheme and reduced-motion preferences are also kept current in
+    /// `Config::flags`.
+    fn media(&mut self, query: &str) -> bool { self.ask(Ask::Media, query) == "1" }
+    /// `document.elementFromPoint(x, y)` as the known nodes from it upwards (nearest first).
+    fn hit(&mut self, x: f64, y: f64) -> Vec<Node> { nodes(&self.ask(Ask::Hit, &format!("{x}\0{y}"))) }
+    /// `document.activeElement` as the known nodes from it upwards (nearest first): `[0] == Node::BODY` when
+    /// nothing is focused, `.contains(&h)` for `h.contains(document.activeElement)`.
+    fn active(&mut self) -> Vec<Node> { nodes(&self.ask(Ask::Active, "")) }
+    /// `h.hasPointerCapture(pointer_id)`.
+    fn has_capture(&mut self, h: Node, pointer_id: i32) -> bool {
+        self.ask(Ask::Capture, &format!("{}\0{pointer_id}", h.0)) == "1"
+    }
 }
 
 /// Scripted host for cargo tests: records the out-buffer, answers measurements from tables, has a manual clock,
@@ -111,6 +148,8 @@ pub struct FakeHost {
     pub time: f64,
     pub rects: std::collections::HashMap<Node, Rect>,
     pub metrics: std::collections::HashMap<(Node, Metric), f64>,
+    /// Scripted answers of [`Host::ask`] by question and input (missing = empty).
+    pub answers: std::collections::HashMap<(Ask, String), String>,
     pub local: std::collections::BTreeMap<String, String>,
     pub session: std::collections::BTreeMap<String, String>,
     pub flushes: u32,
@@ -127,6 +166,7 @@ impl Default for FakeHost {
             time: 1_793_354_400_000.0, // 2026-10-30T10:00:00Z, the parity clock (TESTING §3.1)
             rects: Default::default(),
             metrics: Default::default(),
+            answers: Default::default(),
             local: Default::default(),
             session: Default::default(),
             flushes: 0,
@@ -190,4 +230,31 @@ impl Host for FakeHost {
         }
     }
     fn log(&mut self, level: u32, msg: &str) { self.logs.push((level, msg.into())); }
+    fn ask(&mut self, q: Ask, input: &str) -> String {
+        self.flushes += 1;
+        self.answers.get(&(q, input.to_string())).cloned().unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn typed_questions_encode_their_input_and_parse_the_answer() {
+        let mut host = FakeHost::default();
+        host.answers.insert((Ask::Style, "20\0transform".into()), "matrix(1, 0, 0, 1, 0, 0)".into());
+        host.answers.insert((Ask::Media, "(prefers-reduced-motion: reduce)".into()), "1".into());
+        host.answers.insert((Ask::Hit, "10.5\0-2".into()), "1500,20,4,3,1".into());
+        host.answers.insert((Ask::Active, String::new()), "4,3,1".into());
+        host.answers.insert((Ask::Capture, "20\0-7".into()), "1".into());
+        assert_eq!(host.style(Node(20), "transform"), "matrix(1, 0, 0, 1, 0, 0)");
+        assert_eq!(host.style(Node(21), "transform"), "");
+        assert!(host.media("(prefers-reduced-motion: reduce)") && !host.media("(max-width: 720px)"));
+        assert_eq!(host.hit(10.5, -2.0), [Node(1500), Node(20), Node::BODY, Node::HTML, Node::DOCUMENT]);
+        assert_eq!(host.hit(0.0, 0.0), []);
+        assert_eq!(host.active()[0], Node::BODY);
+        assert!(host.has_capture(Node(20), -7) && !host.has_capture(Node(20), 1));
+        assert_eq!(host.flushes, 9);
+    }
 }

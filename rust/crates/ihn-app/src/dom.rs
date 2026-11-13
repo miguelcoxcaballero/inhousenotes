@@ -65,6 +65,8 @@ pub const LAYOUT: &[(u8, &str, &str)] = &[
     (op::CLICK, "click", "h"),
     (op::HTML, "html", "hs"),
     (op::SELECT, "select", "h"),
+    (op::OBSERVE, "observe", "hubs"),
+    (op::UNOBSERVE, "unobserve", "u"),
 ];
 
 impl OutBuf {
@@ -254,4 +256,22 @@ impl OutBuf {
     }
     /// `h.click()` (file inputs, download anchors).
     pub fn click(&mut self, h: Node) { self.dom_h(op::CLICK, h); }
+    /// Adds `h` to the observer registered under `listener` (created on first use): a `ResizeObserver` for
+    /// `what == abi::observe::RESIZE`, else a `MutationObserver` with those `abi::observe` options and the
+    /// comma-separated `attribute_filter` (empty = none). Each callback arrives as one `Event::Dom` with
+    /// `ty == ety::RESIZE_OBSERVED` / `MUTATION_OBSERVED`, `node` = the first node observed and `path` = the
+    /// target of the first entry. `listener` follows the rules of [`OutBuf::listen`].
+    pub fn observe(&mut self, h: Node, listener: u32, what: u8, attribute_filter: &str) {
+        let m = self.dom(op::OBSERVE, h);
+        self.w.u32(listener);
+        self.w.u8(what);
+        self.w.str(attribute_filter);
+        self.w.end(m);
+    }
+    /// Disconnects the observer registered under `listener`.
+    pub fn unobserve(&mut self, listener: u32) {
+        let m = self.w.rec(fam::DOM, op::UNOBSERVE);
+        self.w.u32(listener);
+        self.w.end(m);
+    }
 }
