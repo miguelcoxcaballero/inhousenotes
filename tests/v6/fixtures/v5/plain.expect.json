@@ -1,0 +1,44 @@
+{
+ "app": "5.18.0",
+ "exportName": "cuaderno",
+ "pageCount": 2,
+ "strokeCount": 0,
+ "imageCount": 0,
+ "hasLegacyBakedOverlay": false,
+ "cleanOriginalBytes": 1696,
+ "versions": [],
+ "pages": [
+  {
+   "pageId": "pg_mvuswpfc_hn1gi88ry",
+   "pageWidth": 595,
+   "pageHeight": 842,
+   "templateKind": "default",
+   "backgroundSource": "pdf",
+   "pdfPageIndex": 1,
+   "backgroundImage": "2790304a478cfcbf2c06f32f9c0a427ee711dd327e540e3eed0945edd381ed27",
+   "sidePanel": null,
+   "strokes": [],
+   "pointsSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "images": [],
+   "deletedStrokeIds": [],
+   "legacyCoverStrokes": []
+  },
+  {
+   "pageId": "pg_mvuswpfk_fq2bo4i3w",
+   "pageWidth": 595,
+   "pageHeight": 420,
+   "templateKind": "default",
+   "backgroundSource": "pdf",
+   "pdfPageIndex": 2,
+   "backgroundImage": "bcc241ac5cb0c7d17fc435e28faa6ce2ee9d8a5f5770244177e17715de928292",
+   "sidePanel": null,
+   "strokes": [],
+   "pointsSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "images": [],
+   "deletedStrokeIds": [],
+   "legacyCoverStrokes": []
+  }
+ ],
+ "keywordSections": [],
+ "pdfBytes": 1696
+}

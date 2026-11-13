@@ -1,0 +1,85 @@
+{
+ "scenario": "local-doc",
+ "app": "5.18.0",
+ "account": "ana@example.test",
+ "document": {
+  "id": "local-9b36f69c-0724-4b46-9ace-e03a0b794586",
+  "name": "Offline notebook",
+  "driveFixture": null,
+  "pages": [
+   {
+    "pageId": "pg_legacy_1nvnp4",
+    "strokeIds": [
+     "mvusxh4k-98r953tpp",
+     "mvusxhbo-bvwho0kmr",
+     "mvusxhis-y4j7gxg4j",
+     "mvusxhpw-jsgo1nsym",
+     "mvusxhx0-kjkjl0otk",
+     "mvusxi44-od21oyb1o"
+    ]
+   }
+  ]
+ },
+ "unsyncedStrokeIds": [
+  "mvusxh4k-98r953tpp",
+  "mvusxhbo-bvwho0kmr",
+  "mvusxhis-y4j7gxg4j",
+  "mvusxhpw-jsgo1nsym",
+  "mvusxhx0-kjkjl0otk",
+  "mvusxi44-od21oyb1o"
+ ],
+ "editorOpen": true,
+ "offline": {
+  "account": "ana@example.test",
+  "sync": {
+   "phase": "idle",
+   "pending": 1,
+   "id": null,
+   "errors": [
+    {
+     "id": "local-9b36f69c-0724-4b46-9ace-e03a0b794586",
+     "phase": "checking",
+     "code": "network",
+     "message": "Failed to fetch"
+    }
+   ]
+  }
+ },
+ "stores": {
+  "inhouse-offline-v1": {
+   "document-index": 1,
+   "documents": 1,
+   "entries": 3,
+   "leases": 1,
+   "outbox": 1,
+   "recoveries": 0,
+   "settings": 4
+  },
+  "notebook-data-db-v1": {
+   "pages": 1,
+   "snapshots": 1,
+   "stroke-ops": 6,
+   "timeline-history": 2
+  }
+ },
+ "inkCodecs": [
+  "xor-v1"
+ ],
+ "localStorageKeys": [
+  "drive-hint-email",
+  "drive-profile-v1",
+  "drive-remember-v1",
+  "drive-session-v1",
+  "drive-token-v1",
+  "ihn-live-leader-v1:local-9b36f69c-0724-4b46-9ace-e03a0b794586",
+  "inhouse-theme",
+  "notebook-data-v3",
+  "notebook-view-v1",
+  "presence-client-id-v1"
+ ],
+ "sessionStorageKeys": [
+  "ihn-network-offline",
+  "presence-client-id-v1"
+ ],
+ "driveRequests": []
+}

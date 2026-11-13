@@ -1,0 +1,112 @@
+{
+ "scenario": "offline-dirty",
+ "app": "5.18.0",
+ "account": "ana@example.test",
+ "document": {
+  "id": "scene-template",
+  "name": "Template notebook",
+  "driveFixture": "template",
+  "pages": [
+   {
+    "pageId": "pg_mvuswpfc_hyj0jmgnr",
+    "strokeIds": [
+     "mvuswpqg-upvvqw2py",
+     "mvuswpxk-9rjb62mvd",
+     "mvuswq4o-swe2z5vpv",
+     "mvuswqbs-te78mibq9",
+     "mvuswqiw-gnvrfezs9",
+     "mvuswqq0-v01skop31",
+     "mvuswqx4-xuso7jkly",
+     "mvuswr48-m1i3era0h",
+     "mvuswrbc-my9u9mf99",
+     "mvuswrig-r02o39odw",
+     "mvuswrpk-gq0d3xlta",
+     "mvuswrwo-4lok0hzss",
+     "mvuswsq0-7pj6b5gpj",
+     "mvuswsx4-gae7v51mg",
+     "mvuswt48-cw6ofkrco",
+     "mvusws7c-q02v2lihh",
+     "mvuswseg-alhpdlx8x",
+     "mvuswslk-72sani6zb"
+    ]
+   },
+   {
+    "pageId": "pg_mvuswpfc_ftpy03gy2",
+    "strokeIds": [
+     "tpl-p2-a",
+     "tpl-p2-b",
+     "tpl-p2-hl"
+    ]
+   },
+   {
+    "pageId": "pg_mvuswpfc_0bdlxkcza",
+    "strokeIds": []
+   }
+  ]
+ },
+ "unsyncedStrokeIds": [
+  "mvusws7c-q02v2lihh",
+  "mvuswseg-alhpdlx8x",
+  "mvuswslk-72sani6zb"
+ ],
+ "editorOpen": true,
+ "offline": {
+  "account": "ana@example.test",
+  "sync": {
+   "phase": "idle",
+   "pending": 1,
+   "id": null,
+   "errors": []
+  }
+ },
+ "stores": {
+  "inhouse-offline-v1": {
+   "document-index": 1,
+   "documents": 1,
+   "entries": 2,
+   "leases": 1,
+   "outbox": 1,
+   "recoveries": 0,
+   "settings": 7
+  },
+  "inhouse-original-pdfs-v1": {
+   "drive-open-cache": 1,
+   "originals": 0
+  },
+  "notebook-data-db-v1": {
+   "pages": 3,
+   "snapshots": 1,
+   "stroke-ops": 3,
+   "timeline-history": 1
+  }
+ },
+ "inkCodecs": [
+  "xor-v1",
+  "xor-v1,xor-v1"
+ ],
+ "localStorageKeys": [
+  "drive-hint-email",
+  "drive-profile-v1",
+  "drive-remember-v1",
+  "drive-session-v1",
+  "drive-token-v1",
+  "ihn-live-leader-v1:scene-template",
+  "inhouse-theme",
+  "notebook-data-v3",
+  "notebook-view-v1",
+  "presence-client-id-v1"
+ ],
+ "sessionStorageKeys": [
+  "ihn-network-offline",
+  "presence-client-id-v1"
+ ],
+ "driveRequests": [
+  "PATCH /drive/v3/files/scene-template 200",
+  "POST /drive/v3/files/scene-template/comments 200",
+  "POST /drive/v3/files 200",
+  "POST /upload/drive/v3/files 200",
+  "PATCH /drive/v3/files/scene-template 200",
+  "PATCH /drive/v3/files/scene-template 200",
+  "PATCH /drive/v3/files/scene-template 200"
+ ]
+}
