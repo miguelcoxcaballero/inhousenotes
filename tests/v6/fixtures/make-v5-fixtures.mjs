@@ -346,7 +346,8 @@ async function makeDocuments() {
 // ---- storage dumps ----
 // Each scenario is a 5.18.0 session driven through its UI against the mock Drive (Ana signed in), stopped at the
 // moment a device would be when the user updates to v6; then localStorage, sessionStorage and every IndexedDB database
-// are dumped. `expect` lists what v6's migration must preserve: the stroke ids the device holds and Drive does not.
+// are dumped. `expect` lists what v6's migration must preserve: the stroke ids the device holds that the Drive fixture
+// it opened does not contain (strokes the session itself uploaded to the mock Drive are in the list too).
 const library = scenes => mock => {
   addAccounts(mock);
   mock.drive.addFile({ id: 'dump-folder', name: 'Notebooks', mimeType: FOLDER, owner: ANA, modifiedTime: '2026-10-20T08:00:00.000Z' });
@@ -419,10 +420,24 @@ const storage = {
     await t.advance(4000, { step: 100 });
     return t;
   },
-  // Offline edits, closed to Home; meanwhile another device replaced the Drive revision (R1). Back online the outbox
-  // runner writes both full PDFs to `recoveries` before it merges; the upload itself never completes.
+  // Saved once online (5.18.0 keeps the editable draft of its last upload in `recoveries`), then edited again offline
+  // and closed to Home: a recovery row next to a dirty document with an outbox row.
   async recoveries() {
     const t = await openScene('recoveries', 'r0');
+    await write(t, { rows: 1, perRow: 2, y: 420 });
+    await t.advance(15_000, { step: 100 });
+    t.mock.offline = true;
+    await write(t, { rows: 1, perRow: 2, y: 470 });
+    await t.advance(12_000, { step: 100 });
+    await t.click('#btn-drive-home');
+    await t.advance(3000, { step: 100 });
+    return t;
+  },
+  // Offline edits, closed to Home; meanwhile another device replaced the Drive revision (R1). The app is started
+  // again online, and its outbox runner writes both full PDFs to `recoveries` before it merges; the upload itself
+  // never completes. NOT reproducible byte for byte (see UNSTABLE below): made once, on request only.
+  async 'recovery-conflict'() {
+    const t = await openScene('recovery-conflict', 'r0');
     t.mock.offline = true;
     await write(t, { rows: 1, perRow: 2, y: 420 });
     await t.advance(12_000, { step: 100 });
@@ -431,9 +446,14 @@ const storage = {
     t.mock.drive.handle({ method: 'PATCH', url: 'https://www.googleapis.com/upload/drive/v3/files/scene-r0?uploadType=media', headers: { authorization: `Bearer ${t.mock.drive.accounts.get(ANA).token}`, 'content-type': 'application/pdf' }, body: fs.readFileSync(path.join(HERE, 'v5', 'r1.pdf')) });
     t.mock.inject({ path: '/upload/drive/', times: Infinity, hold: true });
     t.mock.offline = false;
-    // The app is started again (as after the device was put away): the outbox runner, not the editor, owns the draft.
+    // The closed document's Web Locks (its `sync` lease) are released a moment after it unloads, in real time; the new
+    // one must not find them still held, so it starts only once they are gone.
+    await t.page.goto(`${server.url}/__seed`, { waitUntil: 'commit' });
+    while (await t.page.evaluate(async () => (await navigator.locks.query()).held.length > 0)) await new Promise(resolve => setTimeout(resolve, 20));
     await t.page.goto(`${server.url}/?e2e=1`, { waitUntil: 'commit' });
     await t.advance(90_000, { step: 250 });
+    const rows = await t.job(async () => (await InhouseOfflineStore.list('recoveries', InhouseOfflineLibrary.account())).filter(r => r.localBlob && r.remoteBlob).length).catch(() => -1);
+    if (rows !== 1) { await t.stop(); throw new Error(`recovery-conflict: the outbox runner lost the start-up race this time (conflict rows: ${rows}); run it again`); }
     return t;
   },
   // The hidden background processor as the Android host runs it (`/?offline-worker=1`): its own `background-`
@@ -449,7 +469,8 @@ const storage = {
     t.mock.offline = false;
     const worker = await t.context.newPage();
     await worker.goto(`${server.url}/?inhouse_app=1&offline-worker=1&e2e=1`, { waitUntil: 'commit' });
-    for (let ms = 0; ms < 40_000; ms += 250) { await t.advance(250, { step: 250 }); await worker.evaluate(ms => globalThis.__pwClock.controller.runFor(ms), 250); while (t.mock.next()) await new Promise(r => setTimeout(r, 5)); }
+    // Two pages, two clocks: they take turns, each idle before the other moves.
+    for (let ms = 0; ms < 40_000; ms += 250) { await t.advance(250, { step: 250 }); await t.advance(250, { step: 250, page: worker }); }
     t.extraPages = [worker];
     return t;
   },
@@ -463,15 +484,21 @@ const storage = {
 };
 
 // Revisions another device wrote to Drive during the scenario: their strokes are not this device's unsynced work.
-const ALSO_ON_DRIVE = { recoveries: ['r1'] };
+const ALSO_ON_DRIVE = { 'recovery-conflict': ['r1'] };
+// Scenarios whose result depends on which of 5.18.0's start-up flows (library refresh, outbox runner, each a chain of
+// IndexedDB, lock and worker round trips) wins a real-time race within one instant of fake time. Their committed dump
+// is a sample of one run: generated only when named with `--only`, never compared by `--check`.
+const UNSTABLE = new Set(['recovery-conflict']);
 
 async function makeStorage() {
   const dir = path.join(OUT, 'storage');
   fs.mkdirSync(dir, { recursive: true });
   for (const [name, run] of Object.entries(storage)) {
-    if (ONLY.length && !ONLY.includes(name)) continue;
+    if (ONLY.length ? !ONLY.includes(name) : UNSTABLE.has(name)) continue;
+    if (CHECK && UNSTABLE.has(name)) { console.log(`storage/${name}: not reproducible byte for byte, skipped by --check`); continue; }
     const t = await run();
     try {
+      if (process.env.IHN_DET_TRAIL) fs.writeFileSync(path.join(dir, `${name}.trail.txt`), (await t.page.evaluate(() => self.__ihnDet.trail)).join('\n') + '\n');   // debugging aid, see determinism-init.js
       const dump = await dumpStorage(t.page);
       const live = await t.page.evaluate(() => ({
         driveFileId: state.driveFileId || null, exportName: state.exportName || '', editorOpen: !document.getElementById('editor-view')?.classList.contains('hidden'),

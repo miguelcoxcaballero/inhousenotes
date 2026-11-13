@@ -2,7 +2,7 @@
 // tests/v6/fixtures/traces/<scene>.json. W2.3's cargo trace-golden tests compare the Rust renderer's command stream
 // with these files before a v6 editor exists; the parity harness compares both apps' traces live.
 //
-//   node tests/v6/fixtures/record-traces.mjs [--only dense-page,ink-pen] [--check]
+//   node tests/v6/fixtures/record-traces.mjs [--only dense-page,ink-pen] [--check] [--out dir]
 //
 // File format (normalize.mjs `stringifyTrace`): {"scene", "app", "viewport", "dpr", "input"?, "surfaces":[{"label",
 // "kind", "width", "height", "ops":[[name, ...args]]}]}, one op per line. Numbers are "~" + the 16 hex digits of their
@@ -21,7 +21,7 @@ import { ANA } from '../mock/fixtures.mjs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2), flag = name => args.includes(`--${name}`), opt = name => { const i = args.indexOf(`--${name}`); return i < 0 ? '' : args[i + 1]; };
 const CHECK = flag('check'), ONLY = opt('only').split(',').filter(Boolean);
-const OUT = CHECK ? fs.mkdtempSync(path.join(os.tmpdir(), 'ihn-traces-')) : path.join(HERE, 'traces');
+const OUT = opt('out') ? path.resolve(opt('out')) : CHECK ? fs.mkdtempSync(path.join(os.tmpdir(), 'ihn-traces-')) : path.join(HERE, 'traces');
 const CELL = { viewport: 'desktop-1280', theme: 'light', mode: 'web' };
 
 let server, browser;
@@ -47,7 +47,10 @@ const scenes = {
   async 'dense-page'(t, out) {
     await t.open({ account: ANA, scene: 'dense-page', settleMs: 8000 });
     out['dense-page'] = { trace: await take(t) };
-    // Damage repaint: the stroke eraser dragged across two rows of strokes.
+    // Damage repaint: the stroke eraser dragged across two rows of strokes (a document opened from Drive starts in
+    // Read mode: switch to Edit like a user).
+    await t.click('#mode-toggle-btn');
+    await t.advance(600);
     await t.click('[data-tool="eraser"]');
     await reset(t);
     const box = await pageBox(t), input = Array.from({ length: 30 }, (_, k) => ({ x: 120 + k * 9, y: 150 + k * 0.9, t: k * 8, p: 0.5 }));
@@ -59,6 +62,8 @@ const scenes = {
   // Thumbnails: the Pages panel of the template notebook (page previews drawn into their own canvases).
   async thumbnails(t, out) {
     await t.open({ account: ANA, scene: 'template', settleMs: 6000 });
+    await t.click('#mode-toggle-btn');
+    await t.advance(600);
     await reset(t);
     await t.click('#btn-edit-pages');
     await t.advance(2500);
@@ -117,7 +122,7 @@ async function main() {
   } finally { await server.close(); }
   if (CHECK) {
     const committed = path.join(HERE, 'traces'), bad = fs.readdirSync(OUT).filter(f => !fs.existsSync(path.join(committed, f)) || !fs.readFileSync(path.join(committed, f)).equals(fs.readFileSync(path.join(OUT, f))));
-    fs.rmSync(OUT, { recursive: true, force: true });
+    if (!opt('out')) fs.rmSync(OUT, { recursive: true, force: true });
     console.log(bad.length ? `DIFFERENT: ${bad.join(', ')}` : 'Traces regenerate byte-identically.');
     process.exit(bad.length ? 1 : 0);
   }
