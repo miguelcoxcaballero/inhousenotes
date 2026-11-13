@@ -842,8 +842,14 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
     0
 }
 
-pub fn test_cmd(app: &mut App, host: &mut dyn Host, name: &str, _args: &str) -> Option<String> {
+pub fn test_cmd(app: &mut App, host: &mut dyn Host, name: &str, args: &str) -> Option<String> {
     Some(match name {
+        // What the offline library unit reports with `set_local_library` (`{"ready":true}`).
+        "local_library" => {
+            let ready = Json::parse(args).is_some_and(|a| a.get("ready").is_some_and(Json::truthy));
+            set_local_library(app, host, ready);
+            "true".into()
+        }
         "state" => {
             let st = &app.st.auth;
             format!(

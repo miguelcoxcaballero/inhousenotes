@@ -46,7 +46,8 @@ pub mod sig {
     pub const RECONNECT: u8 = 0x28;
     /// A profile menu opened; data = `home` | `editor` (the editor menu shows the document stats).
     pub const MENU: u8 = 0x29;
-    /// [`super::status`] was called; data = the text. The save-indicator state machine (W3.1) follows it.
+    /// [`super::status`] was called; data = a header line and the text, read with [`super::StatusMsg::parse`]
+    /// (every option of 5.18.0 `showStatus`). The save-indicator state machine (W3.1) follows it.
     pub const STATUS: u8 = 0x2a;
 }
 
@@ -69,7 +70,7 @@ impl View {
     }
 }
 
-/// What [`status`] shows on the editor's save indicator.
+/// What [`status`] shows on the editor's save indicator: the short forms of [`StatusOpts`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Status {
     /// Class `saved`.
@@ -78,6 +79,115 @@ pub enum Status {
     Error,
     /// One of 5.18.0's `SAVE_STATES`: `paused`, `building`, `uploading`, `syncing`, `saving`, `saved`, `error`.
     Phase(&'static str),
+}
+
+/// The options of 5.18.0 `showStatus(text, options)`. `Status` converts into it; the rest is built from there:
+/// `StatusOpts::from(Status::Saving).preserve()`, `StatusOpts::default().saved_at(now)`.
+// v5: app-v5.js:showStatus (options)
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+pub struct StatusOpts {
+    pub saving: bool,
+    pub error: bool,
+    /// Leave the indicator's state classes as they are (5.18.0 `preserveState`): only tooltip and label change.
+    pub preserve_state: bool,
+    /// Epoch ms of the save this status reports (5.18.0 `savedAt`; a number, so never 0 in practice).
+    pub saved_at: Option<f64>,
+    /// One of `SAVE_STATES`; wins over `error` and `saving` for the class.
+    pub phase: Option<&'static str>,
+}
+
+impl StatusOpts {
+    pub fn preserve(mut self) -> Self {
+        self.preserve_state = true;
+        self
+    }
+    pub fn saved_at(mut self, ms: f64) -> Self {
+        self.saved_at = Some(ms);
+        self
+    }
+    pub fn phase(mut self, phase: &'static str) -> Self {
+        self.phase = Some(phase);
+        self
+    }
+    /// The class 5.18.0 gives the indicator when the state is not preserved.
+    pub fn class(&self) -> &'static str {
+        match (self.phase, self.error, self.saving) {
+            (Some(p), ..) => p,
+            (None, true, _) => "error",
+            (None, false, true) => "saving",
+            _ => "saved",
+        }
+    }
+}
+
+impl From<Status> for StatusOpts {
+    fn from(kind: Status) -> Self {
+        match kind {
+            Status::Info => StatusOpts::default(),
+            Status::Saving => StatusOpts { saving: true, ..Default::default() },
+            Status::Error => StatusOpts { error: true, ..Default::default() },
+            Status::Phase(p) => StatusOpts { phase: Some(p), ..Default::default() },
+        }
+    }
+}
+
+/// The payload of [`sig::STATUS`]: everything `showStatus` was called with.
+/// Wire form: `<flags> <phase> <savedAt>\n<text>` — flags are `s` (saving), `e` (error), `p` (preserveState) or `-`;
+/// phase is a `SAVE_STATES` name or `-`; savedAt is epoch ms or `-`. The text may contain line breaks.
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct StatusMsg<'a> {
+    pub text: &'a str,
+    pub saving: bool,
+    pub error: bool,
+    pub preserve_state: bool,
+    pub saved_at: Option<f64>,
+    /// `""` when no phase was given.
+    pub phase: &'a str,
+}
+
+impl<'a> StatusMsg<'a> {
+    pub fn encode(text: &str, o: &StatusOpts) -> String {
+        let mut flags = String::new();
+        for (on, c) in [(o.saving, 's'), (o.error, 'e'), (o.preserve_state, 'p')] {
+            if on {
+                flags.push(c);
+            }
+        }
+        if flags.is_empty() {
+            flags.push('-');
+        }
+        let saved_at = o.saved_at.map_or("-".to_string(), |ms| format!("{ms}"));
+        format!("{flags} {} {saved_at}\n{text}", o.phase.unwrap_or("-"))
+    }
+
+    /// `None` when `data` is not a status payload.
+    pub fn parse(data: &'a [u8]) -> Option<Self> {
+        let all = std::str::from_utf8(data).ok()?;
+        let (head, text) = all.split_once('\n')?;
+        let mut parts = head.split(' ');
+        let (flags, phase, saved_at) = (parts.next()?, parts.next()?, parts.next()?);
+        if parts.next().is_some() || !flags.chars().all(|c| "sep-".contains(c)) {
+            return None;
+        }
+        Some(StatusMsg {
+            text,
+            saving: flags.contains('s'),
+            error: flags.contains('e'),
+            preserve_state: flags.contains('p'),
+            saved_at: if saved_at == "-" { None } else { Some(saved_at.parse().ok()?) },
+            phase: if phase == "-" { "" } else { phase },
+        })
+    }
+
+    /// 5.18.0 `requestedSemanticState`: the phase, else `error`, else `saving`, else `""`.
+    pub fn semantic_state(&self) -> &'a str {
+        match () {
+            _ if !self.phase.is_empty() => self.phase,
+            _ if self.error => "error",
+            _ if self.saving => "saving",
+            _ => "",
+        }
+    }
 }
 
 /// A shared link waiting to be opened (`?drive=<id>`); the link itself belongs to `doc::links`.
@@ -204,23 +314,23 @@ pub fn show_view(app: &mut App, host: &mut dyn Host, view: View) {
 /// The Home status line (`#drive-status`).
 pub fn home_status(host: &mut dyn Host, text: &str) { host.out().text(Ui::DRIVE_STATUS, text); }
 
-/// The editor's save indicator: class, tooltip and label. The save-state machine (debounced confirmation, save
-/// details, timestamp) belongs to `doc::save_state`, which follows [`sig::STATUS`].
+/// The editor's save indicator: class (unless `preserve_state`), tooltip and label. `kind` is a [`Status`] or a
+/// full [`StatusOpts`]. The save-state machine (debug status, `lastSavedAt` and the timestamp, debounced
+/// confirmation, the presentation that may replace the tooltip) belongs to `doc::save_state`, which follows
+/// [`sig::STATUS`] and reads the call with [`StatusMsg::parse`].
 // v5: app-v5.js:showStatus
-pub fn status(app: &mut App, host: &mut dyn Host, text: &str, kind: Status) {
+pub fn status(app: &mut App, host: &mut dyn Host, text: &str, kind: impl Into<StatusOpts>) {
+    let opts: StatusOpts = kind.into();
     let out = host.out();
-    let class = match kind {
-        Status::Info => "saved",
-        Status::Saving => "saving",
-        Status::Error => "error",
-        Status::Phase(p) => p,
-    };
-    for s in SAVE_STATES {
-        out.class(Ui::SAVE_INDICATOR, s, s == class);
+    if !opts.preserve_state {
+        let class = opts.class();
+        for s in SAVE_STATES {
+            out.class(Ui::SAVE_INDICATOR, s, s == class);
+        }
     }
     out.prop(Ui::SAVE_INDICATOR, "title", Prop::Str(text));
     out.attr(Ui::SAVE_INDICATOR, "aria-label", Some(text));
-    signal(app, host, sig::STATUS, text);
+    signal(app, host, sig::STATUS, &StatusMsg::encode(text, &opts));
 }
 
 /// "Soon": the answer of the features 5.18.0 removed (Diary, Agenda, Scan).
@@ -701,14 +811,18 @@ pub fn test_cmd(app: &mut App, host: &mut dyn Host, name: &str, args: &str) -> O
             hide_loading(app, host);
             "true".into()
         }
+        // `{"text", "kind": "error"|"saving"|"paused"|…, "preserve": bool, "savedAt": ms}`
         "status" => {
-            let kind = match arg.text("kind") {
+            let mut opts: StatusOpts = match arg.text("kind") {
                 "error" => Status::Error,
                 "saving" => Status::Saving,
-                "paused" => Status::Phase("paused"),
-                _ => Status::Info,
-            };
-            status(app, host, arg.text("text"), kind);
+                "" | "info" => Status::Info,
+                phase => Status::Phase(SAVE_STATES.iter().copied().find(|s| *s == phase).unwrap_or("saved")),
+            }
+            .into();
+            opts.preserve_state = arg.get("preserve").is_some_and(json::Json::truthy);
+            opts.saved_at = arg.get("savedAt").and_then(json::Json::as_f64);
+            status(app, host, arg.text("text"), opts);
             "true".into()
         }
         "show" => {
@@ -728,6 +842,45 @@ pub fn test_cmd(app: &mut App, host: &mut dyn Host, name: &str, args: &str) -> O
 mod tests {
     use super::testkit::*;
     use super::*;
+
+    // v5: app-v5.js:showStatus — class precedence, preserveState, and the whole call in the signal.
+    #[test]
+    fn status_follows_show_status_options() {
+        let (mut app, mut host) = boot(0, |_| {});
+        out(&mut host);
+        let ind = Ui::SAVE_INDICATOR.0;
+        status(&mut app, &mut host, "Saving...", Status::Saving);
+        let text = out(&mut host);
+        assert!(text.contains(&format!("class {ind} \"saving\" 1")) && text.contains(&format!("class {ind} \"saved\" 0")), "{text}");
+        assert!(text.contains(&format!("prop {ind} \"title\" \"Saving...\"")) && text.contains(&format!("attr {ind} \"aria-label\" \"Saving...\"")));
+        // preserveState: the classes stay, tooltip and label change.
+        status(&mut app, &mut host, "Drive sync paused", StatusOpts::from(Status::Error).preserve());
+        let text = out(&mut host);
+        assert!(!text.contains("class ") && text.contains(&format!("prop {ind} \"title\" \"Drive sync paused\"")), "{text}");
+        // A phase wins over error and saving.
+        let opts = StatusOpts { saving: true, error: true, ..Default::default() }.phase("uploading");
+        assert_eq!(opts.class(), "uploading");
+        assert_eq!(StatusOpts { saving: true, error: true, ..Default::default() }.class(), "error");
+        assert_eq!(StatusOpts::default().saved_at(5.0).class(), "saved");
+
+        for (text, opts) in [
+            ("Saved", StatusOpts::default().saved_at(1_798_761_600_123.0)),
+            ("Uploading\nline two", opts.preserve()),
+            ("", StatusOpts::from(Status::Phase("paused"))),
+            ("a b c", Status::Info.into()),
+        ] {
+            let wire = StatusMsg::encode(text, &opts);
+            let msg = StatusMsg::parse(wire.as_bytes()).unwrap_or_else(|| panic!("{wire:?}"));
+            assert_eq!((msg.text, msg.saving, msg.error, msg.preserve_state, msg.saved_at), (text, opts.saving, opts.error, opts.preserve_state, opts.saved_at), "{wire:?}");
+            assert_eq!(msg.phase, opts.phase.unwrap_or(""));
+        }
+        assert_eq!(StatusMsg::encode("Saved", &StatusOpts::default().saved_at(1500.0)), "- - 1500\nSaved");
+        assert_eq!(StatusMsg::encode("x", &opts.preserve()), "sep uploading -\nx");
+        assert_eq!(StatusMsg::parse(b"sep uploading -\nx").unwrap().semantic_state(), "uploading");
+        assert_eq!(StatusMsg::parse(b"se - -\nx").unwrap().semantic_state(), "error");
+        assert_eq!(StatusMsg::parse(b"- - -\nx").unwrap().semantic_state(), "");
+        assert!(StatusMsg::parse(b"Signed out").is_none() && StatusMsg::parse(b"x - -\nt").is_none() && StatusMsg::parse(b"- - soon\nt").is_none());
+    }
 
     #[test]
     fn signed_out_boot_shows_welcome_and_probes_drive() {

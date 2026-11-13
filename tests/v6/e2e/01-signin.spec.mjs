@@ -273,6 +273,99 @@ test('theme, profile menu, fullscreen and the loading overlay follow 5.18.0', as
   await expect(page.locator('#loading-overlay')).toHaveClass('', { timeout: 2000 });
 });
 
+// Going offline and coming back, in the browser: the `offline` event, the NETWORK signal, the session flag, the
+// status line (`#drive-status` is `display: none` in the stylesheet, so its text is the whole of it) and the probes
+// of Drive — none while connected, then after 30 s, 60 s, 120 s … (v5: offline-library-v5.js scheduleOfflineProbe),
+// at once on `online`, and none again once Drive answered. Timers run on Playwright's clock.
+test('offline: NETWORK signal, status line, probe backoff, `online` and recovery', async ({ page, context }) => {
+  await stubGoogle(page);
+  let down = false;
+  const probes = [];
+  // Registered after stubGoogle, so it is asked first.
+  await page.route('https://www.googleapis.com/drive/v3/about?fields=kind', route => {
+    probes.push({ method: route.request().method(), auth: route.request().headers().authorization || '', cache: route.request().headers()['cache-control'] || '' });
+    return down ? route.abort('internetdisconnected') : route.fallback();
+  });
+  await page.addInitScript(scope => {
+    if (localStorage.getItem('drive-remember-v1')) return;
+    localStorage.setItem('drive-token-v1', JSON.stringify({ token: 'stored-token', expiry: Date.now() + 3_000_000, grantedScopes: scope }));
+    localStorage.setItem('drive-remember-v1', '1');
+    localStorage.setItem('drive-hint-email', 'ana@example.com');
+  }, DRIVE_SCOPE);
+  await page.clock.install();
+  await open(page);
+  const NETWORK = 0x26;
+  const network = async () => (await cmd(page, 'shell.state')).signals.filter(signal => signal[0] === NETWORK).map(signal => signal[1]);
+  const flag = () => page.evaluate(() => sessionStorage.getItem('ihn-network-offline'));
+
+  // Connected: one unauthenticated probe at boot, Drive answered (401 counts), nothing is probed again.
+  await expect.poll(() => probes.length).toBe(1);
+  expect(probes[0]).toMatchObject({ method: 'GET', auth: '' });
+  await expect(page.locator('#drive-home')).toBeVisible();
+  await expect.poll(flag).toBe('0');
+  expect((await cmd(page, 'shell.state')).offline).toBe(false);
+  await expect(page.locator('#drive-status')).toHaveText('Loading your PDFs...', { useInnerText: false });
+  await page.clock.runFor(10 * 60_000);
+  expect(probes).toHaveLength(1);
+  expect(await network()).toEqual([]);
+
+  // The network goes away.
+  down = true;
+  await context.setOffline(true);
+  await expect.poll(async () => (await cmd(page, 'shell.state')).offline).toBe(true);
+  expect(await network()).toEqual(['0']);
+  expect(await flag()).toBe('1');
+  expect(await page.evaluate(() => getComputedStyle(document.getElementById('drive-status')).display)).toBe('none');
+  // Without a local library the line keeps its text (5.18.0 only rewrites it from the library's reload) …
+  await expect(page.locator('#drive-status')).toHaveText('Loading your PDFs...', { useInnerText: false });
+  // … and with one (the offline library unit reports it) it is 5.18.0's offline line.
+  await cmd(page, 'auth.local_library', { ready: true });
+  await expect(page.locator('#drive-status')).toHaveText('Offline · changes stay on this device', { useInnerText: false });
+  await expect(page.locator('#btn-drive-login')).toBeHidden();
+  await expect(page.locator('#drive-search')).toBeEnabled();
+
+  // Probes: 30 s after going offline, then 60 s, 120 s after each failure.
+  const after = async (quietMs, count) => {
+    await page.clock.runFor(quietMs - 1000);
+    expect(probes, `no probe before ${quietMs} ms`).toHaveLength(count - 1);
+    await page.clock.runFor(1500);
+    await expect.poll(() => probes.length, `a probe after ${quietMs} ms`).toBe(count);
+    // The failed answer has to reach the app before the next interval starts counting.
+    await page.waitForTimeout(150);
+    await page.clock.runFor(100);
+  };
+  await after(30_000, 2);
+  await after(60_000 - 600, 3);
+  await after(120_000 - 600, 4);
+  expect((await cmd(page, 'shell.state')).offline).toBe(true);
+  expect(await network()).toEqual(['0']);
+
+  // `online` probes at once; Drive still does not answer, so the app stays offline.
+  await context.setOffline(false);
+  await expect.poll(() => probes.length).toBe(5);
+  await page.waitForTimeout(150);
+  expect((await cmd(page, 'shell.state')).offline).toBe(true);
+  expect(await network()).toEqual(['0']);
+  // A reload in the same tab starts offline (the session flag) and probes at boot.
+  await page.reload();
+  await page.waitForFunction(() => window.__IHN_TEST_API__);
+  await page.evaluate(() => window.__IHN_TEST_API__.ready());
+  expect((await cmd(page, 'shell.state')).offline).toBe(true);
+  await expect.poll(() => probes.length).toBe(6);
+  await page.waitForTimeout(150);
+  await page.clock.runFor(100);
+
+  // Drive is back: the next probe (30 s again) finds it, the app is connected and stops probing.
+  down = false;
+  await page.clock.runFor(31_000);
+  await expect.poll(async () => (await cmd(page, 'shell.state')).offline).toBe(false);
+  expect(probes).toHaveLength(7);
+  expect(await network()).toEqual(['1']);
+  expect(await flag()).toBe('0');
+  await page.clock.runFor(10 * 60_000);
+  expect(probes).toHaveLength(7);
+});
+
 // ---- executor self-test ---------------------------------------------------------------------------------------
 
 // One effect record: `fx(page, 0x30, ['r'], ['s', 'GET'], …)` → {req, obj}; field types as in shell/fx.rs `probe`.
