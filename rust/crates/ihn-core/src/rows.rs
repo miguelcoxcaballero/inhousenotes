@@ -69,10 +69,7 @@ pub fn px_list(css: &str) -> Vec<f64> {
                 i += 1;
             }
             if css[i..].starts_with("px") {
-                // `parseFloat` stops at a second dot.
-                let text = &css[start..i];
-                let cut = text.match_indices('.').nth(1).map_or(text.len(), |(at, _)| at);
-                if let Ok(v) = text[..cut].parse::<f64>() {
+                if let Some(v) = parse_decimal(&css[start..i]) {
                     out.push(v);
                 }
                 i += 2;
@@ -84,14 +81,37 @@ pub fn px_list(css: &str) -> Vec<f64> {
     out
 }
 
+/// `parseFloat` of plain decimal digits (`"138.6875"`; it stops at a second dot): the digits as one integer divided
+/// by a power of ten, which is the correctly rounded value while both are exact (15 digits), without the tables of
+/// a general decimal parser.
+pub fn parse_decimal(text: &str) -> Option<f64> {
+    let (mut mantissa, mut scale, mut digits, mut dot) = (0f64, 1f64, 0, false);
+    for c in text.bytes() {
+        match c {
+            b'0'..=b'9' if digits < 15 => {
+                mantissa = mantissa * 10.0 + (c - b'0') as f64;
+                digits += 1;
+                if dot {
+                    scale *= 10.0;
+                }
+            }
+            b'0'..=b'9' if dot => {}
+            b'0'..=b'9' => return None,
+            b'.' if !dot => dot = true,
+            _ => break,
+        }
+    }
+    (digits > 0).then_some(mantissa / scale)
+}
+
 /// Test command hook: `__IHN_TEST_API__.cmd('core.rows.<name>', args)`.
 pub fn test_cmd(name: &str, args: &str) -> Option<String> {
     match name {
         // "h1,h2,…|gap|columns|count|top|bottom|overscan" → "start,end"
         "range" => {
             let f: Vec<&str> = args.trim_matches('"').split('|').collect();
-            let n = |i: usize| f.get(i).and_then(|s| s.parse::<f64>().ok()).unwrap_or(f64::NAN);
-            let heights: Vec<f64> = f.first()?.split(',').filter_map(|s| s.parse().ok()).collect();
+            let n = |i: usize| f.get(i).and_then(|s| parse_decimal(s)).unwrap_or(f64::NAN);
+            let heights: Vec<f64> = f.first()?.split(',').filter_map(parse_decimal).collect();
             let rows = Rows::new(&heights, n(1), n(2) as usize, n(3) as usize)?;
             let (a, b) = rows.range(n(4), n(5), n(6))?;
             Some(format!("\"{a},{b}\""))
@@ -145,5 +165,12 @@ mod tests {
         assert_eq!(px_list("138px 140.5px 138px"), [138.0, 140.5, 138.0]);
         assert_eq!(px_list("none"), Vec::<f64>::new());
         assert_eq!(px_list("[a] 10px [b] 2.5px"), [10.0, 2.5]);
+        assert_eq!(px_list("1.5.2px 0.1px"), [1.5, 0.1]);
+        for text in ["0", "138.6875", "195.171875", "0.7071", "1234567.125", "999999999999.999"] {
+            assert_eq!(parse_decimal(text), text.parse::<f64>().ok(), "{text}");
+        }
+        // Digits past the fifteenth are beyond what a computed length carries (1/64 px) and are dropped.
+        assert_eq!(parse_decimal("24.000000000000004"), Some(24.0));
+        assert_eq!(parse_decimal("px"), None);
     }
 }

@@ -19,7 +19,8 @@ fn is_js_space(c: char) -> bool {
 /// Lower-case `#rrggbb`, or manila for anything else (Drive reports `#8f8f8f` for folders nobody coloured).
 // v5: app-v5.js:resolveDriveFolderColor
 pub fn resolve_color(raw: &str) -> String {
-    let lower = raw.trim_matches(is_js_space).to_lowercase();
+    // Only ASCII can match `#rrggbb`, so ASCII lower-casing is `toLowerCase()` here.
+    let lower = raw.trim_matches(is_js_space).to_ascii_lowercase();
     let b = lower.as_bytes();
     if b.len() == 7 && b[0] == b'#' && b[1..].iter().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f')) && lower != "#8f8f8f" {
         return lower;
@@ -175,7 +176,7 @@ impl Tone {
 /// The source rectangle `(x, y, w, h)` 5.18.0 draws into its 24×16 sampling canvas.
 // v5: app-v5.js:sampleDrivePreviewTone
 pub fn tone_source(natural_w: f64, natural_h: f64) -> (f64, f64, f64, f64) {
-    let ratio = sheet_ratio(natural_w, natural_h).map_or(0.7071, |r| crate::jsfmt::fixed(r, 4).parse().unwrap_or(r));
+    let ratio = sheet_ratio(natural_w, natural_h).map_or(0.7071, |r| crate::rows::parse_decimal(&crate::jsfmt::fixed(r, 4)).unwrap_or(r));
     let (sw, sh) = (natural_w.min(natural_h * ratio), natural_h.min(natural_w / ratio));
     let left = (natural_w - sw) / 2.0;
     (left + sw * 0.04, sh * 0.66, sw * 0.92, sh * 0.3)

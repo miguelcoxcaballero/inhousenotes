@@ -102,7 +102,11 @@ pub fn fade_frames(frames: &[(f64, f64)]) -> String {
 pub fn test_cmd(name: &str, args: &str) -> Option<String> {
     match name {
         "plan" => {
-            let v: Vec<f64> = args.trim_matches('"').split(',').filter_map(|s| s.trim().parse().ok()).collect();
+            // Non-negative decimals; a leading `-` negates.
+            let v: Vec<f64> = args.trim_matches('"').split(',').filter_map(|s| {
+                let s = s.trim();
+                crate::rows::parse_decimal(s.trim_start_matches('-')).map(|v| if s.starts_with('-') { -v } else { v })
+            }).collect();
             if v.len() != 9 {
                 return None;
             }

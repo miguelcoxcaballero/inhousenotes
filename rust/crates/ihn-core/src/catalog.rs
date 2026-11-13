@@ -3,7 +3,6 @@
 // v5: offline-library-v5.js (compareEntries, folder, combine, home, recentItems, observed), offline-store-v5.js:cacheEntries
 
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
 
 pub const FOLDER: &str = "application/vnd.google-apps.folder";
 pub const PDF: &str = "application/pdf";
@@ -197,16 +196,54 @@ pub struct Observed {
 
 /// `name.localeCompare(other)`, supplied by the host.
 pub type NameOrder<'a> = &'a mut dyn FnMut(&str, &str) -> Ordering;
+/// `name.toLowerCase().includes(needle)` for the search box, supplied by the host (`None`: no search).
+pub type NameFilter<'a> = Option<&'a mut dyn FnMut(&str) -> bool>;
+
+// One stable merge sort for every list (the std sorts cost a copy of their code per call site).
+fn sort_indices(order: &mut [u32], scratch: &mut Vec<u32>, cmp: &mut dyn FnMut(u32, u32) -> Ordering) {
+    let n = order.len();
+    if n < 2 {
+        return;
+    }
+    let (left, right) = order.split_at_mut(n / 2);
+    sort_indices(left, scratch, cmp);
+    sort_indices(right, scratch, cmp);
+    scratch.clear();
+    let (mut i, mut j) = (0, 0);
+    while i < left.len() && j < right.len() {
+        if cmp(right[j], left[i]) == Ordering::Less {
+            scratch.push(right[j]);
+            j += 1;
+        } else {
+            scratch.push(left[i]);
+            i += 1;
+        }
+    }
+    scratch.extend_from_slice(&left[i..]);
+    scratch.extend_from_slice(&right[j..]);
+    order.copy_from_slice(scratch);
+}
+
+/// `list.sort(cmp)` (stable).
+pub fn sort_entries(list: &mut Vec<Entry>, cmp: &mut dyn FnMut(&Entry, &Entry) -> Ordering) {
+    let mut order: Vec<u32> = (0..list.len() as u32).collect();
+    sort_indices(&mut order, &mut Vec::new(), &mut |a, b| cmp(&list[a as usize], &list[b as usize]));
+    let mut items: Vec<Option<Entry>> = std::mem::take(list).into_iter().map(Some).collect();
+    list.extend(order.into_iter().filter_map(|i| items[i as usize].take()));
+}
+
+fn by_id(a: &Entry, b: &Entry) -> Ordering { a.id.cmp(&b.id) }
 
 #[derive(Default)]
 pub struct Catalog {
-    /// As stored (raw parents), trashed ones included.
-    stored: HashMap<String, Entry>,
-    /// Active (not trashed, not hidden) entries with resolved parents, in id order.
+    /// As stored (raw parents), trashed ones included, sorted by id.
+    stored: Vec<Entry>,
+    /// Active (not trashed, not hidden) entries with resolved parents, sorted by id.
     active: Vec<Entry>,
-    by_parent: HashMap<String, Vec<usize>>,
-    by_id: HashMap<String, usize>,
-    docs: HashMap<String, DocInfo>,
+    /// `(parent, index into active)`, sorted.
+    by_parent: Vec<(String, u32)>,
+    /// Sorted by id.
+    docs: Vec<(String, DocInfo)>,
     pub views: Views,
     /// `kv.relay-folder`: the sync folder, never listed.
     sync_folder: String,
@@ -217,8 +254,10 @@ pub struct Catalog {
 
 impl Catalog {
     // v5: offline-library-v5.js:reload
-    pub fn load(&mut self, entries: Vec<Entry>, docs: HashMap<String, DocInfo>, views: Views, sync_folder: String, root_id: String) {
-        self.stored = entries.into_iter().map(|e| (e.id.clone(), e)).collect();
+    pub fn load(&mut self, mut entries: Vec<Entry>, mut docs: Vec<(String, DocInfo)>, views: Views, sync_folder: String, root_id: String) {
+        sort_entries(&mut entries, &mut by_id);
+        docs.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+        self.stored = entries;
         self.docs = docs;
         self.views = views;
         self.sync_folder = sync_folder;
@@ -258,41 +297,40 @@ impl Catalog {
 
     // v5: offline-library-v5.js:indexCatalogue
     fn index(&mut self) {
-        let mut active: Vec<Entry> = self.stored.values().filter(|e| !e.trashed && !self.hidden(e)).cloned().collect();
-        active.sort_by(|a, b| a.id.cmp(&b.id));
+        let mut active: Vec<Entry> = self.stored.iter().filter(|e| !e.trashed && !self.hidden(e)).cloned().collect();
         self.by_parent.clear();
-        self.by_id.clear();
         for (i, e) in active.iter_mut().enumerate() {
-            let mut parents: Vec<String> = e.parents.clone().unwrap_or_else(|| vec!["root".into()]);
+            let mut parents: Vec<String> = e.parents.take().unwrap_or_else(|| vec!["root".into()]);
             for p in parents.iter_mut() {
                 if !self.root_id.is_empty() && *p == self.root_id {
                     *p = "root".into();
                 }
             }
-            let mut seen = HashSet::new();
-            for p in &parents {
-                if seen.insert(p.clone()) {
-                    self.by_parent.entry(p.clone()).or_default().push(i);
+            for (k, p) in parents.iter().enumerate() {
+                if !parents[..k].contains(p) {
+                    self.by_parent.push((p.clone(), i as u32));
                 }
             }
             e.parents = Some(parents);
-            self.by_id.insert(e.id.clone(), i);
         }
+        self.by_parent.sort_unstable();
         self.active = active;
     }
 
-    pub fn entry(&self, id: &str) -> Option<&Entry> { self.by_id.get(id).map(|i| &self.active[*i]) }
-    pub fn doc(&self, id: &str) -> Option<&DocInfo> { self.docs.get(id) }
+    fn stored_at(&self, id: &str) -> Result<usize, usize> { self.stored.binary_search_by(|e| e.id.as_str().cmp(id)) }
+    pub fn entry(&self, id: &str) -> Option<&Entry> { self.active.binary_search_by(|e| e.id.as_str().cmp(id)).ok().map(|i| &self.active[i]) }
+    pub fn doc(&self, id: &str) -> Option<&DocInfo> { self.docs.binary_search_by(|d| d.0.as_str().cmp(id)).ok().map(|i| &self.docs[i].1) }
     pub fn set_doc(&mut self, id: &str, info: Option<DocInfo>) {
-        match info {
-            Some(info) => self.docs.insert(id.to_string(), info),
-            None => self.docs.remove(id),
-        };
+        match (self.docs.binary_search_by(|d| d.0.as_str().cmp(id)), info) {
+            (Ok(i), Some(info)) => self.docs[i].1 = info,
+            (Ok(i), None) => drop(self.docs.remove(i)),
+            (Err(i), Some(info)) => self.docs.insert(i, (id.to_string(), info)),
+            (Err(_), None) => {}
+        }
     }
-    pub fn docs(&self) -> impl Iterator<Item = (&String, &DocInfo)> { self.docs.iter() }
     /// Documents with changes Drive does not have (the queue line of the Offline documents dialog).
-    pub fn pending_count(&self) -> usize { self.docs.values().filter(|d| d.pending).count() }
-    pub fn is_folder(&self, id: &str) -> bool { self.stored.get(id).is_some_and(Entry::is_folder) }
+    pub fn pending_count(&self) -> usize { self.docs.iter().filter(|d| d.1.pending).count() }
+    pub fn is_folder(&self, id: &str) -> bool { self.stored_at(id).is_ok_and(|i| self.stored[i].is_folder()) }
 
     /// Folders first by name, then files newest first; ties by id.
     // v5: offline-library-v5.js:compareEntries
@@ -308,67 +346,87 @@ impl Catalog {
     /// Most recently opened on this device first, then newest, then id.
     // v5: offline-library-v5.js:compareRecents
     pub fn compare_recents(&self, a: &Entry, b: &Entry) -> Ordering {
-        let opened = |e: &Entry| self.docs.get(&e.id).map_or(0.0, |d| d.last_opened_at);
+        let opened = |e: &Entry| self.doc(&e.id).map_or(0.0, |d| d.last_opened_at);
         let by = |x: f64, y: f64| y.partial_cmp(&x).unwrap_or(Ordering::Equal);
         by(opened(a), opened(b)).then_with(|| by(a.modified_ms(), b.modified_ms())).then_with(|| js_cmp(&a.id, &b.id))
     }
 
-    /// The cached directory `id` (`root` for My Drive), filtered by a case-insensitive substring.
+    /// The cached directory `id` (`root` for My Drive), filtered by the search box.
     // v5: offline-library-v5.js:folder
-    pub fn folder(&self, id: &str, search: &str, names: NameOrder) -> Vec<Entry> {
-        let needle = search.to_lowercase();
+    pub fn folder(&self, id: &str, mut filter: NameFilter, names: NameOrder) -> Vec<Entry> {
         let key = if id.is_empty() { "root" } else { id };
-        let mut list: Vec<Entry> = self.by_parent.get(key).map(|v| v.as_slice()).unwrap_or(&[]).iter().map(|i| &self.active[*i])
-            .filter(|e| needle.is_empty() || e.name.to_lowercase().contains(&needle)).cloned().collect();
-        list.sort_by(|a, b| Self::compare_entries(a, b, names));
+        let from = self.by_parent.partition_point(|p| p.0.as_str() < key);
+        let mut list = Vec::new();
+        for (_, i) in self.by_parent[from..].iter().take_while(|p| p.0 == key) {
+            let e = &self.active[*i as usize];
+            if filter.as_mut().is_none_or(|f| f(&e.name)) {
+                list.push(e.clone());
+            }
+        }
+        sort_entries(&mut list, &mut |a, b| Self::compare_entries(a, b, names));
         list
     }
 
     /// A Drive listing of `parent` with this device's not-yet-uploaded entries in front of it.
     // v5: offline-library-v5.js:combine
-    pub fn combine(&self, remote: Vec<Entry>, parent: &str, search: &str, names: NameOrder) -> Vec<Entry> {
-        let mut list: Vec<Entry> = self.folder(parent, search, names).into_iter().filter(|e| e.pending).collect();
-        let ids: HashSet<String> = list.iter().map(|e| e.id.clone()).collect();
-        list.extend(self.visible(remote).into_iter().filter(|e| !ids.contains(&e.id)));
-        list.sort_by(|a, b| Self::compare_entries(a, b, names));
+    pub fn combine(&self, remote: Vec<Entry>, parent: &str, filter: NameFilter, names: NameOrder) -> Vec<Entry> {
+        let mut list = self.folder(parent, filter, names);
+        list.retain(|e| e.pending);
+        let local = list.len();
+        for e in self.visible(remote) {
+            if !list[..local].iter().any(|l| l.id == e.id) {
+                list.push(e);
+            }
+        }
+        sort_entries(&mut list, &mut |a, b| Self::compare_entries(a, b, names));
         list
     }
 
     /// Recents: the given list plus every pending PDF, most recently opened first, 12 at most.
     // v5: offline-library-v5.js:recentItems
     pub fn recent_items(&self, remote: Vec<Entry>) -> Vec<Entry> {
-        let mut order: Vec<String> = Vec::new();
-        let mut by_id: HashMap<String, Entry> = HashMap::new();
-        let pending: Vec<Entry> = self.active.iter().filter(|e| e.mime == PDF && e.pending).cloned().collect();
+        let mut list: Vec<Entry> = Vec::new();
+        let pending = self.active.iter().filter(|e| e.mime == PDF && e.pending).cloned();
         for e in self.visible(remote).into_iter().chain(pending) {
-            if !by_id.contains_key(&e.id) {
-                order.push(e.id.clone());
+            // `byId.set(id, entry)`: a later entry replaces an earlier one in its place.
+            match list.iter().position(|l| l.id == e.id) {
+                Some(i) => list[i] = e,
+                None => list.push(e),
             }
-            by_id.insert(e.id.clone(), e);
         }
-        let mut list: Vec<Entry> = order.into_iter().filter_map(|id| by_id.remove(&id)).collect();
-        list.sort_by(|a, b| self.compare_recents(a, b));
+        sort_entries(&mut list, &mut |a, b| self.compare_recents(a, b));
         list.truncate(12);
         list
+    }
+
+    fn ordered(&self, keep: &dyn Fn(&Entry) -> bool, n: usize) -> Vec<Entry> {
+        let mut list: Vec<Entry> = self.active.iter().filter(|e| keep(e)).cloned().collect();
+        sort_entries(&mut list, &mut |a, b| self.compare_recents(a, b));
+        list.truncate(n);
+        list
+    }
+
+    fn view(&self, v: View, keep: &dyn Fn(&Entry) -> bool, n: usize) -> Vec<Entry> {
+        match self.views.get(v) {
+            Some(ids) => ids.iter().filter_map(|id| self.entry(id).cloned()).collect(),
+            None => self.ordered(keep, n),
+        }
     }
 
     /// Home's three rows from the cache: the saved Drive order when there is one, else what the entries say.
     // v5: offline-library-v5.js:home
     pub fn home(&self) -> Home {
-        let ordered = |keep: &dyn Fn(&Entry) -> bool, n: usize| {
-            let mut list: Vec<Entry> = self.active.iter().filter(|e| keep(e)).cloned().collect();
-            list.sort_by(|a, b| self.compare_recents(a, b));
-            list.truncate(n);
-            list
-        };
-        let view = |v: View, fallback: &dyn Fn() -> Vec<Entry>| match self.views.get(v) {
-            Some(ids) => ids.iter().filter_map(|id| self.entry(id).cloned()).collect(),
-            None => fallback(),
-        };
         Home {
-            recents: self.recent_items(view(View::Recents, &|| ordered(&|e| e.mime == PDF, 12))),
-            starred: view(View::Starred, &|| ordered(&|e| e.starred, 12)),
-            shared: view(View::Shared, &|| ordered(&|e| e.shared(), 24)),
+            recents: self.recent_items(self.view(View::Recents, &|e| e.mime == PDF, 12)),
+            starred: self.view(View::Starred, &|e| e.starred, 12),
+            shared: self.view(View::Shared, &Entry::shared, 24),
+        }
+    }
+
+    fn store(&mut self, e: Entry) {
+        match self.stored_at(&e.id) {
+            Ok(i) => self.stored[i] = e,
+            Err(i) => self.stored.insert(i, e),
         }
     }
 
@@ -378,22 +436,23 @@ impl Catalog {
     // v5: offline-library-v5.js:observed / alreadyObserved
     pub fn observe(&mut self, items: &[Entry], parent: Option<&str>, view: Option<View>) -> Option<Observed> {
         let ids: Vec<String> = items.iter().map(|e| e.id.clone()).collect();
-        let items: Vec<Entry> = items.iter().map(|e| {
-            let mut e = e.clone();
+        let views = view.is_some_and(|v| self.views.get(v).as_ref() != Some(&ids));
+        let mut entries = Vec::new();
+        let mut changed = !self.loaded || views;
+        for item in items {
+            let mut e = item.clone();
             if e.parents.is_none() {
                 e.parents = parent.map(|p| vec![p.to_string()]);
             }
-            e
-        }).collect();
-        let views = view.is_some_and(|v| self.views.get(v).as_ref() != Some(&ids));
-        if self.loaded && !views && items.iter().all(|e| self.stored.get(&e.id).is_some_and(|s| e.same_as_stored(s))) {
+            let stored = self.stored_at(&e.id).ok().map(|i| &self.stored[i]);
+            changed |= !stored.is_some_and(|s| e.same_as_stored(s));
+            entries.push(Entry::merged(stored, &e));
+        }
+        if !changed {
             return None;
         }
-        let mut entries = Vec::with_capacity(items.len());
-        for e in &items {
-            let merged = Entry::merged(self.stored.get(&e.id), e);
-            self.stored.insert(e.id.clone(), merged.clone());
-            entries.push(merged);
+        for e in &entries {
+            self.store(e.clone());
         }
         if let Some(v) = view {
             self.views.set(v, ids);
@@ -402,17 +461,17 @@ impl Catalog {
         Some(Observed { entries, views })
     }
 
-    /// After a complete enumeration of Drive: cached entries it did not contain are marked removed.
+    /// After a complete enumeration of Drive (`found`: its ids, sorted): cached entries it did not contain are
+    /// marked removed.
     // v5: offline-library-v5.js:catalogue
-    pub fn mark_missing(&mut self, found: &HashSet<String>) -> Vec<Entry> {
+    pub fn mark_missing(&mut self, found: &[String]) -> Vec<Entry> {
         let mut changed = Vec::new();
-        for e in self.stored.values_mut() {
-            if !e.pending && !e.trashed && !found.contains(&e.id) {
+        for e in self.stored.iter_mut() {
+            if !e.pending && !e.trashed && found.binary_search(&e.id).is_err() {
                 e.trashed = true;
                 changed.push(e.clone());
             }
         }
-        changed.sort_by(|a, b| a.id.cmp(&b.id));
         if !changed.is_empty() {
             self.index();
         }
@@ -443,7 +502,7 @@ mod tests {
     fn ids(list: &[Entry]) -> Vec<&str> { list.iter().map(|e| e.id.as_str()).collect() }
     fn loaded(entries: Vec<Entry>) -> Catalog {
         let mut c = Catalog::default();
-        c.load(entries, HashMap::new(), Views::default(), "sync".into(), "root-id".into());
+        c.load(entries, Vec::new(), Views::default(), "sync".into(), "root-id".into());
         c
     }
 
@@ -468,11 +527,11 @@ mod tests {
             Entry { parents: Some(vec!["f1".into()]), ..file("n", "Nested.pdf", 25) },
             Entry { trashed: true, ..file("t", "Binned.pdf", 30) },
         ]);
-        assert_eq!(ids(&c.folder("root", "", &mut names)), ["f1", "f2", "a", "c", "b"]);
-        assert_eq!(ids(&c.folder("", "", &mut names)), ["f1", "f2", "a", "c", "b"]);
-        assert_eq!(ids(&c.folder("f1", "", &mut names)), ["n"]);
-        assert_eq!(ids(&c.folder("root", "ALP", &mut names)), ["f1", "a"]);
-        assert!(c.folder("missing", "", &mut names).is_empty());
+        assert_eq!(ids(&c.folder("root", None, &mut names)), ["f1", "f2", "a", "c", "b"]);
+        assert_eq!(ids(&c.folder("", None, &mut names)), ["f1", "f2", "a", "c", "b"]);
+        assert_eq!(ids(&c.folder("f1", None, &mut names)), ["n"]);
+        assert_eq!(ids(&c.folder("root", Some(&mut |n: &str| n.to_lowercase().contains("alp")), &mut names)), ["f1", "a"]);
+        assert!(c.folder("missing", None, &mut names).is_empty());
     }
 
     #[test]
@@ -482,12 +541,12 @@ mod tests {
             Entry { parents: Some(vec!["sync".into()]), ..file("r", "relay", 21) },
             Entry { kind: "relay".into(), ..file("k", "tagged", 22) },
         ]);
-        assert_eq!(ids(&c.folder("root", "", &mut names)), ["a"]);
-        assert!(c.folder("sync", "", &mut names).is_empty());
+        assert_eq!(ids(&c.folder("root", None, &mut names)), ["a"]);
+        assert!(c.folder("sync", None, &mut names).is_empty());
         assert_eq!(ids(&c.home().recents), ["a"]);
         let listing = vec![file("a", "A.pdf", 20), folder("sync", "x"), Entry { kind: "archive".into(), ..file("z", "z", 1) }, Entry::default()];
         assert_eq!(ids(&c.visible(listing.clone())), ["a"]);
-        assert_eq!(ids(&c.combine(listing.clone(), "root", "", &mut names)), ["a"]);
+        assert_eq!(ids(&c.combine(listing.clone(), "root", None, &mut names)), ["a"]);
         assert_eq!(ids(&c.recent_items(listing)), ["a"]);
         // The folder id may become known later.
         c.set_sync_folder("f9");
@@ -547,27 +606,27 @@ mod tests {
         let newer = Entry { starred: true, ..file("a", "A2.pdf", 21) };
         let seen = c.observe(&[newer], None, Some(View::Recents)).unwrap();
         assert_eq!((seen.entries[0].name.as_str(), seen.entries[0].local_preview.as_str(), seen.entries[0].starred, seen.views), ("A2.pdf", "", true, false));
-        assert_eq!(ids(&c.folder("root", "", &mut names)), ["f", "a"]);
+        assert_eq!(ids(&c.folder("root", None, &mut names)), ["f", "a"]);
         assert_eq!(c.views.recents, Some(vec!["a".to_string()]));
     }
 
     #[test]
     fn a_complete_enumeration_marks_what_drive_no_longer_has() {
         let mut c = loaded(vec![file("a", "A.pdf", 20), file("b", "B.pdf", 21), Entry { pending: true, ..file("p", "P.pdf", 22) }]);
-        let gone = c.mark_missing(&["a".to_string()].into_iter().collect());
+        let gone = c.mark_missing(&["a".to_string()]);
         assert_eq!(ids(&gone), ["b"]);
         assert!(gone[0].trashed);
-        assert_eq!(ids(&c.folder("root", "", &mut names)), ["p", "a"]);
-        assert!(c.mark_missing(&["a".to_string()].into_iter().collect()).is_empty());
+        assert_eq!(ids(&c.folder("root", None, &mut names)), ["p", "a"]);
+        assert!(c.mark_missing(&["a".to_string()]).is_empty());
     }
 
     #[test]
     fn the_root_alias_can_arrive_after_the_entries() {
         let mut c = Catalog::default();
-        c.load(vec![file("a", "A.pdf", 20)], HashMap::new(), Views::default(), String::new(), String::new());
-        assert!(c.folder("root", "", &mut names).is_empty());
+        c.load(vec![file("a", "A.pdf", 20)], Vec::new(), Views::default(), String::new(), String::new());
+        assert!(c.folder("root", None, &mut names).is_empty());
         c.set_root("root-id");
-        assert_eq!(ids(&c.folder("root", "", &mut names)), ["a"]);
+        assert_eq!(ids(&c.folder("root", None, &mut names)), ["a"]);
         assert_eq!(c.entry("a").unwrap().parents, Some(vec!["root".to_string()]));
     }
 
