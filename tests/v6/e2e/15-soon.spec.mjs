@@ -5,15 +5,29 @@ import { expect, test } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
 
+// A signed-in session: a stored token (5.18.0 `drive-token-v1`) and a Drive that only knows the profile.
+async function signedIn(page) {
+  await page.route('https://accounts.google.com/**', route => route.fulfill({ contentType: 'text/javascript', body: '' }));
+  await page.route('https://www.googleapis.com/**', route => {
+    const url = new URL(route.request().url()), headers = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*' };
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    if (url.pathname === '/drive/v3/about') return route.fulfill({ headers, json: { kind: 'drive#about', user: { displayName: 'Ana Test', emailAddress: 'ana@example.com', photoLink: '' } } });
+    return route.fulfill({ status: 404, headers, json: { error: { code: 404, message: 'not mocked' } } });
+  });
+  await page.addInitScript(() => {
+    localStorage.setItem('drive-remember-v1', '1');
+    localStorage.setItem('drive-token-v1', JSON.stringify({ token: 'stored-token', expiry: Date.now() + 3_600_000, grantedScopes: 'https://www.googleapis.com/auth/drive' }));
+  });
+}
+
 for (const width of [390, 1280]) {
   test(`Diary and Agenda answer "Soon" and nothing else (${width}px)`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
     const requests = [];
-    page.on('request', request => requests.push(request.url()));
-    await page.route('https://accounts.google.com/**', route => route.fulfill({ contentType: 'text/javascript', body: '' }));
-    await page.route('https://www.googleapis.com/**', route => route.fulfill({ status: 401, headers: { 'access-control-allow-origin': '*' }, body: '{}' }));
+    // boot.js's published-release watcher runs on its own clock; it is not caused by the tap.
+    page.on('request', request => { if (!request.url().includes('release-check=')) requests.push(request.url()); });
+    await signedIn(page);
     await page.addInitScript(() => {
-      localStorage.setItem('drive-remember-v1', '1');
       window.__camera = 0;
       const media = navigator.mediaDevices;
       if (media) media.getUserMedia = () => { window.__camera += 1; return Promise.reject(new Error('blocked by test')); };
@@ -66,9 +80,7 @@ for (const width of [390, 1280]) {
 }
 
 test('a second tap restarts the 1.8 s and the toast node is reused', async ({ page }) => {
-  await page.route('https://accounts.google.com/**', route => route.fulfill({ contentType: 'text/javascript', body: '' }));
-  await page.route('https://www.googleapis.com/**', route => route.fulfill({ status: 401, headers: { 'access-control-allow-origin': '*' }, body: '{}' }));
-  await page.addInitScript(() => localStorage.setItem('drive-remember-v1', '1'));
+  await signedIn(page);
   await page.goto('/?e2e=1');
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   await page.evaluate(() => window.__IHN_TEST_API__.ready());
