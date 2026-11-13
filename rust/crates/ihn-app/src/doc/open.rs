@@ -231,6 +231,66 @@ pub struct State {
     job: Option<Job>,
     /// Opens finished: `(doc id, ok)` (test command `log`).
     log: Vec<(String, bool)>,
+    probe: Option<Probe>,
+}
+
+/// The executor self-test (`doc.open.pdf_probe`): every op of `host/pdf.js` on a Drive file.
+#[derive(Default)]
+struct Probe {
+    req: u32,
+    stage: u8,
+    blob: u32,
+    pdf: u32,
+    pages: u32,
+    attachment: String,
+    out: String,
+    done: bool,
+}
+
+fn probe_step(app: &mut App, host: &mut dyn Host, io: &Io) {
+    let req = app.req(Mod::DocOpen);
+    let Some(p) = app.st.doc_open.probe.as_mut() else { return };
+    p.req = req;
+    p.stage += 1;
+    let out = host.out();
+    if io.status < 0 {
+        p.out = format!("{{\"stage\":{},\"error\":{},\"message\":{}}}", p.stage, io.status, json_str(std::str::from_utf8(io.data).unwrap_or("")));
+        p.done = true;
+        return;
+    }
+    let mut r = Reader::new(io.data);
+    match p.stage {
+        1 => {
+            p.blob = io.obj;
+            pdf::open(out, req, io.obj);
+        }
+        2 => {
+            let opened = pdf::Opened::parse(io.data).unwrap_or_default();
+            (p.pdf, p.pages) = (io.obj, opened.pages);
+            p.attachment = opened.attachments.first().map_or(String::new(), |a| a.0.clone());
+            p.out = format!("{{\"pages\":{},\"kind\":{},\"attachments\":{}", opened.pages, classify(&opened.keywords).0 as u8, opened.attachments.len());
+            pdf::pages(out, req, io.obj, 1, opened.pages);
+        }
+        3 => {
+            let sizes: Vec<String> = (0..p.pages * 2).map(|_| r.f64().unwrap_or(-1.0).to_string()).collect();
+            p.out.push_str(&format!(",\"sizes\":[{}]", sizes.join(",")));
+            pdf::render(out, req, p.pdf, 1, 0.5);
+        }
+        4 => {
+            let (url, w, h) = (r.str().unwrap_or(""), r.f64().unwrap_or(0.0), r.f64().unwrap_or(0.0));
+            p.out.push_str(&format!(",\"raster\":[{},{w},{h}]", url.starts_with("blob:")));
+            fx::url_revoke(out, url);
+            out.obj_release(io.obj);
+            pdf::attachment(out, req, p.pdf, &p.attachment);
+        }
+        _ => {
+            p.out.push_str(&format!(",\"attachmentSize\":{}}}", r.f64().unwrap_or(-1.0)));
+            out.obj_release(io.obj);
+            pdf::close(out, p.pdf);
+            out.obj_release(p.blob);
+            p.done = true;
+        }
+    }
 }
 
 /// An open is running (5.18.0 `driveOpenInProgress`).
@@ -529,6 +589,7 @@ pub fn init(_app: &mut App, _host: &mut dyn Host) {}
 /// Events addressed to this module (ids made with `abi::tag`) and broadcasts (`Life`, `Msg`). Returns `abi::ret` bits.
 pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
     match *event {
+        Event::Io(io) if app.st.doc_open.probe.as_ref().is_some_and(|p| p.req == io.req) => probe_step(app, host, &io),
         Event::Io(io) => {
             let Some(j) = job(app) else {
                 // A completion of an abandoned open: free what it carries.
@@ -572,13 +633,21 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
 }
 
 /// `__IHN_TEST_API__.cmd('doc.open.<name>', args)`: `state` → `{busy, log: [[id, ok]…]}`; `open` `{id, name}`
-/// starts an open as Home's card click will.
+/// starts an open as Home's card click will; `pdf_probe` `{id}` runs every op of `host/pdf.js` on that Drive file
+/// and `pdf_probe_result` returns what came back (`null` until it finished).
 pub fn test_cmd(app: &mut App, host: &mut dyn Host, name: &str, args: &str) -> Option<String> {
     match name {
         "state" => {
             let log: Vec<String> = app.st.doc_open.log.iter().map(|(id, ok)| format!("[{},{ok}]", json_str(id))).collect();
             Some(format!("{{\"busy\":{},\"running\":{},\"log\":[{}]}}", busy(app), app.st.doc_open.job.is_some(), log.join(",")))
         }
+        "pdf_probe" => {
+            let url = format!("https://www.googleapis.com/drive/v3/files/{}?alt=media", Json::parse(args)?.text("id"));
+            let req = client::request(app, host, Mod::DocOpen, Req { blob: true, ..Req::get(&url) });
+            app.st.doc_open.probe = Some(Probe { req, ..Probe::default() });
+            Some("true".into())
+        }
+        "pdf_probe_result" => Some(app.st.doc_open.probe.as_ref().filter(|p| p.done).map_or("null".into(), |p| p.out.clone())),
         "open" => {
             let j = Json::parse(args)?;
             Some(open_file(app, host, File { id: j.text("id").into(), name: j.text("name").into(), resource_key: j.text("resourceKey").into() }, 0).to_string())
