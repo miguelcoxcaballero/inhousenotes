@@ -91,5 +91,6 @@ Files: `rust/crates/ihn-core/src/render/*`, `host/canvas.js`, `icons/agenda.svg`
    documents with highlighter covers.
 8. **Canvas record = one batch** (`[2][1][len][commands…]`, commands without their own length) instead of one
    record per call: a dense repaint is ~50,000 calls.
-9. `scripts/check-math.mjs` currently reports three `.log(` lines of `ihn-app/src/store/selftest.rs` (W2.4);
-   nothing in `render`.
+9. **`npm run build` fails on `v6-int`**: `scripts/check-math.mjs` reports three `self.log(io)` lines of
+   `ihn-app/src/store/selftest.rs` (W2.4, a logger, not a logarithm). Not touched here (not this unit's files);
+   `00-boot` was run on a build made with the gate skipped: 6 passed. The gate reports nothing in `render`.
