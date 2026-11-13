@@ -1,0 +1,13 @@
+[package]
+name = "ihn-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+doctest = false
+
+[dependencies]
+ihn-core = { path = "../ihn-core" }
+ihn-sync = { path = "../ihn-sync" }
