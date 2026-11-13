@@ -196,6 +196,41 @@ fn draw_ref(id: Id, item: &Item) -> DrawRef {
 }
 
 impl Doc {
+    // -------------------------------------------------------------------------------------------- clock
+
+    /// The hybrid logical clock a writer `actor` resumes with after loading this document: `observed` = the
+    /// greatest clock of any register or z stamp not beyond `wall_ms + 24 h` (the same horizon as
+    /// `Clock::observe`, so a corrupt far-future stamp stored in the document is not adopted on reload either),
+    /// `last` = the greatest clock of the stamps written by `actor` itself, horizon or not (a wall clock that
+    /// stepped back must not let the writer fall below its own earlier writes). One pass over the registers.
+    pub fn clock(&self, actor: ActorId, wall_ms: u64) -> Clock {
+        let horizon = wall_ms.saturating_add(crate::stamp::CLOCK_HORIZON_MS);
+        let mut c = Clock::default();
+        let mut see = |at: Stamp| {
+            if at.clock <= horizon {
+                c.observed = c.observed.max(at.clock);
+            }
+            if at.actor == actor && at.clock != u64::MAX {
+                c.last = c.last.max(at.clock);
+            }
+        };
+        see(self.name.at);
+        for p in self.pages.values() {
+            [p.pos.at, p.deleted.at, p.template.at, p.size.at, p.background.at, p.side_panel.at].into_iter().for_each(&mut see);
+        }
+        for it in self.items.values() {
+            [it.page.at, it.z.at, it.z.v.at, it.body.at, it.deleted.at].into_iter().for_each(&mut see);
+        }
+        for v in self.versions.values() {
+            see(v.data.at);
+            see(v.deleted.at);
+        }
+        c
+    }
+
+    /// Greatest clock the document holds within the horizon of `wall_ms` (see [`Doc::clock`]).
+    pub fn max_clock(&self, wall_ms: u64) -> u64 { self.clock(ActorId(0), wall_ms).observed }
+
     // -------------------------------------------------------------------------------------------- apply
 
     /// Applies a local or remote batch atomically. A batch already in `vv` is skipped (`Changes::applied == false`).
@@ -614,7 +649,16 @@ pub struct Author {
 }
 
 impl Author {
+    /// A writer for a document it has never seen: an empty new document, or tests. For a document loaded from the
+    /// store use [`Author::resume`]: a writer whose clock restarts at zero stamps below what the document already
+    /// holds, and LWW then drops its edits on every replica.
     pub fn new(ids: IdGen, seq: u32) -> Author { Author { actor: ids.actor, ids, clock: Clock::default(), seq } }
+
+    /// The writer of a document that was loaded (snapshot chunks decoded, journal applied): the hybrid logical
+    /// clock is rebuilt from the stamps in `doc` ([`Doc::clock`]), so the next batch is stamped above everything
+    /// the document holds within the horizon and above every surviving write of this actor, whatever the wall
+    /// clock says now. Nothing about the clock is stored; call this again after every reload.
+    pub fn resume(ids: IdGen, seq: u32, doc: &Doc, wall_ms: u64) -> Author { Author { actor: ids.actor, clock: doc.clock(ids.actor, wall_ms), ids, seq } }
 }
 
 /// Builder used by tools: reads the pre-state, collects ops, `commit` assigns clock, seq and stamps.
@@ -1071,12 +1115,26 @@ mod tests {
         wall: u64,
         undo: Vec<Vec<Op>>,
         redo: Vec<Vec<Op>>,
+        /// The persisted id high-water mark (`kv['ctr:'+actor]`).
+        mark: u64,
     }
 
     impl Rep {
         fn new(n: u64) -> Rep {
             let au = Author::new(IdGen::new(ActorId::tab(0x1000_0000 * (n + 1), n as u8), 0), 0);
-            Rep { doc: Doc::default(), au, wall: T0, undo: vec![], redo: vec![] }
+            Rep { doc: Doc::default(), au, wall: T0, undo: vec![], redo: vec![], mark: 0 }
+        }
+        /// Compaction followed by a reload, with only what the store keeps (ARCHITECTURE §7.1): the snapshot
+        /// chunks, the actor's seq and the id mark. The clock is not stored; `Author::resume` rebuilds it.
+        fn reload(&mut self) {
+            self.mark = self.au.ids.persist_mark().unwrap_or(self.mark);
+            self.doc = snapshot::encode(&self.doc).decode().expect("own snapshot decodes");
+            self.au = Author::resume(IdGen::new(self.au.actor, self.mark), self.au.seq, &self.doc, self.wall);
+        }
+        /// Merges a snapshot received from a peer; its stamps are observed like those of a batch.
+        fn merge(&mut self, other: &Doc) -> Changes {
+            self.au.clock.observe(other.max_clock(self.wall), self.wall);
+            self.doc.merge(other)
         }
         /// Commits a transaction: inverse against the pre-state, then apply. `None` if it had no ops.
         fn tx(&mut self, f: impl FnOnce(&mut Tx)) -> Option<(Batch, Vec<Op>)> {
@@ -1297,11 +1355,11 @@ mod tests {
             if step % 250 == 100 {
                 // Compaction (bodies of erased items dropped) and a snapshot merged into another replica.
                 let (from, to) = (rng.below(replicas as u64) as usize, rng.below(replicas as u64) as usize);
-                let bytes = snapshot::encode(&reps[from].doc);
-                reps[from].doc = bytes.decode().expect("own snapshot decodes");
+                // The compacting replica also reloads: its writer is rebuilt from the store, clock included.
+                reps[from].reload();
                 if from != to {
-                    let other = bytes.decode().expect("snapshot decodes");
-                    reps[to].doc.merge(&other);
+                    let other = snapshot::encode(&reps[from].doc).decode().expect("snapshot decodes");
+                    reps[to].merge(&other);
                 }
             }
         }
@@ -1411,6 +1469,66 @@ mod tests {
         assert_eq!((c.doc.vv.get(src.au.actor), c.doc.vv.extras().count()), (12, 0));
         // The receivers observed the clocks: their next batch is stamped after everything they saw.
         assert_eq!(c.act(|tx| tx.set_name("later")).unwrap().clock, T0 + 12);
+    }
+
+    /// A reload keeps nothing of the writer but seq and id mark. The resumed clock must still stamp above what the
+    /// document holds, or the next local edit loses to an older write on every replica.
+    #[test]
+    fn reload_resumes_the_clock() {
+        let (mut fast, mut me) = (Rep::new(0), Rep::new(1));
+        fast.wall = T0 + 5 * 60_000; // five minutes ahead: inside the horizon
+        let page = fast.page();
+        let s = fast.stroke(page, &[0.0, 0.0, 10.0, 10.0]);
+        me.merge(&snapshot::encode(&fast.doc).decode().unwrap());
+        let shift = |dx: f64| Affine::new((0.0, 0.0), 1.0, 1.0, 0.0, dx, 0.0);
+        let first = me.act(|tx| tx.transform(&[s], shift(5.0))).unwrap();
+        assert_eq!(first.clock, fast.wall + 2); // after the page and the stroke
+        assert_eq!(me.doc.max_clock(me.wall), first.clock);
+
+        me.wall = T0 + 2000;
+        me.reload();
+        assert_eq!((me.au.clock.last, me.au.clock.observed, me.au.seq), (first.clock, first.clock, 1));
+        let mut new = Id::NONE;
+        let second = me.act(|tx| {
+            tx.transform(&[s], shift(50.0));
+            new = tx.add_stroke(page, pen(&[1.0, 1.0, 2.0, 2.0]));
+        });
+        let second = second.unwrap();
+        assert!(second.clock > first.clock && second.seq == 2);
+        assert_eq!(me.doc.items[&s].body.v.points(), &[55.0, 0.0, 65.0, 10.0], "the move after the reload was applied");
+        assert_eq!(me.doc.page_items(page).last(), Some(&new), "the new stroke is on top");
+        assert!(new > s && new.0 >> 64 == me.au.actor.0 as u128);
+        // Every replica agrees, in either delivery order.
+        fast.recv(&second);
+        fast.recv(&first);
+        assert_eq!(snap(&fast.doc), snap(&me.doc));
+
+        // The wall clock steps back two days: the device's own writes are beyond the horizon now, and its next
+        // batch must still be stamped above them.
+        me.wall = T0 - 2 * CLOCK_HORIZON_MS;
+        me.reload();
+        assert_eq!(me.au.clock.last, second.clock);
+        assert!(me.au.clock.observed < second.clock, "stamps beyond the horizon are not observed, own or not");
+        let third = me.act(|tx| tx.transform(&[s], shift(100.0))).unwrap();
+        assert_eq!(third.clock, second.clock + 1);
+        assert_eq!(me.doc.items[&s].body.v.points(), &[155.0, 0.0, 165.0, 10.0]);
+
+        // A far-future stamp of another device stored in the document is not adopted by a reload either.
+        let mut ahead = Rep::new(2);
+        ahead.wall = T0 + 10 * CLOCK_HORIZON_MS;
+        let far = ahead.act(|tx| tx.set_name("from the future")).unwrap();
+        me.wall = T0 + 3000;
+        me.recv(&far);
+        me.reload();
+        assert_eq!(me.doc.name.v, "from the future");
+        assert_eq!((me.au.clock.last, me.au.clock.observed), (third.clock, third.clock));
+        // A new writer on a loaded document (another tab, a second device) starts above it too.
+        let other = Author::resume(IdGen::new(ActorId::tab(0x7700_0000, 4), 0), 0, &me.doc, me.wall);
+        assert_eq!((other.clock.last, other.clock.observed), (0, third.clock));
+        assert_eq!(Doc::default().clock(me.au.actor, T0).next(T0), T0);
+        // A saturated clock never panics.
+        let mut c = Clock { last: u64::MAX, observed: u64::MAX };
+        assert_eq!(c.next(5), u64::MAX);
     }
 
     #[test]
@@ -1603,7 +1721,7 @@ mod tests {
             }
             // Sometimes a compaction happens in between: undo must not depend on bodies the snapshot dropped.
             if rng.chance(0.5) {
-                rep.doc = snapshot::encode(&rep.doc).decode().unwrap();
+                rep.reload();
             }
             assert!(rep.undo().is_some(), "{name}");
             assert!(visible(&rep.doc) == before, "{name}: undo did not restore the pre-state");

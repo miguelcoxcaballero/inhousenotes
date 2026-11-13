@@ -52,7 +52,7 @@ pub struct Clock {
 impl Clock {
     /// Clock of the next batch: `max(prev + 1, wall_ms, observed + 1)`.
     pub fn next(&mut self, wall_ms: u64) -> u64 {
-        self.last = (self.last + 1).max(wall_ms).max(self.observed + 1);
+        self.last = self.last.saturating_add(1).max(wall_ms).max(self.observed.saturating_add(1));
         self.last
     }
     /// Observes the greatest clock of an applied batch unless it lies beyond `wall_ms + 24 h`, so that one device

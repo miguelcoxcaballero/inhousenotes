@@ -1,20 +1,21 @@
 # W2.1 MODEL — notes for the units that build on it
 
 Files: `rust/crates/ihn-core/src/{id,stamp,op,doc,pos,snapshot,geom}.rs`. Branch `v6-w2_1`, based on `v6-w1_4`
-(see deviation 1). `cargo test -p ihn-core`: 57 tests, ~6 s debug.
+(see deviation 1). `cargo test -p ihn-core`: 58 tests, ~6 s debug.
 
 ## What is there
 
 - `id`: `Id(u128)`, `ActorId` (`tab`, `import`, `inst_from_random`), `IMPORT_BIT`, `fnv1a64/128`, `Id::legacy`,
   `inst13`, `migration_source`, `IdGen` (blocks of 65,536; persist `persist_mark()` in the same transaction as the
   batch), `IdMap`/`IdSet` (cheap hasher for `Id` keys), `Hash`, `DocId`.
-- `stamp`: `Stamp`, `Reg<T>` (LWW), `Clock` (`next(wall)`, `observe(clock, wall)` with the 24 h horizon),
+- `stamp`: `Stamp`, `Reg<T>` (LWW), `Clock` (`next(wall)`, `observe(clock, wall)` with the 24 h horizon; rebuilt by `Doc::clock`),
   `VersionVector` (contiguous + extras; `encode/decode` = SYNC §4.1 `VV`, extras separately).
 - `pos`: `Pos` (base-256 fractional key), `Pos::between`, `Pos::rank(i)` for imports.
 - `op`: `Op`, `Batch` (`stamp(i)`, `max_clock()`), `Body`, `Z` (`Z::TOP` placeholder, `fragment(k)`), `Color`,
   `Tool`, `Template`, `Background`, `PageProp`, `ImageRect`, `VersionMeta`.
 - `doc`: `Doc::{apply, apply_owned, apply_part, merge, order, draw_list, page_items, hit_strokes, split_strokes,
-  lasso, selection_bounds, inverse, chunk_items, chunk_pages, take_dirty, reindex}`, `Changes`, `Author`, `Tx`,
+  lasso, selection_bounds, inverse, chunk_items, chunk_pages, take_dirty, reindex, clock, max_clock}`, `Changes`,
+  `Author` (`new`, `resume`), `Tx`,
   and the §4.4 interface: `Replica`, `SyncEngine`, `SyncStatus`, `ExportPhase`, `SyncError`, `ReceiveResult`,
   `PeerRef`, `PeerView`, `PeerLink`, `LivePreview`, `PresenceState`, `PresenceMode`, `Compacted`, `BlobHandle`.
 - `snapshot`: SYNC §4.2–4.3 batch/op codec (`encode_batch`, `decode_batch`, `BatchDecoder`, `EncodedBatch::header`),
@@ -25,6 +26,18 @@ Files: `rust/crates/ihn-core/src/{id,stamp,op,doc,pos,snapshot,geom}.rs`. Branch
 
 ## How to use it
 
+- **Opening a document (W3.1 — mandatory):** the writer's clock is not stored anywhere (the `docs` row has `seq`
+  and `kv` has the id mark, nothing else; snapshot bytes must not depend on the device). After the chunks are
+  loaded and the journal is applied, build the writer with
+  `Author::resume(IdGen::new(actor, mark), seq, &doc, wall_ms)`. It sets `clock.observed` to the greatest stamp in
+  the document within the 24 h horizon and `clock.last` to the greatest stamp of this actor (`Doc::clock`, one pass
+  over the registers). **Never use `Author::new` for a document that has content**: a clock restarting at zero
+  stamps below the existing registers whenever a peer was ahead or the wall clock stepped back, and LWW then drops
+  the local edit on every replica (a moved stroke snaps back, a new stroke lands underneath). `Author::new` is for
+  a brand-new empty document and tests. If the writer is created before the load finishes, call
+  `author.clock = doc.clock(actor, wall_ms)` once it has.
+- **Snapshot merge:** stamps arrive without batches, so observe them:
+  `author.clock.observe(other.max_clock(wall_ms), wall_ms)` then `doc.merge(&other)`.
 - **Local edit:** `let mut tx = Tx::new(&doc, &mut author, wall_ms); …; let b = tx.commit(); let inv =
   doc.inverse(&b); doc.apply(&b);` — `inverse` must run before `apply`. Skip empty transactions (`tx.is_empty()`).
 - **Undo/redo (`editor/history.rs`):** undo = push the stored inverse ops into a new `Tx` (`tx.push`) and commit; the
@@ -55,6 +68,10 @@ Files: `rust/crates/ihn-core/src/{id,stamp,op,doc,pos,snapshot,geom}.rs`. Branch
 3. Page sizes are ≥ 64 and `Pos` keys are non-empty without a trailing zero byte: the batch decoder rejects anything
    else (`Tx` clamps sizes; use `Pos::rank`/`Pos::between`).
 4. `Body::Dropped` never goes into an op (the decoder rejects it).
+5. A writer of a loaded document is built with `Author::resume` (see above). Known limit, accepted: `resume` reads
+   the registers, so a batch of this actor whose every write was since overwritten by a stamp **beyond** the horizon
+   (a peer with a corrupt clock) is not counted; those writes had already lost, and the only effect is that the
+   next batch may be stamped below that lost one.
 
 ## Deviations from the plan / architecture text
 
@@ -84,7 +101,10 @@ Files: `rust/crates/ihn-core/src/{id,stamp,op,doc,pos,snapshot,geom}.rs`. Branch
 - Convergence: `doc::tests::replicas_converge_under_reordering_duplication_loss_and_snapshots` (2–5 replicas ×
   2,000 actions each, plus 30 short seeds; `IHN_CONVERGE_SEEDS=N` soaks more — 4,000 seeds passed), every op pair
   commutes, apply twice = once, imports R0/R1 in both orders.
-- Stamps: same-millisecond batches reversed; far-future clock applied, not observed; VV contiguity + extras.
+- Stamps: same-millisecond batches reversed; far-future clock applied, not observed; VV contiguity + extras;
+  `reload_resumes_the_clock` (reload after a peer that was ahead, after the wall clock stepped back two days, and
+  with a far-future stamp in the document). The convergence and undo tests rebuild the writer from the store at
+  every compaction (`Rep::reload`).
 - Undo: inverse of every `Tx` restores the visible state (also across a compaction), SYNC §5 table, revival of a
   dropped body, undo under concurrent remote edits.
 - Z rules: area-erase fragments and undo at the original z, cross-page move on top, covers → images → strokes.
