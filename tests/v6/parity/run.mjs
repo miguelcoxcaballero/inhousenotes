@@ -2,9 +2,10 @@
 //
 //   node tests/v6/parity/run.mjs [--quick] [--states welcome,home-shell] [--filter text] [--runs 2] [--self]
 //        [--a-root <5.18.0 tree>] [--b-root .] [--b-overlay build] [--port-a N] [--port-b N] (default: free ports)
-//        [--out build/parity-report] [--workers 1] [--save-all] [--viewports phone-360,desktop-1280]
+//        [--out test-results/parity-report] [--workers 1] [--save-all] [--viewports phone-360,desktop-1280]
 //
-// A is 5.18.0 (default: `git archive 1d6e8a0` extracted to build/v5-ref), B is v6 (this tree + build/ overlay).
+// A is 5.18.0 (default: `git archive 1d6e8a0` extracted to test-results/v5-ref), B is v6 (this tree + build/ overlay).
+// Nothing the harness writes goes into build/: that directory holds only `npm run build` output (ARCHITECTURE §14.2).
 // `--self` serves the A tree on both sides (the harness proving itself); `--runs N` repeats every state and also
 // compares each side with its own previous run. Exit code 1 when any screenshot differs outside a
 // BEHAVIOUR-CHANGES rule.
@@ -34,6 +35,10 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const REPO = path.resolve(HERE, '..', '..', '..');
 export const V5_COMMIT = '1d6e8a0';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+// The real clock of this process, taken before anything can replace it; and the queue in which drivers take turns to
+// install their page clock (see Driver.start: that step shows Playwright one fixed wall time).
+const REAL_NOW = Date.now;
+let clockTurn = Promise.resolve();
 
 // ---- state registry ------------------------------------------------------------------------------------------------
 const registry = new Map();
@@ -52,10 +57,14 @@ export function parity(name, options, script) {
 }
 
 /** The 5.18.0 reference tree, extracted once from git. */
-export function ensureV5Ref(target = path.join(REPO, 'build', 'v5-ref')) {
+export function ensureV5Ref(target = path.join(REPO, 'test-results', 'v5-ref')) {
   if (!fs.existsSync(path.join(target, 'app-v5.js'))) {
-    fs.mkdirSync(target, { recursive: true });
-    execSync(`git archive ${V5_COMMIT} | tar -x -C "${target}"`, { cwd: REPO, stdio: ['ignore', 'ignore', 'inherit'] });
+    // Extracted next to the target and renamed, so a second process never serves a half-written tree.
+    const partial = `${target}.${process.pid}.partial`;
+    fs.rmSync(partial, { recursive: true, force: true });
+    fs.mkdirSync(partial, { recursive: true });
+    execSync(`git archive ${V5_COMMIT} | tar -x -C "${partial}"`, { cwd: REPO, stdio: ['ignore', 'ignore', 'inherit'] });
+    try { fs.renameSync(partial, target); } catch (error) { fs.rmSync(partial, { recursive: true, force: true }); if (!fs.existsSync(path.join(target, 'app-v5.js'))) throw error; }
   }
   return target;
 }
@@ -94,12 +103,19 @@ export class Driver {
     // Playwright logs both calls with the wall time they were made at, and a document loaded later replays the gap
     // between them (a few real ms, different every run) into the clock's tick counter, which decides the phase of
     // its 16 ms animation frames. Both calls therefore see one wall time (the Playwright server runs in this process).
-    const wallNow = Date.now, wall = wallNow();
-    Date.now = () => wall;
-    try {
-      await this.context.clock.install({ time: EPOCH });
-      await this.context.clock.pauseAt(EPOCH);
-    } finally { Date.now = wallNow; }
+    // Drivers run in parallel with `--workers`: they take turns here, and the true Date.now (REAL_NOW, never the
+    // function found in place) is put back before the next one starts, so the process clock is frozen only for
+    // the two calls of one driver and never stays frozen.
+    const turn = clockTurn.then(async () => {
+      const wall = REAL_NOW.call(Date);
+      Date.now = () => wall;
+      try {
+        await this.context.clock.install({ time: EPOCH });
+        await this.context.clock.pauseAt(EPOCH);
+      } finally { Date.now = REAL_NOW; }
+    });
+    clockTurn = turn.catch(() => {});
+    await turn;
     if (this.traceEnabled) await this.context.addInitScript(TRACE_INIT);
     if (this.cell.mode === 'app') await this.context.addInitScript(NATIVE_STUB);
     this.page = await this.context.newPage();
@@ -351,7 +367,7 @@ async function main() {
   const quick = flag('quick'), self = flag('self'), runs = Number(opt('runs', '1')), workers = Math.max(1, Number(opt('workers', '1')));
   const aRoot = path.resolve(opt('a-root', '') || ensureV5Ref()), bRoot = self ? aRoot : path.resolve(opt('b-root', REPO));
   const bOverlay = self ? null : path.resolve(opt('b-overlay', path.join(REPO, 'build')));
-  const outDir = path.resolve(opt('out', path.join(REPO, 'build', 'parity-report')));
+  const outDir = path.resolve(opt('out', path.join(REPO, 'test-results', 'parity-report')));
   const states = (await loadStates(opt('states', '').split(',').filter(Boolean))).filter(s => !opt('filter') || s.name.includes(opt('filter')));
   if (!states.length) { console.error('No parity states selected.'); process.exit(2); }
 

@@ -11,12 +11,15 @@
 | Performance profile | `node tests/v6/perf/profile.mjs --app v5\|v6 [--short] [--throttle 4]` |
 
 Servers listen on a free port unless `--port-a/--port-b` are given. The 5.18.0 tree is extracted once from commit
-`1d6e8a0` into `build/v5-ref`.
+`1d6e8a0` into `test-results/v5-ref` (gitignored; nothing the harness writes goes into `build/`).
 
 ## Results on this branch
 
 - Parity `--self --quick --runs 2`: 96 comparisons, 0 failures, 0 warnings, in two consecutive invocations (about
-  2 min 15 s each).
+  2 min 15 s each); with `--workers 4`: the same 96 passes in 49 s. Drivers running in parallel take turns to install
+  their page clock (the step that shows Playwright one fixed wall time), and the process' real `Date.now` is always
+  put back, so the harness' real-time limits (20 s never-idle, 1.5 s silent worker) keep working.
+- Reports go to `test-results/parity-report` unless `--out` says otherwise.
 - Traces: `--check` identical in every run after the last fix (dense page included).
 - Fixtures: all Drive PDFs, their import records and the storage dumps regenerate byte for byte — also with three
   busy-loop processes competing for the four cores — with one exception listed under deviations
