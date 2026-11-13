@@ -1,0 +1,104 @@
+{
+ "app": "5.18.0",
+ "exportName": "Inline images",
+ "pageCount": 2,
+ "strokeCount": 1,
+ "imageCount": 3,
+ "hasLegacyBakedOverlay": false,
+ "cleanOriginalBytes": 0,
+ "versions": [
+  {
+   "id": "v_mvuswqw4_kge47b0m",
+   "originId": "v_mvuswqw4_kge47b0m",
+   "ts": 1793354404900,
+   "summary": "+2 pages, +1 stroke, 3 image changes",
+   "kind": "autosave",
+   "isMilestone": false,
+   "schemaVersion": 3,
+   "parentId": null,
+   "contentHash": "j8vviq:38m",
+   "deviceId": "cz0gmp0hx",
+   "exportName": "Inline images",
+   "pageCount": 2
+  }
+ ],
+ "pages": [
+  {
+   "pageId": "pg_mvuswpfc_silzzfsh9",
+   "pageWidth": 794,
+   "pageHeight": 1123,
+   "templateKind": "default",
+   "backgroundSource": "template",
+   "pdfPageIndex": null,
+   "backgroundImage": null,
+   "sidePanel": null,
+   "strokes": [
+    [
+     "img-ink",
+     "pen",
+     "#1a1a1a",
+     2,
+     30
+    ]
+   ],
+   "pointsSha256": "730be93f4deba855dee9d6a40b67324c111849d8b3e2135521bddf5ee7b3d41f",
+   "images": [
+    {
+     "id": "mvuswpqg-jr0ahblw5",
+     "x": 120,
+     "y": 160,
+     "width": 64,
+     "height": 48,
+     "rotation": 0,
+     "srcSha256": "b0dcbf28af8f495f2972fa97b64d6366653216e22efa7abb0d1875b3aceddde7"
+    },
+    {
+     "id": "mvuswpqg-bce7eiadx",
+     "x": 438,
+     "y": 318,
+     "width": 40,
+     "height": 40,
+     "rotation": 0,
+     "srcSha256": "8f6d46d947fc392c4da556f8499e42e8026a57e4c3887fa7e800d2425eeda7e1"
+    }
+   ],
+   "deletedStrokeIds": [],
+   "legacyCoverStrokes": []
+  },
+  {
+   "pageId": "pg_mvuswpfc_wkf48khft",
+   "pageWidth": 794,
+   "pageHeight": 1123,
+   "templateKind": "default",
+   "backgroundSource": "template",
+   "pdfPageIndex": null,
+   "backgroundImage": null,
+   "sidePanel": null,
+   "strokes": [],
+   "pointsSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "images": [
+    {
+     "id": "mvuswpqg-sb4jqzzdz",
+     "x": 200,
+     "y": 500,
+     "width": 64,
+     "height": 48,
+     "rotation": 0,
+     "srcSha256": "b0dcbf28af8f495f2972fa97b64d6366653216e22efa7abb0d1875b3aceddde7"
+    }
+   ],
+   "deletedStrokeIds": [],
+   "legacyCoverStrokes": []
+  }
+ ],
+ "keywordSections": [
+  "STROKES_Z",
+  "IH_NORM",
+  "IH_OVERLAY_REFS",
+  "IH_STRUCT",
+  "IH_FIELDS",
+  "IH_SYNC",
+  "IH_VERSIONS"
+ ],
+ "pdfBytes": 189927
+}
