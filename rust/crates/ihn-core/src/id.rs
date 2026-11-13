@@ -68,6 +68,32 @@ impl Id {
     }
 }
 
+/// Hasher for `Id` keys: ids are already well spread (actor ‖ counter, or FNV), so one multiply replaces SipHash
+/// on the hot paths (apply, draw-list lookups).
+#[derive(Clone, Copy, Default)]
+pub struct IdHasher(u64);
+
+impl std::hash::Hasher for IdHasher {
+    fn finish(&self) -> u64 { self.0 }
+    fn write(&mut self, bytes: &[u8]) {
+        for chunk in bytes.chunks(8) {
+            let mut word = [0u8; 8];
+            word[..chunk.len()].copy_from_slice(chunk);
+            self.write_u64(u64::from_le_bytes(word));
+        }
+    }
+    fn write_u64(&mut self, v: u64) { self.0 = (self.0.rotate_left(29) ^ v).wrapping_mul(0x9e37_79b9_7f4a_7c15) }
+    fn write_u128(&mut self, v: u128) {
+        self.write_u64(v as u64);
+        self.write_u64((v >> 64) as u64);
+    }
+}
+
+pub type IdBuild = std::hash::BuildHasherDefault<IdHasher>;
+/// `HashMap` keyed by `Id` (or a tuple starting with one).
+pub type IdMap<V> = std::collections::HashMap<Id, V, IdBuild>;
+pub type IdSet = std::collections::HashSet<Id, IdBuild>;
+
 /// Id generator of one actor. The counter is shared by every document the tab edits.
 ///
 /// Crash safety: ids leave the tab only inside committed batches, so the session persists [`IdGen::persist_mark`]

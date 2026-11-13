@@ -328,25 +328,45 @@ fn batch_header(r: &mut Reader) -> Option<(ActorId, u32, u64, u64)> {
     (n <= MAX_BATCH_OPS).then_some((actor, seq, clock, n))
 }
 
-pub fn decode_batch(bytes: &[u8]) -> Result<Batch, Corrupt> {
-    let decode = || {
-        if bytes.len() > MAX_BATCH_BYTES {
-            return None;
-        }
+/// Incremental batch decoder: a large remote batch is decoded a slice of ops at a time (remote-apply budget),
+/// and handed out only when all of it decoded, so nothing is ever applied partially from damaged bytes.
+pub struct BatchDecoder {
+    at: usize,
+    left: u64,
+    batch: Batch,
+}
+
+impl BatchDecoder {
+    pub fn new(bytes: &[u8]) -> Result<BatchDecoder, Corrupt> {
         let mut r = Reader::new(bytes);
-        let (actor, seq, clock, n) = batch_header(&mut r)?;
-        let import = actor.is_import();
-        let mut ops = Vec::new();
-        let mut stamps = Vec::new();
-        for _ in 0..n {
-            if import {
-                stamps.push(get_stamp(&mut r)?);
+        let (actor, seq, clock, left) = batch_header(&mut r).filter(|_| bytes.len() <= MAX_BATCH_BYTES).ok_or(Corrupt)?;
+        let stamps = actor.is_import().then(Vec::new);
+        Ok(BatchDecoder { at: bytes.len() - r.buf.len(), left, batch: Batch { actor, seq, clock, ops: Vec::new(), stamps } })
+    }
+    /// Decodes up to `max_ops` more ops of the same `bytes`. `Ok(true)` when the batch is complete.
+    pub fn step(&mut self, bytes: &[u8], max_ops: usize) -> Result<bool, Corrupt> {
+        let mut r = Reader::new(bytes.get(self.at..).ok_or(Corrupt)?);
+        for _ in 0..self.left.min(max_ops as u64) {
+            if let Some(stamps) = &mut self.batch.stamps {
+                stamps.push(get_stamp(&mut r).ok_or(Corrupt)?);
             }
-            ops.push(get_op(&mut r)?);
+            self.batch.ops.push(get_op(&mut r).ok_or(Corrupt)?);
+            self.left -= 1;
         }
-        r.is_empty().then_some(Batch { actor, seq, clock, ops, stamps: import.then_some(stamps) })
-    };
-    decode().ok_or(Corrupt)
+        self.at = bytes.len() - r.buf.len();
+        if self.left == 0 && !r.is_empty() {
+            return Err(Corrupt); // trailing bytes
+        }
+        Ok(self.left == 0)
+    }
+    /// The decoded batch; `None` until `step` returned `Ok(true)`.
+    pub fn finish(self) -> Option<Batch> { (self.left == 0).then_some(self.batch) }
+}
+
+pub fn decode_batch(bytes: &[u8]) -> Result<Batch, Corrupt> {
+    let mut d = BatchDecoder::new(bytes)?;
+    d.step(bytes, usize::MAX)?;
+    d.finish().ok_or(Corrupt)
 }
 
 impl EncodedBatch {
@@ -701,6 +721,18 @@ mod tests {
             let back = enc.decode().unwrap_or_else(|_| panic!("round {round}: {b:?}"));
             // NaN payloads make `==` useless: compare the re-encoding.
             assert_eq!(encode_batch(&back), enc, "round {round}");
+            // Decoded a few ops at a time: the same batch; nothing is handed out before the end.
+            let mut d = BatchDecoder::new(&enc.0).unwrap();
+            let mut steps = 0;
+            while !d.step(&enc.0, 3).unwrap() {
+                steps += 1;
+            }
+            assert!(steps >= b.ops.len().saturating_sub(1) / 3);
+            assert_eq!(encode_batch(&d.finish().unwrap()), enc);
+            let mut d = BatchDecoder::new(&enc.0).unwrap();
+            if !d.step(&enc.0, 1).unwrap() {
+                assert!(d.finish().is_none());
+            }
             assert_eq!((back.actor, back.seq, back.clock, back.ops.len(), back.stamps.is_some()), (b.actor, b.seq, b.clock, b.ops.len(), b.stamps.is_some()));
             assert!(back.is_well_formed());
         }
