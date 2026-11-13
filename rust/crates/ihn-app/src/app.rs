@@ -496,7 +496,6 @@ mod tests {
         app.init(&mut host);
         let text = host.take();
         let lines: Vec<&str> = text.lines().collect();
-        assert_eq!(lines.len(), Ui::IDS.len() + 7);
         for (i, id) in Ui::IDS.iter().enumerate() {
             assert_eq!(lines[i], format!("bind {} {id:?}", Ui::FIRST + i as u32));
         }
@@ -506,7 +505,9 @@ mod tests {
             home = Ui::DRIVE_HOME.0,
             editor = Ui::EDITOR_VIEW.0
         );
-        assert_eq!(lines[Ui::IDS.len()..].join("\n") + "\n", golden);
+        // The modules' own boot records (shell, auth, …) follow the version labels; `ready` is always last.
+        assert_eq!(lines[Ui::IDS.len()..Ui::IDS.len() + 6].join("\n") + "\nready\n", golden);
+        assert_eq!(lines.last(), Some(&"ready"));
         assert!(app.is_ready());
         // Nothing more is written for an event nobody handles.
         timer(&mut app, &mut host, tag(Mod::Shell, 1));
@@ -518,7 +519,7 @@ mod tests {
         let (mut app, mut host) = (App::new(config()), FakeHost::default());
         app.hold_ready();
         app.init(&mut host);
-        assert!(!host.take().contains("ready"));
+        assert!(!host.take().lines().any(|l| l == "ready"));
         app.release_ready();
         timer(&mut app, &mut host, tag(Mod::Shell, 1));
         assert_eq!(host.take(), "ready\n");
