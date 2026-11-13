@@ -41,22 +41,24 @@
    "phase": "idle",
    "pending": 1,
    "id": null,
-   "errors": [
-    {
-     "message": "Failed to fetch"
-    }
-   ]
+   "errors": []
   }
  },
  "stores": {
+  "background-notebook-data-db-v1": {
+   "pages": 2,
+   "snapshots": 1,
+   "stroke-ops": 0,
+   "timeline-history": 1
+  },
   "inhouse-offline-v1": {
    "document-index": 1,
    "documents": 1,
-   "entries": 3,
-   "leases": 2,
+   "entries": 2,
+   "leases": 3,
    "outbox": 1,
    "recoveries": 0,
-   "settings": 7
+   "settings": 8
   },
   "inhouse-original-pdfs-v1": {
    "drive-open-cache": 1,
@@ -74,6 +76,7 @@
   "xor-v1,xor-v1"
  ],
  "localStorageKeys": [
+  "background-notebook-data-v3",
   "drive-hint-email",
   "drive-pending-exit-upload-v1",
   "drive-profile-v1",
@@ -98,5 +101,26 @@
   "PATCH /drive/v3/files/scene-r0 200",
   "PATCH /drive/v3/files/scene-r0 200",
   "PATCH /drive/v3/files/scene-r0 200"
- ]
+ ],
+ "background": {
+  "database": "background-notebook-data-db-v1",
+  "stores": {
+   "pages": 2,
+   "snapshots": 1,
+   "stroke-ops": 0,
+   "timeline-history": 1
+  },
+  "localStorageKeys": [
+   "background-notebook-data-v3"
+  ],
+  "syncLeaseHeld": true,
+  "uploadsInFlight": [
+   "PATCH /upload/drive/v3/files/scene-r0",
+   "POST /upload/drive/v3/files",
+   "POST /upload/drive/v3/files",
+   "POST /upload/drive/v3/files",
+   "POST /upload/drive/v3/files",
+   "POST /upload/drive/v3/files"
+  ]
+ }
 }

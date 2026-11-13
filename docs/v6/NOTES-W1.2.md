@@ -20,10 +20,13 @@ Servers listen on a free port unless `--port-a/--port-b` are given. The 5.18.0 t
   their page clock (the step that shows Playwright one fixed wall time), and the process' real `Date.now` is always
   put back, so the harness' real-time limits (20 s never-idle, 1.5 s silent worker) keep working.
 - Reports go to `test-results/parity-report` unless `--out` says otherwise.
-- Traces: `--check` identical in every run after the last fix (dense page included).
-- Fixtures: all Drive PDFs, their import records and the storage dumps regenerate byte for byte — also with three
-  busy-loop processes competing for the four cores — with one exception listed under deviations
-  (`recovery-conflict`).
+- Traces: `--check` identical in every run after the last fix (dense page included). Nine files: `dense-page`,
+  `dense-page-erase`, `thumbnails` (Pages panel), `page-preview` and `page-preview-images` (`renderPagePreview`, the
+  0.18-scale JPEG 0.6 preview a released page keeps: five pages of `dense-20`, both pages of `inline-images`),
+  `scroll-preview` (the scroll-preview queue, JPEG 0.65, over the pages that come into view while `dense-20` is
+  scrolled with the wheel), `template-backgrounds`, `ink-pen`, `ink-highlighter`.
+- Fixtures: all Drive PDFs, their import records and all nine storage dumps regenerate byte for byte (`--check`
+  covers every one; there is no excluded scenario any more).
 - Profile: `--app v5 --short` completes all four phases on the `dense-20` document.
 
 ## How determinism is obtained (read before writing states)
@@ -52,16 +55,8 @@ helpers; a second page of the same context is advanced with `t.advance(ms, { pag
 
 ## Deviations from the plan
 
-- **`recovery-conflict` storage dump is a one-run sample, not reproducible byte for byte.** The row 5.18.0's outbox
-  runner writes when Drive changed underneath an offline draft (`localBlob` + `remoteBlob`) only appears after the app
-  is started again, and then the library refresh and the outbox runner — each a chain of IndexedDB, Web Lock and
-  worker round trips inside one instant of fake time — race in real time (lease owner ids, and in one run of five
-  the runner does not get the lease at all). It is generated only with `--only recovery-conflict` and skipped by
-  `--check`. The reproducible `recoveries` dump contains the other kind of row (`last-upload-draft:<id>`, the editable
-  draft kept after an upload) next to a dirty document. Removing the race would need a scheduler that orders every
-  asynchronous completion; not worth it for one fixture.
-- **Tracked files are larger than usual**: `tests/v6/fixtures/traces` 21 MB (the two dense-page traces are 9 MB each,
-  about 1.8 MB each compressed in the pack) and `tests/v6/fixtures/v5` 14 MB.
+- **Tracked files are larger than usual**: `tests/v6/fixtures/traces` 28 MB (the two dense-page traces are 9 MB each,
+  about 1.8 MB each compressed in the pack; `scroll-preview` 4.4 MB, `page-preview` 2.8 MB) and `tests/v6/fixtures/v5` 14 MB.
 - **The Playwright clock is driven through its page-side controller** (`globalThis.__pwClock.controller`: `_timers`,
   `_now`, `runFor`, `log`), which is not public API. It is pinned by `@playwright/test` 1.62.1; when the page has no
   such controller the harness falls back to `page.clock.runFor`.
@@ -73,6 +68,21 @@ helpers; a second page of the same context is advanced with `t.advance(ms, { pag
   spot-checked here; the acceptance runs are the quick matrix.
 
 ## For other units
+
+- **Storage dumps with the `background-` variant** (W2.4): `background-worker` and `recovery-conflict` are both
+  taken while Android's headless processor (`/?inhouse_app=1&offline-worker=1`) is running with its upload held.
+  Both contain the foreground `notebook-data-db-v1` and a populated `background-notebook-data-db-v1` (2 pages, 1
+  snapshot, 1 timeline-history row) plus the localStorage key `background-notebook-data-v3`. That key is the only
+  `background-…` localStorage key 5.18.0 writes in this mode: `background-drive-session-v1`,
+  `background-notebook-view-v1` and `background-drive-pending-exit-upload-v1` are only written by editor UI paths
+  the processor never runs. `background-worker.expect.json` has a `background` section (stores, keys, held upload
+  requests); `recovery-conflict.expect.json` a `conflict` section (the `recoveries` key of the row with `localBlob` +
+  `remoteBlob`; the remote PDF is fixture `r1`). The generator fails if either is missing.
+- In `background-worker` the foreground database still has two `stroke-ops` rows not folded into a checkpoint (the
+  app was closed 300 ms after the last stroke) and the draft has no built PDF (`preparedGeneration` unset); in
+  `recovery-conflict` the draft was closed to Home first and has one.
+- 5.18.0's processor only builds and uploads once the closed editor's lease (5 min) and a left-over `sync` lease
+  (45 s) have run out; the scenarios advance fake time while the app is closed for that reason.
 
 - `expect.json` of a Drive fixture is what 5.18.0 holds after importing the bytes in a fresh session (pages, stroke
   rows `[id, tool, color, width, points]`, a SHA-256 of all points, images, timeline entries). Background images are
