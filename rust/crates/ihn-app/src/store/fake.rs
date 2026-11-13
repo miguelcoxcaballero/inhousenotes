@@ -160,6 +160,13 @@ fn exec(stores: &mut [Rows], r: &mut R, ops: u32) -> Result<Vec<u8>, i32> {
                 match (find(rows, &key), mode) {
                     (Ok(_), 1) => return Err(status::CONSTRAINT),
                     (Ok(i), 2) => w.value(&rows[i].1),
+                    (Ok(i), 3) => {
+                        w.value(&rows[i].1);
+                        if let (Value::Obj(old), Value::Obj(new)) = (&mut rows[i].1, value) {
+                            let missing: Vec<_> = new.into_iter().filter(|f| old.iter().all(|o| o.0 != f.0)).collect();
+                            old.extend(missing);
+                        }
+                    }
                     (Ok(i), _) => {
                         rows[i].1 = value;
                         w.undef();
@@ -199,7 +206,12 @@ fn exec(stores: &mut [Rows], r: &mut R, ops: u32) -> Result<Vec<u8>, i32> {
                 for _ in 0..n {
                     let (path, value) = (path(r).ok_or(bad)?, r.value().ok_or(bad)?);
                     let (last, parents) = path.split_last().ok_or(bad)?;
-                    descend(&mut record, parents).set(last, value);
+                    let parent = descend(&mut record, parents);
+                    // Flag 2 (max): a number never replaces a greater (or equal) number.
+                    let keep = flags & 2 != 0 && matches!((parent.get(last), &value), (Value::Num(now), Value::Num(new)) if now >= new);
+                    if !keep {
+                        parent.set(last, value);
+                    }
                 }
                 match at {
                     Ok(i) => rows[i].1 = record,

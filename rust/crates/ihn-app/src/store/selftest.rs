@@ -19,7 +19,7 @@
 use super::locks;
 use super::schema::{kv, Archive, DocRecord, Flags, LastExport, Record, RelayAsset};
 use super::sv::Value;
-use super::{conn, reopen_conn, start_open, submit, v5, Conn, Health, Job, Range, Reply, Store, Tx};
+use super::{conn, reopen_conn, start_open, submit, v5, Conn, Health, Job, Key, Put, Range, Reply, Store, Tx};
 use ihn_core::codec::b64_encode;
 use crate::abi::Io;
 use crate::app::Mod;
@@ -261,6 +261,12 @@ impl SelfTest {
                 t.ops_append(DOC, ACTOR, 2, b"two");
                 t.ops_trim(DOC, ACTOR, 1);
                 self.record.seq.insert(ACTOR, 2);
+                // A late seq 1 does not take the stored seq back; a reference counted before the asset's bytes
+                // arrive is kept when they do (bytes stand in for the Blob here).
+                t.doc_seq(DOC, ACTOR, 1);
+                t.asset_ref(&HASH, 1, true);
+                let asset = Value::obj([("blob", (&b"\x09"[..]).into()), ("mime", "x/y".into()), ("size", 1.0.into()), ("refs", 0.0.into())]);
+                t.put(Store::Assets, Put::Fill, Key::Str(&super::sv::hex(&HASH)), &asset);
                 t.strict = true;
             }
             4 => {
@@ -268,12 +274,15 @@ impl SelfTest {
                 t.ops_scan(DOC);
                 t.kv_get(ACCOUNT, kv::IDPOOL);
                 t.ops_scan_actor(DOC, ACTOR, 1, 1);
+                t.asset_get(&HASH);
             }
             5 => {
                 t.doc_delete(DOC);
                 for store in [Store::Docs, Store::Ops, Store::Chunks] {
                     t.count(store, Range::All);
                 }
+                t.asset_ref(&HASH, -1, true);
+                t.count(Store::Assets, Range::All);
             }
             6 => {
                 self.locks = [app.req(Mod::Store), app.req(Mod::Store), app.req(Mod::Store)];
@@ -501,7 +510,9 @@ mod tests {
         assert_eq!((record.seq.get(ACTOR), record.relay.applied.get(REMOTE), record.flags.relay_pending), (Some(&2), Some(&(2, [6; 16])), true));
         assert_eq!(steps[4].1[1].items().len(), 4, "remote 5 and own 2; own 1 trimmed");
         assert_eq!(steps[4].1[2], Value::Arr(vec!["id-1".into()]));
-        assert_eq!(steps[5].1[3..], [0.0.into(), 0.0.into(), 0.0.into()]);
+        assert_eq!(steps[3].1[8..], [true.into(), 1.0.into(), Value::obj([("refs", 1.0.into())])]);
+        assert_eq!(steps[4].1[4], Value::obj([("refs", 1.0.into()), ("blob", (&b"\x09"[..]).into()), ("mime", "x/y".into()), ("size", 1.0.into())]));
+        assert_eq!(steps[5].1[3..], vec![Value::Num(0.0); 5]);
         let name: Value = "ihn6-selftest:scratch".into();
         assert_eq!(steps[8].1, [Value::obj([("held", vec![name.clone()].into()), ("pending", vec![name].into())])]);
         assert!(!db.dbs.contains_key("scratch") && db.held.is_empty());

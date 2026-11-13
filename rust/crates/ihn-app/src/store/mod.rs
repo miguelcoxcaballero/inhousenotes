@@ -12,10 +12,17 @@
 //! Every transaction gets exactly one completion, never inside the `store::tx` call. The database
 //! (`inhouse-notes-v6`, [`schema`]) is opened by the first transaction; transactions issued while it opens wait.
 //!
+//! # Order
+//! Write transactions of a connection run **one at a time, in the order they were issued**: the next one is sent
+//! when the previous one completed, was given up, or the store degraded. So a write that has to be tried again
+//! (quota, lost connection) is never overtaken by a later one, and the journal has no hole before a durable
+//! batch. A transaction issued while others wait takes its place behind them (a read sees the writes issued
+//! before it); with nothing waiting, a read is sent at once — IndexedDB orders it after the write in flight, and
+//! it does not wait for the backoff of a write that is being retried.
+//!
 //! # Degraded mode (ARCHITECTURE §4.4, SYNC §7.2)
 //! The store is **degraded** when the open is blocked for 1.5 s, takes more than 5 s or fails, or when a write
-//! still hits the quota after 3 retries (250 ms × 2 backoff; later writes wait behind the retry, so the journal
-//! order is kept). From then on [`health`] reports `Degraded` and every write completes with
+//! still hits the quota after 3 retries (250 ms × 2 backoff; later writes wait behind it, see Order). From then on [`health`] reports `Degraded` and every write completes with
 //! [`status::DEGRADED`] without being attempted (reads still run when the database is open). The session keeps
 //! such batches in memory; [`reopen`] tries again (document open, user retry).
 //!
@@ -129,7 +136,7 @@ struct Conn {
     timeout_ms: f64,
     health: Health,
     open_req: u32,
-    /// Jobs waiting for the open, or (writes) for a retry ahead of them.
+    /// Jobs waiting for the open or for the write ahead of them, in the order they run.
     queue: VecDeque<Job>,
     /// Jobs put back at the head of `queue` after the connection was lost.
     requeued: usize,
@@ -234,9 +241,10 @@ fn start_open(app: &mut App, host: &mut dyn Host, c: usize) {
     out.w.end(m);
 }
 
-/// A write of this connection is being retried: later writes wait so the journal order holds.
+/// A write of this connection is in flight or waits for its backoff: later writes wait, so that they commit in
+/// the order they were issued whatever happens to this one.
 fn stalled(st: &State, c: usize) -> bool {
-    st.retry.iter().any(|r| r.1 == c) || st.pending.iter().any(|(_, pc, job)| *pc == c && job.attempt > 0 && job.tx.write)
+    st.retry.iter().any(|r| r.1 == c) || st.pending.iter().any(|(_, pc, job)| *pc == c && job.tx.write)
 }
 
 fn submit(app: &mut App, host: &mut dyn Host, c: usize, job: Job) {
@@ -247,7 +255,8 @@ fn submit(app: &mut App, host: &mut dyn Host, c: usize, job: Job) {
             start_open(app, host, c);
         }
         Health::Opening => conn(app, c).queue.push_back(job),
-        Health::Ready if job.tx.write && stalled(&app.st.store, c) => conn(app, c).queue.push_back(job),
+        // Behind what waits already; a write also behind the write that is in flight or being retried.
+        Health::Ready if !conn(app, c).queue.is_empty() || (job.tx.write && stalled(&app.st.store, c)) => conn(app, c).queue.push_back(job),
         _ => dispatch(app, host, c, job),
     }
 }
@@ -336,7 +345,6 @@ fn opened(app: &mut App, host: &mut dyn Host, c: usize, io: &Io) {
 }
 
 fn done(app: &mut App, host: &mut dyn Host, c: usize, mut job: Job, io: &Io) {
-    let retried = job.attempt > 0;
     let healthy = conn(app, c).health == Health::Ready;
     match io.status {
         status::QUOTA if job.tx.write && healthy && job.attempt < RETRIES => {
@@ -365,8 +373,22 @@ fn done(app: &mut App, host: &mut dyn Host, c: usize, mut job: Job, io: &Io) {
         _ => {}
     }
     forward(app, host, Io { req: job.caller, ..*io });
-    if retried || io.status == status::QUOTA {
-        flush(app, host, c);
+    flush(app, host, c);
+}
+
+/// Runs a write again after its backoff. When the connection was lost meanwhile the job waits for the reopen at
+/// the head of the queue: it is still the oldest write, and the store is not degraded.
+fn retry(app: &mut App, host: &mut dyn Host, c: usize, job: Job) {
+    let conn = conn(app, c);
+    match conn.health {
+        Health::Closed | Health::Opening => {
+            conn.queue.push_front(job);
+            conn.requeued += 1;
+            if conn.health == Health::Closed {
+                start_open(app, host, c);
+            }
+        }
+        _ => dispatch(app, host, c, job),
     }
 }
 
@@ -407,7 +429,7 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
             let (due, wait): (Vec<_>, Vec<_>) = std::mem::take(&mut app.st.store.retry).into_iter().partition(|r| r.0 <= now);
             app.st.store.retry = wait;
             for (_, c, job) in due {
-                dispatch(app, host, c, job);
+                retry(app, host, c, job);
             }
             arm_retry(app, host);
         }
@@ -735,28 +757,33 @@ mod tests {
         let (mut app, mut host, mut db) = boot();
         open(&mut app, &mut host);
         db.pump(&mut app, &mut host);
-        // One failure: retried after 250 ms; a write issued meanwhile waits behind it, a read does not.
+        // One failure: retried after 250 ms; a write issued meanwhile waits behind it, a read does not — unless
+        // it was issued after a write that waits.
         db.fail_writes.extend([status::QUOTA]);
-        let (first, second, read) = (app.req(Mod::Store), app.req(Mod::Store), app.req(Mod::Store));
+        let (first, second, read, read_after) = (app.req(Mod::Store), app.req(Mod::Store), app.req(Mod::Store), app.req(Mod::Store));
         let mut t = Tx::new();
         t.doc_put(DOC, &DocRecord::default());
         t.ops_append(DOC, ACTOR, 1, b"one");
         tx(&mut app, &mut host, first, t);
         db.pump_io(&mut app, &mut host);
         let mut t = Tx::new();
+        t.count(Store::Ops, Range::All);
+        tx(&mut app, &mut host, read, t);
+        let mut t = Tx::new();
         t.ops_append(DOC, ACTOR, 2, b"two");
         tx(&mut app, &mut host, second, t);
         let mut t = Tx::new();
         t.count(Store::Ops, Range::All);
-        tx(&mut app, &mut host, read, t);
+        tx(&mut app, &mut host, read_after, t);
         db.pump_io(&mut app, &mut host);
         assert_eq!(Value::decode(&db.take(read).unwrap().1), Some(0.0.into()));
-        assert!(db.take(first).is_none() && db.take(second).is_none());
+        assert!(db.take(first).is_none() && db.take(second).is_none() && db.take(read_after).is_none());
         let t0 = host.now;
         db.pump(&mut app, &mut host);
         assert_eq!(host.now - t0, 250.0);
         assert_eq!((db.take(first).unwrap().0, db.take(second).unwrap().0), (status::OK, status::OK));
-        assert_eq!(db.order, [read, first, second], "the journal order survives the retry");
+        assert_eq!(Value::decode(&db.take(read_after).unwrap().1), Some(2.0.into()), "a read sees the writes issued before it");
+        assert_eq!(db.order, [read, first, second, read_after], "the journal order survives the retry");
         assert_eq!(health(&app), Health::Ready);
 
         // Four failures in a row: 250 + 500 + 1000 ms, then degraded; the queued write is refused.
@@ -787,6 +814,148 @@ mod tests {
         let mut t = Tx::new();
         t.ops_append(DOC, ACTOR, 3, b"three");
         assert_eq!(run_on(&mut app, &mut host, &mut db, t).0, status::OK);
+    }
+
+    fn append(app: &mut App, host: &mut crate::host::FakeHost, seq: u32) -> u32 {
+        let req = app.req(Mod::Store);
+        let mut t = Tx::new();
+        t.ops_append(DOC, ACTOR, seq, &[seq as u8]);
+        tx(app, host, req, t);
+        req
+    }
+
+    /// The stored `docs.seq[ACTOR]` and the seqs of the journal.
+    fn journal(app: &mut App, host: &mut crate::host::FakeHost, db: &mut MemDb) -> (Option<u32>, Vec<u32>) {
+        let mut t = Tx::new();
+        t.doc_get(DOC);
+        t.ops_scan(DOC);
+        let req = app.req(Mod::Store);
+        tx(app, host, req, t);
+        db.pump(app, host);
+        let (status, data) = db.take(req).unwrap();
+        let mut reply = Reply::new(&Io { req, status, obj: 0, data: &data });
+        let seq = reply.doc().and_then(|record| record.seq.get(ACTOR).copied());
+        (seq, reply.ops().iter().map(|op| op.1).collect())
+    }
+
+    #[test]
+    fn writes_in_flight_together_keep_their_order_through_a_quota_retry() {
+        let (mut app, mut host, mut db) = boot();
+        open(&mut app, &mut host);
+        db.pump(&mut app, &mut host);
+        let mut t = Tx::new();
+        t.doc_put(DOC, &DocRecord::default());
+        assert_eq!(run_on(&mut app, &mut host, &mut db, t).0, status::OK);
+        db.order.clear();
+        // Two batches issued back to back, as while writing; the first one hits the quota once.
+        db.fail_writes.extend([status::QUOTA]);
+        let (one, two) = (append(&mut app, &mut host, 1), append(&mut app, &mut host, 2));
+        db.step(&mut app, &mut host);
+        assert_eq!(db.transactions, 2, "one write in flight: the second waits for the first");
+        db.pump(&mut app, &mut host);
+        assert_eq!(db.order, [one, two]);
+        assert_eq!((db.take(one).unwrap().0, db.take(two).unwrap().0), (status::OK, status::OK));
+        assert_eq!(journal(&mut app, &mut host, &mut db), (Some(2), vec![1, 2]));
+
+        // The first one never fits: the ones behind it are refused, so no batch is durable past a hole.
+        db.fail_writes.extend([status::QUOTA; 4]);
+        let (three, four, read) = (append(&mut app, &mut host, 3), append(&mut app, &mut host, 4), app.req(Mod::Store));
+        let mut t = Tx::new();
+        t.count(Store::Ops, Range::All);
+        tx(&mut app, &mut host, read, t);
+        db.pump(&mut app, &mut host);
+        assert_eq!((db.take(three).unwrap().0, db.take(four).unwrap().0), (status::QUOTA, status::DEGRADED));
+        assert_eq!(Value::decode(&db.take(read).unwrap().1), Some(2.0.into()), "reads still run");
+        assert_eq!(journal(&mut app, &mut host, &mut db), (Some(2), vec![1, 2]));
+    }
+
+    #[test]
+    fn a_read_sees_every_write_issued_before_it() {
+        let (mut app, mut host, mut db) = boot();
+        let mut t = Tx::new();
+        t.doc_put(DOC, &DocRecord::default());
+        let put = app.req(Mod::Store);
+        tx(&mut app, &mut host, put, t);
+        let (one, two) = (append(&mut app, &mut host, 1), append(&mut app, &mut host, 2));
+        assert_eq!(journal(&mut app, &mut host, &mut db), (Some(2), vec![1, 2]));
+        assert_eq!(db.order[..3], [put, one, two]);
+    }
+
+    #[test]
+    fn the_stored_seq_never_goes_back() {
+        let (mut app, mut host, mut db) = boot();
+        let mut record = DocRecord::default();
+        let mut t = Tx::new();
+        t.doc_put(DOC, &record);
+        t.ops_append(DOC, ACTOR, 2, b"two");
+        t.ops_append(DOC, ACTOR, 1, b"one");
+        t.persist(ACCOUNT, DOC, &mut record, Record::Seq { actor: ACTOR, seq: 5 });
+        t.persist(ACCOUNT, DOC, &mut record, Record::Seq { actor: ACTOR, seq: 4 });
+        t.persist(ACCOUNT, DOC, &mut record, Record::Seq { actor: ACTOR + 1, seq: 1 });
+        assert_eq!(run_on(&mut app, &mut host, &mut db, t).0, status::OK);
+        assert_eq!(journal(&mut app, &mut host, &mut db), (Some(5), vec![1, 2]));
+        assert_eq!(record.seq, [(ACTOR, 5), (ACTOR + 1, 1)].into(), "the in-memory record follows the stored one");
+    }
+
+    #[test]
+    fn references_that_arrive_before_the_bytes_are_kept_and_the_bytes_are_stored() {
+        let (mut app, mut host, mut db) = boot();
+        let hash = [0x5au8; 32];
+        // A received batch references the asset; its bytes come later from a peer or the relay.
+        let mut t = Tx::new();
+        t.asset_ref(&hash, 1, true);
+        t.asset_get(&hash);
+        let (status, r) = run_on(&mut app, &mut host, &mut db, t);
+        assert_eq!(status, status::OK);
+        assert_eq!(r, [1.0.into(), Value::obj([("refs", 1.0.into())])], "counted, no blob yet");
+        let mut t = Tx::new();
+        t.asset_put(&hash, 41, "image/png", 10.0);
+        t.asset_put(&hash, 42, "image/png", 10.0);
+        t.asset_get(&hash);
+        t.asset_ref(&hash, -1, true);
+        t.asset_get(&hash);
+        let (status, r) = run_on(&mut app, &mut host, &mut db, t);
+        assert_eq!(status, status::OK);
+        assert!(r[0].get("blob").is_undef(), "the first put stored the bytes");
+        let blob = Value::Blob { obj: 41, size: 10.0, mime: "image/png".into() };
+        let stored = Value::obj([("refs", 1.0.into()), ("blob", blob), ("mime", "image/png".into()), ("size", 10.0.into())]);
+        assert_eq!(r[1..3], [stored.clone(), stored], "the second put finds them; the count is kept");
+        assert_eq!(r[3..], [0.0.into(), Value::Undef], "collected at zero");
+    }
+
+    #[test]
+    fn a_retry_that_comes_due_while_the_database_reopens_keeps_its_place() {
+        let (mut app, mut host, mut db) = boot();
+        open(&mut app, &mut host);
+        db.pump(&mut app, &mut host);
+        db.fail_writes.extend([status::QUOTA]);
+        let (write, read, later) = (app.req(Mod::Store), app.req(Mod::Store), app.req(Mod::Store));
+        let mut t = Tx::new();
+        t.ops_put(DOC, ACTOR, 1, b"x");
+        tx(&mut app, &mut host, write, t);
+        db.pump_io(&mut app, &mut host);
+        // The connection goes away during the backoff; a read finds out and the store opens it again.
+        db.close_all();
+        let mut t = Tx::new();
+        t.count(Store::Ops, Range::All);
+        tx(&mut app, &mut host, read, t);
+        let mut t = Tx::new();
+        t.ops_put(DOC, ACTOR, 2, b"x");
+        tx(&mut app, &mut host, later, t);
+        db.step(&mut app, &mut host);
+        assert_eq!(health(&app), Health::Opening);
+        // The backoff ends before the open does.
+        host.advance(RETRY_MS);
+        let mut w = ihn_core::codec::Writer::default();
+        w.u32(T_RETRY);
+        app.event(&mut host, crate::abi::kind::TIMER, &w.buf);
+        assert!(db.take(write).is_none());
+        db.pump(&mut app, &mut host);
+        assert_eq!(db.order, [write, read, later]);
+        assert_eq!(db.take(write).unwrap().0, status::OK);
+        assert_eq!(Value::decode(&db.take(read).unwrap().1), Some(1.0.into()));
+        assert_eq!(db.take(later).unwrap().0, status::OK);
+        assert_eq!((health(&app), degraded(&app)), (Health::Ready, false));
     }
 
     #[test]

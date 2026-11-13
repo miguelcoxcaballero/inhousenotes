@@ -100,8 +100,9 @@ test('transactions, the frozen schema, locks and the actor slot against the real
     [[DOC, ACTOR, 1], text('one')],
     [[DOC, 0], u8(0, 0, 0, 0, 0), [DOC, 2], u8(2, 2, 2, 2, 2), [DOC, 10], u8(10, 10, 10, 10, 10)]
   ]);
-  // 3: SyncRecord writes + a received batch + own seq 2 + trim, one strict transaction → 4: what is stored.
-  expect(steps[3].results).toEqual([true, true, true, UNDEF, UNDEF, UNDEF, true, UNDEF]);
+  // 3: SyncRecord writes + a received batch + own seq 2 + trim, one strict transaction; then a late seq 1 (the
+  // stored seq stays 2) and an asset that is referenced before its bytes arrive → 4: what is stored.
+  expect(steps[3].results).toEqual([true, true, true, UNDEF, UNDEF, UNDEF, true, UNDEF, true, 1, { refs: 1 }]);
   expect(steps[4].results).toEqual([
     {
       ...record,
@@ -119,10 +120,11 @@ test('transactions, the frozen schema, locks and the actor slot against the real
     },
     [[DOC, REMOTE, 5], text('remote'), [DOC, ACTOR, 2], text('two')],
     ['id-1'],
-    [[DOC, ACTOR, 2], text('two')]
+    [[DOC, ACTOR, 2], text('two')],
+    { refs: 1, blob: u8(9), mime: 'x/y', size: 1 }
   ]);
-  // 5: the document, its journal and chunks are gone.
-  expect(steps[5].results).toEqual([UNDEF, UNDEF, UNDEF, 0, 0, 0]);
+  // 5: the document, its journal and chunks are gone; the asset is collected with its last reference.
+  expect(steps[5].results).toEqual([UNDEF, UNDEF, UNDEF, 0, 0, 0, 0, 0]);
   // 6..10: granted, busy for a second ifAvailable request, a waiting request is pending and takes over on release;
   // released again, the next request gets it.
   const lock = 'ihn6-selftest:ihn6-selftest-basic';
