@@ -40,6 +40,9 @@ export async function profile({ app = 'v5', root, overlay = null, throttle = 1, 
     await page.waitForFunction(() => self.__IHN_TEST_API__, null, { timeout: 30_000 });
     await page.evaluate(() => self.__IHN_TEST_API__.ready());
     await page.waitForSelector('canvas.page-canvas', { state: 'visible', timeout: 60_000 });
+    // A document opened from its link starts in Read mode; the profile measures an editing session.
+    await page.locator('#mode-toggle-btn').first().click();
+    await page.waitForFunction(() => { const pen = document.querySelector('[data-tool="pen"]'); return pen && !pen.disabled; }, null, { timeout: 15_000 });
     await sleep(8000);                                   // open settles: later pages, first save decisions
     const opened = await page.evaluate(() => ({ canvases: document.querySelectorAll('canvas.page-canvas').length, pages: document.querySelectorAll('.page-wrapper').length }));
     log(`opened ${JSON.stringify(opened)} after ${mock.calls.length} requests`);
