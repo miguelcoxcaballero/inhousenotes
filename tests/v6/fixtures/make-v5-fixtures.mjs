@@ -1,7 +1,7 @@
 // Generates the 5.x fixtures of TESTING §5 by driving 5.18.0 itself (the tree of commit 1d6e8a0), under the parity
 // harness' determinism (fixed clock, seeded randomness, also in workers), so a second run gives the same bytes.
 //
-//   node tests/v6/fixtures/make-v5-fixtures.mjs [--only template,r0] [--skip-storage] [--skip-pdf] [--check]
+//   node tests/v6/fixtures/make-v5-fixtures.mjs [--only template,r0] [--skip-storage] [--skip-pdf] [--check] [--out dir]
 //
 // `--check` regenerates into a temporary directory and compares with the committed files (exit 1 on any difference).
 //
@@ -24,7 +24,7 @@ import { FOLDER } from '../mock/drive.mjs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2), flag = name => args.includes(`--${name}`), opt = name => { const i = args.indexOf(`--${name}`); return i < 0 ? '' : args[i + 1]; };
 const CHECK = flag('check'), ONLY = opt('only').split(',').filter(Boolean);
-const OUT = CHECK ? fs.mkdtempSync(path.join(os.tmpdir(), 'ihn-v5-fixtures-')) : path.join(HERE, 'v5');
+const OUT = opt('out') ? path.resolve(opt('out')) : CHECK ? fs.mkdtempSync(path.join(os.tmpdir(), 'ihn-v5-fixtures-')) : path.join(HERE, 'v5');
 const CELL = { viewport: 'desktop-1280', theme: 'light', mode: 'web' };
 const seedOf = name => { let h = 2166136261; for (const c of name) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return (h >>> 0) || 1; };
 
@@ -33,6 +33,8 @@ const LIB = () => {
   const b64 = bytes => { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); };
   const unb64 = text => { const s = atob(text), out = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i); return out; };
   const sha = async data => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', typeof data === 'string' ? new TextEncoder().encode(data) : data)), b => b.toString(16).padStart(2, '0')).join('');
+  // blob: URLs are random; what they point to is not
+  const bytesOf = async url => /^blob:/.test(url) ? new Uint8Array(await (await fetch(url)).arrayBuffer()) : String(url);
   self.mk = {
     b64, unb64, sha,
     /** A handwriting-like stroke: `n` points starting at (x, y). */
@@ -42,8 +44,8 @@ const LIB = () => {
     add(pageIndex, strokes) { const page = state.pages[pageIndex]; page.strokes.push(...strokes); page.strokeCount = getVisibleStrokeCount(page); markPageDirty(pageIndex, 'full'); },
     async pdf() { return b64(new Uint8Array(await (await buildPdfBlob({ status: false })).arrayBuffer())); },
     async importPdf(base64) { await __IHN_TEST_API__.ready(); await __IHN_TEST_API__.importPdfBlobForTest(Array.from(unb64(base64))); },
-    /** The PDF `/Keywords` of an exported document, read with the vendored pdf-lib. */
-    async keywords(base64) { const doc = await PDFLib.PDFDocument.load(unb64(base64), { updateMetadata: false }); return doc.getKeywords() || ''; },
+    /** The PDF `/Keywords` of an exported document, read with the vendored pdf.js (as the app does). */
+    async keywords(base64) { const task = pdfjsLib.getDocument({ data: unb64(base64) }), doc = await task.promise; try { return String((await doc.getMetadata()).info?.Keywords || ''); } finally { await task.destroy(); } },
     async rewriteKeywords(base64, change) {
       const doc = await PDFLib.PDFDocument.load(unb64(base64), { updateMetadata: false });
       doc.setKeywords([await change(doc.getKeywords() || '')]);
@@ -59,10 +61,10 @@ const LIB = () => {
         const strokeRow = s => [s.id ?? null, s.tool ?? null, s.color ?? null, s.width ?? null, Array.isArray(s.points) ? s.points.length : 0];
         pages.push({
           pageId: p.pageId, pageWidth: p.pageWidth, pageHeight: p.pageHeight, templateKind: p.templateKind, backgroundSource: p.backgroundSource,
-          pdfPageIndex: p.pdfPageIndex ?? null, backgroundImage: p.backgroundImage ? await sha(p.backgroundImage) : null, sidePanel: p.sidePanel || null,
+          pdfPageIndex: p.pdfPageIndex ?? null, backgroundImage: p.backgroundImage ? await sha(await bytesOf(p.backgroundImage)) : null, sidePanel: p.sidePanel || null,
           strokes: (p.strokes || []).map(strokeRow),
           pointsSha256: await sha(JSON.stringify((p.strokes || []).map(s => (s.points || []).map(q => [q.x, q.y, q.p ?? null])))),
-          images: await Promise.all((p.images || []).map(async im => ({ id: im.id ?? null, x: im.x, y: im.y, width: im.width, height: im.height, rotation: im.rotation ?? 0, srcSha256: await sha(String(im.src || '')) }))),
+          images: await Promise.all((p.images || []).map(async im => ({ id: im.id ?? null, x: im.x, y: im.y, width: im.width, height: im.height, rotation: im.rotation ?? 0, srcSha256: await sha(await bytesOf(String(im.src || ''))) }))),
           deletedStrokeIds: [...(p.deletedStrokeIds || [])], legacyCoverStrokes: (p.legacyCoverStrokes || []).map(strokeRow)
         });
       }
@@ -70,7 +72,8 @@ const LIB = () => {
         app: '5.18.0', exportName: state.exportName || '', pageCount: state.pages.length,
         strokeCount: pages.reduce((n, p) => n + p.strokes.length, 0), imageCount: pages.reduce((n, p) => n + p.images.length, 0),
         hasLegacyBakedOverlay: !!state.hasLegacyBakedOverlay, cleanOriginalBytes: state.cleanOriginalPdfBytes ? state.cleanOriginalPdfBytes.byteLength : 0,
-        versions: (state.versionHistory || []).map(v => ({ id: v.id, ts: v.ts ?? v.timestamp ?? null, milestone: !!v.milestone, pages: Array.isArray(v.pages) ? v.pages.length : null })),
+        // every scalar field of a timeline entry (id, ts, author, label, milestone flags, hashes…) plus its page count
+        versions: (state.versionHistory || []).map(v => ({ ...Object.fromEntries(Object.entries(v).filter(([, x]) => x === null || ['string', 'number', 'boolean'].includes(typeof x))), pageCount: Array.isArray(v.pages) ? v.pages.length : null })),
         pages
       };
     }
@@ -79,8 +82,8 @@ const LIB = () => {
 
 // ---- sessions ----
 let server, browser;
-async function session(name, { drive, account = null, scene, sceneOptions, settleMs } = {}) {
-  const t = new Driver({ browser, baseUrl: server.url, cell: CELL, state: { drive }, seed: seedOf(name), trace: false });
+async function session(name, { drive, driveExtra, account = null, scene, sceneOptions, settleMs } = {}) {
+  const t = new Driver({ browser, baseUrl: server.url, cell: CELL, state: { drive: mock => { drive?.(mock); driveExtra?.(mock); } }, seed: seedOf(name), trace: false });
   await t.start();
   await t.open({ account, scene, sceneOptions, settleMs });
   await t.page.evaluate(`(${LIB})()`);
@@ -92,16 +95,19 @@ async function editor(t, pages, title) {
   await t.advance(400);
 }
 const pageBox = (t, index = 0) => t.page.evaluate(i => { const r = document.querySelector(`canvas.page-canvas[data-page="${i}"]`).getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; }, index);
-/** Handwriting through real pen input: `rows` lines of loops inside the visible part of the page. */
-async function write(t, { rows = 3, perRow = 4, top = 0.12, tool = 'pen' } = {}) {
-  await t.click(`#toolbar [data-tool="${tool}"], [data-tool="${tool}"]`);
-  const box = await pageBox(t);
+/**
+ * Handwriting through real pen input: `rows` lines of loops on the first page, starting `y` CSS px below the top of
+ * its visible part (the pointer must stay inside the viewport).
+ */
+async function write(t, { rows = 3, perRow = 4, y = 110, tool = 'pen', settle = true } = {}) {
+  await t.click(`[data-tool="${tool}"]`);
+  const box = await pageBox(t), top = Math.max(box.y, 70);
   for (let r = 0; r < rows; r++) for (let c = 0; c < perRow; c++) {
-    const x0 = box.x + box.w * (0.1 + c * 0.2), y0 = box.y + box.h * top + r * 46;
+    const x0 = box.x + box.w * (0.1 + c * 0.2), y0 = top + y + r * 46;
     await t.pen(Array.from({ length: 18 }, (_, k) => ({ x: x0 + k * 4.5, y: y0 + Math.sin(k / 2.2 + c) * 14, t: k * 8, p: 0.3 + (k % 6) * 0.08 })));
     await t.advance(120);
   }
-  await t.advance(800);
+  if (settle) await t.advance(800);
 }
 const pdfOf = t => t.job(() => mk.pdf()).then(text => Buffer.from(text, 'base64'));
 
@@ -130,7 +136,7 @@ const documents = {
   async template(t) {
     await editor(t, 3, 'Template notebook');
     await write(t, { rows: 3, perRow: 4 });
-    await write(t, { rows: 1, perRow: 3, top: 0.42, tool: 'highlighter' });
+    await write(t, { rows: 1, perRow: 3, y: 300, tool: 'highlighter' });
     await t.job(async () => { mk.add(1, [mk.stroke('tpl-p2-a', 80, 140, 40), mk.stroke('tpl-p2-b', 80, 220, 40, { color: '#c62828', width: 3 }), mk.stroke('tpl-p2-hl', 80, 300, 30, { tool: 'highlighter', color: '#ffeb3b', width: 14 })]); });
     return pdfOf(t);
   },
@@ -338,21 +344,168 @@ async function makeDocuments() {
 }
 
 // ---- storage dumps ----
-/*STORAGE*/
-async function makeStorage() {}
+// Each scenario is a 5.18.0 session driven through its UI against the mock Drive (Ana signed in), stopped at the
+// moment a device would be when the user updates to v6; then localStorage, sessionStorage and every IndexedDB database
+// are dumped. `expect` lists what v6's migration must preserve: the stroke ids the device holds and Drive does not.
+const library = scenes => mock => {
+  addAccounts(mock);
+  mock.drive.addFile({ id: 'dump-folder', name: 'Notebooks', mimeType: FOLDER, owner: ANA, modifiedTime: '2026-10-20T08:00:00.000Z' });
+  for (const scene of scenes) mock.drive.addFile({ id: `scene-${scene}`, name: `${scene}.pdf`, owner: ANA, data: fs.readFileSync(path.join(HERE, 'v5', `${scene}.pdf`)), modifiedTime: '2026-10-29T09:00:00.000Z' });
+};
+/** A Drive document opened through its link, switched from Read to Edit like a user would. */
+async function openScene(name, scene, extra = {}) {
+  const t = await session(`storage:${name}`, { drive: library([scene]), account: ANA, scene, settleMs: 6000, ...extra });
+  await t.click('#mode-toggle-btn');
+  await t.advance(600);
+  return t;
+}
+/** Home of a returning user with the library listed (5.18.0 shows a fresh device's lists at its first 30 s refresh). */
+async function home(name, scenes = ['template']) {
+  const t = await session(`storage:${name}`, { drive: library(scenes), account: ANA, settleMs: 3000 });
+  await t.advance(31_000, { step: 100 });
+  return t;
+}
+
+const storage = {
+  // A Drive document edited while offline: offline snapshot + outbox row, nothing uploaded.
+  async 'offline-dirty'() {
+    const t = await openScene('offline-dirty', 'template');
+    t.mock.offline = true;
+    await write(t, { rows: 1, perRow: 3, y: 420 });
+    await t.advance(12_000, { step: 100 });
+    return t;
+  },
+  // A document created on this device while offline (`local-…` id) and written in; never uploaded.
+  async 'local-doc'() {
+    const t = await home('local-doc');
+    t.mock.offline = true;
+    await t.click('#btn-drive-new');
+    await t.advance(300);
+    await t.click('#drive-create-pdf');
+    await t.advance(600);
+    await t.type('#folder-picker-name', 'Offline notebook');
+    await t.click('#folder-picker-confirm');
+    await t.advance(4000, { step: 50 });
+    await write(t, { rows: 2, perRow: 3 });
+    await t.advance(12_000, { step: 100 });
+    return t;
+  },
+  // A folder created while offline: a pending `local-…` catalogue entry.
+  async 'local-folder'() {
+    const t = await home('local-folder');
+    t.mock.offline = true;
+    await t.click('.home-nav-tab[data-home-tab="files"]');
+    await t.advance(600);
+    await t.click('#btn-folder-view-new-folder, #btn-drive-new-folder');
+    await t.advance(400);
+    await t.type('#new-folder-name', 'Offline folder');
+    await t.click('#new-folder-confirm');
+    await t.advance(6000, { step: 100 });
+    return t;
+  },
+  // Strokes journalled in `stroke-ops` and not yet folded into a checkpoint or the offline snapshot.
+  async 'stroke-ops-pending'() {
+    const t = await openScene('stroke-ops-pending', 'r0');
+    await t.advance(6000, { step: 100 });
+    await write(t, { rows: 1, perRow: 2, y: 420, settle: false });
+    await t.advance(300);
+    return t;
+  },
+  // The user left for Home while the upload could not finish: pending-exit marker, dirty document.
+  async 'pending-exit'() {
+    const t = await openScene('pending-exit', 'r0', { driveExtra: mock => mock.inject({ path: '/upload/drive/', times: Infinity, hold: true }) });
+    await write(t, { rows: 1, perRow: 3, y: 420 });
+    await t.click('#btn-drive-home');
+    await t.advance(4000, { step: 100 });
+    return t;
+  },
+  // Offline edits, closed to Home; meanwhile another device replaced the Drive revision (R1). Back online the outbox
+  // runner writes both full PDFs to `recoveries` before it merges; the upload itself never completes.
+  async recoveries() {
+    const t = await openScene('recoveries', 'r0');
+    t.mock.offline = true;
+    await write(t, { rows: 1, perRow: 2, y: 420 });
+    await t.advance(12_000, { step: 100 });
+    await t.click('#btn-drive-home');
+    await t.advance(3000, { step: 100 });
+    t.mock.drive.handle({ method: 'PATCH', url: 'https://www.googleapis.com/upload/drive/v3/files/scene-r0?uploadType=media', headers: { authorization: `Bearer ${t.mock.drive.accounts.get(ANA).token}`, 'content-type': 'application/pdf' }, body: fs.readFileSync(path.join(HERE, 'v5', 'r1.pdf')) });
+    t.mock.inject({ path: '/upload/drive/', times: Infinity, hold: true });
+    t.mock.offline = false;
+    // The app is started again (as after the device was put away): the outbox runner, not the editor, owns the draft.
+    await t.page.goto(`${server.url}/?e2e=1`, { waitUntil: 'commit' });
+    await t.advance(90_000, { step: 250 });
+    return t;
+  },
+  // The hidden background processor as the Android host runs it (`/?offline-worker=1`): its own `background-`
+  // databases and localStorage keys next to the foreground ones, with an upload still in flight.
+  async 'background-worker'() {
+    const t = await openScene('background-worker', 'r0');
+    t.mock.offline = true;
+    await write(t, { rows: 1, perRow: 2, y: 420 });
+    await t.advance(12_000, { step: 100 });
+    await t.click('#btn-drive-home');
+    await t.advance(3000, { step: 100 });
+    t.mock.inject({ path: '/upload/drive/', times: Infinity, hold: true });
+    t.mock.offline = false;
+    const worker = await t.context.newPage();
+    await worker.goto(`${server.url}/?inhouse_app=1&offline-worker=1&e2e=1`, { waitUntil: 'commit' });
+    for (let ms = 0; ms < 40_000; ms += 250) { await t.advance(250, { step: 250 }); await worker.evaluate(ms => globalThis.__pwClock.controller.runFor(ms), 250); while (t.mock.next()) await new Promise(r => setTimeout(r, 5)); }
+    t.extraPages = [worker];
+    return t;
+  },
+  // Page bodies checkpointed by the processing worker: `__inkCheckpoint` with codec `xor-v1`.
+  async 'xor-packed'() {
+    const t = await openScene('xor-packed', 'template');
+    await write(t, { rows: 2, perRow: 4, y: 420 });
+    await t.advance(15_000, { step: 100 });
+    return t;
+  }
+};
+
+// Revisions another device wrote to Drive during the scenario: their strokes are not this device's unsynced work.
+const ALSO_ON_DRIVE = { recoveries: ['r1'] };
+
+async function makeStorage() {
+  const dir = path.join(OUT, 'storage');
+  fs.mkdirSync(dir, { recursive: true });
+  for (const [name, run] of Object.entries(storage)) {
+    if (ONLY.length && !ONLY.includes(name)) continue;
+    const t = await run();
+    try {
+      const dump = await dumpStorage(t.page);
+      const live = await t.page.evaluate(() => ({
+        driveFileId: state.driveFileId || null, exportName: state.exportName || '', editorOpen: !document.getElementById('editor-view')?.classList.contains('hidden'),
+        pages: state.pages.map(p => ({ pageId: p.pageId, strokeIds: (p.strokes || []).map(s => s.id) })),
+        offline: self.InhouseOfflineLibrary ? { account: InhouseOfflineLibrary.account(), sync: InhouseOfflineLibrary.syncStatus() } : null
+      }));
+      // Stroke ids of the Drive copy, read from the fixture's import record: the rest exists only on this device.
+      const source = /^scene-(.+)$/.exec(live.driveFileId || '')?.[1];
+      const known = new Set([source, ...(ALSO_ON_DRIVE[name] || [])].filter(Boolean).flatMap(fixture => JSON.parse(fs.readFileSync(path.join(HERE, 'v5', `${fixture}.expect.json`), 'utf8')).pages.flatMap(p => p.strokes.map(s => s[0]))));
+      const stores = Object.fromEntries(dump.indexedDB.map(db => [db.name, Object.fromEntries(db.stores.map(s => [s.name, s.records.length]))]));
+      const codecs = [...new Set(dump.indexedDB.flatMap(db => db.stores.flatMap(s => s.records.map(r => r.value?.__inkCheckpoint?.codec || r.value?.snapshot?.pages?.map?.(p => p?.__inkCheckpoint?.codec).filter(Boolean).join(',') || null))).filter(Boolean))].sort();
+      const expect = { scenario: name, app: '5.18.0', account: ANA, document: { id: live.driveFileId, name: live.exportName, driveFixture: source || null, pages: live.pages },
+        unsyncedStrokeIds: live.pages.flatMap(p => p.strokeIds).filter(id => !known.has(id)), editorOpen: live.editorOpen, offline: live.offline,
+        stores, inkCodecs: codecs, localStorageKeys: Object.keys(dump.localStorage), sessionStorageKeys: Object.keys(dump.sessionStorage),
+        driveRequests: t.mock.drive.log.filter(l => l.method !== 'GET').map(l => `${l.method} ${l.path} ${l.status}`) };
+      fs.writeFileSync(path.join(dir, `${name}.dump.json`), JSON.stringify(dump) + '\n');
+      fs.writeFileSync(path.join(dir, `${name}.expect.json`), JSON.stringify(expect, null, 1) + '\n');
+      console.log(`storage/${name}: ${(JSON.stringify(dump).length / 1024).toFixed(0)} KiB — doc ${live.driveFileId}, ${expect.unsyncedStrokeIds.length} unsynced strokes, codecs [${codecs}], stores ${JSON.stringify(stores)}${t.problems.length ? ' problems: ' + t.problems.join('; ') : ''}`);
+    } finally { await t.stop(); }
+  }
+}
 
 async function main() {
   server = await startServer({ root: ensureV5Ref() });
   browser = await launchBrowser();
   try {
     if (!flag('skip-pdf')) await makeDocuments();
-    if (!flag('skip-storage')) await makeStorage({ session, editor, write, pdfOf, out: path.join(OUT, 'storage'), only: ONLY, v5: path.join(HERE, 'v5') });
+    if (!flag('skip-storage')) await makeStorage();
   } finally { await browser.close(); await server.close(); }
   if (CHECK) {
     const committed = path.join(HERE, 'v5'), bad = [];
     const walk = dir => fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]);
     for (const file of walk(OUT)) { const rel = path.relative(OUT, file), other = path.join(committed, rel); if (!fs.existsSync(other) || !fs.readFileSync(other).equals(fs.readFileSync(file))) bad.push(rel); }
-    fs.rmSync(OUT, { recursive: true, force: true });
+    if (!opt('out')) fs.rmSync(OUT, { recursive: true, force: true });
     console.log(bad.length ? `DIFFERENT: ${bad.join(', ')}` : 'Fixtures regenerate byte-identically.');
     process.exit(bad.length ? 1 : 0);
   }
