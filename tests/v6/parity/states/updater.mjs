@@ -1,8 +1,10 @@
 // The shared updater's screens in the Android app (TESTING §3.3 row "updater"; spec/shell §14.5): the JavaScript
 // is the same file in both apps, so this pins how v6 creates it — version, channel, native bridge, container.
-import { parity } from '../run.mjs';
+import { parity as register } from '../run.mjs';
+import { shellOnly } from '../support/shell-only.mjs';
 import { fixtures, ANA } from '../../mock/fixtures.mjs';
 
+const parity = (name, options, script) => register(name, options, shellOnly(script));
 const APP = { only: { modes: ['app'] } };
 const offer = mock => { fixtures.empty(mock); mock.github.setCatalog('B', [{ version: '1.0.29', versionCode: 30, changelog: 'Inhouse Notes 6.' }]); };
 const dialog = '#inhouse-services-update';

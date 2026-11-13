@@ -1,10 +1,15 @@
 // The Home profile menu and what it starts (TESTING §3.3 row "profile-menu"): the menu itself, night mode, Refresh,
-// the fullscreen button, the Soon toast and the offline status line. Home's lists behind the menu are W4.1's.
-import { parity } from '../run.mjs';
+// the fullscreen button, the Soon toast and the menu while offline. Home's lists behind the menu are W4.1's.
+// The "offline status line" (`#drive-status`) is `display: none` in 5.18.0's stylesheet at every width, so no
+// screenshot can show it: its text is asserted in tests/v6/e2e/01-signin.spec.mjs, and the visible effect of going
+// offline on the shell is `auth/reconnect-offline`.
+import { parity as register } from '../run.mjs';
+import { shellOnly } from '../support/shell-only.mjs';
 import { fixtures, ANA } from '../../mock/fixtures.mjs';
 
 // The only intended difference in these states: the version label of the open profile menu (v5.18.0 → v6.0.0).
 const VERSION = { tags: ['VERSION-LABEL'], expected: t => t.page.evaluate(() => [...document.querySelectorAll('[data-app-version]')].map(n => n.getBoundingClientRect()).filter(r => r.width).map(r => ({ x: r.x, y: r.y, width: r.width, height: r.height }))) };
+const parity = (name, options, script) => register(name, options, shellOnly(script));
 const menu = async t => { await t.open({ account: ANA }); await t.click('#btn-drive-profile'); await t.advance(300); };
 
 parity('profile-menu/home', { ...VERSION, systemDark: true, app: true, drive: fixtures.empty }, menu);
@@ -56,11 +61,9 @@ parity('profile-menu/soon', { drive: fixtures.empty }, async t => {
   await t.capture('gone');
 });
 
-// Drive unreachable with a stored session: the offline status line and the menu over it.
+// Drive unreachable with a stored session: Home stays, the profile menu opens over it and works as ever.
 parity('profile-menu/offline', { ...VERSION, drive: mock => { fixtures.empty(mock); mock.offline = true; } }, async t => {
   await t.open({ account: ANA, settleMs: 8000 });
-  await t.capture('status-line');
   await t.click('#btn-drive-profile');
   await t.advance(300);
-  await t.capture('menu');
 });
