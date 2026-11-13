@@ -188,6 +188,7 @@ export class Driver {
   }
   /** Advances until `predicate()` (in the page) is true, in `step` slices, at most `timeout` fake ms. */
   async until(predicate, { timeout = 10_000, step = 100, arg } = {}) {
+    await this.settle({ frames: false });   // work already in flight finishes before the first look, not during it
     for (let waited = 0; ; waited += step) {
       if (await this.page.evaluate(predicate, arg).catch(() => false)) return waited;
       if (waited >= timeout) throw new Error(`until: not reached in ${timeout} ms of fake time: ${predicate}`);
@@ -264,10 +265,37 @@ export class Driver {
     if (lift) { await send('mouseReleased', points.at(-1), 0); await this.settle(); }
   }
 
+  /**
+   * Makes the pixels of scaled images independent of what was painted before. Chromium's software image cache
+   * serves a scaled draw from whatever larger decode of that image it already holds, and which ones it holds depends
+   * on the real frames painted earlier (intermediate sizes during an animation, a canvas that drew the image first):
+   * seen as ±1 levels in a Home card preview, in one capture of eight. So: every image is decoded, the cache is
+   * emptied (a simulated memory-pressure signal; nothing the page can observe), and every image is painted once
+   * unscaled-filtered (`image-rendering: pixelated`, which stores the full-size decode) and then again normally.
+   */
+  async #freshRaster() {
+    const frames = () => this.page.evaluate(() => self.__ihnDet ? self.__ihnDet.frames(2) : null).catch(() => {});
+    await this.page.evaluate(() => Promise.all(Array.from(document.images, image => image.complete && image.naturalWidth ? image.decode().catch(() => {}) : null))).catch(() => {});
+    await this.cdp.send('Memory.simulatePressureNotification', { level: 'critical' }).catch(() => {});
+    await this.page.evaluate(() => { const style = document.createElement('style'); style.id = '__ihn-raster'; style.textContent = '*, *::before, *::after { image-rendering: pixelated !important; }'; document.documentElement.appendChild(style); }).catch(() => {});
+    await frames();
+    await this.page.evaluate(() => { const style = document.getElementById('__ihn-raster'); if (style) style.remove(); }).catch(() => {});
+    await frames();
+    await this.settle();
+  }
+
   /** Takes a capture now: screenshot (the gate), normalized DOM and canvas trace (diagnostics). */
   async capture(label = '') {
     await this.settle();
-    const png = await this.page.screenshot({ type: 'png', caret: 'hide', animations: 'allow', scale: 'device' });
+    await this.#freshRaster();
+    const shoot = () => this.page.screenshot({ type: 'png', caret: 'hide', animations: 'allow', scale: 'device' });
+    let png = await shoot();
+    for (let tries = 0; tries < 5; tries++) {   // and it must hold still: two captures in a row are identical
+      await sleep(30);
+      const again = await shoot();
+      if (again.equals(png)) break;
+      png = again;
+    }
     const dom = await this.page.evaluate(normalizeDom);
     const trace = this.traceEnabled ? normalizeTrace(await this.page.evaluate(() => self.__ihnTrace ? self.__ihnTrace.take() : null)) : { surfaces: [] };
     let regions = null;

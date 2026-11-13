@@ -67,7 +67,11 @@
   if (g.Response) for (const name of ['arrayBuffer', 'text', 'json', 'blob', 'bytes', 'formData']) wrapAsync(g.Response.prototype, name);
   if (g.crypto && g.crypto.subtle) for (const name of ['digest', 'importKey', 'encrypt', 'decrypt', 'sign', 'verify', 'deriveBits', 'deriveKey', 'generateKey', 'exportKey']) wrapAsync(Object.getPrototypeOf(g.crypto.subtle), name);
   if (g.WebAssembly) for (const name of ['instantiate', 'instantiateStreaming', 'compile', 'compileStreaming']) wrapAsync(g.WebAssembly, name);
-  if (g.CompressionStream) { /* streams end in Response/Blob readers, which are tracked */ }
+  // Streams: a `reader.read()` loop (5.18.0's worker inflates this way) is work in flight between two chunks.
+  if (g.ReadableStreamDefaultReader) wrapAsync(g.ReadableStreamDefaultReader.prototype, 'read');
+  if (g.ReadableStreamBYOBReader) wrapAsync(g.ReadableStreamBYOBReader.prototype, 'read');
+  if (g.WritableStreamDefaultWriter) for (const name of ['write', 'close']) wrapAsync(g.WritableStreamDefaultWriter.prototype, name);
+  if (g.ReadableStream) wrapAsync(g.ReadableStream.prototype, 'pipeTo');
   if (g.HTMLImageElement) wrapAsync(g.HTMLImageElement.prototype, 'decode');
   // Task-queue yields run in real time: `await scheduler.yield()` / `postTask` loops are work in flight.
   if (g.Scheduler) for (const name of ['yield', 'postTask']) wrapAsync(g.Scheduler.prototype, name);
