@@ -15,9 +15,8 @@ use ihn_core::op::{Background, Template};
 
 /// 5.18.0 `A4_WIDTH` × `A4_HEIGHT`.
 pub const A4: (u32, u32) = (794, 1123);
-/// Ids asked for at once, and the level below which the pool is refilled (SYNC §8.2).
+/// Ids asked for at once (SYNC §8.2).
 pub const POOL_SIZE: usize = 20;
-pub const POOL_LOW: usize = 10;
 
 #[derive(Default)]
 struct Pending {
@@ -34,10 +33,8 @@ pub struct State {
     pool_req: u32,
     ids_req: u32,
     load_req: u32,
-    /// The pool was read for a creation (else: a refill check).
-    creating: bool,
-    /// The pool as last read or written.
-    pool: Vec<String>,
+    /// Drive was asked for ids for the pending creation.
+    asked: bool,
 }
 
 // v5: app-v5.js:normalizeDocTitleInput / sanitizeFilename
@@ -70,27 +67,19 @@ pub fn new_document(app: &mut App, host: &mut dyn Host, folder: &str, base_name:
     if app.st.doc_create.pending.is_some() || account.is_empty() {
         return false;
     }
+    app.st.doc_create.asked = false;
     app.st.doc_create.pending = Some(Pending { folder: folder.into(), name: normalize_title(base_name), account: account.clone(), id: String::new() });
     shell::show_view(app, host, View::Editor);
     shell::loading(app, host, "Creating PDF...");
-    read_pool(app, host, &account, true);
+    read_pool(app, host, &account);
     true
 }
 
-/// Refills the id pool of the signed-in account when it is low (called when a token appears and after a creation).
-pub fn refill(app: &mut App, host: &mut dyn Host) {
-    let account = auth::known_account(host);
-    if !account.is_empty() && app.st.doc_create.pool_req == 0 && app.st.doc_create.pending.is_none() {
-        read_pool(app, host, &account, false);
-    }
-}
-
-fn read_pool(app: &mut App, host: &mut dyn Host, account: &str, creating: bool) {
+fn read_pool(app: &mut App, host: &mut dyn Host, account: &str) {
     let mut t = StoreTx::new();
     t.kv_get(account, kv::IDPOOL);
     let req = app.req(Mod::DocCreate);
     app.st.doc_create.pool_req = req;
-    app.st.doc_create.creating = creating;
     store::tx(app, host, req, t);
 }
 
@@ -110,17 +99,13 @@ fn fail(app: &mut App, host: &mut dyn Host) {
 }
 
 fn pool_read(app: &mut App, host: &mut dyn Host, mut ids: Vec<String>) {
-    let creating = app.st.doc_create.creating;
     let account = auth::known_account(host);
-    if ids.len() < POOL_LOW && !shell::offline(app) && auth::token(app).is_some() && app.st.doc_create.ids_req == 0 {
+    // Keeping the pool filled is the relay's job (SYNC §8.2, `drive::relay`); a creation that finds it empty asks
+    // for ids itself when Drive can be reached.
+    if ids.is_empty() && !app.st.doc_create.asked && !shell::offline(app) && auth::token(app).is_some() {
+        app.st.doc_create.asked = true;
         let url = format!("https://www.googleapis.com/drive/v3/files/generateIds?count={POOL_SIZE}&space=drive&type=files");
         app.st.doc_create.ids_req = client::request(app, host, Mod::DocCreate, Req::get(&url));
-    }
-    if !creating {
-        app.st.doc_create.pool = ids;
-        return;
-    }
-    if ids.is_empty() && app.st.doc_create.ids_req != 0 {
         return; // the creation continues with the answer
     }
     let Some(p) = app.st.doc_create.pending.as_mut() else { return };
@@ -130,7 +115,6 @@ fn pool_read(app: &mut App, host: &mut dyn Host, mut ids: Vec<String>) {
     p.id = ids.remove(0);
     let (id, owner) = (p.id.clone(), p.account.clone());
     write_pool(app, host, &account, &ids);
-    app.st.doc_create.pool = ids;
     let req = app.req(Mod::DocCreate);
     app.st.doc_create.load_req = req;
     session::begin_new(app, host, &owner, &id, req);
@@ -181,28 +165,13 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
             app.st.doc_create.ids_req = 0;
             let body = if io.status >= 0 { crate::shell::fx::Response::parse(io.data).text() } else { "" };
             let fresh: Vec<String> = Json::parse(body).as_ref().and_then(|j| j.get("ids")).map(|ids| ids.items().iter().filter_map(|i| i.as_str().map(String::from)).collect()).unwrap_or_default();
-            let account = auth::known_account(host);
-            if fresh.is_empty() || account.is_empty() {
-                if app.st.doc_create.pending.as_ref().is_some_and(|p| p.id.is_empty()) && app.st.doc_create.load_req == 0 {
-                    fail(app, host);
-                }
-            } else if app.st.doc_create.pending.as_ref().is_some_and(|p| p.id.is_empty()) {
-                // The pool was empty: the creation was waiting for these ids.
-                app.st.doc_create.creating = true;
-                pool_read(app, host, fresh);
-            } else {
-                // A top-up: the fresh ids go behind what the pool still holds.
-                let mut ids = std::mem::take(&mut app.st.doc_create.pool);
-                ids.extend(fresh);
-                write_pool(app, host, &account, &ids);
-                app.st.doc_create.pool = ids;
-            }
+            // An empty answer leaves the pool empty: `pool_read` then fails the creation (it asks only once).
+            pool_read(app, host, fresh);
         }
         Event::Io(io) if io.req == app.st.doc_create.load_req => {
             app.st.doc_create.load_req = 0;
             session_ready(app, host);
         }
-        Event::Msg(m) if m.chan == shell::sig::ACCOUNT => refill(app, host),
         _ => {}
     }
     0
