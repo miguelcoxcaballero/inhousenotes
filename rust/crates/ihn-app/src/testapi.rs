@@ -340,6 +340,8 @@ mod tests {
     fn booted() -> (App, FakeHost) {
         let (mut app, mut host) = (App::new(Config { version: "6.0.0".into(), dpr: 1.0, flags: crate::abi::mode::E2E, ..Config::default() }), FakeHost::default());
         app.init(&mut host);
+        // The frame modules asked for while booting is painted before a test starts.
+        app.frame(&mut host, 0.0);
         host.take();
         (app, host)
     }
@@ -434,6 +436,9 @@ release 1025
 test_result \"true\"
 timer_set 4278190080 1 0
 ";
+        // Modules hold dynamic handles of their own since boot: the golden text counts from the first free one.
+        let base: u32 = text.split(' ').nth(1).and_then(|n| n.parse().ok()).unwrap_or(1024);
+        let golden = (0..8u32).rev().fold(golden.to_string(), |g, i| g.replace(&(1024 + i).to_string(), &(base + i).to_string()));
         assert_eq!(text, golden);
         let ops: std::collections::BTreeSet<&str> = golden.lines().filter_map(|l| l.split(' ').next()).collect();
         for (_, name, _) in crate::dom::LAYOUT {
@@ -445,7 +450,7 @@ timer_set 4278190080 1 0
         // Feed the events the host would send back and read the observations.
         let mut click = Writer::default();
         click.u32(CLICK);
-        click.u32(1027);
+        click.u32(base + 3);
         click.u8(ety::CLICK);
         click.u32(ev::EXACT);
         click.f64(5.0);
@@ -462,8 +467,8 @@ timer_set 4278190080 1 0
             click.str("");
         }
         click.u32(3);
-        click.u32(1027);
-        click.u32(1024);
+        click.u32(base + 3);
+        click.u32(base);
         click.u32(4);
         click.u32(0);
         click.u32(0);
@@ -478,7 +483,7 @@ timer_set 4278190080 1 0
         app.frame(&mut host, 16.0);
         host.take();
         let result = cmd(&mut app, &mut host, "app.selftest_result");
-        assert!(result.starts_with("unlisten 1\nunlisten 3\nunlisten 10\nunlisten 11\nunobserve 12\nunobserve 13\nremove 1024\nrelease 1024\nrelease 1027\nrelease 1030\ntest_result "), "{result}");
+        assert!(result.starts_with(&format!("unlisten 1\nunlisten 3\nunlisten 10\nunlisten 11\nunobserve 12\nunobserve 13\nremove {base}\nrelease {base}\nrelease {}\nrelease {}\ntest_result ", base + 3, base + 6)), "{result}");
         assert!(result.contains("{\\\"clicks\\\":1,\\\"pathOk\\\":true,\\\"timer\\\":true,\\\"interval\\\":0,\\\"frame\\\":true,\\\"idle\\\":false,\\\"finish\\\":false,\\\"work\\\":false,\\\"dragover\\\":false,\\\"dragleave\\\":false,\\\"resized\\\":false,\\\"mutated\\\":false,\\\"sync\\\":{\\\"connected\\\":0,"), "{result}");
     }
 }

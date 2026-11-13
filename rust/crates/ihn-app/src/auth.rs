@@ -910,12 +910,13 @@ mod tests {
         assert!(text.contains(&format!("style {} \"display\" \"none\"", Ui::BTN_DRIVE_LOGIN.0)));
         assert!(text.contains(&format!("text {} \"Loading your PDFs...\"", Ui::DRIVE_STATUS.0)));
         assert!(text.contains(&format!("prop {} \"disabled\" false", Ui::DRIVE_SEARCH.0)));
-        let about = line_of(&text, "fetch");
+        // (Home lists Drive on the same signal: the profile request is the one for `about`.)
+        let about = text.lines().find(|l| l.starts_with("fetch ") && l.contains("/about?")).expect("the profile request");
         assert!(about.ends_with("\"GET\" \"https://www.googleapis.com/drive/v3/about?fields=user(displayName,emailAddress,photoLink)\" \"Authorization: Bearer tok-1\\n\" 0 60000 0 -"), "{about}");
         let seen = signals(&mut app);
         assert_eq!(seen.iter().map(|s| s.0).collect::<Vec<_>>(), [sig::VIEW, sig::AUTH, sig::REFRESH]);
         // The profile answer fills both menus and is remembered for the next boot.
-        io(&mut app, &mut host, req_of(&text, "fetch"), 200, &response("content-type: application/json\n", r#"{"user":{"displayName":"Ana","emailAddress":"Ana@Example.com","photoLink":"https://lh3.googleusercontent.com/a"}}"#));
+        io(&mut app, &mut host, about.split(' ').nth(1).and_then(|n| n.parse().ok()).expect("request id"), 200, &response("content-type: application/json\n", r#"{"user":{"displayName":"Ana","emailAddress":"Ana@Example.com","photoLink":"https://lh3.googleusercontent.com/a"}}"#));
         assert_eq!(host.local[HINT_KEY], "Ana@Example.com");
         assert_eq!(host.local[PROFILE_KEY], r#"{"name":"Ana","email":"Ana@Example.com","photo":"https://lh3.googleusercontent.com/a"}"#);
         let text = out(&mut host);
@@ -963,7 +964,7 @@ mod tests {
         assert!(text.contains(&format!("text {} \"Drive connection paused. Sign in again to continue syncing.\"", Ui::DRIVE_STATUS.0)));
         assert!(text.contains(&format!("class {} \"paused\" 1", Ui::SAVE_INDICATOR.0)));
         assert!(signals(&mut app).iter().any(|s| s.0 == sig::RECONNECT));
-        assert_eq!(client::busy(&app), 1, "only the profile request is left");
+        assert_eq!(client::busy(&app), 1 + crate::home::pending_requests(&app), "only the profile request (and Home's lists) are left");
         let _ = id;
     }
 
@@ -1155,8 +1156,10 @@ mod tests {
         let text = out(&mut host);
         io(&mut app, &mut host, req_of(&text, "gis_init"), -1, b"");
         let text = out(&mut host);
-        assert!(text.starts_with("query 1024 1 \"script[src*=\\\"accounts.google.com/gsi/client\\\"]\"\nlisten 1024 \"load\""), "{text}");
-        assert!(text.ends_with(&format!("release 1024\ntimer_set {T_RETRY} 200 0\n")));
+        // (The handle is the first free one: modules hold dynamic handles of their own since boot.)
+        let h: u32 = text.split(' ').nth(1).and_then(|n| n.parse().ok()).expect("handle");
+        assert!(text.starts_with(&format!("query {h} 1 \"script[src*=\\\"accounts.google.com/gsi/client\\\"]\"\nlisten {h} \"load\"")), "{text}");
+        assert!(text.ends_with(&format!("release {h}\ntimer_set {T_RETRY} 200 0\n")));
         timer(&mut app, &mut host, T_RETRY);
         let text = out(&mut host);
         io(&mut app, &mut host, req_of(&text, "gis_init"), -1, b"");

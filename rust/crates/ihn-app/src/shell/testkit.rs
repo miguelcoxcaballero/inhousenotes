@@ -26,6 +26,8 @@ pub fn boot_at(flags: u32, url: &str, setup: impl FnOnce(&mut FakeHost)) -> (App
     let (mut app, mut host) = (App::new(config(flags, url)), FakeHost::default());
     setup(&mut host);
     app.init(&mut host);
+    // The frame modules asked for while booting (Home's fast-scroll thumb) is painted before a test starts.
+    app.frame(&mut host, 0.0);
     (app, host)
 }
 pub fn boot(flags: u32, setup: impl FnOnce(&mut FakeHost)) -> (App, FakeHost) { boot_at(flags, "http://127.0.0.1:4400/?e2e=1", setup) }
