@@ -51,6 +51,11 @@ Branch `v6-w1_3`, on top of `v6-w1_1`.
     screenshot (a local, uncommitted switch in the harness), all of `auth/*`, `profile-menu/*`, `updater/*` and
     W1.2's `home-shell/*` are pixel-identical at tolerance 0, except the two noted below. They pass unmodified once
     W4.1 has merged.
+    Run that way over the **full matrix** (5 viewports × light/dark/system-dark × web/app, 169 cells, 273
+    comparisons) for `auth`, `profile-menu` and `updater`: everything equal except `auth/reconnect` (10 cells).
+    With the sections only made invisible (`visibility:hidden`) phones show ±1 levels in 17 antialiased pixels of
+    the search field's corners: Chromium rasters them differently when the list area behind is taller, so that too
+    goes away with W4.1's content.
   - The version label in the open profile menu reads `v6.0.0` instead of `v5.18.0`. The states that show it carry
     the tag `VERSION-LABEL` with the label's rectangle as the allowed region.
   - `auth/reconnect` and `home-shell/reconnect`: 5.18.0 keeps Search and the Add button enabled because its offline
