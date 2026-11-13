@@ -10,6 +10,8 @@ async function open(page, url = '/?e2e=1') {
   page.on('request', request => requests.push(request.url()));
   // The Google Identity Services client is the only external script; the mock (W1.2) replaces this stub.
   await page.route('https://accounts.google.com/**', route => route.fulfill({ contentType: 'text/javascript', body: '' }));
+  // The connectivity probe (W1.3; 5.18.0 `probeConnection`) must not reach the real Drive: its 401 is a console error.
+  await page.route('https://www.googleapis.com/**', route => route.fulfill({ headers: { 'access-control-allow-origin': '*' }, json: { kind: 'drive#about' } }));
   await page.addInitScript(() => {
     window.__cspViolations = [];
     document.addEventListener('securitypolicyviolation', event => window.__cspViolations.push(`${event.violatedDirective} ${event.blockedURI}`));
