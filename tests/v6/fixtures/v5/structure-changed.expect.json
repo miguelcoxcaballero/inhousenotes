@@ -1,0 +1,106 @@
+{
+ "app": "5.18.0",
+ "exportName": "cuaderno",
+ "pageCount": 3,
+ "strokeCount": 2,
+ "imageCount": 0,
+ "hasLegacyBakedOverlay": true,
+ "cleanOriginalBytes": 1696,
+ "versions": [
+  {
+   "id": "v_mvuswrs2_bw257w9u",
+   "originId": "v_mvuswrs2_bw257w9u",
+   "ts": 1793354406050,
+   "summary": "+3 pages, +2 strokes",
+   "kind": "autosave",
+   "isMilestone": false,
+   "schemaVersion": 3,
+   "parentId": null,
+   "contentHash": "dx1bwa:288",
+   "deviceId": "c6rl5arv2",
+   "exportName": "cuaderno",
+   "pageCount": 3
+  }
+ ],
+ "pages": [
+  {
+   "pageId": "pg_mvuswpfk_cgjdvafsu",
+   "pageWidth": 595,
+   "pageHeight": 842,
+   "templateKind": "default",
+   "backgroundSource": "pdf",
+   "pdfPageIndex": 1,
+   "backgroundImage": "bcc241ac5cb0c7d17fc435e28faa6ce2ee9d8a5f5770244177e17715de928292",
+   "sidePanel": null,
+   "strokes": [],
+   "pointsSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "images": [],
+   "deletedStrokeIds": [],
+   "legacyCoverStrokes": []
+  },
+  {
+   "pageId": "pg_mvuswqme_wew9fvpdz",
+   "pageWidth": 595,
+   "pageHeight": 420,
+   "templateKind": "default",
+   "backgroundSource": "template",
+   "pdfPageIndex": null,
+   "backgroundImage": null,
+   "sidePanel": null,
+   "strokes": [
+    [
+     "str-new",
+     "pen",
+     "#1a1a1a",
+     2,
+     32
+    ]
+   ],
+   "pointsSha256": "8a13f1b02e20e96ac436082c5c031caa0882ec127f3a044c151b90876a1066dd",
+   "images": [],
+   "deletedStrokeIds": [],
+   "legacyCoverStrokes": []
+  },
+  {
+   "pageId": "pg_mvuswpfc_gsr41j8fj",
+   "pageWidth": 595,
+   "pageHeight": 842,
+   "templateKind": "default",
+   "backgroundSource": "pdf",
+   "pdfPageIndex": 3,
+   "backgroundImage": null,
+   "sidePanel": null,
+   "strokes": [
+    [
+     "str-old",
+     "pen",
+     "#ad1457",
+     2,
+     32
+    ]
+   ],
+   "pointsSha256": "523daa5754b292ced93acd265cda15b99e447385ff9b47a0691c9ef2e76f6d79",
+   "images": [],
+   "deletedStrokeIds": [],
+   "legacyCoverStrokes": [
+    [
+     "str-old",
+     "pen",
+     "#ad1457",
+     2,
+     32
+    ]
+   ]
+  }
+ ],
+ "keywordSections": [
+  "STROKES_Z",
+  "IH_NORM",
+  "IH_OVERLAY_REFS",
+  "IH_STRUCT",
+  "IH_FIELDS",
+  "IH_SYNC",
+  "IH_VERSIONS"
+ ],
+ "pdfBytes": 62674
+}

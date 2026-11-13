@@ -1,0 +1,115 @@
+{
+ "scenario": "recoveries",
+ "app": "5.18.0",
+ "account": "ana@example.test",
+ "document": {
+  "id": "scene-r0",
+  "name": "Revisions",
+  "driveFixture": "r0",
+  "pages": [
+   {
+    "pageId": "pg_mvuswpfc_ry7x67vru",
+    "strokeIds": [
+     "rev-s1",
+     "rev-s2",
+     "rev-s3",
+     "rev-s4",
+     "rev-s5",
+     "rev-s6",
+     "mvusws7c-l0i4tmgv6",
+     "mvuswseg-4v94sbeqa",
+     "mvusx4sg-gso7t2hmd",
+     "mvusx4zk-1brly2o0u"
+    ]
+   },
+   {
+    "pageId": "pg_mvuswpfc_xe0qtsb3b",
+    "strokeIds": [
+     "rev-s7",
+     "rev-s8",
+     "rev-s9"
+    ]
+   }
+  ]
+ },
+ "unsyncedStrokeIds": [
+  "mvusws7c-l0i4tmgv6",
+  "mvuswseg-4v94sbeqa",
+  "mvusx4sg-gso7t2hmd",
+  "mvusx4zk-1brly2o0u"
+ ],
+ "editorOpen": false,
+ "offline": {
+  "account": "ana@example.test",
+  "sync": {
+   "phase": "idle",
+   "pending": 1,
+   "id": null,
+   "errors": [
+    {
+     "message": "Failed to fetch"
+    }
+   ]
+  }
+ },
+ "stores": {
+  "inhouse-offline-v1": {
+   "document-index": 1,
+   "documents": 1,
+   "entries": 2,
+   "leases": 1,
+   "outbox": 1,
+   "recoveries": 1,
+   "settings": 7
+  },
+  "inhouse-original-pdfs-v1": {
+   "drive-open-cache": 1,
+   "originals": 0
+  },
+  "notebook-data-db-v1": {
+   "pages": 2,
+   "snapshots": 1,
+   "stroke-ops": 4,
+   "timeline-history": 1
+  }
+ },
+ "inkCodecs": [
+  "xor-v1",
+  "xor-v1,xor-v1"
+ ],
+ "localStorageKeys": [
+  "drive-hint-email",
+  "drive-pending-exit-upload-v1",
+  "drive-profile-v1",
+  "drive-remember-v1",
+  "drive-session-v1",
+  "drive-token-v1",
+  "inhouse-theme",
+  "notebook-data-v3",
+  "notebook-view-v1",
+  "presence-client-id-v1"
+ ],
+ "sessionStorageKeys": [
+  "ihn-network-offline",
+  "presence-client-id-v1"
+ ],
+ "driveRequests": [
+  "PATCH /drive/v3/files/scene-r0 200",
+  "POST /drive/v3/files/scene-r0/comments 200",
+  "POST /drive/v3/files 200",
+  "POST /upload/drive/v3/files 200",
+  "PATCH /drive/v3/files/scene-r0 200",
+  "PATCH /drive/v3/files/scene-r0 200",
+  "PATCH /drive/v3/files/scene-r0 200",
+  "PATCH /upload/drive/v3/files/1MockGen0000000000000000000000006 200",
+  "PATCH /upload/drive/v3/files/1MockGen0000000000000000000000006 200",
+  "POST /upload/drive/v3/files 200",
+  "PATCH /drive/v3/files/scene-r0 200",
+  "PATCH /upload/drive/v3/files/1MockGen0000000000000000000000006 200",
+  "PATCH /upload/drive/v3/files/1MockGen0000000000000000000000006 200",
+  "PUT /upload/drive/v2/files/1MockGen000000000000000000000000I 200",
+  "PATCH /upload/drive/v3/files/1MockGen0000000000000000000000006 200",
+  "PUT /upload/drive/v2/files/scene-r0 200",
+  "PATCH /drive/v3/files/scene-r0 200"
+ ]
+}
