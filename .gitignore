@@ -22,3 +22,12 @@ android app/apk-output/
 Thumbs.db
 
 /rust-core/target/
+
+# v6: generated files are never committed on the v6 branch (ARCHITECTURE §14.2). `npm run build` writes them to
+# build/; only the release PR copies them over the tree.
+/build/
+/rust/target/
+/wasm/ihn.wasm
+/offline-assets.js
+/native-assets.json
+/node_modules

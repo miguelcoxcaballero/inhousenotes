@@ -1,0 +1,17 @@
+# Inhouse Notes 6 — cargo workspace (ARCHITECTURE §2). No external crates, ever (§2.4).
+[workspace]
+resolver = "2"
+members = ["crates/ihn-core", "crates/ihn-sync", "crates/ihn-app", "crates/ihn-wasm"]
+
+[workspace.package]
+version = "6.0.0"
+edition = "2021"
+rust-version = "1.90"
+publish = false
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

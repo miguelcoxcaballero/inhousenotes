@@ -1,22 +1,146 @@
 name: Production checks
 
+# Inhouse Notes 6 (docs/v6/ARCHITECTURE.md §14.2):
+#   checks  — every pull request and every push to v6 or main: cargo tests, a reproducible build from two paths,
+#             browser smoke tests and the quick pixel-parity run.
+#   full    — nightly on v6 and on the release pull request to main: the full parity matrix against 5.18.0 and
+#             the performance report.
+#   release — the release pull request to main only: the committed generated files equal a clean rebuild.
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, v6]
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: production-checks-${{ github.ref }}
+  group: production-checks-${{ github.ref }}-${{ github.event_name }}
   # Let the running full suite finish while frequent releases queue the newest head.
   cancel-in-progress: false
 
+env:
+  V5_COMMIT: 1d6e8a0 # 5.18.0, the parity reference
+
 jobs:
-  test:
+  checks:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 14b-sw-upgrade and the parity harness serve 5.18.0 from history
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install test dependencies
+        run: npm ci
+
+      - name: Install the Rust toolchain
+        run: rustup toolchain install 1.90.0 --profile minimal --target wasm32-unknown-unknown
+
+      - name: Run cargo tests
+        run: npm run test:cargo
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify the build is reproducible from another path
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/ihn-second-path/checkout" HEAD
+          (cd "$RUNNER_TEMP/ihn-second-path/checkout" && npm run build)
+          (cd build && find . -type f | sort | xargs sha256sum) > "$RUNNER_TEMP/first.sha256"
+          (cd "$RUNNER_TEMP/ihn-second-path/checkout/build" && find . -type f | sort | xargs sha256sum) > "$RUNNER_TEMP/second.sha256"
+          cat "$RUNNER_TEMP/first.sha256"
+          diff "$RUNNER_TEMP/first.sha256" "$RUNNER_TEMP/second.sha256"
+          git worktree remove --force "$RUNNER_TEMP/ihn-second-path/checkout"
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run browser smoke tests
+        run: npm run test:e2e
+
+      - name: Run quick pixel parity against 5.18.0
+        run: |
+          # The harness arrives with W1.2; IHN_V5_ROOT is the 5.18.0 tree it serves next to this one.
+          if [ ! -f tests/v6/parity/run.mjs ]; then echo "::warning::tests/v6/parity/run.mjs is missing; parity skipped"; exit 0; fi
+          git worktree add --detach "$RUNNER_TEMP/ihn-5.18.0" "$V5_COMMIT"
+          IHN_V5_ROOT="$RUNNER_TEMP/ihn-5.18.0" npm run test:parity -- --quick
+
+      - name: Upload reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: |
+            playwright-report
+            test-results
+            tests/v6/parity/report
+          if-no-files-found: ignore
+
+  full:
+    if: >-
+      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'pull_request' && github.base_ref == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'v6' || github.ref }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install test dependencies
+        run: npm ci
+
+      - name: Build
+        run: |
+          rustup toolchain install 1.90.0 --profile minimal --target wasm32-unknown-unknown
+          npm run test:cargo
+          npm run build
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run the full parity matrix against 5.18.0
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/ihn-5.18.0" "$V5_COMMIT"
+          IHN_V5_ROOT="$RUNNER_TEMP/ihn-5.18.0" npm run test:parity
+
+      - name: Run the performance check
+        run: IHN_V5_ROOT="$RUNNER_TEMP/ihn-5.18.0" npm run perf
+
+      - name: Upload parity and performance reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-and-performance
+          path: |
+            tests/v6/parity/report
+            tests/v6/perf/REPORT.md
+          if-no-files-found: ignore
+
+  release:
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -27,29 +151,11 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install release test dependencies
-        run: npm ci
-
-      - name: Verify reproducible Rust and offline assets
+      - name: Verify the committed generated files equal a clean rebuild
         run: |
+          npm ci
           rustup toolchain install 1.90.0 --profile minimal --target wasm32-unknown-unknown
-          npm run build:rust
-          npm run build:offline
-          git diff --exit-code -- wasm/inhouse_notes_core.wasm offline-assets.js native-assets.json index.html vendor/fonts/ui.css
-
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
-
-      - name: Run unit and release checks
-        run: npm run test:unit
-
-      - name: Run browser and chaos checks
-        run: npm run test:e2e
-
-      - name: Upload Playwright report on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          path: playwright-report
-          if-no-files-found: ignore
+          npm run build
+          # The release pull request commits build/ over the tree (ARCHITECTURE §14.3); it must be byte-identical.
+          cp -R build/. .
+          git diff --exit-code -- wasm/ihn.wasm offline-assets.js native-assets.json index.html vendor/fonts/ui.css
