@@ -165,8 +165,7 @@ fn or(value: f64, fallback: f64) -> f64 {
 /// Test command hook: `__IHN_TEST_API__.cmd('core.render.<name>', args)` (JSON text in, JSON text out).
 pub fn test_cmd(name: &str, _args: &str) -> Option<String> {
     match name {
-        // The command table, for the host self-test: `[["CREATE",1], …]` is not needed; the count is enough to
-        // detect a host built against another ABI.
+        // The batch record op and the last command byte: enough for a host self-test to notice another ABI.
         "abi" => Some(format!("{{\"batch\":{},\"last\":{}}}", cmd::REC_BATCH, cmd::op::READ_PIXELS)),
         _ => None,
     }

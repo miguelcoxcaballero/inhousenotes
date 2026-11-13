@@ -8,7 +8,7 @@ use super::page::{self, Bg, PageView, Staged};
 use super::template::{BgUrls, Templates};
 use super::thumb::{self, ScrollPreview, ThumbBg};
 use super::trace::{strokes_of, Golden, Host, Stroke};
-use super::{damage, overlay, ImageRef, PageItems, PathCache, StrokeRef};
+use super::{damage, overlay, pdfink, ImageRef, PageItems, PathCache, StrokeRef};
 use crate::codec::b64_encode;
 use crate::geom::{self, Sweep};
 use crate::id::Id;
@@ -94,6 +94,7 @@ impl Scene {
     fn check(mut self, scene: &str) {
         self.h.run(&mut self.c);
         Golden::load(scene).assert_eq(&self.h);
+        self.h.dump(scene);
     }
 }
 
@@ -384,4 +385,270 @@ fn scroll_preview_queue() {
         s.h.detach(node);
     }
     s.check("scroll-preview");
+}
+
+#[test]
+fn host_table_matches() {
+    // host/canvas.js mirrors `cmd::op` and the three keyword tables.
+    let js = std::fs::read_to_string(super::trace::fixture("../../../host/canvas.js")).unwrap();
+    let table = js.split("export const OP = {").nth(1).unwrap().split('}').next().unwrap();
+    let mut theirs: Vec<(String, u8)> = table.split(',').map(|e| e.split_once(':').unwrap()).map(|(k, v)| (k.trim().to_string(), v.trim().parse().unwrap())).collect();
+    let rust = include_str!("cmd.rs").split("pub mod op {").nth(1).unwrap().split("\n}").next().unwrap();
+    let mut ours: Vec<(String, u8)> = rust.lines().filter_map(|l| l.trim().strip_prefix("pub const ")).map(|l| l.split_once(": u8 = ").unwrap()).map(|(k, v)| (k.to_string(), v.trim_end_matches(';').parse().unwrap())).collect();
+    theirs.sort();
+    ours.sort();
+    assert_eq!(ours, theirs);
+    assert_eq!(ours.len(), 54);
+    for (name, list) in [("CAPS", &super::cmd::CAPS), ("JOINS", &super::cmd::JOINS), ("COMPOSITES", &super::cmd::COMPOSITES)] {
+        let text = js.split(&format!("const {name} = [")).nth(1).unwrap().split(']').next().unwrap();
+        assert_eq!(text.split(", ").map(|v| v.trim_matches('\'')).collect::<Vec<_>>(), list.to_vec());
+    }
+}
+
+// ------------------------------------------------------------------------------- without a recorded scene
+
+fn stroke(tool: Tool, colour: &str, width: f64, xy: &[f64]) -> Stroke { Stroke { id: 0, tool, color: Color::parse(colour), width, xy: xy.to_vec() } }
+
+/// The op names a command batch makes on the canvas `label`, in order.
+fn calls(s: &mut Scene, label: &str) -> Vec<String> {
+    s.h.run(&mut s.c);
+    let all = s.h.surfaces();
+    let ops = all.iter().find(|e| e.0.contains(&format!("\"{label}\""))).map(|e| e.1.clone()).unwrap_or_default();
+    s.h.reset();
+    ops.iter().map(|l| super::trace::name(l).to_string()).collect()
+}
+
+#[test]
+fn single_tap_dots_survive_repaints() {
+    // BEHAVIOUR-CHANGES B-E3: a one-point pen stroke is a filled circle of radius max(0.7, width / 2) wherever
+    // strokes are drawn; 5.18.0 only showed it until the next repaint.
+    let mut s = Scene::new();
+    let p = s.page(0);
+    let dots = [stroke(Tool::Pen, "#002FD9", 3.0, &[50.0, 60.0]), stroke(Tool::Pen, "#002fd9", 1.0, &[70.0, 60.0])];
+    let items = items(&dots, 0);
+    page::repaint(&mut s.c, &mut s.tpl, &mut s.paths, p.page, PAGE_PX, &PageView { bg: Bg::PdfPending, ..a4(&items) }, 2.0);
+    s.h.run(&mut s.c);
+    let ops = &s.h.surfaces()[0].1;
+    let arcs: Vec<Vec<f64>> = ops.iter().filter(|l| l.starts_with("[\"arc\"")).map(|l| super::trace::nums(l)).collect();
+    assert_eq!(arcs, vec![vec![50.0, 60.0, 1.5, 0.0, super::TAU], vec![70.0, 60.0, 0.7, 0.0, super::TAU]]);
+    // `Color::parse` folds the case of `#rrggbb`; the canvas string is lowercase.
+    assert_eq!(ops.iter().filter(|l| l.as_str() == "[\"set:fillStyle\",\"#002fd9\"]").count(), 2);
+    assert!(s.paths.is_empty());
+}
+
+#[test]
+fn backgrounds_covers_and_the_path_cache() {
+    let mut s = Scene::new();
+    let p = s.page(0);
+    s.h.images.insert("blob:5".into(), "{\"image\":\"photo\",\"w\":10,\"h\":10}".into());
+    let photo = s.c.image_blob(1, 5);
+    let ink = [stroke(Tool::Pen, "#111111", 2.0, &[10.0, 10.0, 30.0, 10.0, 30.0, 40.0])];
+    let cover = [stroke(Tool::LegacyCover, "#111111", 2.0, &[10.0, 10.0, 30.0, 10.0])];
+    let mut all = items(&ink, 0);
+    all.covers = items(&cover, 9).strokes;
+    all.images = vec![ImageRef { img: Some(photo), cx: 100.0, cy: 100.0, w: 20.0, h: 10.0, rotation: f64::NAN }, ImageRef { img: None, cx: 0.0, cy: 0.0, w: 1.0, h: 1.0, rotation: 0.0 }];
+    let view = PageView { bg: Bg::Image(Some(photo)), ..a4(&all) };
+    page::repaint(&mut s.c, &mut s.tpl, &mut s.paths, p.page, PAGE_PX, &view, 2.0);
+    s.h.run(&mut s.c);
+    let ops = s.h.surfaces()[0].1.clone();
+    let names: Vec<&str> = ops.iter().map(|l| super::trace::name(l)).collect();
+    // white, photo, cover (white, 1.35 × wider), the decoded image (rotation `NaN || 0`), the stroke.
+    assert_eq!(names[..9], ["getContext", "save", "setTransform", "clearRect", "set:globalCompositeOperation", "set:globalAlpha", "set:fillStyle", "fillRect", "drawImage"]);
+    assert!(ops.contains(&"[\"set:strokeStyle\",\"#ffffff\"]".to_string()) && ops.contains(&format!("[\"set:lineWidth\",{}]", super::trace::num(2.0 * 1.35))));
+    assert_eq!(names.iter().filter(|n| **n == "drawImage").count(), 2);
+    assert!(ops.contains(&format!("[\"rotate\",{}]", super::trace::num(0.0))));
+    assert_eq!((names.iter().filter(|n| **n == "stroke(path)").count(), s.paths.len()), (2, 2));
+    // Unchanged geometry: the cached Path2D is stroked again, nothing is rebuilt. A new body stamp rebuilds it.
+    s.h.reset();
+    page::repaint(&mut s.c, &mut s.tpl, &mut s.paths, p.page, PAGE_PX, &view, 2.0);
+    let again = s.c.take();
+    assert!(!again.contains(&super::cmd::op::PATH_BEGIN) || again.iter().filter(|b| **b == super::cmd::op::BEZIER_TO).count() < 2);
+    let mut moved = items(&ink, 0);
+    moved.strokes[0].key = Some((Id(0), Stamp { clock: 7, ..Stamp::ZERO }));
+    let before = s.paths.len();
+    pen_draw_twice(&mut s, &moved);
+    assert_eq!(s.paths.len(), before);
+    s.paths.forget(&mut s.c, Id(0));
+    assert_eq!(s.paths.len(), before - 1);
+    s.paths.clear(&mut s.c);
+    assert!(s.paths.is_empty());
+}
+
+fn pen_draw_twice(s: &mut Scene, items: &PageItems) {
+    let probe = s.c.canvas();
+    s.c.ctx(probe, false);
+    super::pen::draw(&mut s.c, &mut s.paths, &items.strokes[0]);
+    let first = s.c.take().len();
+    super::pen::draw(&mut s.c, &mut s.paths, &items.strokes[0]);
+    assert!(s.c.take().len() < first, "the second draw reuses the path");
+}
+
+#[test]
+fn page_resize_keeps_the_last_frame() {
+    // v5 `resizePageCanvas`: copy out, resize, draw back scaled, release the copy.
+    let mut s = Scene::new();
+    let p = s.page(0);
+    page::resize(&mut s.c, p.page, Some(PAGE_PX), (1787, 2527));
+    assert_eq!(calls(&mut s, "canvas.page-canvas[page=0]"), ["set:width", "set:height", "getContext", "drawImage"]);
+    page::resize(&mut s.c, p.page, None, PAGE_PX);
+    assert_eq!(calls(&mut s, "canvas.page-canvas[page=0]"), ["set:width", "set:height"]);
+}
+
+#[test]
+fn overlays() {
+    let mut s = Scene::new();
+    let p = s.page(0);
+    let lasso_scale = LASSO_PX.0 as f64 / A4.0;
+    overlay::lasso_path(&mut s.c, p.lasso, LASSO_PX, lasso_scale, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    assert_eq!(calls(&mut s, "canvas.lasso-overlay[page=0]"), ["getContext", "setTransform", "clearRect", "set:strokeStyle", "set:lineWidth", "setLineDash", "beginPath", "moveTo", "lineTo", "lineTo", "stroke", "setLineDash"]);
+    overlay::lasso_path(&mut s.c, p.lasso, LASSO_PX, lasso_scale, &[]);
+    assert!(s.c.is_empty());
+
+    let picked = [stroke(Tool::Pen, "#111111", 2.0, &[1.0, 1.0, 2.0, 2.0, 3.0, 1.0]), stroke(Tool::Pen, "#111111", 2.0, &[9.0, 9.0])];
+    let picked = items(&picked, 0);
+    assert!(overlay::selection_outlines(&mut s.c, p.lasso, LASSO_PX, lasso_scale, &picked.strokes));
+    assert_eq!(calls(&mut s, "canvas.lasso-overlay[page=0]"), ["getContext", "setTransform", "clearRect", "setTransform", "set:strokeStyle", "set:lineWidth", "setLineDash", "set:lineCap", "set:lineJoin", "beginPath", "moveTo", "lineTo", "lineTo", "stroke", "setLineDash"]);
+    assert!(!overlay::selection_outlines(&mut s.c, p.lasso, LASSO_PX, lasso_scale, &[]));
+    assert_eq!(calls(&mut s, "canvas.lasso-overlay[page=0]"), ["getContext", "setTransform", "clearRect"]);
+
+    // Other devices' ink: appended as straight segments, redrawn as the spline.
+    let remote = [stroke(Tool::Pen, "#e81010", 2.0, &[0.0, 0.0, 10.0, 0.0, 20.0, 5.0, 30.0, 5.0])];
+    let remote = items(&remote, 0);
+    let mut rendered = 0;
+    let head = StrokeRef { xy: &remote.strokes[0].xy[..2], ..remote.strokes[0] };
+    assert!(overlay::remote_append(&mut s.c, p.remote, CURSOR_SCALE, &head, &mut rendered));
+    assert_eq!((rendered, calls(&mut s, "canvas.remote-live-overlay[page=0]").last().unwrap().as_str()), (1, "fill"));
+    assert!(overlay::remote_append(&mut s.c, p.remote, CURSOR_SCALE, &remote.strokes[0], &mut rendered));
+    assert_eq!(calls(&mut s, "canvas.remote-live-overlay[page=0]")[9..], ["beginPath", "moveTo", "lineTo", "lineTo", "lineTo", "stroke"]);
+    assert!(!overlay::remote_append(&mut s.c, p.remote, CURSOR_SCALE, &remote.strokes[0], &mut rendered) && s.c.is_empty());
+    assert!(overlay::remote_redraw(&mut s.c, &mut s.paths, p.remote, CURSOR_PX, CURSOR_SCALE, &remote.strokes));
+    assert_eq!(calls(&mut s, "canvas.remote-live-overlay[page=0]").last().unwrap(), "stroke(path)");
+    assert!(s.paths.is_empty(), "live ink is never cached");
+
+    // Timeline preview highlights on the selected context.
+    s.c.ctx(p.remote, false);
+    overlay::timeline_highlights(&mut s.c, &[overlay::Highlight { removed: true, x: 1.0, y: 2.0, w: 3.0, h: 4.0 }, overlay::Highlight { removed: false, x: 1.0, y: 2.0, w: 3.0, h: 4.0 }]);
+    assert_eq!(calls(&mut s, "canvas.remote-live-overlay[page=0]")[1..], ["save", "set:lineJoin", "set:strokeStyle", "set:fillStyle", "set:lineWidth", "setLineDash", "fillRect", "strokeRect", "set:strokeStyle", "set:fillStyle", "set:lineWidth", "setLineDash", "fillRect", "strokeRect", "restore"]);
+}
+
+#[test]
+fn panel_thumbnail_backgrounds() {
+    let mut s = Scene::new();
+    let (thumb, _) = s.dom("#thumb-7".into(), (272, 384));
+    let none = PageItems::default();
+    let view = PageView { w: 595.0, h: 842.0, bg: Bg::PdfPending, items: &none };
+    thumb::panel(&mut s.c, &mut s.tpl, &mut s.paths, thumb, 272, 384, ThumbBg::PdfPlaceholder, &view);
+    s.h.run(&mut s.c);
+    let ops = s.h.surfaces()[0].1.clone();
+    // inset = max(2, round(272 × 0.04)) = 11; font = max(9, round(272 × 0.18)) = 49 px.
+    assert!(ops.contains(&format!("[\"fillRect\",{0},{0},{1},{2}]", super::trace::num(11.0), super::trace::num(250.0), super::trace::num(362.0))));
+    assert!(ops.contains(&"[\"set:font\",\"bold 49px sans-serif\"]".to_string()) && ops.contains(&format!("[\"fillText\",\"PDF\",{},{}]", super::trace::num(136.0), super::trace::num(192.0))));
+    assert!(ops.contains(&format!("[\"scale\",{},{}]", super::trace::num(272.0 / 595.0), super::trace::num(384.0 / 842.0))));
+    s.h.reset();
+    thumb::panel(&mut s.c, &mut s.tpl, &mut s.paths, thumb, 272, 384, ThumbBg::Waiting, &view);
+    assert_eq!(calls(&mut s, "#thumb-7"), ["getContext", "set:fillStyle", "fillRect"]);
+    assert!(!thumb::page_preview(&mut s.c, &mut s.tpl, &mut s.paths, &view, 1) && s.c.is_empty());
+    // A5 template pages draw the SVG once it is loaded; before that the canvas stays white and is not cached
+    // past the load (v5 flushes `_tplCache` in the image's onload).
+    s.h.images.insert("icons/diary.svg".into(), "{\"image\":\"diary\",\"w\":106,\"h\":150}".into());
+    s.tpl.draw(&mut s.c, None, 1118, 1588, Template::Diary);
+    s.h.run(&mut s.c);
+    assert!(s.tpl.cached(Template::Diary, 1118, 1588).is_some() && s.h.loads == [(902, "icons/diary.svg".to_string())]);
+    assert!(!s.tpl.svg_loaded(&mut s.c, 902, false) && !s.tpl.svg_loaded(&mut s.c, 55, true));
+    assert!(s.tpl.svg_loaded(&mut s.c, 902, true) && s.tpl.cached(Template::Diary, 1118, 1588).is_none());
+    assert_eq!((super::template::bg_scale(1.0, false), super::template::bg_scale(3.0, false), super::template::bg_scale(f64::NAN, true), super::template::bg_scale(2.0, true)), (3.0, 4.2, 3.6, 4.8));
+}
+
+#[test]
+fn pdf_ink_streams_parse_and_keep_every_sample() {
+    let pen: Vec<f64> = (0..40).flat_map(|k| [10.0 + k as f64 * 5.5, 300.0 + crate::jsmath::sin(k as f64 / 2.5) * 22.0]).collect();
+    let dense: Vec<f64> = (0..30).flat_map(|k| [400.0 + k as f64 * 0.37, 500.0 + k as f64 * 0.11]).collect();
+    let list = [
+        stroke(Tool::Highlighter, "#ffde00", 16.0, &pen[..20]),
+        stroke(Tool::Pen, "#002FD9", 2.0, &pen),
+        stroke(Tool::Pen, "#f00", 1.5, &dense),
+        stroke(Tool::Pen, "#1a1a1a", 3.0, &[77.0, 88.0]),
+        stroke(Tool::Highlighter, "#ffde00", 0.0, &[90.0, 91.0]),
+        stroke(Tool::Pen, "#1a1a1a", 3.0, &[1.0, f64::NAN, 2.0, 3.0]),
+    ];
+    let mut all = items(&list, 0);
+    all.images = vec![ImageRef { img: None, cx: 200.0, cy: 100.0, w: 64.0, h: 48.0, rotation: std::f64::consts::FRAC_PI_2 }];
+    let ink = pdfink::content_stream(1123.0, &all).unwrap();
+    assert_eq!(ink.images, [0]);
+    assert!(pdfink::content_stream(1123.0, &PageItems::default()).is_none());
+
+    // A small content-stream reader: operands are numbers or names, every operator has its operand count.
+    let arity = |operator: &str| -> usize {
+        match operator {
+            "q" | "Q" | "S" | "f" => 0,
+            "w" | "J" | "j" | "gs" | "Do" => 1,
+            "m" | "l" => 2,
+            "RG" | "rg" => 3,
+            "c" | "cm" => 6,
+            other => panic!("operator {other}"),
+        }
+    };
+    let (mut stack, mut depth, mut ends, mut ops): (Vec<&str>, i32, Vec<(f64, f64)>, Vec<String>) = (Vec::new(), 0, Vec::new(), Vec::new());
+    for token in ink.content.split_ascii_whitespace() {
+        if token.parse::<f64>().is_ok() || token.starts_with('/') {
+            assert!(!token.contains(['e', 'E']) || token.starts_with('/'), "no exponents in PDF numbers: {token}");
+            stack.push(token);
+            continue;
+        }
+        assert_eq!(stack.len(), arity(token), "{token} after {stack:?}");
+        match token {
+            "q" => depth += 1,
+            "Q" => depth -= 1,
+            "m" | "l" | "c" => ends.push((stack[stack.len() - 2].parse().unwrap(), stack[stack.len() - 1].parse().unwrap())),
+            _ => {}
+        }
+        assert!(depth >= 0);
+        ops.push(format!("{} {token}", stack.join(" ")).trim().to_string());
+        stack.clear();
+    }
+    assert!(stack.is_empty() && depth == 0);
+    assert_eq!(ops[..4], ["q", "1 0 0 -1 0 1123 cm", "1 J", "1 j"]);
+    // The image box, rotated a quarter turn about its centre, upright in the flipped space.
+    assert!(ops.contains(&"0 64 48 0 176 68 cm".to_string()) && ops.contains(&"/Im0 Do".to_string()));
+    // Highlighter: two multiply passes; pen: colour, width, one path; dots: filled circles; NaN stroke: skipped.
+    let count = |needle: &str| ops.iter().filter(|o| o.as_str() == needle).count();
+    assert_eq!((count("/GSh1 gs"), count("/GSh2 gs"), count("/GSh3 gs"), count("16 w"), count("9.92 w")), (1, 1, 1, 1, 1));
+    assert_eq!((count("0 0.1843 0.851 RG"), count("1 0 0 RG"), count("S"), count("f")), (1, 1, 4, 2));
+    // Every pen sample is the end point of a segment, in order (4 decimals).
+    let near = |a: (f64, f64), b: &[f64]| (a.0 - b[0]).abs() <= 5.1e-5 && (a.1 - b[1]).abs() <= 5.1e-5;
+    for xy in [&pen, &dense] {
+        let start = ends.windows(xy.len() / 2).position(|w| w.iter().zip(xy.chunks_exact(2)).all(|(e, p)| near(*e, p)));
+        assert!(start.is_some(), "samples lost");
+    }
+    // Short segments are lines, long ones curves — the screen's rule. Lines: 29 dense pen segments + the last
+    // point of each highlighter pass; curves: 39 pen segments + 8 quadratics per pass + two dots of 4 arcs.
+    assert_eq!((count_ops(&ops, " l"), count_ops(&ops, " c")), (29 + 2, 39 + 2 * 8 + 2 * 4));
+}
+
+fn count_ops(ops: &[String], suffix: &str) -> usize { ops.iter().filter(|o| o.ends_with(suffix)).count() }
+
+#[test]
+fn page_items_follow_the_document_draw_order() {
+    use crate::doc::{Author, Doc, Tx};
+    use crate::id::{ActorId, IdGen};
+    use crate::op::{Background, Body, ImageRect};
+    let mut doc = Doc::default();
+    let mut author = Author::new(IdGen::new(ActorId(0x700), 0), 0);
+    let mut tx = Tx::new(&doc, &mut author, 1000);
+    let page = tx.page_new(None, Template::Default, (794, 1123), Background::Template);
+    let body = |tool, x: f64| Body::Stroke { tool, color: Color::parse("#111111"), width: 2.0, xy: vec![x, 1.0, x + 5.0, 9.0], p: None };
+    tx.add_stroke(page, body(Tool::Pen, 10.0));
+    tx.add_image(page, [7u8; 32], ImageRect { cx: 50.0, cy: 60.0, w: 20.0, h: 10.0, rotation: 0.0 });
+    tx.add_stroke(page, body(Tool::LegacyCover, 30.0));
+    let gone = tx.add_stroke(page, body(Tool::Highlighter, 40.0));
+    let batch = tx.commit();
+    doc.apply(&batch);
+    let mut tx = Tx::new(&doc, &mut author, 1001);
+    tx.erase(&[gone]);
+    let batch = tx.commit();
+    doc.apply(&batch);
+    let items = PageItems::collect(&doc, page, &|hash| (hash == [7u8; 32]).then_some(Img(3)));
+    assert_eq!((items.covers.len(), items.images.len(), items.strokes.len()), (1, 1, 1));
+    assert_eq!((items.images[0].img, items.strokes[0].bounds, items.covers[0].xy[0]), (Some(Img(3)), [10.0, 1.0, 15.0, 9.0], 30.0));
+    assert!(items.strokes[0].key.is_some() && items.strokes[0].key != items.covers[0].key);
 }

@@ -25,6 +25,11 @@ pub struct Host {
     /// `(request id, surface, mime)` of every `toDataURL` / `toBlob`, and `(request id, url)` of every image load.
     pub encodes: Vec<(u32, u32, String)>,
     pub loads: Vec<(u32, String)>,
+    /// Everything replayed, one byte string per recording window, and the document's canvases: what
+    /// `tests/v6/e2e/internal-canvas.spec.mjs` feeds to the real `host/canvas.js`.
+    log: Vec<Vec<u8>>,
+    bound: Vec<(u32, String, u32, u32)>,
+    detached: Vec<u32>,
     surfs: HashMap<u32, Meta>,
     imgs: HashMap<u32, String>,
     paths: HashMap<u32, Vec<String>>,
@@ -66,9 +71,14 @@ impl Host {
     pub fn reset(&mut self) {
         self.streams.clear();
         self.used.clear();
+        if self.log.is_empty() {
+            self.log.push(Vec::new());
+        }
+        self.log.push(Vec::new());
     }
     /// A canvas left the document (its label is gone, like a detached element's).
     pub fn detach(&mut self, node: u32) {
+        self.detached.push(node);
         let label = self.dom.remove(&node).map(|d| d.0);
         for m in self.surfs.values_mut().filter(|m| m.label.is_some() && m.label == label) {
             m.label = None;
@@ -77,6 +87,10 @@ impl Host {
 
     pub fn run(&mut self, c: &mut Cmds) {
         let bytes = c.take();
+        if self.log.is_empty() {
+            self.log.push(Vec::new());
+        }
+        self.log.last_mut().unwrap().extend_from_slice(&bytes);
         let mut r = Reader::new(&bytes);
         let s = |v: String| format!("\"{v}\"");
         while let Some(code) = r.u8() {
@@ -129,6 +143,7 @@ impl Host {
             op::BIND => {
                 let (id, node) = (u(r), u(r));
                 let (label, w, h) = self.dom.get(&node).cloned().expect("a canvas of the document");
+                self.bound.push((node, label.clone(), w, h));
                 self.surfs.insert(id, Meta { label: Some(label), kind: "canvas", w, h });
             }
             op::DROP => drop(u(r)),
@@ -208,6 +223,20 @@ impl Host {
             op::IMAGE_DROP => drop(self.imgs.remove(&u(r))),
             other => panic!("unknown canvas command {other}"),
         }
+    }
+
+    /// With `IHN_CMD_DUMP=<dir>`: writes `<dir>/<scene>.json` (`{dom, detach, segments}`, segments in base64)
+    /// for scenes the browser can replay as they are (no images: their trace identity is their `src`).
+    pub fn dump(&self, scene: &str) {
+        let Ok(dir) = std::env::var("IHN_CMD_DUMP") else { return };
+        if !self.imgs.is_empty() || !self.loads.is_empty() {
+            return;
+        }
+        let dom: Vec<String> = self.bound.iter().map(|(node, label, w, h)| format!("[{node},\"{label}\",{w},{h}]")).collect();
+        let detach: Vec<String> = self.detached.iter().map(|n| n.to_string()).collect();
+        let segments: Vec<String> = self.log.iter().map(|s| format!("\"{}\"", crate::codec::b64_encode(s, false))).collect();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(std::path::Path::new(&dir).join(format!("{scene}.json")), format!("{{\"dom\":[{}],\"detach\":[{}],\"segments\":[{}]}}\n", dom.join(","), detach.join(","), segments.join(","))).unwrap();
     }
 
     /// The recording window as `stringifyTrace` prints it: `(surface header, op lines)` sorted by label.
