@@ -5,7 +5,7 @@
 //! `core.<module>` / `sync.<module>` for the pure crates. `args` and the result are JSON text; the result reaches
 //! the page through the `test_result` effect.
 
-use crate::abi::{fam, fx, tag, Event, Node};
+use crate::abi::{ety, ev, fam, fx, observe, ret, tag, Event, Node};
 use crate::app::{Mod, MODULES};
 use crate::dom::Prop;
 use crate::host::{Host, IntlOp, LsOp, Metric};
@@ -25,6 +25,11 @@ pub struct State {
     idle: bool,
     finish: bool,
     work: bool,
+    dragover: bool,
+    dragleave: bool,
+    resized: bool,
+    mutated: bool,
+    pen: u32,
     sync: String,
 }
 
@@ -34,6 +39,13 @@ const FINISH: u32 = tag(Mod::App, 3);
 const IDLE: u32 = tag(Mod::App, 4);
 const WORK: u32 = tag(Mod::App, 5);
 const INTERVAL: u32 = tag(Mod::App, 6);
+const DRAGOVER: u32 = tag(Mod::App, 10);
+const DRAGLEAVE: u32 = tag(Mod::App, 11);
+const RESIZED: u32 = tag(Mod::App, 12);
+const MUTATED: u32 = tag(Mod::App, 13);
+const PEN_DOWN: u32 = tag(Mod::App, 15);
+const PEN_MOVE: u32 = tag(Mod::App, 16);
+const PEN_WORK: u32 = tag(Mod::App, 17);
 
 pub fn init(_app: &mut App, _host: &mut dyn Host) {}
 
@@ -42,10 +54,27 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
     match *event {
         Event::Dom(e) if e.listener == CLICK => {
             st.clicks += 1;
-            st.path_ok = e.node == st.button && e.path.first() == st.button && e.has(crate::abi::ev::EXACT)
-                && e.path.contains(st.root) && e.path.contains(Node::BODY) && !e.path.contains(st.anim);
+            st.path_ok = e.node == st.button && e.path.first() == st.button && e.has(ev::EXACT) && e.ty == ety::CLICK
+                && e.path.contains(st.root) && e.path.contains(Node::BODY) && !e.path.contains(st.anim) && e.t > 0.0;
         }
-        Event::Dom(e) if e.listener == FINISH => st.finish = true,
+        Event::Dom(e) if e.listener == FINISH => st.finish = e.ty == ety::FINISH,
+        // v5: app-v5.js:handleImageDragOver — accept files with the copy cursor.
+        Event::Dom(e) if e.listener == DRAGOVER => {
+            st.dragover = e.ty == ety::DRAGOVER && e.has(ev::DT_FILES);
+            return ret::PREVENT_DEFAULT | ret::DROP_COPY;
+        }
+        Event::Dom(e) if e.listener == DRAGLEAVE => {
+            st.dragleave = e.ty == ety::DRAGLEAVE && e.related.first() == st.root && !e.related.contains(st.button);
+        }
+        Event::Dom(e) if e.listener == RESIZED => st.resized = e.ty == ety::RESIZE_OBSERVED && e.node == Node::BODY,
+        Event::Dom(e) if e.listener == MUTATED => {
+            st.mutated = e.ty == ety::MUTATION_OBSERVED && e.node == st.root && e.path.first() == st.root;
+        }
+        Event::Pointer(p) if p.listener == PEN_DOWN => {
+            st.pen += 1;
+            app.sched.set_busy(Mod::App, true);
+        }
+        Event::Pointer(p) if p.listener == PEN_MOVE => st.pen += p.samples().count() as u32,
         Event::Timer(TIMER) => st.timer = true,
         Event::Timer(INTERVAL) => {
             st.interval += 1;
@@ -66,6 +95,20 @@ pub fn test_cmd(app: &mut App, host: &mut dyn Host, name: &str, _args: &str) -> 
         "state" => state(app),
         "selftest" => selftest(app, host),
         "selftest_result" => selftest_result(app, host),
+        // A pen stroke on the self-test button while background work is queued (e2e: no host timer per sample).
+        "pen_probe" => {
+            let (out, button) = (host.out(), app.st.app.button);
+            out.listen(button, "pointerdown", PEN_DOWN, crate::abi::listen::PASSIVE);
+            out.listen(button, "pointermove", PEN_MOVE, crate::abi::listen::PASSIVE);
+            app.sched.defer(PEN_WORK, 60000.0, false).to_string()
+        }
+        "pen_probe_result" => {
+            host.out().unlisten(PEN_DOWN);
+            host.out().unlisten(PEN_MOVE);
+            app.sched.cancel(PEN_WORK);
+            app.sched.set_busy(Mod::App, false);
+            app.st.app.pen.to_string()
+        }
         _ => return None,
     })
 }
@@ -173,13 +216,20 @@ fn selftest(app: &mut App, host: &mut dyn Host) -> String {
     out.click(button);
     out.listen(button, "click", tag(Mod::App, 7), crate::abi::listen::ONCE);
     out.unlisten(tag(Mod::App, 7));
+    out.listen(button, "dragover", DRAGOVER, 0);
+    out.listen(button, "dragleave", DRAGLEAVE, 0);
+    out.observe(Node::BODY, RESIZED, observe::RESIZE, "");
+    out.observe(root, MUTATED, observe::ATTRIBUTES, "data-m");
+    out.attr(root, "data-m", Some("1"));
+    out.observe(root, tag(Mod::App, 14), observe::CHILD_LIST | observe::SUBTREE, "");
+    out.unobserve(tag(Mod::App, 14));
     let anim = out.animate(span, "[{\"opacity\":0},{\"opacity\":1}]", "{\"duration\":50}");
     out.listen(anim, "finish", FINISH, 0);
     out.anim_finish(anim);
     let cancelled = out.animate(span, "[{\"opacity\":1},{\"opacity\":0}]", "{\"duration\":50}");
     out.anim_cancel(cancelled);
     out.release(cancelled);
-    for node in [span, input, dialog, made] {
+    for node in [input, dialog, made] {
         out.release(node);
     }
     app.sched.timer(out, TIMER, 1.0);
@@ -212,11 +262,19 @@ fn selftest(app: &mut App, host: &mut dyn Host) -> String {
     let number = host.intl(IntlOp::Number, "1234.5\0\"en-US\"\0");
     let date = host.intl(IntlOp::Date, "0\0date\0\"en-US\"\0{\"timeZone\":\"UTC\",\"month\":\"long\"}");
     host.log(0, "ihn selftest");
+    let color = host.style(span, "color");
+    let custom = host.style(span, "--ihn-x");
+    let media = host.media("(min-width: 1px)") && !host.media("(max-width: 1px)");
+    let hit = host.hit(1.0, 1.0).contains(&Node::BODY);
+    let active = host.active().first() == Some(&Node::BODY);
+    let capture = host.has_capture(button, 1);
+    host.out().release(span);
     let st = &mut app.st.app;
     *st = State { root, button, anim, ..State::default() };
     st.sync = format!(
         "{{\"connected\":{connected},\"bodyWidth\":{},\"innerWidth\":{inner},\"lsSet\":{set},\"lsGet\":{},\"session\":{session},\
-         \"lsMissing\":{missing},\"random\":{},\"lower\":{},\"compare\":{},\"number\":{},\"date\":{},\"now\":{},\"time\":{}}}",
+         \"lsMissing\":{missing},\"random\":{},\"lower\":{},\"compare\":{},\"number\":{},\"date\":{},\"now\":{},\"time\":{},\
+         \"color\":{},\"custom\":{},\"media\":{media},\"hit\":{hit},\"active\":{active},\"capture\":{capture}}}",
         body.w,
         json_str(got.as_deref().unwrap_or("")),
         random.iter().any(|&b| b != 0),
@@ -226,6 +284,8 @@ fn selftest(app: &mut App, host: &mut dyn Host) -> String {
         json_str(&date),
         host.now() >= 0.0,
         host.time() > 1.6e12,
+        json_str(&color),
+        json_str(custom.trim()),
     );
     "true".into()
 }
@@ -234,14 +294,18 @@ fn selftest(app: &mut App, host: &mut dyn Host) -> String {
 fn selftest_result(app: &mut App, host: &mut dyn Host) -> String {
     let st = std::mem::take(&mut app.st.app);
     let out = host.out();
-    out.unlisten(CLICK);
-    out.unlisten(FINISH);
+    for listener in [CLICK, FINISH, DRAGOVER, DRAGLEAVE] {
+        out.unlisten(listener);
+    }
+    out.unobserve(RESIZED);
+    out.unobserve(MUTATED);
     out.remove(st.root);
     for node in [st.root, st.button, st.anim] {
         out.release(node);
     }
     format!(
-        "{{\"clicks\":{},\"pathOk\":{},\"timer\":{},\"interval\":{},\"frame\":{},\"idle\":{},\"finish\":{},\"work\":{},\"sync\":{}}}",
+        "{{\"clicks\":{},\"pathOk\":{},\"timer\":{},\"interval\":{},\"frame\":{},\"idle\":{},\"finish\":{},\"work\":{},\
+         \"dragover\":{},\"dragleave\":{},\"resized\":{},\"mutated\":{},\"sync\":{}}}",
         st.clicks,
         st.path_ok,
         st.timer,
@@ -250,6 +314,10 @@ fn selftest_result(app: &mut App, host: &mut dyn Host) -> String {
         st.idle,
         st.finish,
         st.work,
+        st.dragover,
+        st.dragleave,
+        st.resized,
+        st.mutated,
         if st.sync.is_empty() { "null" } else { &st.sync }
     )
 }
@@ -338,13 +406,19 @@ listen 1027 \"click\" 1 0
 click 1027
 listen 1027 \"click\" 7 4
 unlisten 7
+listen 1027 \"dragover\" 10 0
+listen 1027 \"dragleave\" 11 0
+observe 4 12 0 \"\"
+observe 1024 13 1 \"data-m\"
+attr 1024 \"data-m\" \"1\"
+observe 1024 14 6 \"\"
+unobserve 14
 animate 1030 1025 \"[{\\\"opacity\\\":0},{\\\"opacity\\\":1}]\" \"{\\\"duration\\\":50}\"
 listen 1030 \"finish\" 3 0
 anim_finish 1030
 animate 1031 1025 \"[{\\\"opacity\\\":1},{\\\"opacity\\\":0}]\" \"{\\\"duration\\\":50}\"
 anim_cancel 1031
 release 1031
-release 1025
 release 1026
 release 1028
 release 1029
@@ -356,6 +430,7 @@ raf_request
 idle_request 4 50
 idle_request 9 50
 idle_cancel 9
+release 1025
 test_result \"true\"
 timer_set 4278190080 1 0
 ";
@@ -364,14 +439,16 @@ timer_set 4278190080 1 0
         for (_, name, _) in crate::dom::LAYOUT {
             assert!(ops.contains(name), "DOM op {name} is not covered by the self-test");
         }
-        assert!(host.flushes >= 4 && host.logs == [(0, "ihn selftest".to_string())]);
+        assert!(host.flushes >= 10 && host.logs == [(0, "ihn selftest".to_string())]);
         assert!(host.local.is_empty() && host.session.is_empty());
 
         // Feed the events the host would send back and read the observations.
         let mut click = Writer::default();
-        for v in [CLICK, 1027, crate::abi::ev::EXACT] {
-            click.u32(v);
-        }
+        click.u32(CLICK);
+        click.u32(1027);
+        click.u8(ety::CLICK);
+        click.u32(ev::EXACT);
+        click.f64(5.0);
         click.i32(0);
         click.u32(0);
         for _ in 0..4 {
@@ -390,14 +467,18 @@ timer_set 4278190080 1 0
         click.u32(4);
         click.u32(0);
         click.u32(0);
-        app.event(&mut host, kind::DOM, &click.buf);
+        click.u32(0);
+        assert_eq!(app.event(&mut host, kind::DOM, &click.buf), 0);
+        // The same payload sent to the dragover listener asks for the copy effect.
+        click.buf[..4].copy_from_slice(&DRAGOVER.to_le_bytes());
+        assert_eq!(app.event(&mut host, kind::DOM, &click.buf), ret::PREVENT_DEFAULT | ret::DROP_COPY);
         let mut w = Writer::default();
         w.u32(TIMER);
         app.event(&mut host, kind::TIMER, &w.buf);
         app.frame(&mut host, 16.0);
         host.take();
         let result = cmd(&mut app, &mut host, "app.selftest_result");
-        assert!(result.starts_with("unlisten 1\nunlisten 3\nremove 1024\nrelease 1024\nrelease 1027\nrelease 1030\ntest_result "), "{result}");
-        assert!(result.contains("{\\\"clicks\\\":1,\\\"pathOk\\\":true,\\\"timer\\\":true,\\\"interval\\\":0,\\\"frame\\\":true,\\\"idle\\\":false,\\\"finish\\\":false,\\\"work\\\":false,\\\"sync\\\":{\\\"connected\\\":0,"), "{result}");
+        assert!(result.starts_with("unlisten 1\nunlisten 3\nunlisten 10\nunlisten 11\nunobserve 12\nunobserve 13\nremove 1024\nrelease 1024\nrelease 1027\nrelease 1030\ntest_result "), "{result}");
+        assert!(result.contains("{\\\"clicks\\\":1,\\\"pathOk\\\":true,\\\"timer\\\":true,\\\"interval\\\":0,\\\"frame\\\":true,\\\"idle\\\":false,\\\"finish\\\":false,\\\"work\\\":false,\\\"dragover\\\":false,\\\"dragleave\\\":false,\\\"resized\\\":false,\\\"mutated\\\":false,\\\"sync\\\":{\\\"connected\\\":0,"), "{result}");
     }
 }

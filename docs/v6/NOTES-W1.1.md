@@ -25,11 +25,40 @@ bodies, keep the signatures.
 - `init` runs in `Mod` order: infrastructure first, `shell` last.
 - `app.hold_ready()` in `init` + `app.release_ready()` later delays `__IHN_TEST_API__.ready()`.
 - Scheduler: `timer`, `interval`, `clear`, `frame`, `idle`, `defer(id, quiet_ms, bound)` → `Event::Work`,
-  `set_busy(Mod, on)`, `activity(now)` (automatic for pointer events), `new_session()`.
+  `set_busy(Mod, on)`, `activity(t)`, `new_session()`.
+  - Activity is recorded automatically, from the event `timeStamp`, for `pointerdown` and for
+    `pointermove`/`pointerrawupdate` in contact (buttons, pressure or touch) — the 5.18.0 rule; hovering is not
+    activity. The module that mirrors 5.18.0's document-level `touchstart`/`touchmove`/`wheel`/`keydown` interrupt
+    listeners calls `app.sched.activity(e.t)` itself.
+  - Input never writes a record: activity and `set_busy(.., true)` leave the pending poll timer alone. While any
+    module is busy no poll timer runs (5.18.0 re-polled every 100 ms); deferred work is re-armed when the last
+    module calls `set_busy(.., false)`, so **always pair the two calls** (pointerup, pointercancel,
+    lostpointercapture).
 - Test commands: `cmd('<module>.<name>', args)` → that module's `test_cmd`; `core.<module>.<name>` and
   `sync.<module>.<name>` reach the pure crates. Only delivered in e2e mode.
 - Export worker: `ihn_worker` payload byte 0 is the role (`app::worker_role`): 0 → `doc::v5open::worker`,
   1 → `export::pdf::worker`.
+
+## Synchronous reads and event fields (all in ABI v6; nothing to track by hand)
+
+- `host.style(h, "gridTemplateColumns" | "transform" | "display" | "--custom")` = `getComputedStyle(h)[prop]`;
+  `host.media("(max-width: 720px)")` = `matchMedia(q).matches`; `host.hit(x, y)` = `elementFromPoint` as a handle
+  path; `host.active()` = `document.activeElement` as a handle path (`[0] == Node::BODY` when nothing is focused);
+  `host.has_capture(h, pointer_id)`. All imply a flush and answer through the `host_intl` import (ops 16..), so the
+  import list stays the nine of ARCHITECTURE §3.2. Answers are text of at most 1024 bytes. `FakeHost::answers`
+  scripts them.
+- `mode::REDUCED_MOTION` in `app.cfg.flags` is kept current (`life::MOTION` events), like `DARK_SCHEME`.
+- `DomEvent`: `ty` (`abi::ety` code of `event.type`; add a type to **both** `abi.rs` and `DOM_TYPE` in
+  `host/dom.js` — a cargo test compares them), `t` (`timeStamp`), `related` (handle path of `relatedTarget`:
+  `related.contains(node)`), flag `ev::DT_FILES` (`dataTransfer.types` includes `Files`). Return
+  `ret::DROP_COPY` to set `dataTransfer.dropEffect = 'copy'`.
+- `out.observe(h, listener, abi::observe::RESIZE, "")` / `out.observe(h, listener, ATTRIBUTES | CHILD_LIST | …,
+  "class,data-home-tab")` + `out.unobserve(listener)`: Resize/MutationObserver; one observer per listener id,
+  several nodes per observer, one `Event::Dom` (`ety::RESIZE_OBSERVED` / `MUTATION_OBSERVED`) per callback.
+- Pointer capture and the focused element can be read (above), so Rust does not have to mirror them; it may still
+  follow `gotpointercapture`/`lostpointercapture` (`ptr::GOT_CAPTURE`/`LOST_CAPTURE`) where 5.18.0 listens to them.
+- Limits that remain: an event that fires while Rust is running (focus/blur/scroll caused by a DOM op) is queued
+  and cannot be cancelled; the answer of `Host::ask` is truncated to 1024 bytes.
 
 ## Contract of a host executor (`host/<name>.js`)
 
@@ -44,7 +73,8 @@ handles from `host.hold(obj)` / `host.obj(id)` (Rust frees them with `out.obj_re
    units would all have to edit `app.rs`.
 2. **`trait Host` has `log`** (the `host_log` import needs a caller) and `ihn_core::testutil` is public and not
    `cfg(test)`, so `ihn-sync`/`ihn-app` tests can use the PRNG.
-3. **ABI additions** to the §3.3 list: DOM `html` (innerHTML) and `select`; effects `obj_release`, `test_result`,
+3. **ABI additions** to the §3.3 list: DOM `html` (innerHTML), `select`, `observe`, `unobserve`; `Host::ask`
+   multiplexed on `host_intl`; the reduced-motion flag and `life::MOTION`; `ret::DROP_COPY`; effects `obj_release`, `test_result`,
    `ready`, `raf_cancel`; `listen` flag `ACTIVE` (`passive:false`). Frames arrive through `ihn_frame`, so there is
    no `FRAME` event kind. Events report every known handle from the target upwards (`path`), which gives Rust both
    `closest` and `contains`.
@@ -61,7 +91,8 @@ handles from `host.hold(obj)` / `host.obj(id)` (Rust frees them with `out.obj_re
    5.18.0's init writes invisible state (`data-app-ready`, `read-only` classes, avatar placeholders, title) — for
    W1.3/W3.1.
 8. **Root `offline-assets.js` and `native-assets.json` are removed from git and ignored** on this branch (generated
-   files, ARCHITECTURE §14.2). The release PR must `git add -f` them and `wasm/ihn.wasm`.
+   files, ARCHITECTURE §14.2). The release PR must `git add -f` them and `wasm/ihn.wasm`; the `release` CI job
+   fails (`git ls-files --error-unmatch`) when one of them is not tracked.
 9. **`package.json`**: the 5.x `test:unit`/`build:*` scripts are gone (their targets no longer match the tree);
    the 5.x test files stay until the release deletes them. Version fields are `6.0.0`.
 10. **WebView gate text** `Update Android System WebView to use Inhouse Notes.` is new wording (5.18.0 has none).
@@ -76,5 +107,5 @@ handles from `host.hold(obj)` / `host.obj(id)` (Rust frees them with `out.obj_re
 
 ## Measured
 
-`ihn.wasm` 72,703 bytes (30,262 gzip -9; limits 480 KB / 160 KB); first-party JS 45,371 bytes (limit 100 KB).
+`ihn.wasm` 80,153 bytes (33,600 gzip -9; limits 480 KB / 160 KB); first-party JS 49,038 bytes (limit 100 KB).
 Two builds from different paths: identical SHA-256 for all four files in `build/`.

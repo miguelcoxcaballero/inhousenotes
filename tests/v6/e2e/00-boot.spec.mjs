@@ -64,6 +64,38 @@ test('a returning user boots to the Home skeleton, not Welcome', async ({ page }
   await expect(page.locator('#drive-home')).toBeVisible();
 });
 
+test('a reduced-motion preference reaches Rust at boot and when it changes', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await open(page);
+  const flags = () => page.evaluate(() => window.__IHN_TEST_API__.state().flags & 128);
+  expect(await flags()).toBe(128);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await expect.poll(flags).toBe(0);
+});
+
+test('a pen stroke over queued background work sets no timer', async ({ page }) => {
+  await open(page);
+  // Count the host timers set while pointer events are delivered to a Rust listener.
+  const sets = await page.evaluate(async () => {
+    const test = window.__IHN_TEST_API__;
+    test.cmd('app.selftest');
+    await new Promise(resolve => setTimeout(resolve, 100));
+    test.cmd('app.pen_probe');
+    const button = document.querySelector('#ihn-selftest button');
+    const original = window.setTimeout;
+    let count = 0;
+    window.setTimeout = (...args) => { count += 1; return original(...args); };
+    const init = { bubbles: true, pointerId: 7, pointerType: 'pen', pressure: 0.5, buttons: 1 };
+    button.dispatchEvent(new PointerEvent('pointerdown', init));
+    for (let i = 0; i < 200; i += 1) button.dispatchEvent(new PointerEvent('pointermove', { ...init, clientX: i }));
+    window.setTimeout = original;
+    const seen = test.cmd('app.pen_probe_result');
+    test.cmd('app.selftest_result');
+    return { count, seen };
+  });
+  expect(sets).toEqual({ count: 0, seen: 201 });
+});
+
 test('every DOM op, timer, frame, idle slot and synchronous import works against the real host', async ({ page }) => {
   const { problems } = await open(page);
   expect(await page.evaluate(() => window.__IHN_TEST_API__.cmd('app.selftest'))).toBe(true);
@@ -90,14 +122,27 @@ test('every DOM op, timer, frame, idle slot and synchronous import works against
     dialogOpen: false,
     animations: 0
   });
-  // Two interval ticks, the idle slot and the deferred job need a few turns of the event loop.
+  // Drag events carry `dataTransfer.types` and `relatedTarget`; the listener's result sets `dropEffect`.
+  const drag = await page.evaluate(() => {
+    const root = document.getElementById('ihn-selftest'), button = root.querySelector('button');
+    const dataTransfer = { types: ['text/plain', 'Files'], files: [], dropEffect: 'none' };
+    const over = new Event('dragover', { bubbles: true, cancelable: true });
+    Object.defineProperty(over, 'dataTransfer', { value: dataTransfer });
+    button.dispatchEvent(over);
+    button.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget: root.querySelector('span') }));
+    return { prevented: over.defaultPrevented, dropEffect: dataTransfer.dropEffect };
+  });
+  expect(drag).toEqual({ prevented: true, dropEffect: 'copy' });
+  // Two interval ticks, the idle slot, the observers and the deferred job need a few turns of the event loop.
   await page.waitForTimeout(300);
   const result = await page.evaluate(() => window.__IHN_TEST_API__.cmd('app.selftest_result'));
   expect(result).toEqual({
     clicks: 1, pathOk: true, timer: true, interval: 2, frame: true, idle: true, finish: true, work: true,
+    dragover: true, dragleave: true, resized: true, mutated: true,
     sync: {
       connected: 1, bodyWidth: 1280, innerWidth: 1280, lsSet: true, lsGet: 'ß1', session: true, lsMissing: true,
-      random: true, lower: 'àb', compare: '-1', number: '1,234.5', date: 'January', now: true, time: true
+      random: true, lower: 'àb', compare: '-1', number: '1,234.5', date: 'January', now: true, time: true,
+      color: 'rgb(255, 0, 0)', custom: '1', media: true, hit: true, active: true, capture: false
     }
   });
   expect(await page.evaluate(() => [document.getElementById('ihn-selftest'), localStorage.getItem('ihn-selftest')])).toEqual([null, null]);

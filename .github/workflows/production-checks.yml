@@ -158,4 +158,7 @@ jobs:
           npm run build
           # The release pull request commits build/ over the tree (ARCHITECTURE §14.3); it must be byte-identical.
           cp -R build/. .
+          # Three of them are ignored on v6 (.gitignore): an untracked file would pass `git diff`, and the site
+          # would be published without it.
+          git ls-files --error-unmatch wasm/ihn.wasm offline-assets.js native-assets.json index.html vendor/fonts/ui.css
           git diff --exit-code -- wasm/ihn.wasm offline-assets.js native-assets.json index.html vendor/fonts/ui.css
