@@ -79,3 +79,6 @@ helpers; a second page of the same context is advanced with `t.advance(ms, { pag
   was taken (it used to be `null`).
 - Blob images passed to `drawImage` are recorded as `{"image":"blob"}` with their natural size: their content is not
   part of the trace.
+- The shared `.git/info/exclude` of this clone (written during wave 1, not by W1.2) ignores `tests/v6/mock/`,
+  `tests/v6/parity/*.{mjs,js}`, `tests/v6/fixtures/`, `tests/v6/perf/` and `tests/v6/server.mjs` in every worktree:
+  new files under those paths are only committed with `git add -f`. The fixtures and traces were added that way.
