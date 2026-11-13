@@ -23,11 +23,12 @@
     FakeDate.now = () => epoch; FakeDate.parse = NativeDate.parse; FakeDate.UTC = NativeDate.UTC;
     g.Date = FakeDate;
   }
+  const token = Math.random().toString(36).slice(2, 10);   // the browser's own randomness: names this page's workers
   let state = (g.__IHN_DET_SEED__ >>> 0) || 0x1badc0de;
   const next = () => { state ^= state << 13; state >>>= 0; state ^= state >>> 17; state ^= state << 5; state >>>= 0; return state; };
-  const det = g.__ihnDet = { busy: 0, events: 0, workers: 0, next };
+  const det = g.__ihnDet = { busy: 0, events: 0, next, changed: null };
   const begin = () => { det.busy++; det.events++; };
-  const end = () => { det.busy--; det.events++; };
+  const end = () => { det.busy--; det.events++; if (det.changed) det.changed(); };
   const track = promise => { begin(); Promise.resolve(promise).then(end, end); return promise; };
 
   Math.random = () => next() / 4294967296;
@@ -61,6 +62,39 @@
   if (g.WebAssembly) for (const name of ['instantiate', 'instantiateStreaming', 'compile', 'compileStreaming']) wrapAsync(g.WebAssembly, name);
   if (g.CompressionStream) { /* streams end in Response/Blob readers, which are tracked */ }
   if (g.HTMLImageElement) wrapAsync(g.HTMLImageElement.prototype, 'decode');
+  // Task-queue yields run in real time: `await scheduler.yield()` / `postTask` loops are work in flight.
+  if (g.Scheduler) for (const name of ['yield', 'postTask']) wrapAsync(g.Scheduler.prototype, name);
+  // Web Locks: pending from the request until the lock is granted (the holder may keep it for the page's life).
+  if (g.LockManager) {
+    wrapAsync(g.LockManager.prototype, 'query');
+    const request = g.LockManager.prototype.request;
+    g.LockManager.prototype.request = function (...args) {
+      const callback = args[args.length - 1];
+      if (typeof callback !== 'function') return request.apply(this, args);
+      let open = true;
+      const close = () => { if (open) { open = false; end(); } };
+      begin();
+      args[args.length - 1] = lock => { close(); return callback(lock); };
+      const result = request.apply(this, args);
+      result.then(close, close);
+      return result;
+    };
+  }
+  // A MessageChannel hop is a real task too (5.18.0 yields with one); every post counts as activity, so a chain of
+  // hops is never mistaken for an idle page. The harness' own probe uses the native method.
+  const nativePost = g.MessagePort && g.MessagePort.prototype.postMessage;
+  if (nativePost) g.MessagePort.prototype.postMessage = function (...args) { det.events++; return nativePost.apply(this, args); };
+  // An image that is not in the document (`new Image()` + onload) is pending from `src = …` to its load/error event.
+  det.loads = 0;
+  const srcOf = g.HTMLImageElement && Object.getOwnPropertyDescriptor(g.HTMLImageElement.prototype, 'src');
+  if (srcOf && srcOf.set) Object.defineProperty(g.HTMLImageElement.prototype, 'src', { ...srcOf, set(value) {
+    if (value && !this.isConnected && this.loading !== 'lazy') {
+      det.loads++; det.events++;
+      const done = () => { this.removeEventListener('load', done); this.removeEventListener('error', done); det.loads--; det.events++; };
+      this.addEventListener('load', done); this.addEventListener('error', done);
+    }
+    srcOf.set.call(this, value);
+  } });
   if (g.HTMLCanvasElement) {
     const toBlob = g.HTMLCanvasElement.prototype.toBlob;
     g.HTMLCanvasElement.prototype.toBlob = function (callback, ...rest) { begin(); return toBlob.call(this, blob => { end(); callback(blob); }, ...rest); };
@@ -87,8 +121,36 @@
     const transaction = g.IDBDatabase.prototype.transaction;
     g.IDBDatabase.prototype.transaction = function (...args) { const tx = transaction.apply(this, args); once(tx, ['complete', 'abort', 'error']); return tx; };
   }
+  // ---- workers ----
+  // A worker created by this page is named "…#ihn<id>". Inside it (this same script), every message it received is
+  // counted, and when its handlers, tracked async work and short timers have all finished it reports
+  // {__ihnDetAck: received} to its owner — on the worker's own port, so the report arrives after every reply it sent
+  // before it (a separate channel could overtake a reply still in flight). The owner's wrapper swallows the report.
+  if (inWorker) {
+    const id = (/#ihn([a-z0-9-]+)$/.exec(g.name || '') || [])[1];
+    if (id && typeof g.postMessage === 'function') {
+      const report = g.postMessage.bind(g), later = g.setTimeout.bind(g), cancel = g.clearTimeout.bind(g), live = new Set();
+      let received = 0, handling = 0, scheduled = false;
+      const check = det.changed = () => {
+        if (scheduled) return;
+        scheduled = true;
+        later(() => { scheduled = false; if (!handling && !det.busy && !live.size) report({ __ihnDetAck: received }); }, 0);
+      };
+      g.addEventListener('message', () => { received++; handling++; later(() => { handling--; check(); }, 0); });
+      g.setTimeout = function (callback, delay, ...rest) {
+        if (typeof callback !== 'function' || delay > 2000) return later(callback, delay, ...rest);
+        const handle = later((...values) => { live.delete(handle); try { callback(...values); } finally { check(); } }, delay, ...rest);
+        live.add(handle);
+        return handle;
+      };
+      g.clearTimeout = function (handle) { if (live.delete(handle)) check(); return cancel(handle); };
+    }
+  }
+  const owed = new Map();   // worker id → {posted, acked}
+  det.workers = () => { let n = 0; for (const w of owed.values()) n += w.posted - w.acked; return n; };
+  /** Stops waiting for workers that never report (not instrumented, or a protocol without replies). */
+  det.forgive = () => { for (const w of owed.values()) w.acked = w.posted; };
   if (g.Worker) {
-    // A request/response worker is busy while it owes replies. Capped by the harness (a worker may also push freely).
     const NativeWorker = g.Worker, source = install.toString();
     const prelude = () => `self.__IHN_DET_SEED__ = ${(state ^ 0x9e3779b9) >>> 0}; self.__IHN_DET_EPOCH__ = ${inWorker ? g.__IHN_DET_EPOCH__ : Date.now()};\n(${source})(self);\n`;
     // A blob: worker never touches the network: rebuild it with the prelude in front (same origin, synchronous read).
@@ -99,18 +161,28 @@
         return URL.createObjectURL(new Blob([prelude(), xhr.responseText], { type: 'text/javascript' }));
       } catch (error) { return url; }
     };
+    let sequence = 0;
     g.Worker = class extends NativeWorker {
-      constructor(url, ...rest) { super(deterministic(url), ...rest); this.addEventListener('message', () => { if (this.__owed > 0) { this.__owed--; det.workers--; } det.events++; }); this.__owed = 0; }
-      postMessage(...args) { this.__owed++; det.workers++; det.events++; return super.postMessage(...args); }
-      terminate() { det.workers -= this.__owed; this.__owed = 0; return super.terminate(); }
+      constructor(url, options) {
+        const id = `${token}-${sequence++}`;
+        super(deterministic(url), { ...(options || {}), name: `${(options && options.name) || ''}#ihn${id}` });
+        this.__ihnId = id; owed.set(id, { posted: 0, acked: 0 });
+        this.addEventListener('message', event => {
+          det.events++;
+          const ack = event.data && event.data.__ihnDetAck, w = owed.get(id);
+          if (typeof ack === 'number') { event.stopImmediatePropagation(); if (w) w.acked = Math.max(w.acked, Math.min(w.posted, ack)); }
+        });
+      }
+      postMessage(...args) { const w = owed.get(this.__ihnId); if (w) w.posted++; det.events++; return super.postMessage(...args); }
+      terminate() { owed.delete(this.__ihnId); det.events++; return super.terminate(); }
     };
   }
   // The harness adds this script before it installs the clock, so these are the browser's own.
   const nativeRaf = g.requestAnimationFrame ? g.requestAnimationFrame.bind(g) : null;
   const facts = () => {
-    let images = 0;
+    let images = det.loads;
     if (g.document) for (const img of g.document.images) if (!img.complete) images++;
-    return { busy: det.busy, workers: det.workers, events: det.events, dirty: det.dirty, images, fonts: g.document && g.document.fonts ? g.document.fonts.status === 'loading' : false,
+    return { busy: det.busy, workers: det.workers(), events: det.events, dirty: det.dirty, images, fonts: g.document && g.document.fonts ? g.document.fonts.status === 'loading' : false,
       ready: g.document ? g.document.readyState : 'complete' };
   };
   // Style recalculation, transition starts, animation events and observer callbacks happen in rendering frames, which
@@ -126,7 +198,7 @@
   det.probe = () => new Promise(resolve => {
     const channel = new MessageChannel();
     channel.port1.onmessage = () => { channel.port1.close(); resolve(facts()); };
-    channel.port2.postMessage(0);
+    nativePost.call(channel.port2, 0);
   });
   /** Two real frames (style, layout, observers, paint), then the idle facts. Used before a capture. */
   det.frames = (count = 2) => new Promise(resolve => {
@@ -135,6 +207,27 @@
     const next = left => nativeRaf(() => left > 1 ? next(left - 1) : det.probe().then(resolve));
     next(count);
   });
+  /**
+   * Runs the Playwright clock of this document for up to `ms`, one timer instant at a time (never more than `step`),
+   * and stops early when a callback started work the clock does not own or changed the document. Returns the fake
+   * milliseconds consumed, or -1 when the clock is not installed here. `least` forces a minimum slice (stalled clock).
+   */
+  det.run = async (ms, step, least = 0) => {
+    const clock = g.__pwClock && g.__pwClock.controller;
+    if (!clock || !clock._timers || !clock._now || typeof clock.runFor !== 'function') return -1;
+    const busy = det.busy;
+    for (let used = 0; ;) {
+      let due = Infinity;
+      for (const timer of clock._timers.values()) due = Math.min(due, timer.callAt - clock._now.ticks);
+      const slice = Math.min(ms - used, Math.max(least, Math.min(step, Math.max(0, Math.ceil(due)))));
+      const events = det.events;
+      await clock.runFor(slice);
+      if (slice) det.animate(slice);
+      used += slice;
+      if (used >= ms || det.events !== events || det.busy !== busy || det.dirty || det.loads || det.workers()) return used;
+      if (!slice) return 0;   // a silent timer re-armed for "now": the harness decides (see advance)
+    }
+  };
   /**
    * CSS animations, transitions and Web Animations follow the fake clock: the harness stops the document timeline
    * (CDP Animation.setPlaybackRate 0) and calls this with every clock slice.

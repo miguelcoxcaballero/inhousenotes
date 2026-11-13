@@ -24,7 +24,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from '@playwright/test';
 import { startServer } from '../server.mjs';
 import { createMock } from '../mock/google.mjs';
-import { addScene, storageDump, restoreStorage } from '../mock/fixtures.mjs';
+import { addAccounts, addScene, storageDump, restoreStorage } from '../mock/fixtures.mjs';
 import { CHROMIUM_FLAGS, chromiumExecutable, contextOptions, cellsFor, cellId, themeStorage, modeQuery, NATIVE_STUB, EPOCH, SEED, VIEWPORTS } from './matrix.mjs';
 import { normalizeDom, normalizeTrace } from './normalize.mjs';
 import { compareCaptures } from './compare.mjs';
@@ -60,8 +60,6 @@ export function ensureV5Ref(target = path.join(REPO, 'build', 'v5-ref')) {
   return target;
 }
 
-// In a worker the same file runs before the worker's own code, on one line so stack line numbers move by one.
-const WORKER_INIT = fs.readFileSync(path.join(HERE, 'determinism-init.js'), 'utf8').replace(/^\s*\/\/.*$/gm, '').replace(/\n\s*/g, ' ');
 const DET_INIT = fs.readFileSync(path.join(HERE, 'determinism-init.js'), 'utf8');
 const TRACE_INIT = fs.readFileSync(path.join(HERE, 'trace-init.js'), 'utf8');
 
@@ -88,13 +86,20 @@ export class Driver {
     await this.context.route(url => /worker[^/]*\.m?js$/i.test(url.pathname) && !/service-worker/.test(url.pathname) && /^(127\.0\.0\.1|localhost)$/.test(url.hostname), async route => {
       try {
         const response = await route.fetch();
-        await route.fulfill({ response, body: `self.__IHN_DET_SEED__ = ${(this.seed ^ 0x5bd1e995) >>> 0}; self.__IHN_DET_EPOCH__ = ${EPOCH + this.elapsed};\n${WORKER_INIT}\n${await response.text()}` });
+        await route.fulfill({ response, body: `self.__IHN_DET_SEED__ = ${(this.seed ^ 0x5bd1e995) >>> 0}; self.__IHN_DET_EPOCH__ = ${EPOCH + this.elapsed};\n${DET_INIT}\n${await response.text()}` });
       } catch { await route.abort().catch(() => {}); }
     });
     // Order matters: determinism-init keeps the native rAF, then the clock replaces the timers.
     await this.context.addInitScript(`self.__IHN_DET_SEED__ = ${this.seed};\n${DET_INIT}`);
-    await this.context.clock.install({ time: EPOCH });
-    await this.context.clock.pauseAt(EPOCH);
+    // Playwright logs both calls with the wall time they were made at, and a document loaded later replays the gap
+    // between them (a few real ms, different every run) into the clock's tick counter, which decides the phase of
+    // its 16 ms animation frames. Both calls therefore see one wall time (the Playwright server runs in this process).
+    const wallNow = Date.now, wall = wallNow();
+    Date.now = () => wall;
+    try {
+      await this.context.clock.install({ time: EPOCH });
+      await this.context.clock.pauseAt(EPOCH);
+    } finally { Date.now = wallNow; }
     if (this.traceEnabled) await this.context.addInitScript(TRACE_INIT);
     if (this.cell.mode === 'app') await this.context.addInitScript(NATIVE_STUB);
     this.page = await this.context.newPage();
@@ -132,7 +137,12 @@ export class Driver {
       const loading = mock.gated.length - waitingFetch + mock.held.length > 0;
       let idle = !!facts && !mock.pending && facts.busy <= waitingFetch && (!facts.images || waitingImages > 0) && (!facts.fonts || waitingFonts > 0) && (facts.ready === 'complete' || loading)
         && activity === mock.activity && facts.events === last && !facts.dirty;
-      if (idle && facts.workers > 0) { workerSince ||= Date.now(); if (Date.now() - workerSince < 3000) idle = false; }
+      if (idle && facts.workers > 0) {
+        // A worker owes an answer. Instrumented workers report when they are done; one that stays silent for 1.5 s
+        // is taken to have a protocol without replies and is not waited for again until it is sent more work.
+        idle = false; workerSince ||= Date.now();
+        if (Date.now() - workerSince > 1500) { await this.page.evaluate(() => self.__ihnDet.forgive()).catch(() => {}); workerSince = 0; }
+      } else if (facts && facts.events !== last) workerSince = 0;
       last = facts ? facts.events : -1;
       if (idle && ++stable >= 2) {
         // The page has nothing left to do: let exactly one network answer in, then wait again. Local work
@@ -147,14 +157,28 @@ export class Driver {
       await sleep(2);
     }
   }
-  /** Advances fake time by `ms` in fixed slices; the page is idle before every slice. Animations follow. */
+  /**
+   * Advances fake time by `ms`; animations follow. The page steps its own clock from one timer instant to the next
+   * (`__ihnDet.run`, determinism-init.js) and hands back as soon as a callback started anything the clock does not own
+   * (a request, IndexedDB, a worker message, a decode, a DOM change); the harness then waits until that has finished
+   * before time moves again. All real work therefore completes at one fixed fake millisecond, whatever the machine's
+   * speed: Playwright's own `runFor` yields to real tasks between two timers of a slice, which lets a worker reply
+   * decide which `Date.now()` a later callback sees.
+   */
   async advance(ms, { step = 20 } = {}) {
-    for (let left = ms; left > 0; left -= step) {
-      const slice = Math.min(step, left);
+    // A callback chain that re-arms itself with a 0 ms timer and starts real work every time (a poll loop waiting for
+    // something that needs time to pass) would pin the clock: after three chunks without progress the page is made
+    // to move by at least 1, 2, 4 … `step` ms per chunk until a chunk gets further by itself.
+    let stall = 0;
+    for (let left = ms; left > 0;) {
       await this.settle({ frames: false });
-      await this.page.clock.runFor(slice);
-      await this.page.evaluate(d => self.__ihnDet && self.__ihnDet.animate(d), slice).catch(() => {});
-      this.elapsed += slice;
+      const least = stall < 3 ? 0 : Math.min(step, left, 2 ** (stall - 3));
+      let used = await this.page.evaluate(([budget, slice, min]) => self.__ihnDet && self.__ihnDet.run ? self.__ihnDet.run(budget, slice, min) : -1, [left, step, least]).catch(() => -1);
+      if (used < 0) { used = Math.min(step, left); await this.page.clock.runFor(used); }   // no clock in this document yet
+      // What Playwright's runFor does besides running: a document loaded later replays the log to reach the same time.
+      else if (used > 0) await this.context.addInitScript(`globalThis.__pwClock && globalThis.__pwClock.controller.log('runFor', ${Date.now()}, ${used});`);
+      stall = used <= least ? stall + 1 : 0;
+      this.elapsed += used; left -= used;
     }
     await this.settle();
   }
@@ -175,12 +199,13 @@ export class Driver {
    * (first-paint states).
    */
   async open({ account = null, scene = null, sceneOptions = {}, storage = {}, dump = null, query = '', settleMs = 3000, ready: wantReady = true } = {}) {
+    let sceneQuery = '';
+    if (scene) { const file = addScene(this.mock, scene, sceneOptions); sceneQuery = `drive=${encodeURIComponent(file.id)}&`; }
+    if (account && !this.mock.drive.accounts.has(account)) addAccounts(this.mock);
     await this.page.goto(`${this.baseUrl}/__seed`, { waitUntil: 'commit' });   // 404 page of the app's origin
     const entries = { ...themeStorage(this.cell), ...(account ? this.mock.session(account, { now: EPOCH }) : {}), ...storage };
     await this.page.evaluate(values => { for (const [key, value] of Object.entries(values)) localStorage.setItem(key, value); }, entries);
     if (dump) await restoreStorage(this.page, typeof dump === 'string' ? storageDump(dump) : dump);
-    let sceneQuery = '';
-    if (scene) { const file = addScene(this.mock, scene, sceneOptions); sceneQuery = `drive=${encodeURIComponent(file.id)}&`; }
     await this.page.goto(`${this.baseUrl}/?${sceneQuery}e2e=1${modeQuery(this.cell)}${query}`, { waitUntil: 'commit' });
     await this.advance(settleMs);
     if (!wantReady) return;
