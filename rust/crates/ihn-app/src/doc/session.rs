@@ -137,11 +137,12 @@ pub struct Session {
     chunks: Vec<(Id, u32)>,
     next_chunk: u32,
     full_compact: bool,
-    record_dirty: bool,
     assets: Vec<(Hash, BlobHandle)>,
     new_assets: Vec<(Hash, BlobHandle, String, f64)>,
     pending: StoreTx,
     changes: Changes,
+    /// `sig::CHANGED` was sent for what `changes` holds.
+    announced: bool,
     sync: Option<SyncStatus>,
 }
 
@@ -223,11 +224,11 @@ impl Session {
             chunks: Vec::new(),
             next_chunk: 1,
             full_compact: false,
-            record_dirty: false,
             assets: Vec::new(),
             new_assets: Vec::new(),
             pending: StoreTx::new(),
             changes: Changes::default(),
+            announced: false,
             sync: None,
         }
     }
@@ -252,6 +253,13 @@ impl Session {
         m.name |= c.name;
         m.versions |= c.versions;
         m.applied |= c.applied;
+        // Nobody read the changes for a long time: keep the lists bounded by the document's size.
+        if m.items.len() > 8192 {
+            for list in [&mut m.pages, &mut m.items, &mut m.page_props] {
+                list.sort_unstable();
+                list.dedup();
+            }
+        }
     }
 
     /// Asset hashes the document refers to: page backgrounds and images that are not deleted.
@@ -468,9 +476,9 @@ pub fn with_replica<R>(app: &mut App, host: &mut dyn Host, f: impl FnOnce(&mut d
     Some(r)
 }
 
-/// What remote batches and snapshots changed since the last call.
+/// What remote batches and snapshots changed since the last call (the reader of `sig::CHANGED`).
 pub fn take_changes(app: &mut App) -> Changes {
-    let mut c = get_mut(app).map(|s| std::mem::take(&mut s.changes)).unwrap_or_default();
+    let mut c = get_mut(app).map(|s| (std::mem::take(&mut s.announced), std::mem::take(&mut s.changes)).1).unwrap_or_default();
     for list in [&mut c.pages, &mut c.items, &mut c.page_props] {
         list.sort_unstable();
         list.dedup();
@@ -516,7 +524,9 @@ fn after(app: &mut App, host: &mut dyn Host) {
             tx.asset_ref(&hash, 1, false);
         }
     }
-    let (changed, queued) = (s.changes != Changes::default(), !s.queue.is_empty() || s.partial.is_some());
+    // One signal per batch of changes: the next one follows `take_changes`.
+    let changed = s.changes != Changes::default() && !std::mem::replace(&mut s.announced, true);
+    let queued = !s.queue.is_empty() || s.partial.is_some();
     if !tx.is_empty() {
         let req = app.req(Mod::DocSession);
         store::tx(app, host, req, tx);
@@ -624,15 +634,19 @@ pub fn set_meta(app: &mut App, host: &mut dyn Host, name: &str, can_edit: bool, 
     s.can_edit = can_edit;
     s.record.name = name.into();
     s.record.drive_meta = meta;
-    s.record.flags.created = true;
     s.record.last_opened_at = time;
+    // Field patches, never the whole record: `seq` and `relay` belong to the tabs that append and seal. (Until the
+    // record exists the patches do nothing and the compaction below writes it whole.)
+    let mut t = StoreTx::new();
+    t.doc_patch(&s.doc_id, &[(&["name"], Value::from(name)), (&["driveMeta"], s.record.drive_meta.clone()), (&["lastOpenedAt"], Value::from(time))]);
+    t.persist(&s.account, &s.doc_id, &mut s.record, Record::Flags { relay_pending: None, export_pending: None, created: Some(true) });
     if let Some((head, vv)) = export {
-        s.record.exports.retain(|e| e.0 != head);
-        s.record.exports.push((head, vv));
-        let extra = s.record.exports.len().saturating_sub(crate::store::schema::KNOWN_EXPORTS);
-        s.record.exports.drain(..extra);
+        t.persist(&s.account, &s.doc_id, &mut s.record, Record::KnownExport { head, vv });
     }
-    s.record_dirty = true;
+    if s.persistent && s.record_stored {
+        let req = app.req(Mod::DocSession);
+        store::tx(app, host, req, t);
+    }
     compact(app, host, true);
     shell::signal(app, host, sig::STATE, "");
 }
@@ -667,15 +681,14 @@ pub fn compact(app: &mut App, host: &mut dyn Host, force: bool) {
         pages.dedup();
     }
     let through = s.trimmable(wall);
-    if pages.is_empty() && !header && through.is_empty() && !s.record_dirty && s.record_stored {
+    if pages.is_empty() && !header && through.is_empty() && s.record_stored {
         return;
     }
     let mut t = StoreTx::new();
     let mut vv = ihn_core::codec::Writer::default();
     s.doc.vv.encode(&mut vv);
     s.record.vv = vv.buf;
-    if !std::mem::replace(&mut s.record_stored, true) || std::mem::take(&mut s.record_dirty) {
-        // The whole record, but never over fields other tabs patch: seq and relay are merged by maximum below.
+    if !std::mem::replace(&mut s.record_stored, true) {
         t.doc_put(&s.doc_id, &s.record);
     } else {
         t.doc_patch(&s.doc_id, &[(&["vv"], Value::from(&s.record.vv[..]))]);
