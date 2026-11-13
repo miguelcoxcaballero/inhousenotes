@@ -450,6 +450,11 @@ impl DocRecord {
     /// 5.18.0's retention rule (`offline-store-v5.js:prune`) in v6 terms: the local copy of a document may be
     /// dropped when it is not pinned, not open, everything local is sealed and exported, the Drive file exists,
     /// and it was last opened more than `retention_days` ago.
+    ///
+    /// "Sealed" is read from the journal position itself, not only from the flags: every actor of `seq` must be
+    /// covered by `relay.sealed`. `seq` is written in the transaction that appends the batch, the flags in a later
+    /// one (and only by the `ihn6-net` holder), so after a crash between the two — or an append by a tab that
+    /// does not hold the lock — the flags can still be clear while batches wait to be sealed.
     // v5: offline-store-v5.js:prune — !pinned && !dirty && !protected && lastOpenedAt < cutoff && no outbox row
     pub fn prunable(&self, open: bool, now_ms: f64, retention_days: f64) -> bool {
         !self.pinned
@@ -457,6 +462,7 @@ impl DocRecord {
             && self.flags.created
             && !self.flags.relay_pending
             && !self.flags.export_pending
+            && self.seq.0.iter().all(|&(actor, seq)| self.relay.sealed.get(actor).is_some_and(|&sealed| seq <= sealed))
             && self.last_opened_at < now_ms - retention_days * 86_400_000.0
     }
 }
@@ -508,10 +514,8 @@ impl Tx {
         let kv = |tx: &mut Tx, key: &str, value: &dyn Fn(&mut W)| tx.put_with(Store::Kv, Put::Replace, Key::Pair(account, key), value);
         match r {
             Record::Seq { actor, seq } => {
-                self.doc_patch_with(doc, 1, |w| {
-                    w.path(&["seq", &hex16(actor)]);
-                    w.num(seq as f64);
-                });
+                self.doc_seq(doc, actor, seq);
+                let seq = record.seq.get(actor).map_or(seq, |&old| old.max(seq));
                 record.seq.insert(actor, seq);
             }
             Record::RelayPlan { gen, file_id, epoch_day } => {
@@ -675,6 +679,13 @@ mod tests {
             let mut other = record.clone();
             change(&mut other);
             assert!(!other.prunable(false, now, 14.0));
+        }
+        // Unsealed own batches keep the document even when no flag says so (the flags are written later than seq).
+        let actor = 0xab00;
+        for (seq, sealed, prunable) in [(5, Some(3), false), (5, None, false), (5, Some(5), true), (5, Some(6), true)] {
+            let mut other = DocRecord { seq: [(actor, seq), (actor + 1, 2)].into(), ..record.clone() };
+            other.relay.sealed = [(actor + 1, 2)].into_iter().chain(sealed.map(|n| (actor, n))).collect();
+            assert_eq!(other.prunable(false, now, 14.0), prunable, "seq {seq}, sealed {sealed:?}");
         }
         record.last_opened_at = now - 14.0 * day;
         assert!(!record.prunable(false, now, 14.0), "exactly at the cutoff stays");

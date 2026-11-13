@@ -21,8 +21,14 @@ Branch `v6-w2_4` (from `v6-w1_1`). Owns `rust/crates/ihn-app/src/store/*`, `host
 - The database opens with the first transaction (or `store::open`); a signed-out visitor never creates it.
 - Degraded mode: `store::health(app)` / `store::degraded(app)`; a transaction that was not attempted completes with
   `status::DEGRADED`. Causes: open blocked 1.5 s, open timeout 5 s, open error, no IndexedDB, or a write that still
-  fails with the quota after 3 retries (250/500/1000 ms; later writes wait behind the retry so the journal order
-  holds). While degraded for the quota, reads still run. `store::reopen` tries again.
+  fails with the quota after 3 retries (250/500/1000 ms). While degraded for the quota, reads still run.
+  `store::reopen` tries again.
+- **Order**: write transactions of a connection run one at a time, in the order they were issued (the next is
+  sent when the previous completed), so a write that is retried (quota backoff, lost connection) is never
+  overtaken and no batch becomes durable past a hole; when the first one degrades the store, the ones behind it
+  complete with `DEGRADED`. A transaction issued while others wait runs after them (a read sees the writes
+  issued before it); with nothing waiting a read is sent at once. A retry that comes due while the database is
+  reopening waits for the open at the head of the queue (it is not reported as `DEGRADED`).
 - Web Locks: `store::locks::{request, release, query, names}` with the names `slot_name/net_name/migrate_name`;
   `locks::acquire_slot(app, host, account, notify_req)` takes the first free `ihn6-slot:<account>:<n>` for the tab's
   lifetime and reports the slot as `Io::status` (`locks::EXHAUSTED`, `status::UNAVAILABLE` otherwise);
@@ -43,12 +49,20 @@ Branch `v6-w2_4` (from `v6-w1_1`). Owns `rust/crates/ihn-app/src/store/*`, `host
 - `Tx::ops_append` = `add` of the batch + patch of `docs.seq[actor]`. Its two results are `undefined` and a
   boolean: **false means the `docs` record does not exist** (deleted by retention in another tab); the batch is
   stored, the seq is not — write the record again with `doc_put`. A `seq` already in the journal aborts the whole
-  transaction with `status::CONSTRAINT`.
+  transaction with `status::CONSTRAINT`. The seq patch (`Tx::doc_seq`, also `Record::Seq`) is a maximum: the
+  stored `docs.seq[actor]` never goes back.
 - Document patches never resurrect a deleted record (`doc_patch` is "only when it exists").
 - `asset_get` and scans of `assets` return a **new JS handle per `Blob`**; release them (`Value::handles`,
   `OutBuf::obj_release`). `asset_keys` lists hashes without creating handles. `asset_put` takes the handle of a
   `Blob` the caller already holds and keeps the caller's ownership of that handle.
+- **References may arrive before the bytes**: `asset_ref` on an asset that is not stored counts in a record
+  without `blob` (`{refs}`), and `asset_put` then adds `blob/mime/size` to it and keeps the count. So an asset
+  record **without `blob` means "missing"** (`asset_get`), and `asset_put`'s result is the record as it was
+  before: `undefined` or an object without `blob` = this call stored the bytes; with `blob` = already there
+  (release that handle). `asset_keys` lists such records too.
 - Retention: `DocRecord::prunable(open, now, days)` + `schema::retention_days(preferences)` + `Tx::doc_delete`.
+  `prunable` also requires `seq[actor] <= relay.sealed[actor]` for every actor in `seq` (the flags are written
+  later than the append, and only by the lock holder), so `RelaySealed.sealed` must cover every actor it seals.
   "Open" must include other tabs: query the `ihn6-net:<account>:<docId>` lock (`locks::query`) before deleting.
 - Journal retention (24 h, 8 MiB) is the session's rule: the store keeps a batch as its bytes; age comes from the
   batch clock, size from the bytes. `ops_trim(doc, actor, through)` deletes a prefix of one actor's journal.
@@ -80,7 +94,7 @@ Branch `v6-w2_4` (from `v6-w1_1`). Owns `rust/crates/ihn-app/src/store/*`, `host
    Its dump tests need the W1.2 fixtures and `restoreStorage`; they skip when those are absent and run against
    another checkout with `IHN_W12_ROOT=<path>`.
 7. **Quota retries are done by the store for every write**, not by each caller (SYNC §7.2 describes them for the
-   session's append): one place, and the queue behind a retry keeps the order.
+   session's append): one place, and because writes are serialised the order holds through a retry.
 8. **`DELETE_DB` reports `BLOCKED` after 1.5 s but the deletion stays requested** (IndexedDB cannot cancel it): it
    completes when the blocking connection closes. Deleting the `inhouse-media-*` Cache Storage entries is not an
    IndexedDB operation and is not in this executor.

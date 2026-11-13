@@ -70,6 +70,11 @@ const setPath = (record, path, value) => {
   const last = path[path.length - 1];
   if (value === undefined) delete o[last]; else setField(o, last, value);
 };
+const getPath = (record, path) => {
+  let o = record;
+  for (const name of path) { if (!isObject(o)) return undefined; o = getField(o, name); }
+  return o;
+};
 
 export default function install(host) {
   // Bytes of an out-buffer record → structured value. Everything is copied: the callbacks run after wasm returned.
@@ -127,6 +132,17 @@ export default function install(host) {
       case 1: then(store.get(op.k), done); break;
       case 2:
         if (op.m === 2) then(store.get(op.k), old => { if (old === undefined) then(store.put(op.v, op.k), () => done(old)); else done(old); });
+        else if (op.m === 3) then(store.get(op.k), old => {
+          // Fill: the stored object keeps its fields and gets the ones it lacks; the result is how it was before.
+          if (old === undefined) return then(store.put(op.v, op.k), () => done(old));
+          if (!isObject(old) || !isObject(op.v)) return done(old);
+          const missing = Object.keys(op.v).filter(key => !Object.hasOwn(old, key));
+          if (!missing.length) return done(old);
+          const before = {};
+          for (const key of Object.keys(old)) setField(before, key, old[key]);
+          for (const key of missing) setField(old, key, op.v[key]);
+          then(store.put(old, op.k), () => done(before));
+        });
         else then(op.m === 1 ? store.add(op.v, op.k) : store.put(op.v, op.k), () => done());
         break;
       case 3: then(op.r ? store.delete(op.r) : store.clear(), () => done()); break;
@@ -142,7 +158,11 @@ export default function install(host) {
       case 6: then(store.get(op.k), old => {
         if (old === undefined && op.f & 1) return done(false);
         const record = isObject(old) ? old : {};
-        for (const [names, value] of op.p) setPath(record, names, value);
+        for (const [names, value] of op.p) {
+          // Flag 2 (max): a number never replaces a greater (or equal) number.
+          if (op.f & 2 && typeof value === 'number') { const now = getPath(record, names); if (typeof now === 'number' && now >= value) continue; }
+          setPath(record, names, value);
+        }
         then(store.put(record, op.k), () => done(old !== undefined));
       }); break;
       default: then(store.get(op.k), old => {

@@ -8,16 +8,19 @@
 //! | Op | Payload | Result |
 //! |---|---|---|
 //! | 1 `get` | key | the value or `undefined` |
-//! | 2 `put` | u8 mode (0 put, 1 add: abort when the key exists, 2 only when absent), key, value | mode 2: the value already there, else `undefined` |
+//! | 2 `put` | u8 mode (0 put, 1 add: abort when the key exists, 2 only when absent, 3 fill), key, value | modes 2 and 3: the value already there, else `undefined` |
 //! | 3 `del` | range | `undefined` |
 //! | 4 `scan` | range, u32 limit (0 = none), u8 flags (1 = keys only) | array `[key, value, key, value…]` or `[key…]`, in key order |
 //! | 5 `count` | range | number |
-//! | 6 `patch` | key, u8 flags (1 = only when the record exists), u32 n, n × (path, value) | whether the record existed |
+//! | 6 `patch` | key, u8 flags (1 = only when the record exists, 2 = max), u32 n, n × (path, value) | whether the record existed |
 //! | 7 `add` | key, path, f64 delta, u8 flags (1 = delete the record when the sum is ≤ 0) | the sum |
 //!
-//! `patch` sets fields of an object record (`undefined` deletes the field; missing parents are created); `add` adds
-//! to a numeric field, or to the record itself when the path is empty. Both read and write inside the transaction,
-//! so concurrent tabs never lose each other's fields.
+//! `patch` sets fields of an object record (`undefined` deletes the field; missing parents are created); with the
+//! `max` flag a number is only written over a smaller number (or over anything that is not a number), so a field
+//! never goes back. `add` adds to a numeric field, or to the record itself when the path is empty. `put` mode 3
+//! (`fill`) writes the value when the key is absent and otherwise adds the top-level fields the stored object
+//! lacks, leaving the ones it has. All of them read and write inside the transaction, so concurrent tabs never
+//! lose each other's fields.
 //!
 //! Range: `u8 kind` — 0 all, 1 only(key), 2 bound(lower, upper, u8 flags: 1 lower open, 2 upper open),
 //! 3 lower bound(key, u8 open), 4 upper bound(key, u8 open).
@@ -178,6 +181,9 @@ pub enum Put {
     Add = 1,
     /// Insert when absent; the result is the value already there (`undefined` when this one was written).
     IfAbsent = 2,
+    /// Insert when absent; when an object is there, add the top-level fields it lacks and keep the ones it has.
+    /// The result is the value as it was before (`undefined` when absent).
+    Fill = 3,
 }
 
 /// The operations of one transaction.
@@ -239,9 +245,16 @@ impl Tx {
     }
     /// `patch` whose `n` fields are written by `fields`: each one [`W::path`] followed by one value.
     pub fn patch_with(&mut self, store: Store, key: Key, only_existing: bool, n: u32, fields: impl FnOnce(&mut W)) {
+        self.patch_flags(store, key, only_existing as u8, n, fields);
+    }
+    /// `patch` whose numbers only ever grow: a field that already holds a greater number is left alone.
+    pub fn patch_max_with(&mut self, store: Store, key: Key, only_existing: bool, n: u32, fields: impl FnOnce(&mut W)) {
+        self.patch_flags(store, key, only_existing as u8 | 2, n, fields);
+    }
+    fn patch_flags(&mut self, store: Store, key: Key, flags: u8, n: u32, fields: impl FnOnce(&mut W)) {
         let mut w = self.op(6, store, true);
         key.write(&mut w);
-        w.0.push(only_existing as u8);
+        w.0.push(flags);
         w.0.extend_from_slice(&n.to_le_bytes());
         fields(&mut w);
     }
@@ -288,6 +301,14 @@ impl Tx {
     pub fn doc_patch_with(&mut self, doc: &str, n: u32, fields: impl FnOnce(&mut W)) {
         self.patch_with(Store::Docs, Key::Str(doc), true, n, fields);
     }
+    /// Raises `docs.seq[actor]` to `seq`; it never goes back (a transaction that commits after a later one of the
+    /// same actor leaves the greater value). The result is whether the document record existed.
+    pub fn doc_seq(&mut self, doc: &str, actor: u64, seq: u32) {
+        self.patch_max_with(Store::Docs, Key::Str(doc), true, 1, |w| {
+            w.path(&["seq", &sv::hex16(actor)]);
+            w.num(seq as f64);
+        });
+    }
     /// Every document record (all accounts; filter by `DocRecord::account`).
     pub fn docs_scan(&mut self) { self.scan(Store::Docs, Range::All, 0, false); }
     /// Removes a document with its chunks and journal (retention, delete forever). Asset references are the
@@ -309,15 +330,12 @@ impl Tx {
 
     // ---- ops (journal): [docId, actor, seq] ----
 
-    /// Appends an own batch and bumps `docs.seq[actor]` — one transaction (SYNC §7.2). A `seq` that is already in
-    /// the journal aborts everything with [`status::CONSTRAINT`]. Two results: `undefined`, then whether the
-    /// document record existed.
+    /// Appends an own batch and raises `docs.seq[actor]` to its seq ([`Tx::doc_seq`]) — one transaction
+    /// (SYNC §7.2). A `seq` that is already in the journal aborts everything with [`status::CONSTRAINT`]. Two
+    /// results: `undefined`, then whether the document record existed.
     pub fn ops_append(&mut self, doc: &str, actor: u64, seq: u32, batch: &[u8]) {
         self.put_with(Store::Ops, Put::Add, Key::Op(doc, actor, seq), |w| w.bytes(batch));
-        self.doc_patch_with(doc, 1, |w| {
-            w.path(&["seq", &sv::hex16(actor)]);
-            w.num(seq as f64);
-        });
+        self.doc_seq(doc, actor, seq);
     }
     /// Stores a received batch (idempotent: a duplicate replaces identical bytes).
     pub fn ops_put(&mut self, doc: &str, actor: u64, seq: u32, batch: &[u8]) {
@@ -337,12 +355,16 @@ impl Tx {
     // ---- assets: hash → {blob, mime, size, refs, remap?} ----
 
     /// The asset record; its `blob` is a new JS object handle each time, for the caller to release
-    /// (`Value::handles`, `OutBuf::obj_release`).
+    /// (`Value::handles`, `OutBuf::obj_release`). A record without `blob` is an asset that is referenced but whose
+    /// bytes have not arrived yet ([`Tx::asset_ref`]): treat it as missing.
     pub fn asset_get(&mut self, hash: &[u8; 32]) { self.get(Store::Assets, Key::Str(&sv::hex(hash))); }
-    /// Stores an asset unless it is already there (content-addressed: same hash, same bytes). `blob` is the JS
-    /// object handle of the `Blob`; the caller keeps owning the handle. New assets start with `refs` 0.
+    /// Stores an asset unless its bytes are already there (content-addressed: same hash, same bytes). `blob` is
+    /// the JS object handle of the `Blob`; the caller keeps owning the handle. New assets start with `refs` 0; a
+    /// record that only counts references (they arrived before the bytes) gets the blob and keeps its count.
+    /// The result is the record as it was before: `undefined` or an object without `blob` when this call stored
+    /// the bytes, else the stored asset (with a `Blob` handle to release).
     pub fn asset_put(&mut self, hash: &[u8; 32], blob: u32, mime: &str, size: f64) {
-        self.put_with(Store::Assets, Put::IfAbsent, Key::Str(&sv::hex(hash)), |w| {
+        self.put_with(Store::Assets, Put::Fill, Key::Str(&sv::hex(hash)), |w| {
             w.obj(4);
             w.key("blob");
             w.blob(blob, size, mime);
@@ -355,7 +377,8 @@ impl Tx {
         });
     }
     /// Adds to the reference count; with `collect` the asset is deleted when the count reaches 0. The result is
-    /// the new count.
+    /// the new count. References to an asset that is not stored yet are counted in a record without `blob`, which
+    /// a later [`Tx::asset_put`] completes.
     pub fn asset_ref(&mut self, hash: &[u8; 32], delta: i32, collect: bool) {
         self.add(Store::Assets, Key::Str(&sv::hex(hash)), &["refs"], delta as f64, collect);
     }
