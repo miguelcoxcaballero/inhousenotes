@@ -5,7 +5,7 @@
 - `ihn-core/src/jsmath.rs`: `sin`, `cos`, `atan2` (+ `atan`), `exp`, `pow`, `round`, `hypot`.
 - `ihn-core/src/jsfmt.rs`: `num(f64)` / `push_num(&mut String, f64)` (ES `Number::toString`) and `fixed(f64, digits)`
   (`Number.prototype.toFixed`; not in the plan, but 5.18.0 calls `toFixed` 7 times and it has the same pitfalls).
-- `tests/v6/fixtures/record-math.mjs` + `tests/v6/fixtures/math/*.json` (38 872 rows, 1.6 MB).
+- `tests/v6/fixtures/record-math.mjs` + `tests/v6/fixtures/math/*.json` (36 872 rows, 1.6 MB).
 - `scripts/check-math.mjs`: the gate, with a self-test that plants 16 banned calls on every run.
 - Test API: `core.jsmath.<sin|cos|atan|exp|round|atan2|pow|hypot>` and `core.jsfmt.num`, args = JSON array of
   16-digit hex bit patterns.
