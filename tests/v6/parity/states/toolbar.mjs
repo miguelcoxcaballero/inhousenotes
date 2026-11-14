@@ -4,6 +4,7 @@
 // and CDP stylus events in both apps.
 // Scenes are 5.x fixtures opened through the shared link, so v6 needs the 5.x import (W3.4) to show them.
 import { parity } from '../run.mjs';
+import { SAVE_DOT, VERSION } from '../support/editor.mjs';
 import { ANA } from '../../mock/fixtures.mjs';
 
 const doc = (t, extra = {}) => t.open({ account: ANA, scene: 'r0', ...extra });
@@ -77,7 +78,7 @@ parity('toolbar/eraser-menu', { only: { viewports: ['desktop-1280', 'desktop-192
   await t.advance(400);
 });
 
-parity('toolbar/draw-with-finger', {}, async t => {
+parity('toolbar/draw-with-finger', VERSION, async t => {
   await doc(t);
   await t.click('#btn-drive-profile-editor', { force: true });
   await t.advance(400);
@@ -86,13 +87,13 @@ parity('toolbar/draw-with-finger', {}, async t => {
   await t.advance(400);
 });
 
-parity('toolbar/draw-with-finger-persisted', {}, async t => {
+parity('toolbar/draw-with-finger-persisted', VERSION, async t => {
   await doc(t, { storage: { touchDrawEnabled: 'true' } });
   await t.click('#btn-drive-profile-editor', { force: true });
   await t.advance(400);
 });
 
-parity('toolbar/undo-redo-states', {}, async t => {
+parity('toolbar/undo-redo-states', SAVE_DOT, async t => {
   await doc(t);
   await edit(t);
   await t.capture('empty');

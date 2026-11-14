@@ -234,8 +234,11 @@
       for (const timer of clock._timers.values()) due = Math.min(due, timer.callAt - clock._now.ticks);
       const slice = Math.min(ms - used, Math.max(least, Math.min(step, Math.max(0, Math.ceil(due)))));
       const events = det.events;
+      // Timers fire at the end of the slice: an animation they start (a class change) begins there and gets no time
+      // of this slice, otherwise its phase would depend on where the slice began (other timers of the page).
+      const before = slice && g.document && g.document.getAnimations ? new Set(g.document.getAnimations()) : null;
       await clock.runFor(slice);
-      if (slice) det.animate(slice);
+      if (slice) det.animate(slice, before);
       used += slice;
       if (used >= ms || det.events !== events || det.busy !== busy || det.dirty || det.loads || det.workers()) return used;
       if (!slice) return 0;   // a silent timer re-armed for "now": the harness decides (see advance)
@@ -245,12 +248,13 @@
    * CSS animations, transitions and Web Animations follow the fake clock: the harness stops the document timeline
    * (CDP Animation.setPlaybackRate 0) and calls this with every clock slice.
    */
-  det.animate = ms => {
+  det.animate = (ms, only = null) => {
     if (!g.document || !g.document.getAnimations) return 0;
     let running = 0;
     for (const animation of g.document.getAnimations()) {
       if (animation.playState !== 'running') continue;
       running++; det.dirty = true;
+      if (only && !only.has(animation)) continue;
       try { animation.currentTime = (Number(animation.currentTime) || 0) + ms * (animation.playbackRate || 1); } catch (error) { /* scroll-driven */ }
     }
     return running;

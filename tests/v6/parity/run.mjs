@@ -267,15 +267,16 @@ export class Driver {
   async wheel(dx, dy) { await this.page.mouse.wheel(dx, dy); await this.settle(); }
   /**
    * A pointer gesture through CDP, like a stylus: `points` are `{x, y, t}` in CSS px and ms from the first sample
-   * (recorded streams of tests/v6/fixtures/ink). The clock advances between samples; `lift: false` leaves the pen down.
+   * (recorded streams of tests/v6/fixtures/ink). The clock advances between samples; `lift: false` leaves the pen down,
+   * `press: false` continues the contact a previous call left down.
    */
-  async pen(points, { pointerType = 'pen', lift = true, force = 0.5 } = {}) {
+  async pen(points, { pointerType = 'pen', lift = true, force = 0.5, press = true } = {}) {
     const send = (type, p, buttons) => this.cdp.send('Input.dispatchMouseEvent', { type, x: p.x, y: p.y, button: 'left', buttons, clickCount: 1, pointerType, force: p.p ?? force });
     let last = 0;
     for (const [index, point] of points.entries()) {
       const wait = Math.max(0, Math.round((point.t ?? index * 8) - last)); last += wait;
       if (wait) await this.advance(wait, { step: wait });
-      await send(index === 0 ? 'mousePressed' : 'mouseMoved', point, 1);
+      await send(index === 0 && press ? 'mousePressed' : 'mouseMoved', point, 1);
       await this.settle({ frames: false });
     }
     if (lift) { await send('mouseReleased', points.at(-1), 0); await this.settle(); }
@@ -347,7 +348,10 @@ function judge(state, a, b, dpr) {
   const regions = b.regions || a.regions;
   if (state.tags?.length && regions && comparison.pixels.box) {
     // Expected difference: every differing pixel must lie inside the rule's rectangles (TESTING §3.5).
-    const box = comparison.pixels.box, inside = regions.some(r => box.x >= Math.floor(r.x * dpr) && box.y >= Math.floor(r.y * dpr) && box.x + box.width <= Math.ceil((r.x + r.width) * dpr) && box.y + box.height <= Math.ceil((r.y + r.height) * dpr));
+    // (Several rules may each allow their own rectangles, so pixels are tested one by one, not their bounding box.)
+    const rects = regions.map(r => [Math.floor(r.x * dpr), Math.floor(r.y * dpr), Math.ceil((r.x + r.width) * dpr), Math.ceil((r.y + r.height) * dpr)]);
+    const { width, marks } = comparison.pixels;
+    const inside = marks.every(i => { const p = i / 4, x = p % width, y = (p / width) | 0; return rects.some(([x0, y0, x1, y1]) => x >= x0 && y >= y0 && x < x1 && y < y1); });
     if (inside) return { status: 'expected', comparison };
   }
   return { status: 'fail', comparison };

@@ -4,6 +4,7 @@
 // Scenes are 5.x fixtures opened through the shared link.
 import zlib from 'node:zlib';
 import { parity } from '../run.mjs';
+import { SAVE_DOT } from '../support/editor.mjs';
 import { ANA } from '../../mock/fixtures.mjs';
 
 const doc = t => t.open({ account: ANA, scene: 'template' });
@@ -58,7 +59,7 @@ parity('pages/panel-edit', {}, async t => {
 });
 
 // Page 2 dragged above page 1: the ghost and the insertion line mid-drag, then the new order.
-parity('pages/drag-reorder', {}, async t => {
+parity('pages/drag-reorder', SAVE_DOT, async t => {
   await doc(t);
   await edit(t);
   await openPanel(t);
@@ -76,7 +77,7 @@ parity('pages/drag-reorder', {}, async t => {
 });
 
 // The slider of "Delete page?": at rest, half way, at the end (held), then the page deleted.
-parity('pages/delete-slider', {}, async t => {
+parity('pages/delete-slider', SAVE_DOT, async t => {
   await doc(t);
   await edit(t);
   await openPanel(t);
@@ -100,7 +101,7 @@ parity('pages/delete-slider', {}, async t => {
 });
 
 // The photo modal: empty, a photo chosen (Document), Photo ratio, then the page added.
-parity('pages/photo-modal', {}, async t => {
+parity('pages/photo-modal', SAVE_DOT, async t => {
   await doc(t);
   await edit(t);
   await openPanel(t);

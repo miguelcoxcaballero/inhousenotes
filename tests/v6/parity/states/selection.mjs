@@ -4,6 +4,7 @@
 // (drawn on top). The pen is a CDP stylus (`t.pen`) in both apps; the box is dragged with it too. Desktop and tablet
 // only: on phones the lasso button of the toolbar's initial position is below the window in 5.18.0.
 import { parity } from '../run.mjs';
+import { SAVE_DOT } from '../support/editor.mjs';
 import { ANA } from '../../mock/fixtures.mjs';
 
 const only = { viewports: ['desktop-1280', 'desktop-1920', 'tablet-800'] };
@@ -58,33 +59,33 @@ parity('selection/box', { only }, async t => {
   await selected(t);
 });
 
-parity('selection/move', { only }, async t => {
+parity('selection/move', { only, ...SAVE_DOT }, async t => {
   await selected(t);
   const at = await mapper(t);
   const path = line(at(110, 130), at(260, 330), 10);
   await t.pen(path, { lift: false });
   await t.advance(32);
   await t.capture('mid');
-  await t.pen([path.at(-1)], { lift: true });
+  await t.pen([path.at(-1)], { lift: true, press: false });   // the same contact lifts (no second press)
   await t.advance(400);
   await t.capture('lift');
 });
 
-parity('selection/scale', { only }, async t => {
+parity('selection/scale', { only, ...SAVE_DOT }, async t => {
   await selected(t);
   const se = await centre(t, '.selection-box[data-page="0"] .handle-se');
   await t.pen(line(se, { x: se.x + 60, y: se.y + 40 }));
   await t.advance(400);
 });
 
-parity('selection/rotate', { only }, async t => {
+parity('selection/rotate', { only, ...SAVE_DOT }, async t => {
   await selected(t);
   const r = await centre(t, '.selection-box[data-page="0"] .rotate-handle');
   await t.pen(line(r, { x: r.x + 140, y: r.y + 90 }));
   await t.advance(400);
 });
 
-parity('selection/recolour', { only }, async t => {
+parity('selection/recolour', { only, ...SAVE_DOT }, async t => {
   await selected(t);
   await t.pen([{ ...(await centre(t, '.selection-box[data-page="0"] .selection-color-btn')), t: 0 }]);
   await t.advance(300);
@@ -94,7 +95,7 @@ parity('selection/recolour', { only }, async t => {
   await t.capture('red');
 });
 
-parity('selection/duplicate-delete', { only }, async t => {
+parity('selection/duplicate-delete', { only, ...SAVE_DOT }, async t => {
   await selected(t);
   await t.pen([{ ...(await centre(t, '.selection-box[data-page="0"] .selection-duplicate')), t: 0 }]);
   await t.advance(400);
@@ -106,7 +107,7 @@ parity('selection/duplicate-delete', { only }, async t => {
 
 // Strokes 5 and 6 of page 1 (y ≈ 340–400) are older than a highlighter drawn on page 2; dragged 900 px down they
 // cross page 1's bottom + 50 px and land on page 2 on top of it.
-parity('selection/cross-page', { only }, async t => {
+parity('selection/cross-page', { only, ...SAVE_DOT }, async t => {
   await doc(t);
   await edit(t);
   const c = await centre(t, '#canvas-viewport');
