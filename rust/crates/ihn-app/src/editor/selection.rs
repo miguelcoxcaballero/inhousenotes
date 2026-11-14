@@ -866,6 +866,9 @@ pub fn test_cmd(app: &mut App, _host: &mut dyn Host, name: &str, _args: &str) ->
 /// The selected item ids (images first, then strokes, in draw order).
 pub fn selected(app: &App) -> Vec<Id> { ids(app) }
 
+/// v5 `state.selectionTransform` is set.
+pub fn transforming(app: &App) -> bool { app.st.editor_selection.tf.is_some() }
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -160,6 +160,13 @@ pub fn interacting(app: &App, now: f64) -> bool {
     st.is_panning || !st.pointers.is_empty() || st.inertia || st.pen_writing || st.gesture || app.sched.quiet_for(now) < RECENT_ACTIVITY_MS
 }
 
+/// v5: `hasSmoothInteraction()` (a page structure edit waits while it is true).
+pub fn smooth(app: &App) -> bool {
+    let st = &app.st.editor_viewport;
+    st.pen_writing || st.gesture || st.is_panning || !st.pointers.is_empty() || st.inertia
+        || crate::panels::pages_panel::dragging(app) || super::selection::transforming(app)
+}
+
 /// A gesture holds cached geometry (v5 `viewportGestureGeometry` is set).
 pub fn in_gesture(app: &App) -> bool { app.st.editor_viewport.geometry.is_some() }
 

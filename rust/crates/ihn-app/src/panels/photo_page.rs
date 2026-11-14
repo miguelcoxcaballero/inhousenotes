@@ -38,6 +38,10 @@ const L_OVERLAY: u32 = tag(Mod::PanelsPhotoPage, 11);
 const L_ESCAPE: u32 = tag(Mod::PanelsPhotoPage, 12);
 const L_DRAGOVER: u32 = tag(Mod::PanelsPhotoPage, 13);
 const L_MODE_PHOTO: u32 = tag(Mod::PanelsPhotoPage, 14);
+const T_ACQUIRE: u32 = tag(Mod::PanelsPhotoPage, 32);
+/// v5 `acquireLocalPageStructureMutation(timeoutMs = 12_000)`: its poll interval and deadline.
+const ACQUIRE_POLL_MS: f64 = 32.0;
+const ACQUIRE_TIMEOUT_MS: f64 = 12_000.0;
 
 /// v5 `COVER_RENDER_SCALE`, `COVER_RENDER_MAX_SIDE`, `COVER_JPEG_QUALITY`, `IMAGE_ORIGINAL_MAX_BYTES`,
 /// `IMAGE_INSERT_MAX_PIXELS`.
@@ -69,6 +73,8 @@ enum Step {
     Url { obj: u32, name: String, mime: String, size: f64, img: Img, w: f64, h: f64 },
     Encode { surf: Surf, page: (f64, f64) },
     Digest { blob: u32, mime: String, size: f64, page: (f64, f64) },
+    /// The page is ready; the structure edit waits for the running interaction to settle.
+    Acquire { hash: Hash, blob: u32, mime: String, size: f64, page: (f64, f64), deadline: f64 },
 }
 
 pub struct State {
@@ -82,12 +88,14 @@ pub struct State {
     /// The document and the page the photo page goes after (anchor by id, as 5.18.0).
     doc: String,
     after: Id,
+    /// The `T_ACQUIRE` poll is armed.
+    acquiring: bool,
     /// Photo pages added (test counter).
     pub added: u32,
 }
 
 impl Default for State {
-    fn default() -> Self { State { open: false, busy: false, photo: false, sel: None, step: Step::Idle, req: 0, doc: String::new(), after: Id::NONE, added: 0 } }
+    fn default() -> Self { State { open: false, busy: false, photo: false, sel: None, step: Step::Idle, req: 0, doc: String::new(), after: Id::NONE, acquiring: false, added: 0 } }
 }
 
 fn photo_mode(app: &App) -> bool { app.st.panels_photo_page.photo }
@@ -178,14 +186,17 @@ fn drop_step(app: &mut App, host: &mut dyn Host) {
             pages::with_gfx(app, |_, g| g.cmds.image_drop(img));
         }
         Step::Encode { surf, .. } => pages::with_gfx(app, |_, g| g.cmds.drop_surf(surf)),
-        Step::Digest { blob, .. } => host.out().obj_release(blob),
+        Step::Digest { blob, .. } | Step::Acquire { blob, .. } => host.out().obj_release(blob),
+    }
+    if std::mem::take(&mut app.st.panels_photo_page.acquiring) {
+        app.sched.clear(host.out(), T_ACQUIRE);
     }
     pages::flush(app, host);
 }
 
 /// v5 `clearCoverModalSelection()`.
 fn clear_selection(app: &mut App, host: &mut dyn Host) {
-    if !matches!(app.st.panels_photo_page.step, Step::Encode { .. } | Step::Digest { .. }) {
+    if !matches!(app.st.panels_photo_page.step, Step::Encode { .. } | Step::Digest { .. } | Step::Acquire { .. }) {
         drop_step(app, host);
     }
     if let Some(sel) = app.st.panels_photo_page.sel.take() {
@@ -337,6 +348,24 @@ fn digest(app: &mut App, host: &mut dyn Host, blob: u32, mime: String, size: f64
     st.step = Step::Digest { blob, mime, size, page };
 }
 
+/// v5 `acquireLocalPageStructureMutation()`: a page structure edit waits while a smooth interaction runs (the tap
+/// on Add Page itself is one until its gesture settles), polling every 32 ms for at most 12 s.
+fn acquire(app: &mut App, host: &mut dyn Host, hash: Hash, blob: u32, mime: String, size: f64, page: (f64, f64), deadline: f64) {
+    if viewport::smooth(app) && session::doc_id(app) == app.st.panels_photo_page.doc {
+        if host.time() >= deadline {
+            // v5: "Still syncing page order…", then the insert's failure replaces it.
+            host.out().obj_release(blob);
+            return failed(app, host);
+        }
+        let st = &mut app.st.panels_photo_page;
+        st.step = Step::Acquire { hash, blob, mime, size, page, deadline };
+        st.acquiring = true;
+        app.sched.timer(host.out(), T_ACQUIRE, ACQUIRE_POLL_MS);
+        return;
+    }
+    insert(app, host, hash, blob, &mime, size, page);
+}
+
 /// v5 `insertPhotoPageAt(asset, insertAfter)`.
 fn insert(app: &mut App, host: &mut dyn Host, hash: Hash, blob: u32, mime: &str, size: f64, page: (f64, f64)) {
     let st = &app.st.panels_photo_page;
@@ -395,6 +424,7 @@ fn step_done(app: &mut App, host: &mut dyn Host, status: i32, obj: u32, data: &[
     let ok = status >= 0;
     match step {
         Step::Idle => {}
+        Step::Acquire { blob, .. } => host.out().obj_release(blob),
         Step::Take { base, drop } => {
             let list = Json::parse(std::str::from_utf8(data).unwrap_or("")).unwrap_or(Json::Null);
             let files = list.items();
@@ -454,7 +484,10 @@ fn step_done(app: &mut App, host: &mut dyn Host, status: i32, obj: u32, data: &[
             digest(app, host, obj, "image/jpeg".into(), f64s(data).0, page, req);
         }
         Step::Digest { blob, mime, size, page } => match data.get(..32).and_then(|d| <Hash>::try_from(d).ok()).filter(|_| ok) {
-            Some(hash) => insert(app, host, hash, blob, &mime, size, page),
+            Some(hash) => {
+                let deadline = host.time() + ACQUIRE_TIMEOUT_MS;
+                acquire(app, host, hash, blob, mime, size, page, deadline)
+            }
             None => {
                 host.out().obj_release(blob);
                 failed(app, host);
@@ -530,6 +563,12 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
         Event::Frame(_) if app.st.panels_photo_page.open => {
             update_preview(app, host);
             host.out().focus(Ui::COVER_UPLOAD_DROPZONE, false);
+        }
+        Event::Timer(T_ACQUIRE) => {
+            app.st.panels_photo_page.acquiring = false;
+            if let Step::Acquire { hash, blob, mime, size, page, deadline } = std::mem::replace(&mut app.st.panels_photo_page.step, Step::Idle) {
+                acquire(app, host, hash, blob, mime, size, page, deadline);
+            }
         }
         Event::Io(io) if io.req != 0 && io.req == app.st.panels_photo_page.req => step_done(app, host, io.status, io.obj, io.data),
         Event::Io(io) => host.out().obj_release(io.obj),
