@@ -30,11 +30,11 @@ pub mod scroll;
 pub mod sig {
     /// A document card was activated (5.18.0 `openDriveFile(card.driveFile)`): data = the file as JSON
     /// `{id, name, mimeType, modifiedTime, resourceKey, thumbnailLink, parents, ownedByMe, pending}`.
-    pub const OPEN_FILE: u8 = 0x40;
+    pub const OPEN_FILE: u8 = 0x30;
     /// The badge of a document whose upload failed was pressed: data = the document id (`#offline-sync-error`).
-    pub const SYNC_ERROR: u8 = 0x41;
+    pub const SYNC_ERROR: u8 = 0x31;
     /// A waiting badge was pressed while Drive is reachable: data = the document id (5.18.0 `retrySync`).
-    pub const RETRY_SYNC: u8 = 0x42;
+    pub const RETRY_SYNC: u8 = 0x32;
 }
 
 /// The seven card grids.
