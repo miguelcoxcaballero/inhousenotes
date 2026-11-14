@@ -15,7 +15,7 @@ const out = join(root, 'build');
 const IMPORTS = ['host_flush', 'host_rect', 'host_metric', 'host_now', 'host_time', 'host_random', 'host_ls', 'host_intl', 'host_log'];
 const EXPORTS = ['memory', 'ihn_abi', 'ihn_alloc', 'ihn_free', 'ihn_init', 'ihn_event', 'ihn_frame', 'ihn_out_ptr', 'ihn_out_len', 'ihn_out_reset', 'ihn_worker'];
 // W6.2s (docs/v6/NOTES-W6.2s.md): the design budget (480 KB / 160 KB gzip / 100 KB JS) is not reachable without
-// dropping features; these are the measured sizes after the size work (1,641,154 / 721,359 / 120,398 bytes) plus
+// dropping features; these are the measured sizes after the size work (1,646,831 / 723,729 / 120,398 bytes) plus
 // ~5 % headroom for the parity fixes still landing. Any growth beyond that fails the build.
 const LIMITS = { wasm: 1700 * 1024, wasmGzip: 740 * 1024, js: 124 * 1024 };
 
