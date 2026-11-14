@@ -303,7 +303,7 @@ mod tests {
     }
 
     fn archive() -> Value {
-        let page = |id: &str, n: u32| format!(r#"{{"pageId":"{id}","strokes":[{{"id":"s{n}","tool":"pen","color":"#111111","width":2,"points":[{{"x":1,"y":2,"p":0.5}},{{"x":3,"y":4,"p":0.5}}]}}],"images":[]}}"#);
+        let page = |id: &str, n: u32| format!(r##"{{"pageId":"{id}","strokes":[{{"id":"s{n}","tool":"pen","color":"#111111","width":2,"points":[{{"x":1,"y":2,"p":0.5}},{{"x":3,"y":4,"p":0.5}}]}}],"images":[]}}"##);
         let snap = |pages: &[String], name: &str| Snapshot { pages: pages.iter().map(|p| parse(p.as_bytes()).unwrap()).collect(), calendar: Value::Null, export_name: name.into() };
         let s0 = snap(&[page("a", 1), page("b", 2)], "Doc");
         let s1 = snap(&[page("b", 3), page("c", 4)], "Doc 2");

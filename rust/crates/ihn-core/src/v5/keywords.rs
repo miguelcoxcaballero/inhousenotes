@@ -58,7 +58,7 @@ fn parse_int(text: &str) -> Option<i64> {
 pub fn is_v5(keywords: &str) -> bool { keywords.starts_with("STROKES_") }
 
 pub fn parse(k: &str) -> Keywords<'_> {
-    let first = |rest: &'_ str| -> &'_ str { rest.split(';').next().unwrap_or(rest) };
+    fn first(rest: &str) -> &str { rest.split(';').next().unwrap_or(rest) }
     let strokes = k.strip_prefix("STROKES_Z:").map(|r| (true, r)).or_else(|| k.strip_prefix("STROKES_DATA:").map(|r| (false, r)));
     let mut overlay_refs: Vec<(i64, OverlayRef)> = Vec::new();
     for entry in section(k, "IH_OVERLAY_REFS:").unwrap_or("").split(',') {
