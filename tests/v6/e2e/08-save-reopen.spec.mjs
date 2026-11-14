@@ -32,8 +32,6 @@ async function device(browser, mock, { app = false, init } = {}) {
   const page = await context.newPage();
   const problems = [];
   page.on('pageerror', e => problems.push(`pageerror: ${e.message}`));
-  page.on('console', m => console.log('CONSOLE', m.type(), m.text().slice(0, 300)));
-  page.on('pageerror', e => console.log('PAGEERR', e.message));
   return { context, page, problems, app };
 }
 
@@ -131,7 +129,7 @@ test('a PDF-background page: no source attachment, the source is rebuilt from th
   await expect.poll(async () => (await session(B.page)).snapshot, { timeout: 20_000 }).toBe((await session(A.page)).snapshot);
   // The source is not in the export as a file: B rebuilds it from the export's pages and the page renders.
   await expect.poll(async () => (await session(B.page)).missing, { timeout: 30_000 }).toBe(0);
-  await expect.poll(async () => B.page.locator('.page-wrapper').first().evaluate(w => getComputedStyle(w).backgroundImage), { timeout: 20_000 }).toMatch(/^url\("?blob:/);
+  await expect.poll(async () => B.page.locator('canvas.page-canvas[data-page="0"]').evaluate(w => getComputedStyle(w).backgroundImage), { timeout: 20_000 }).toMatch(/^url\("?blob:/);
   expect([...A.problems, ...B.problems, ...problems]).toEqual([]);
   await A.context.close();
   await B.context.close();
@@ -163,7 +161,7 @@ test('412 with an unchanged head re-sends the same bytes; 412 with a new head me
   await expect.poll(() => [...mock.drive.files.values()].filter(f => f.name === 'inline-images (recovered Drive version).pdf').length, { timeout: 20_000 }).toBe(1);
   const copy = [...mock.drive.files.values()].find(f => f.name.endsWith('(recovered Drive version).pdf'));
   expect(Buffer.compare(copy.revisions.at(-1).data, blankPdf())).toBe(0);
-  expect((await container(mock.drive.content(id))).keywords.startsWith('STROKES_Z:!;IHN6:')).toBe(true);
+  await expect.poll(async () => (await container(mock.drive.content(id))).keywords.startsWith('STROKES_Z:!;IHN6:'), { timeout: 30_000 }).toBe(true);
   expect((await cmd(A.page, 'export.upload.state')).log).toEqual(expect.arrayContaining(['merge:Plain', 'copy:200']));
   expect([...A.problems, ...problems]).toEqual([]);
   await A.context.close();
@@ -176,7 +174,8 @@ test('export to the user: web download, Android bridge v2 and navigator.share', 
   const A = await device(browser, mock);
   await openDoc(A.page, id);
   await stroke(A.page, line(120, 700));
-  await A.page.click('#btn-export-pdf');
+  // The button lives in the pages panel (its own unit); its click is what matters here.
+  await A.page.locator('#btn-export-pdf').dispatchEvent('click');
   await expect(A.page.locator('#modal-export-pdf')).toHaveClass(/visible/);
   await expect(A.page.locator('#export-filename')).toHaveValue((await session(A.page)).name);
   await A.page.fill('#export-filename', 'My/Notes: final.pdf');

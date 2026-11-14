@@ -179,6 +179,7 @@ fn create_answer(app: &mut App, host: &mut dyn Host, io: &Io) {
         record(app, host, SyncRecord::LastExport { head, vv: c.vv, etag: String::new(), at });
     }
     collab::created(app, host);
+    super::lifecycle::note_home(app, host);
     shell::signal(app, host, session::sig::STATE, "");
 }
 
