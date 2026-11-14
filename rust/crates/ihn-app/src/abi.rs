@@ -227,7 +227,7 @@ pub mod ev {
     pub const PRIMARY: u32 = 256;
     /// `event.target` is itself `path[0]` (not merely a descendant of it).
     pub const EXACT: u32 = 512;
-    /// `event.dataTransfer.types` includes `'Files'`.
+    /// `event.dataTransfer.types` (or `clipboardData.types` of a paste) includes `'Files'`.
     pub const DT_FILES: u32 = 1024;
 }
 
