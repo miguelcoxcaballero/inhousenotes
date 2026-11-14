@@ -16,3 +16,9 @@ pub fn event(_app: &mut App, _host: &mut dyn Host, _event: &Event) -> u32 { 0 }
 
 /// `__IHN_TEST_API__.cmd('<module>.<name>', args)`: JSON text in, JSON text out; `None` = unknown command.
 pub fn test_cmd(_app: &mut App, _host: &mut dyn Host, _name: &str, _args: &str) -> Option<String> { None }
+
+/// v5 `clearSelection()` — interface placeholder for W4.3 (`editor::images`); W4.2 replaces this file.
+pub fn clear(_app: &mut App, _host: &mut dyn Host) {}
+
+/// Selects `items` of `page` and shows the box — interface placeholder for W4.3; W4.2 replaces this file.
+pub fn select(_app: &mut App, _host: &mut dyn Host, _page: ihn_core::id::Id, _items: &[ihn_core::id::Id]) {}
