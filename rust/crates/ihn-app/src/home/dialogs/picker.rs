@@ -197,8 +197,9 @@ pub fn open(app: &mut App, host: &mut dyn Host, mode: Mode, target: Option<Targe
         Mode::Upload => set_name(app, host, &file_name.unwrap_or_default()),
         Mode::Copy => {} // set by `make_copy`
         Mode::New => {
-            // v5: normalizeDocTitleInput(state.exportName || 'Untitled') — the open document's name.
-            let last = doc::session::get(app).map(|s| s.record.name.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| "Untitled".into());
+            // v5: normalizeDocTitleInput(state.exportName || 'Untitled') — the open document's name (`cuaderno`
+            // before any document).
+            let last = doc::session::get(app).map(|s| s.record.name.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| "cuaderno".into());
             set_name(app, host, &doc::create::normalize_title(&last));
         }
     }
