@@ -50,7 +50,7 @@ test('create, rename, card menu, copy, bin, upload', async ({ page, context, moc
   await page.click('#btn-folder-view-new-pdf');
   await expect(page.locator('#modal-folder-picker')).toHaveClass(/visible/);
   await expect(page.locator('#folder-picker-title')).toHaveText('New PDF');
-  await expect(page.locator('#folder-picker-name')).toHaveValue('Untitled');
+  await expect(page.locator('#folder-picker-name')).toHaveValue('cuaderno');
   await expect(page.locator('#folder-picker-breadcrumbs .folder-picker-breadcrumb')).toHaveText(['My Drive', 'School']);
   await expect.poll(async () => (await dialogs(page)).picker.folders).toEqual(['lib-folder-maths']);
   await page.fill('#folder-picker-name', '');
@@ -138,8 +138,10 @@ test('create, rename, card menu, copy, bin, upload', async ({ page, context, moc
   await expect(page.locator('#folder-picker-name-row .file-ext')).toBeHidden();
   await page.click('#folder-picker-confirm');
   await expect(page.locator('#modal-folder-picker')).not.toHaveClass(/visible/);
-  await expect(page.locator('#drive-status')).toHaveText('Uploaded: Scan.pdf');
+  // `Uploaded: Scan.pdf` is written to `#drive-status` and then replaced by the quiet refresh's counts, as in 5.18.0.
+  await expect.poll(() => [...mock.drive.files.values()].some(f => f.name === 'Scan.pdf')).toBe(true);
   const uploaded = [...mock.drive.files.values()].find(f => f.name === 'Scan.pdf');
+  expect(uploaded.parents).toEqual([mock.drive.accounts.get(ANA).rootId]);
   expect(uploaded && Buffer.compare(uploaded.revisions.at(-1).data, blankPdf())).toBe(0);
 
   // Make a Copy of a read-only document: the copy carries no `ihn6_*` property of the source and opens.
@@ -161,6 +163,8 @@ test('create, rename, card menu, copy, bin, upload', async ({ page, context, moc
   await page.click('#btn-drive-home svg');
   await expect(page.locator('#drive-home')).toBeVisible();
   await page.click('#home-nav [data-home-tab="home"]');
+  await cmd(page, 'home.refresh');
+  await expect(page.locator(`#drive-recents ${card(docId)} .drive-card-title`)).toHaveAttribute('title', 'Lecture one.pdf');
   await page.locator(`#drive-recents ${card(docId)}`).click();
   await expect(page.locator('#doc-title')).toHaveText('Lecture one', { timeout: 30_000 });
 
