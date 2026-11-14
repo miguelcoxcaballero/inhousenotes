@@ -124,9 +124,11 @@ test('doc.selftest: a v6 container opens through the shared link, and a reload r
 
   // The write path against the real IndexedDB: journalled, then "waiting to upload" (nothing seals it yet).
   expect(await cmd(page, 'doc.session.stroke')).toBe(true);
+  // The stroke and, once input is quiet, its timeline capture (W5.3): two journalled batches.
+  await expect.poll(async () => (await cmd(page, 'doc.versions.state')).captures).toBe(1);
   await expect.poll(async () => (await cmd(page, 'doc.session.state')).uncommitted).toBe(0);
   const edited = await cmd(page, 'doc.session.state');
-  expect(edited).toMatchObject({ items: 4, journal: 1, failed: false });
+  expect(edited).toMatchObject({ items: 4, journal: 2, failed: false });
   expect(await cmd(page, 'doc.save_state.state')).toMatchObject({ phase: 'paused', title: 'Waiting to save to Drive', badge: 'Waiting to upload', local: 'Saved', drive: 'Waiting' });
   await expect(page.locator('#save-indicator')).toHaveClass(/paused/);
   // The save-details popup: 5.18.0's markup, rows and button.
@@ -141,7 +143,7 @@ test('doc.selftest: a v6 container opens through the shared link, and a reload r
   await opened(page, 'v6-doc');
   await settled(page);
   const third = await cmd(page, 'doc.session.state');
-  expect(third).toMatchObject({ items: 4, journal: 1, snapshot: edited.snapshot, vv: edited.vv });
+  expect(third).toMatchObject({ items: 4, journal: 2, snapshot: edited.snapshot, vv: edited.vv });
   expect(media(mock)).toBe(1);
   expect(problems).toEqual([]);
 });
