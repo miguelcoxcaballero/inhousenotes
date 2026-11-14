@@ -420,7 +420,7 @@ fn write(out: &mut String, v: &Value, sorted: bool) {
             if sorted {
                 fields.retain(|(k, _)| !matches!(*k, "__proto__" | "prototype" | "constructor"));
                 fields.reverse(); // stable sort + dedup then keeps the last of a repeated key
-                fields.sort_by(|a, b| cmp_utf16(a.0, b.0));
+                crate::sort::by(&mut fields, |a, b| cmp_utf16(a.0, b.0));
                 fields.dedup_by(|b, a| a.0 == b.0);
             }
             out.push('{');

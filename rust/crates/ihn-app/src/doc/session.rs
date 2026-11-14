@@ -696,7 +696,7 @@ pub fn compact(app: &mut App, host: &mut dyn Host, force: bool) {
     if std::mem::take(&mut s.full_compact) {
         pages = s.doc.chunk_pages();
         pages.extend(s.chunks.iter().map(|c| c.0));
-        pages.sort_unstable();
+        ihn_core::sort::ord(&mut pages);
         pages.dedup();
     }
     let through = s.trimmable(wall);

@@ -18,6 +18,7 @@ pub mod pos;
 pub mod render;
 pub mod rows;
 pub mod snapshot;
+pub mod sort;
 pub mod stamp;
 #[doc(hidden)]
 pub mod testutil;

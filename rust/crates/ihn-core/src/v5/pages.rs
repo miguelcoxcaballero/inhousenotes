@@ -214,7 +214,7 @@ pub fn deletion_stamps(stamps: &Value, legacy_ids: &Value) -> Vec<(String, V5Sta
         }
     }
     let mut out: Vec<(String, V5Stamp)> = found.into_iter().collect();
-    out.sort_by(|a, b| cmp_utf16(&a.0, &b.0));
+    crate::sort::by(&mut out, |a, b| cmp_utf16(&a.0, &b.0));
     out
 }
 

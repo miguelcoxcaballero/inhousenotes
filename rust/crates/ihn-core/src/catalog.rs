@@ -256,7 +256,7 @@ impl Catalog {
     // v5: offline-library-v5.js:reload
     pub fn load(&mut self, mut entries: Vec<Entry>, mut docs: Vec<(String, DocInfo)>, views: Views, sync_folder: String, root_id: String) {
         sort_entries(&mut entries, &mut by_id);
-        docs.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+        crate::sort::by(&mut docs, |a, b| a.0.cmp(&b.0));
         // Listings Drive answered before the stored catalogue arrived are newer than it.
         let early = std::mem::replace(&mut self.stored, entries);
         let seen = std::mem::replace(&mut self.views, views);
@@ -323,7 +323,7 @@ impl Catalog {
             }
             e.parents = Some(parents);
         }
-        self.by_parent.sort_unstable();
+        crate::sort::ord(&mut self.by_parent);
         self.active = active;
     }
 
