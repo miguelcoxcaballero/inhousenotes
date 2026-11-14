@@ -126,6 +126,8 @@ pub struct State {
     // Navigation.
     tab: u8,
     stack: Vec<folders::Crumb>,
+    /// The path the folder view still shows while a close starts (5.18.0 clones the view before it changes).
+    shown_stack: Option<Vec<folders::Crumb>>,
     current: String,
     origin_id: Option<String>,
     nav_id: u32,
@@ -151,7 +153,7 @@ impl Default for State {
             slots: Default::default(), recents: Vec::new(), starred: Vec::new(), shared: Vec::new(), folders: Vec::new(), files: Vec::new(), search: String::new(),
             reqs: Vec::new(), batches: Vec::new(), folder_jobs: Vec::new(), next_batch: 0, auto_on: false, auto_busy: false, crawled: false, opening: false,
             decodes: Vec::new(), motion_waiters: Vec::new(), next_dyn: 0,
-            tab: 0, stack: vec![folders::Crumb::root()], current: "root".into(), origin_id: None, nav_id: 0, crumb_nodes: Vec::new(), view_open: false, view_top: -1.0,
+            tab: 0, stack: vec![folders::Crumb::root()], shown_stack: None, current: "root".into(), origin_id: None, nav_id: 0, crumb_nodes: Vec::new(), view_open: false, view_top: -1.0,
             view_color: String::new(), anim: None, settle: None, settling_labels: 0, plans: [None, None], observing: false, frames: 0,
             pull: pull::State::default(), scroll: scroll::State::default(),
         }
