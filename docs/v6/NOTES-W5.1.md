@@ -2,7 +2,7 @@
 
 Branch `v6-w5_1` (from `v6-int` at `5296f62`). Owns `rust/crates/ihn-app/src/panels/{pages_panel,photo_page,slider}.rs`,
 `rust/crates/ihn-app/src/doc/import.rs`, `tests/v6/e2e/{05-pages,15b-soon-scan}.spec.mjs`,
-`tests/v6/parity/states/pages.mjs`. Also touched: `editor/pages.rs` (two accessors, below).
+`tests/v6/parity/states/pages.mjs`. Also touched: `editor/pages.rs` (two accessors, below), `editor/viewport.rs` (listener-id fix, below).
 
 ## What exists now
 
@@ -51,6 +51,31 @@ every module needs a distinct id per registration.
     background of *active* pages after `renderAllPages`, v6 (`editor/pages.rs` `rebuild`) clears it once the canvas
     painted; edge antialiasing differs. W3.2's rule, recorded for W6.1;
   - the known 3-px share-button flake on phones.
+
+## Lead's request: phone floating toolbar and the quick parity reruns (A = 5.18.0)
+
+- **Phone floating toolbar:** already present on `v6-int` (W4.4's `editor/toolbar.rs`: inline `inset` via
+  `left/top/right/bottom` and `--toolbar-scale`); on phone-360 the `#toolbar` style attribute is identical in both
+  apps (`--toolbar-scale: 1; inset: 206.406px auto auto 12px; --toolbar-translate: 0px;`).
+- **Fixed (real difference, `editor/viewport.rs`, W3.2's):** `host/dom.js` keeps one listener per id, and the
+  viewport registered `pointerup`, `pointercancel` and `pointerleave` under the same id, so only `pointerleave`
+  stayed: a mouse pan never ended on release (`cursor: grabbing`, the next move kept panning). That was NOTES-W3.4's
+  `editor-tools/undo-redo@redone` phone diff (36.8 px pan), not the toolbar. Each event now has its own id; the
+  cell is pixel-equal. No other module registers one id twice (checked with a grep over `listen(` calls).
+- `--quick` results after the fix (`toolbar, editor-tools, editor-view, selection, erasers, images`), every
+  remaining failing cell classified:
+  - save-status dot (9×9 px at 1073,30 desktop / beside the phone toggle): 5.18.0 reaches `saved` via its Drive
+    upload, v6 waits for relay/export (W4.5/W5.4) — `pen-lift`, `highlighter`, `single-tap-dot`, `undo-redo-states`,
+    `recolour`, `duplicate-delete`, `images/*`;
+  - the 3-px share-button flake on phones;
+  - `toolbar/draw-with-finger*`: the profile menu's version label `v6.0.0` vs `v5.18.0` (intended);
+  - `toolbar/snap-*` desktop: toolbar at the same `inset` in both, colours differ by Δ ≤ 4 over the whole tray
+    (5.18.0's tray is slightly more transparent at capture, an opacity animation phase); the scripted drag does not
+    move the desktop toolbar in either app. Recorded for W6.1/W4.4;
+  - `selection/move@lift`: 5.18.0 leaves Undo disabled after the lifted move (the script lifts with a second pen
+    press, so 5.18.0's `onSelectionPointerUp` records no step), v6 records it; plus Δ ≤ 27 antialiasing at the
+    moved/scaled/rotated strokes (`scale`, `rotate`, `cross-page`) — W4.2's;
+  - `erasers/fast-swipe` (Δ 203 in the swipe band), `erasers/stroke|area@lift` (Δ ≤ 2) — W4.1's.
 
 ## Deviations
 
