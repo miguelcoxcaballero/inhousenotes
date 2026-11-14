@@ -195,13 +195,13 @@ impl SelfTest {
     }
 
     /// Records a completion: its status and its bytes (the failure message when the status is negative).
-    fn log(&mut self, io: &Io) {
+    fn note(&mut self, io: &Io) {
         let _ = write!(self.steps, "{{\"status\":{},\"data\":\"{}\"}},", io.status, b64_encode(io.data, false));
     }
 
     fn advance(&mut self, app: &mut App, host: &mut dyn Host, io: Option<&Io>) {
         if let Some(io) = io.filter(|_| self.run != Run::Dump) {
-            self.log(io);
+            self.note(io);
         }
         let io = io.copied().unwrap_or(Io { req: 0, status: 0, obj: 0, data: &[] });
         match self.run {
@@ -404,7 +404,7 @@ impl SelfTest {
                 }
             }
             Phase::Asset => {
-                self.log(io);
+                self.note(io);
                 let (obj, ..) = self.blob.take().unwrap_or_default();
                 let mut handles = vec![obj];
                 let mut reply = Reply::new(io);
@@ -414,7 +414,7 @@ impl SelfTest {
                 return self.finish(app, host);
             }
             Phase::Delete => {
-                self.log(io);
+                self.note(io);
                 self.done = true;
                 return;
             }
