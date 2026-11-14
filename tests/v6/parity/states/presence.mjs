@@ -35,8 +35,20 @@ function relayDevice(inst, phase = 6) {
 
 /** 5.18.0 packed presence of Ben's device (`packPresenceIdentity` / `packPresenceRuntime`). */
 function v5Device(phase = '') {
-  return { p_benpc_q: `0|cbenpc|${BEN}|Ben Writer|p|Linux PC`, p_benpc_r: `${b36(EPOCH)}|${phase}|${phase ? b36(EPOCH) : ''}` };
+  // The phase is stamped a few seconds into the run, so 5.18.0 still shows it (6.5 s window) at capture time.
+  return { p_benpc_q: `0|cbenpc|${BEN}|Ben Writer|p|Linux PC`, p_benpc_r: `${b36(EPOCH + 4000)}|${phase}|${phase ? b36(EPOCH + 4000) : ''}` };
 }
+
+/** B-Y5: when a device counts as present (and so when its avatar, and the start of its CSS animations, is drawn) is
+ * measured on the receiver's clock; B-Y6: the main device is the scribe. Allowed inside the avatars (padded for the
+ * badges and the glow) and the popup. */
+const around = (selectors, pad = 24) => async t => {
+  const boxes = (await Promise.all(selectors.map(s => t.page.locator(s).boundingBox()))).filter(Boolean);
+  if (!boxes.length) return [];
+  const x = Math.min(...boxes.map(b => b.x)) - pad, y = Math.min(...boxes.map(b => b.y)) - pad;
+  return [{ x, y, width: Math.max(...boxes.map(b => b.x + b.width)) + pad - x, height: Math.max(...boxes.map(b => b.y + b.height)) + pad - y }];
+};
+const avatarsRule = { tags: ['B-Y5'], expected: around(['#presence-avatars']) };
 
 /** Seeds the scene shared with Ben and his device present, the way each side reads presence. */
 function remote({ inst = 0xfff0_0000_0000_0100n, phase = 6, v5phase = '' } = {}) {
@@ -58,26 +70,26 @@ async function openWithRemote(t) {
 
 // Another editor present, the handshake under way: `p2p-connecting` on both (v6: our installation id is the
 // smaller one, so we offer at once).
-parity('presence/connecting', { drive: remote() }, async t => {
+parity('presence/connecting', { drive: remote(), ...avatarsRule }, async t => {
   await openWithRemote(t);
 });
 
 // A device present through the relay only (v6: the other installation offers first; we wait 8 s): no P2P class.
-parity('presence/relay-only', {
-  drive: remote({ inst: 0x100n }),
-  tags: ['B-Y5'],
-  expected: async t => [await t.page.locator('#presence-avatars').boundingBox()].filter(Boolean)
-}, async t => {
+parity('presence/relay-only', { drive: remote({ inst: 0x100n }), ...avatarsRule }, async t => {
   await openWithRemote(t);
 });
 
 // A remote save ring while the other device uploads.
-parity('presence/save-ring', { drive: remote({ phase: 3, v5phase: 'u' }) }, async t => {
+parity('presence/save-ring', { drive: remote({ phase: 3, v5phase: 'u' }), ...avatarsRule }, async t => {
   await openWithRemote(t);
 });
 
 // The activity popup: this device first, then the other editor's device.
-parity('presence/popup', { drive: remote() }, async t => {
+parity('presence/popup', {
+  drive: remote(),
+  tags: ['B-Y5', 'B-Y6'],
+  expected: around(['#presence-avatars', '#presence-popup'])
+}, async t => {
   await openWithRemote(t);
   await t.click('#presence-avatars');
   await t.advance(300);

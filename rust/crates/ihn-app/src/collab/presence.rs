@@ -285,6 +285,8 @@ fn render_popup(app: &mut App, host: &mut dyn Host) {
                 if leader { "This device · coordination leader" } else { "This device · local tab" }
             } else if u.link == PeerLink::Connected {
                 "Peer-to-peer"
+            } else if u.link == PeerLink::Connecting {
+                "Reconnecting peer-to-peer · Drive active"
             } else {
                 "Drive fallback"
             };

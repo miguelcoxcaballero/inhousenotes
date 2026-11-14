@@ -88,4 +88,13 @@ Branch `v6-w4_5`. Owns `rust/crates/ihn-app/src/collab/{mod.rs,presence.rs}`, `r
 9. **Parity:** `presence/connecting`, `presence/relay-only` (B-Y5), `presence/save-ring`, `presence/popup` seed the
    remote device per side (5.18.0 `p_*` packed presence; v6 `ihn6_*` record + a relay file in Ben's link-shared
    folder). `p2p-connected` needs two browsers on both sides and is covered by e2e 11 (a), not by parity.
-   Results of the quick run are below.
+   Quick run (`--quick --states presence`, 8 comparisons): 0 unexplained, 8 expected. The avatar DOM is identical to
+   5.18.0's in `connecting` / `save-ring`; the remaining pixels are the phase of the `p2p-connecting` glow and ring
+   animations, which start when the avatar is first drawn (B-Y5: presence derived on the receiver's clock). The
+   popup differs in the own location line (deviation 4), the `Main device` (B-Y6: the scribe) and the other device's
+   last-activity time (B-Y5). `relay-only` is B-Y5 (no P2P class on a present relay-only device).
+10. **e2e outside this unit:** with this branch, `01-signin` (offline status line on Home) and `internal-store`
+    (a `401` console line from the signed-out connectivity probe) fail; neither opens a document, so no collab code
+    runs in them (not investigated further). `04-ink`, `04b-erase`, `04c-select`, `06-images`,
+    `internal-editor-view`, `07-share`, `internal-peer` pass.
+11. The wasm grows to 1,650,192 bytes raw (646,520 gzip): `ihn-sync` is linked into the app for the first time.
