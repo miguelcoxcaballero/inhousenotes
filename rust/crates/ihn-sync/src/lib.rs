@@ -444,6 +444,9 @@ pub struct Core {
     pub need_export: bool,
     /// Remote live ink / erase previews (written by `live.rs`, drawn by the remote-ink overlay).
     pub live: live::Previews,
+    /// The export desk: build / merge requests to the host and their answers (owned by `export.rs`, served by the
+    /// session binding).
+    pub export: export::Desk,
     // -- private
     effects: Vec<SyncEffect>,
     owner: u8,
@@ -673,6 +676,7 @@ impl Sync {
             peer_vv: HashMap::new(),
             need_export: false,
             live: live::Previews::default(),
+            export: export::Desk::default(),
             effects: Vec::new(),
             owner: SELF,
             owners: BTreeMap::new(),
@@ -896,7 +900,8 @@ impl Sync {
         }
         // Leaving ends when the parts' requests have been answered (or after 30 s).
         if let Some(since) = c.leaving_since {
-            if c.owners.is_empty() || now >= since + LEAVE_LIMIT_MS {
+            let host_work = c.export.build.is_some() || c.export.merge.is_some();
+            if (c.owners.is_empty() && !host_work) || now >= since + LEAVE_LIMIT_MS {
                 self.close();
             } else {
                 c.wake(since + LEAVE_LIMIT_MS);
