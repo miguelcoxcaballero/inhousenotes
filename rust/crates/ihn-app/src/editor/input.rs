@@ -8,9 +8,9 @@
 //!
 //! The tool state (`state.currentTool`, colour, width, the last non-eraser tool), the toolbar's tool buttons, the
 //! pen's background double tap and "Draw with finger" (`touchDrawEnabled`) live here because the acceptance rule
-//! needs them; `editor::toolbar` (W4.4) owns the toolbar's drag, the eraser menu and the colour menus.
+//! needs them; `editor::toolbar` owns the toolbar's drag and the eraser menu (called where 5.18.0 opens/closes it).
 
-use super::{pages, pen, view, viewport};
+use super::{pages, pen, toolbar, view, viewport};
 use crate::abi::{ety, ev, life, ptr, ret, PointerBatch, Sample};
 use crate::{tag, App, Event, Host, LsOp, Mod, Node, Prop, Rect, Ui};
 use ihn_core::id::Id;
@@ -231,6 +231,7 @@ pub fn set_tool(app: &mut App, host: &mut dyn Host, tool: Option<Tool>, color: O
             }
             st.tool = t;
             set_active_button(app, host, t, color, width);
+            toolbar::close_menu(app, host);
         }
     }
     remember(&mut app.st.editor_input);
@@ -247,6 +248,7 @@ pub fn toggle_eraser(app: &mut App, host: &mut dyn Host) {
         let (t, c, w) = st.last_tool;
         (st.tool, st.color, st.width) = (t, c, w);
         set_active_button(app, host, t, Some(c), Some(w));
+        toolbar::close_menu(app, host);
         return;
     }
     remember(st);
@@ -412,7 +414,7 @@ fn tool_click(app: &mut App, host: &mut dyn Host, node: Node) {
     }
     let st = &mut app.st.editor_input;
     if name == "eraser" && st.tool.is_eraser() {
-        // v5: toggleEraserMenu() — the eraser menu is `editor::toolbar`'s.
+        toolbar::toggle_menu(app, host);
         return;
     }
     st.tool = match name {
@@ -430,6 +432,9 @@ fn tool_click(app: &mut App, host: &mut dyn Host, node: Node) {
         }
     }
     remember(st);
+    if name != "eraser" {
+        toolbar::close_menu(app, host);
+    }
 }
 
 // ---- module contract --------------------------------------------------------------------------------------------
