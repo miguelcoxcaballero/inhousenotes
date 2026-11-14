@@ -89,3 +89,10 @@ Branch `v6-w3_2` (from `v6-int` at `185da5c`). Owns `rust/crates/ihn-app/src/edi
 9. **Size**: `npm run build` (report-only) gives 850,917 bytes raw / 339,861 gzip (`v6-int` at `185da5c`: 735,885 raw);
    the +115 KB is mostly `ihn-core::render`, linked into the app for the first time by this unit.
 10. **Commit trailer** names the model given by the workflow.
+11. **Parity run** (`--quick --states editor-view,canvas`, 26 cells): 0 pass. On B every scene open ends on Home
+    (5.x fixture, W3.4 missing), so the B scripts either find no `#canvas-viewport` (the wheel helpers now fall back
+    to the window centre) or no mode toggle; A (5.18.0) runs every script and captures. On phones the mode toggle
+    (floating bar ≤ 720 px) fails Playwright's actionability check in 5.18.0 too, so the scripts click it with
+    `force`. Rerun after W3.4.
+12. `01-signin` "offline: NETWORK signal…" fails on this branch and on `v6-int` (`185da5c`) alike (Home status
+    text); not caused by this unit.
