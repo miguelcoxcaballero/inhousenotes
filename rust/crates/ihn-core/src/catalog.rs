@@ -257,9 +257,19 @@ impl Catalog {
     pub fn load(&mut self, mut entries: Vec<Entry>, mut docs: Vec<(String, DocInfo)>, views: Views, sync_folder: String, root_id: String) {
         sort_entries(&mut entries, &mut by_id);
         docs.sort_unstable_by(|a, b| a.0.cmp(&b.0));
-        self.stored = entries;
+        // Listings Drive answered before the stored catalogue arrived are newer than it.
+        let early = std::mem::replace(&mut self.stored, entries);
+        let seen = std::mem::replace(&mut self.views, views);
+        for e in early {
+            let merged = Entry::merged(self.stored_at(&e.id).ok().map(|i| &self.stored[i]), &e);
+            self.store(merged);
+        }
+        for (view, ids) in [(View::Recents, seen.recents), (View::Starred, seen.starred), (View::Shared, seen.shared)] {
+            if let Some(ids) = ids {
+                self.views.set(view, ids);
+            }
+        }
         self.docs = docs;
-        self.views = views;
         self.sync_folder = sync_folder;
         self.root_id = root_id;
         self.loaded = true;
@@ -504,6 +514,16 @@ mod tests {
         let mut c = Catalog::default();
         c.load(entries, Vec::new(), Views::default(), "sync".into(), "root-id".into());
         c
+    }
+
+    #[test]
+    fn listings_answered_before_the_stored_catalogue_survive_its_load() {
+        let mut c = Catalog::default();
+        assert!(c.observe(&[file("a", "A new.pdf", 21)], None, Some(View::Recents)).is_some());
+        c.load(vec![file("a", "A.pdf", 20), file("b", "B.pdf", 19)], Vec::new(), Views { recents: Some(vec!["b".into()]), starred: Some(vec!["b".into()]), shared: None }, String::new(), "root-id".into());
+        assert_eq!(c.entry("a").map(|e| e.name.as_str()), Some("A new.pdf"));
+        assert_eq!((c.len(), c.views.recents.clone(), c.views.starred.clone()), (2, Some(vec!["a".to_string()]), Some(vec!["b".to_string()])));
+        assert_eq!(ids(&c.home().recents), ["a"]);
     }
 
     #[test]
