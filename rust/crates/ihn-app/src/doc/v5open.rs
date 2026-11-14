@@ -19,7 +19,6 @@ use crate::testapi::json_str;
 use crate::{App, Host};
 use ihn_core::codec::{Reader, Writer};
 use ihn_core::jsmath::round;
-use ihn_core::doc::PeerRef;
 use ihn_core::id::{migration_source, ActorId, Hash, Id};
 use ihn_core::op::{Background, Batch, Body, Op};
 use ihn_core::snapshot::{encode_batch, EncodedBatch};
@@ -370,8 +369,7 @@ fn imported(app: &mut App, host: &mut dyn Host, r: Result<(Option<(Source, Hash)
     // once instead of once per batch (21 rebuilds of every page for a 20-page 5.x document).
     let mut batches = std::mem::take(&mut j.encoded);
     batches.extend(sup.as_ref().map(encode_batch));
-    session::with_replica(app, host, |r| r.receive(&batches, PeerRef::Import));
-    drop(batches);
+    session::receive_owned(app, host, batches);
     mark(app);
     log(app, &id, format!("{}:{pages}", if v5 { "v5" } else { "plain" }));
     app.st.doc_v5open.job = Some(Job { source, ..j });

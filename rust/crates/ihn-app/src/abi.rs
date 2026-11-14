@@ -754,6 +754,23 @@ const FX_LAYOUT: &[(u8, &str, &str)] = &[
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_repeated_long_style_value_is_sent_once() {
+        let (long, other) = ("a".repeat(LONG_STYLE), "b".repeat(LONG_STYLE));
+        let mut out = OutBuf::default();
+        out.style(Node(1024), "background-image", Some(&long));
+        let first = out.w.buf.len();
+        out.style(Node(1025), "background-image", Some(&long));
+        assert!(out.w.buf.len() - first < 64, "the repeat carries no value");
+        out.style(Node(1026), "background-image", Some(&other));
+        out.style(Node(1027), "color", Some("red"));
+        out.style(Node(1028), "background-image", Some(&other));
+        // The dump resolves repeats: the same text as the host applies, without the node handle.
+        let d: Vec<String> = dump(&out.w.buf).lines().map(|l| l.splitn(3, ' ').nth(2).unwrap().to_string()).collect();
+        assert!(d[0].contains(&long) && d[2].contains(&other));
+        assert_eq!((&d[1], &d[4]), (&d[0], &d[2]));
+    }
+
     fn sample_bytes(w: &mut Writer, x: f64, y: f64, t: f64) {
         w.f64(x);
         w.f64(y);

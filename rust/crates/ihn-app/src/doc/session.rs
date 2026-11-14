@@ -371,6 +371,18 @@ impl Session {
         }
     }
 
+    /// The `(actor, seq)` of a batch that is neither applied nor queued.
+    fn wanted(&self, eb: &EncodedBatch) -> Option<(u64, u32)> {
+        let (actor, seq, _) = eb.header()?;
+        (seq > 0 && !self.doc.vv.contains(actor, seq) && !self.queued_keys.contains(&(actor.0, seq))).then_some((actor.0, seq))
+    }
+
+    /// Queues `bytes` (the batch `key` names).
+    fn enqueue(&mut self, key: (u64, u32), bytes: Vec<u8>) {
+        self.queued_keys.push(key);
+        self.queue.push_back(bytes);
+    }
+
     /// The journal prefixes compaction may delete: `actor → through`.
     fn trimmable(&self, wall: u64) -> Through {
         let own = self.author.as_ref().map(|a| a.actor.inst());
@@ -423,6 +435,25 @@ pub struct Rep<'a> {
     contact: bool,
 }
 
+impl Rep<'_> {
+    /// The tail of `receive` once `n` batches were offered and `duplicate` of them were not queued.
+    fn drained(&mut self, n: u32, duplicate: u32) -> ReceiveResult {
+        let s = &mut *self.s;
+        let mut r = ReceiveResult { duplicate, ..ReceiveResult::default() };
+        let mark = (s.changes.pages.len(), n - duplicate);
+        s.drain(self.host, if self.contact { CONTACT_BUDGET_MS } else { f64::INFINITY });
+        r.queued = s.queue.len() as u32 + s.partial.is_some() as u32;
+        r.applied = mark.1.saturating_sub(r.queued);
+        s.refresh_wire();
+        for page in &s.changes.pages[mark.0..] {
+            if !r.changed_pages.contains(page) {
+                r.changed_pages.push(*page);
+            }
+        }
+        r
+    }
+}
+
 impl Replica for Rep<'_> {
     fn doc_id(&self) -> &DocId { &self.s.doc_id }
     fn version_vector(&self) -> &VersionVector { if self.s.unstored.is_empty() { &self.s.doc.vv } else { &self.s.wire_vv } }
@@ -447,27 +478,14 @@ impl Replica for Rep<'_> {
     }
 
     fn receive(&mut self, b: &[EncodedBatch], _from: PeerRef) -> ReceiveResult {
-        let (s, mut r) = (&mut *self.s, ReceiveResult::default());
+        let mut duplicate = 0;
         for eb in b {
-            match eb.header() {
-                Some((actor, seq, _)) if seq > 0 && !s.doc.vv.contains(actor, seq) && !s.queued_keys.contains(&(actor.0, seq)) => {
-                    s.queued_keys.push((actor.0, seq));
-                    s.queue.push_back(eb.0.clone());
-                }
-                _ => r.duplicate += 1,
+            match self.s.wanted(eb) {
+                Some(key) => self.s.enqueue(key, eb.0.clone()),
+                None => duplicate += 1,
             }
         }
-        let mark = (s.changes.pages.len(), b.len() as u32 - r.duplicate);
-        s.drain(self.host, if self.contact { CONTACT_BUDGET_MS } else { f64::INFINITY });
-        r.queued = s.queue.len() as u32 + s.partial.is_some() as u32;
-        r.applied = mark.1.saturating_sub(r.queued);
-        s.refresh_wire();
-        for page in &s.changes.pages[mark.0..] {
-            if !r.changed_pages.contains(page) {
-                r.changed_pages.push(*page);
-            }
-        }
-        r
+        self.drained(b.len() as u32, duplicate)
     }
 
     fn snapshot(&self) -> EncodedSnapshot { snapshot::encode(&self.s.doc) }
@@ -505,6 +523,29 @@ pub fn with_replica<R>(app: &mut App, host: &mut dyn Host, f: impl FnOnce(&mut d
     let contact = app.sched.is_busy();
     s.refresh_wire();
     let r = f(&mut Rep { s: &mut s, host, contact });
+    app.st.doc_session.s = Some(s);
+    after(app, host);
+    Some(r)
+}
+
+/// `Replica::receive` of batches the caller gives away (a 5.x import: megabytes): queued without a copy, and the
+/// store transaction that journals them is sized once instead of doubling.
+pub fn receive_owned(app: &mut App, host: &mut dyn Host, batches: Vec<EncodedBatch>) -> Option<ReceiveResult> {
+    let mut s = app.st.doc_session.s.take()?;
+    let contact = app.sched.is_busy();
+    s.refresh_wire();
+    if s.persistent {
+        // Each journal put adds the batch and a key of a few dozen bytes.
+        s.pending.buf.reserve(batches.iter().map(|b| b.0.len() + 128).sum());
+    }
+    let (n, mut duplicate) = (batches.len() as u32, 0);
+    for eb in batches {
+        match s.wanted(&eb) {
+            Some(key) => s.enqueue(key, eb.0),
+            None => duplicate += 1,
+        }
+    }
+    let r = Rep { s: &mut s, host, contact }.drained(n, duplicate);
     app.st.doc_session.s = Some(s);
     after(app, host);
     Some(r)
