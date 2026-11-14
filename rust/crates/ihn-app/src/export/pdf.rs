@@ -26,7 +26,7 @@ use ihn_core::doc::Doc;
 use ihn_core::id::{Hash, Id};
 use ihn_core::jsmath;
 use ihn_core::op::{Background, Body, Template};
-use ihn_core::render::cmd::Img;
+use ihn_core::render::cmd::{Img, Surf};
 use ihn_core::render::{pdfink, PageItems};
 use ihn_core::snapshot::{self, EncodedSnapshot};
 use ihn_core::stamp::VersionVector;
@@ -77,8 +77,8 @@ struct Job {
     purpose: Purpose,
     doc: String,
     vv: VersionVector,
-    /// Template JPEGs being encoded: `(request, key)`.
-    tpl_wait: Vec<(u32, u32)>,
+    /// Template JPEGs being encoded: `(request, key, template canvas)`.
+    tpl_wait: Vec<(u32, u32, Surf)>,
     /// Blob handles this job made (template JPEGs), released at the end.
     owned: Vec<u32>,
     /// The `BUILD` payload, posted once every template JPEG is in the worker.
@@ -100,6 +100,9 @@ struct Rebuild {
 /// This module's state, stored in `App::st`.
 #[derive(Default)]
 pub struct State {
+    /// v5 `buildPdfBlobWithPdfLib.templateJpegCache`: the JPEG blob of each template canvas, reused by the next
+    /// exports while the canvas stays in the template cache (5.18.0 keys a WeakMap by the canvas).
+    tpl_jpegs: Vec<(Surf, u32)>,
     job: Option<Job>,
     queue: Vec<Purpose>,
     next: u32,
@@ -259,17 +262,31 @@ fn begin(app: &mut App, host: &mut dyn Host, purpose: Purpose) {
     for (key, blob) in blobs {
         send_blob(app, host, id, key, blob);
     }
-    // v5: drawTemplateBackground(null, w, h, 1, kind) → canvasToBlobSafe(tplCanvas, 'image/jpeg', 0.85).
+    // v5: drawTemplateBackground(null, w, h, 1, kind) → canvasToBlobSafe(tplCanvas, 'image/jpeg', 0.85), the
+    // encoding cached per template canvas across consecutive saves.
+    let stale = pages::with_gfx(app, |app, g| {
+        let st = &mut app.st.export_pdf;
+        let (keep, stale): (Vec<_>, Vec<_>) = st.tpl_jpegs.drain(..).partition(|e| g.tpl.holds(e.0));
+        st.tpl_jpegs = keep;
+        stale
+    });
+    for (_, blob) in stale {
+        host.out().obj_release(blob);
+    }
     let mut wait = Vec::new();
     for (kind, tw, th, key) in keys.templates {
         let req = app.req(Mod::ExportPdf);
-        pages::with_gfx(app, |_, g| {
+        let surf = pages::with_gfx(app, |_, g| {
             g.tpl.draw(&mut g.cmds, None, tw, th, kind);
-            if let Some(surf) = g.tpl.cached(kind, tw, th) {
-                g.cmds.to_blob(surf, req, "image/jpeg", TEMPLATE_JPEG_QUALITY);
-            }
+            g.tpl.cached(kind, tw, th)
         });
-        wait.push((req, key));
+        let Some(surf) = surf else { continue };
+        if let Some(&(_, blob)) = app.st.export_pdf.tpl_jpegs.iter().find(|e| e.0 == surf) {
+            send_blob(app, host, id, key, blob);
+            continue;
+        }
+        pages::with_gfx(app, |_, g| g.cmds.to_blob(surf, req, "image/jpeg", TEMPLATE_JPEG_QUALITY));
+        wait.push((req, key, surf));
     }
     pages::flush(app, host);
     if let Some(j) = app.st.export_pdf.job.as_mut() {
@@ -294,10 +311,10 @@ fn maybe_build(app: &mut App, host: &mut dyn Host) {
 fn template_done(app: &mut App, host: &mut dyn Host, io: &Io) -> bool {
     let Some(j) = app.st.export_pdf.job.as_mut() else { return false };
     let Some(at) = j.tpl_wait.iter().position(|t| t.0 == io.req) else { return false };
-    let (_, key) = j.tpl_wait.swap_remove(at);
+    let (_, key, surf) = j.tpl_wait.swap_remove(at);
     let id = j.id;
     if io.obj != 0 {
-        j.owned.push(io.obj);
+        app.st.export_pdf.tpl_jpegs.push((surf, io.obj));
         send_blob(app, host, id, key, io.obj);
     }
     // A template that failed to encode leaves a white page (5.18.0 warns and continues).

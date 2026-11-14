@@ -68,6 +68,62 @@ function instrument() {
   B.reset = () => { B.events = []; B.frames = new Map(); B.intervals = []; B.last = 0; };
 }
 
+// BENCH_CALLS=1: canvas 2D calls per canvas (class, data-page, backing size) during the repaint window.
+function countCanvasCalls() {
+  const C = self.__cc = { on: false, by: new Map() };
+  const label = c => c instanceof HTMLCanvasElement ? `${c.className || 'canvas'}${c.dataset.page ? '#' + c.dataset.page : ''}${c.isConnected ? '' : '(detached)'} ${c.width}x${c.height}` : `offscreen ${c.width}x${c.height}`;
+  for (const proto of [CanvasRenderingContext2D.prototype, self.OffscreenCanvasRenderingContext2D?.prototype].filter(Boolean)) {
+    for (const name of Object.getOwnPropertyNames(proto).filter(n => typeof Object.getOwnPropertyDescriptor(proto, n).value === 'function' && n !== 'constructor')) {
+      const f = proto[name];
+      proto[name] = function (...a) {
+        if (C.on) { const k = `${label(this.canvas)} ${name}${name === 'drawImage' ? ' ' + (a[0]?.width + 'x' + a[0]?.height) : ''}`; C.by.set(k, (C.by.get(k) || 0) + 1); }
+        return f.apply(this, a);
+      };
+    }
+  }
+  for (const k of ['width', 'height']) {
+    const d = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, k);
+    Object.defineProperty(HTMLCanvasElement.prototype, k, { ...d, set(v) { if (C.on) { const key = `${label(this)} set ${k}`; C.by.set(key, (C.by.get(key) || 0) + 1); } d.set.call(this, v); } });
+  }
+  addEventListener('DOMContentLoaded', () => new MutationObserver(list => {
+    if (!C.on) return;
+    for (const m of list) {
+      const t = m.target.nodeType === 1 ? m.target : m.target.parentElement;
+      const k = `mut ${m.type} ${t?.tagName?.toLowerCase()}${t?.id ? '#' + t.id : ''}${t?.classList?.length ? '.' + [...t.classList].slice(0, 2).join('.') : ''}${m.attributeName ? ' @' + m.attributeName : ''}`;
+      C.by.set(k, (C.by.get(k) || 0) + 1);
+    }
+  }).observe(document, { subtree: true, childList: true, attributes: true, characterData: true }));
+  for (const name of ['toDataURL', 'toBlob']) {
+    const f = HTMLCanvasElement.prototype[name];
+    HTMLCanvasElement.prototype[name] = function (...a) { if (C.on) { const k = `${label(this)} ${name}`; C.by.set(k, (C.by.get(k) || 0) + 1); } return f.apply(this, a); };
+  }
+}
+
+// BENCH_TRACE=1: the repaint window is traced; the result lists the main-thread top-level tasks and the event names
+// by total duration (renderer main thread only).
+async function startTrace(cdp) {
+  const events = [];
+  const onData = e => events.push(...e.value);
+  cdp.on('Tracing.dataCollected', onData);
+  await cdp.send('Tracing.start', { transferMode: 'ReportEvents', traceConfig: { includedCategories: ['devtools.timeline', 'disabled-by-default-devtools.timeline', 'toplevel', 'blink', 'v8', 'cc', 'gpu', 'blink.animations', 'disabled-by-default-devtools.timeline.frame'], recordMode: 'recordAsMuchAsPossible' } });
+  return async () => {
+    const done = new Promise(res => cdp.once('Tracing.tracingComplete', res));
+    await cdp.send('Tracing.end');
+    await done;
+    cdp.off('Tracing.dataCollected', onData);
+    if (process.env.BENCH_TRACE_DUMP) fs.writeFileSync(process.env.BENCH_TRACE_DUMP, JSON.stringify(events));
+    const main = new Set(events.filter(e => e.ph === 'M' && e.name === 'thread_name' && e.args.name === 'CrRendererMain').map(e => `${e.pid}:${e.tid}`));
+    const sum = new Map();
+    for (const e of events) {
+      if (e.ph !== 'X' || !main.has(`${e.pid}:${e.tid}`)) continue;
+      const fn = e.args?.data?.functionName || e.args?.data?.url?.split('/').pop()?.split('?')[0] || '';
+      const k = `${e.name}${fn ? ' ' + fn : ''}`;
+      const v = sum.get(k) || [0, 0]; v[0]++; v[1] += e.dur / 1000; sum.set(k, v);
+    }
+    return [...sum].sort((a, b) => b[1][1] - a[1][1]).slice(0, 25).map(([k, [n, ms]]) => `${k} ×${n} ${ms.toFixed(1)}ms`);
+  };
+}
+
 export async function bench({ app = 'v5', root, overlay = null, throttle = 1, runs = 3, only = null, log = () => {} } = {}) {
   root = root || (app === 'v5' ? ensureV5Ref() : REPO);
   if (app === 'v6' && overlay === null && fs.existsSync(path.join(root, 'build', 'index.html'))) overlay = path.join(root, 'build');
@@ -85,6 +141,7 @@ export async function bench({ app = 'v5', root, overlay = null, throttle = 1, ru
     await mock.install(context);
     await context.addInitScript(entries => { if (!localStorage.getItem('ihn-test-seeded')) { localStorage.setItem('ihn-test-seeded', '1'); for (const [k, v] of Object.entries(entries)) localStorage.setItem(k, v); } }, mock.session(ANA));
     if (!process.env.NO_INSTR) await context.addInitScript(instrument);
+    if (process.env.BENCH_CALLS) await context.addInitScript(countCanvasCalls);
     const page = await context.newPage();
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     // CDP attaches only after the boot or open being timed: with a CDP session attached from the start, 5.18.0's
@@ -205,7 +262,11 @@ export async function bench({ app = 'v5', root, overlay = null, throttle = 1, ru
       await openEditor(s);
       await settle(s);
       const r = await canvasRect(s, 0);
+      const mDense = await s.metrics();
+      const t0Dense = Date.now(), mark = name => { if (process.env.BENCH_CALLS) (out.phases ||= []).push(`${name} @${Date.now() - t0Dense}`); };
+      out.phases = [];
       if (want('pen')) {
+        mark('pen');
         await s.page.locator('[data-tool="pen"]').first().click();
         await sleep(300);
         out.pen = await phase(s, 'pointermove', 12 * 30, () => strokes(s, r, 12, 30));
@@ -213,6 +274,7 @@ export async function bench({ app = 'v5', root, overlay = null, throttle = 1, ru
         await settle(s);
       }
       if (want('erase')) {
+        mark('erase');
         await s.page.locator('[data-tool="eraser"]').first().click();
         await sleep(300);
         out.erase = await phase(s, 'pointermove', 6 * 30, () => strokes(s, r, 6, 30, { dx: 6, dy: 30 }));
@@ -220,6 +282,7 @@ export async function bench({ app = 'v5', root, overlay = null, throttle = 1, ru
         await settle(s);
       }
       if (want('lasso')) {
+        mark('lasso');
         await s.page.locator('[data-tool="lasso"]').first().click();
         await sleep(300);
         const cx = r.x + r.w * 0.5, cy = r.y + r.h * 0.4, R = Math.min(r.w, r.h) * 0.25;
@@ -234,13 +297,20 @@ export async function bench({ app = 'v5', root, overlay = null, throttle = 1, ru
         log(`lasso ${JSON.stringify(out.lasso)}`);
         await settle(s);
       }
+      // BENCH_QUIET=ms: wait that long (and settle) before scroll and zoom, so that background saves and the Drive
+      // export that follow the edits (5.18.0 and v6 schedule them differently) land outside the measured windows.
+      const quiet = async () => { if (process.env.BENCH_QUIET) { await sleep(Number(process.env.BENCH_QUIET)); await settle(s); } };
       if (want('scroll')) {
+        await quiet();
+        mark('scroll');
         await s.page.mouse.move(r.x + r.w / 2, 450);
         out.scroll = await phase(s, 'wheel', 40, async () => { for (let i = 0; i < 40; i++) { await s.page.mouse.wheel(0, i < 20 ? 120 : -120); await sleep(16); } });
         log(`scroll ${JSON.stringify(out.scroll)}`);
         await settle(s);
       }
       if (want('zoom')) {
+        await quiet();
+        mark('zoom');
         await s.page.mouse.move(r.x + r.w / 2, 450);
         await s.page.keyboard.down('Control');
         out.zoom = await phase(s, 'wheel', 20, async () => { for (let i = 0; i < 20; i++) { await s.page.mouse.wheel(0, i < 10 ? -100 : 100); await sleep(32); } });
@@ -248,13 +318,29 @@ export async function bench({ app = 'v5', root, overlay = null, throttle = 1, ru
         log(`zoom ${JSON.stringify(out.zoom)}`);
         await settle(s);
         // One zoom step and the full repaint of the dense page at the new scale, until the CPU is idle again.
+        mark('repaint');
         const m0 = await s.metrics();
+        const trace = process.env.BENCH_TRACE ? await startTrace(s.cdp) : null;
+        if (process.env.BENCH_CALLS) await s.page.evaluate(() => { __cc.by.clear(); __cc.on = true; });
         await s.page.keyboard.down('Control'); await s.page.mouse.wheel(0, -100); await s.page.keyboard.up('Control');
         await settle(s);
         const m1 = await s.metrics();
         out.repaint = { cpuMs: Math.round((m1.TaskDuration - m0.TaskDuration) * 1000) };
+        mark('end');
+        if (trace) out.repaint.trace = await trace();
+        if (process.env.BENCH_CALLS) out.repaint.calls = await s.page.evaluate(() => { __cc.on = false; return [...__cc.by].sort((a, b) => b[1] - a[1]).slice(0, 30).map(([k, n]) => `${k} ×${n}`); });
         log(`repaint ${JSON.stringify(out.repaint)}`);
       }
+      // BENCH_TOTAL: CPU of the whole dense-page session (phases, background saves and exports) until it is idle.
+      if (process.env.BENCH_TOTAL) {
+        await sleep(15_000);
+        await settle(s);
+        const m = await s.metrics();
+        out.total = { cpuMs: Math.round((m.TaskDuration - mDense.TaskDuration) * 1000), scriptMs: Math.round((m.ScriptDuration - mDense.ScriptDuration) * 1000), secs: (Date.now() - t0Dense) / 1000 };
+        log(`total ${JSON.stringify(out.total)}`);
+      }
+      // BENCH_CALLS: the Drive writes of the session (an export landing in a measured window explains its CPU).
+      if (process.env.BENCH_CALLS) out.writes = s.mock.calls.filter(c => c.method !== 'GET').map(c => `${c.method} ${c.path.slice(0, 50)} ${c.bytes ?? ''} @${c.at - t0Dense}`);
       out.denseErrors = s.errors.slice(0, 3);
       await s.context.close();
     }
