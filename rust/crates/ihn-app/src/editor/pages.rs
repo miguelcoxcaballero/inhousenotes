@@ -623,7 +623,7 @@ fn decoded_images(app: &mut App, id: Id) -> Vec<(Hash, Img)> {
 }
 
 /// Paints page `id` with `f(gfx, view)`; `None` when the page or the document is gone.
-fn with_view<R>(app: &mut App, id: Id, f: impl FnOnce(&mut Gfx, &PageView) -> R) -> Option<R> {
+pub fn with_view<R>(app: &mut App, id: Id, f: impl FnOnce(&mut Gfx, &PageView) -> R) -> Option<R> {
     let bg = bg_of(app, id);
     let images = decoded_images(app, id);
     let (w, h) = row(app, id).map(|r| (r.w, r.h))?;

@@ -81,7 +81,8 @@ pub trait ToolHandler: Sync {
 pub fn handler(tool: Tool) -> Option<&'static dyn ToolHandler> {
     match tool {
         Tool::Pen | Tool::Highlighter => Some(&pen::Pen),
-        Tool::EraserStroke | Tool::EraserArea | Tool::Lasso => None,
+        Tool::Lasso => Some(&super::selection::Lasso),
+        Tool::EraserStroke | Tool::EraserArea => None,
     }
 }
 
@@ -295,6 +296,10 @@ fn down(app: &mut App, host: &mut dyn Host, p: &PointerBatch) -> u32 {
         return 0;
     }
     let tool = st.tool;
+    // v5: a drawing pointerdown clears the selection (the lasso clears it in its own down).
+    if tool != Tool::Lasso {
+        super::selection::clear(app, host);
+    }
     let Some(h) = handler(tool) else {
         viewport::claim(app, p.pointer_id);
         return 0;
@@ -415,6 +420,10 @@ fn tool_click(app: &mut App, host: &mut dyn Host, node: Node) {
         // v5: toggleEraserMenu() — the eraser menu is `editor::toolbar`'s.
         return;
     }
+    if name != "lasso" {
+        super::selection::clear(app, host);
+    }
+    let st = &mut app.st.editor_input;
     st.tool = match name {
         "eraser" => eraser_tool(st),
         "highlighter" => Tool::Highlighter,
