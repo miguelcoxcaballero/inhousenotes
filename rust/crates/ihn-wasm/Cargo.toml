@@ -13,3 +13,6 @@ doctest = false
 
 [dependencies]
 ihn-app = { path = "../ihn-app" }
+
+[features]
+testapi = ["ihn-app/testapi"]
