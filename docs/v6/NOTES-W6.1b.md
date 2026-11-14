@@ -46,6 +46,4 @@ The report is `tests/v6/parity/REPORT-B.md`.
    lists the rule.
 2. Files outside the editor/session owned by the lead's brief: `collab/mod.rs` (erase previews, COMMITTED while
    leaving, test command) and the parity harness (`determinism-init.js`, `run.mjs`, `compare.mjs`).
-3. The phone share-button edge (3 px, Δ ≤ 7 at CSS (222, 25–27)) still appears intermittently under CPU load; it did
-   not reproduce in a 3-run `--runs` stability check. Hiding SVGs during the raster refresh did not help (reverted).
-   See REPORT-B.md.
+3. Remaining open differences (phone-412 page-edge row, phone share-button edge, photo-page edge rows, dense-page AA) and the partial full matrix are in `tests/v6/parity/REPORT-B.md`.
