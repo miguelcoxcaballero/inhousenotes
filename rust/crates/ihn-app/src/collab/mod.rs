@@ -862,7 +862,7 @@ pub fn test_cmd(app: &mut App, _host: &mut dyn Host, name: &str, _args: &str) ->
                 c.mode,
                 run.leaving,
                 peers.join(","),
-                status.unsealed_local,
+                session::sync_status(app).unsealed_local,
                 status.peers_connected,
                 c.live.strokes.len(),
                 st.overlay_pages.len(),

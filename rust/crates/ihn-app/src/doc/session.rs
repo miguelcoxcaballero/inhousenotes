@@ -539,14 +539,19 @@ pub fn set_sync_status(app: &mut App, host: &mut dyn Host, status: Option<SyncSt
 /// The status the save presentation uses: the engine's, or one derived from the persisted record.
 pub fn sync_status(app: &App) -> SyncStatus {
     let Some(s) = get(app) else { return SyncStatus::default() };
-    s.sync.clone().unwrap_or_else(|| SyncStatus {
+    let mut st = s.sync.clone().unwrap_or_else(|| SyncStatus {
         unsealed_local: s.unsealed_local(),
         not_created: !s.record.flags.created,
         export_pending: s.record.flags.export_pending,
         online: !shell::offline(app),
         auth_paused: auth::reconnecting(app),
         ..SyncStatus::default()
-    })
+    });
+    // The engine does not see own batches before their IDB commit; they are unsealed all the same.
+    if s.sync.is_some() {
+        st.unsealed_local += s.unstored.len() as u32;
+    }
+    st
 }
 
 fn after(app: &mut App, host: &mut dyn Host) {

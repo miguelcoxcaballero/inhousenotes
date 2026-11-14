@@ -291,13 +291,10 @@ export class Driver {
    * unscaled-filtered (`image-rendering: pixelated`, which stores the full-size decode) and then again normally.
    */
   async #freshRaster() {
-    // Inline SVGs are hidden for the first look too: an `image-rendering` change does not repaint them, and a partial
-    // raster left by an earlier nearby invalidation then differed by a few levels at an icon's antialiased edge (the
-    // editor header's share button on phones).
     const frames = () => this.page.evaluate(() => self.__ihnDet ? self.__ihnDet.frames(2) : null).catch(() => {});
     await this.page.evaluate(() => Promise.all(Array.from(document.images, image => image.complete && image.naturalWidth ? image.decode().catch(() => {}) : null))).catch(() => {});
     await this.cdp.send('Memory.simulatePressureNotification', { level: 'critical' }).catch(() => {});
-    await this.page.evaluate(() => { const style = document.createElement('style'); style.id = '__ihn-raster'; style.textContent = '*, *::before, *::after { image-rendering: pixelated !important; } svg { visibility: hidden !important; }'; document.documentElement.appendChild(style); }).catch(() => {});
+    await this.page.evaluate(() => { const style = document.createElement('style'); style.id = '__ihn-raster'; style.textContent = '*, *::before, *::after { image-rendering: pixelated !important; }'; document.documentElement.appendChild(style); }).catch(() => {});
     await frames();
     await this.page.evaluate(() => { const style = document.getElementById('__ihn-raster'); if (style) style.remove(); }).catch(() => {});
     await frames();
