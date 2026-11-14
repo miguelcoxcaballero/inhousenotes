@@ -15,7 +15,7 @@ const DOM_TYPE = {
   dragover: 19, dragleave: 20, drop: 21, paste: 22, copy: 23, cut: 24, animationend: 25, transitionend: 26, load: 27,
   error: 28, abort: 29, finish: 30, cancel: 31, close: 32, contextmenu: 33, mousedown: 34, mouseup: 35,
   mousemove: 36, mouseenter: 37, mouseleave: 38, resize: 39, scrollend: 40, toggle: 41, selectionchange: 42,
-  beforeinput: 43, compositionend: 44, 'ihn-resize': 64, 'ihn-mutation': 65
+  beforeinput: 43, compositionend: 44, ready: 45, 'ihn-resize': 64, 'ihn-mutation': 65
 };
 
 export default function install(host) {
@@ -128,6 +128,17 @@ export default function install(host) {
     };
     let byType = listeners.get(id);
     if (!byType) listeners.set(id, byType = new Map());
+    if (type === 'ready') {
+      // An Animation's `ready` promise (there is no event): one dispatch when it resolves, unless unlistened before.
+      const entry = { node, fn: null, capture: false };
+      byType.set(type, entry);
+      node.ready?.then(() => {
+        if (listeners.get(id)?.get(type) !== entry) return;
+        listeners.get(id).delete(type);
+        dispatch(id, h, 0, { type, timeStamp: performance.now() });
+      }, () => {});
+      return;
+    }
     const old = byType.get(type);
     if (old) old.node.removeEventListener(type, old.fn, { capture: old.capture });
     byType.set(type, { node, fn, capture: options.capture });
@@ -258,6 +269,15 @@ export default function install(host) {
     [DOM | 26]: r => { const node = nodes[r.u32()], html = r.str(); if (node) node.innerHTML = html; },
     [DOM | 27]: r => nodes[r.u32()]?.select?.(),
     [DOM | 28]: r => observe(r.u32(), r.u32(), r.u8(), r.str()),
-    [DOM | 29]: r => unobserve(r.u32())
+    [DOM | 29]: r => unobserve(r.u32()),
+    [DOM | 30]: r => {
+      const animation = nodes[r.u32()], play = r.u8(), keyframes = r.ostr(), sync = nodes[r.u32()];
+      quiet(() => {
+        if (keyframes !== null) animation?.effect?.setKeyframes(JSON.parse(keyframes));
+        if (play === 1) animation?.play();
+        else if (play === 2) animation?.pause();
+        if (sync && animation) animation.startTime = sync.startTime;
+      });
+    }
   };
 }

@@ -3,8 +3,8 @@
 
 use super::cards::{self, esc};
 use super::{lists, nav, scroll, Card, Slot};
-use crate::abi::{mode, observe};
-use crate::dom::{Prop, Scroll};
+use crate::abi::{listen, mode, observe};
+use crate::dom::{AnimPlay, Prop, Scroll};
 use crate::host::Metric;
 use crate::{shell, App, Host, Mod, Node, Rect, Ui};
 use ihn_core::catalog::Entry;
@@ -65,7 +65,8 @@ pub struct Anim {
     dest_art: Node,
     /// The snapshot of the outgoing interior (closing), mounted in the ghost.
     previous: Node,
-    started: f64,
+    /// Opening: the interior's crossfade, held invisible until it joins the zoom's timeline.
+    fade: Node,
     prepared: bool,
     pub(super) preparing: bool,
     live_moved: bool,
@@ -721,7 +722,7 @@ fn play(app: &mut App, host: &mut dyn Host, art: Node, entry: Crumb, what: Swap,
     out.listen(zoom, "finish", zoom_listener, 0);
     st.anim = Some(Box::new(Anim {
         backwards, swap: Some(what), entry, layer, ghost, surface, zoom, zoom_listener, anims, nodes, rect, bounds, motion: m, art, dest_art: Node::NONE,
-        previous, started: host.now(), prepared: false, preparing: false, live_moved: false,
+        previous, fade: Node::NONE, prepared: false, preparing: false, live_moved: false,
         focus_before, focus_target: Node::NONE, refresh: None, pending_contents: None,
     }));
     // Right after the first frame, the next screen is built underneath the turning lid.
@@ -770,7 +771,6 @@ pub(super) fn prepare_scene(app: &mut App, host: &mut dyn Host) {
     }
     let Some(anim) = app.st.home.anim.as_mut() else { return };
     anim.preparing = false;
-    let elapsed = (host.now() - anim.started).max(0.0);
     if backwards {
         // The landing card may still be a deferred slot.
         hydrate_visible(app, host);
@@ -794,11 +794,7 @@ pub(super) fn prepare_scene(app: &mut App, host: &mut dyn Host) {
                             out.style(anim.previous, name, Some(&value));
                         }
                     }
-                    out.unlisten(anim.zoom_listener);
-                    out.anim_cancel(anim.zoom);
-                    out.release(anim.zoom);
-                    anim.zoom = out.animate(anim.ghost, &anim.motion.zoom_frames(), &timing(&anim.motion, &anim.motion.easing(), -elapsed));
-                    out.listen(anim.zoom, "finish", anim.zoom_listener, 0);
+                    out.anim_set(anim.zoom, AnimPlay::Keep, Some(&anim.motion.zoom_frames()), Node::NONE);
                 }
             }
             anim.dest_art = dest;
@@ -825,12 +821,27 @@ pub(super) fn prepare_scene(app: &mut App, host: &mut dyn Host) {
         }
         anim.live_moved = true;
         hydrate_visible(app, host);
-        // Invisible where it arrives and fully in by 70 % of the zoom.
+        // Held invisible (paused) until it joins the running movement.
         let Some(anim) = app.st.home.anim.as_mut() else { return };
-        let frames = motion::folder_fade((elapsed / anim.motion.duration()).clamp(0.0, 1.0), false).unwrap_or_default();
-        let fade = host.out().animate(Ui::DRIVE_FOLDER_VIEW, &motion::fade_frames(&frames), &timing(&anim.motion, "linear", -elapsed));
-        anim.anims.push(fade);
+        let out = host.out();
+        anim.fade = out.animate(Ui::DRIVE_FOLDER_VIEW, "[{\"opacity\":0},{\"opacity\":0}]", &timing(&anim.motion, "linear", 0.0));
+        out.anim_set(anim.fade, AnimPlay::Pause, None, Node::NONE);
+        anim.anims.push(anim.fade);
     }
+    // v5: `zoom.ready.then(joinMotion)`
+    let Some(anim) = app.st.home.anim.as_ref() else { return };
+    host.out().listen(anim.zoom, "ready", anim.zoom_listener, listen::ONCE);
+}
+
+/// The zoom's first frame has its start time: the interior's crossfade joins the movement's own timeline, invisible
+/// where it arrives and fully in by 70 % of the zoom.
+// v5: app-v5.js:playDriveFolderTransition `joinMotion`
+pub(super) fn join_motion(app: &mut App, host: &mut dyn Host) {
+    let Some(anim) = app.st.home.anim.as_ref().filter(|a| !a.backwards && !a.fade.is_none()) else { return };
+    let (zoom, fade, duration) = (anim.zoom, anim.fade, anim.motion.duration());
+    let elapsed = (host.metric(zoom, Metric::AnimCurrentTime) / duration).clamp(0.0, 1.0);
+    let frames = motion::folder_fade(elapsed, false).unwrap_or_default();
+    host.out().anim_set(fade, AnimPlay::Play, Some(&motion::fade_frames(&frames)), zoom);
 }
 
 // v5: app-v5.js:finishDriveFolderAnimation

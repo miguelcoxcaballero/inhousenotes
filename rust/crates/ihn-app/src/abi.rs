@@ -67,6 +67,7 @@ pub mod dom_op {
     pub const SELECT: u8 = 27;
     pub const OBSERVE: u8 = 28;
     pub const UNOBSERVE: u8 = 29;
+    pub const ANIM_SET: u8 = 30;
 }
 
 /// `observe` kinds: [`observe::RESIZE`] alone, or a set of the `MutationObserver` options.
@@ -141,6 +142,7 @@ event_types! {
     SELECTIONCHANGE "selectionchange" 42;
     BEFOREINPUT "beforeinput" 43;
     COMPOSITIONEND "compositionend" 44;
+    READY "ready" 45; // an Animation's `ready` promise (listen with "ready" on an animation handle; delivered once)
 }
 
 /// Effect family ops implemented by `host/main.js` (core, 3.1 and 3.7). Other ranges belong to their executors.
