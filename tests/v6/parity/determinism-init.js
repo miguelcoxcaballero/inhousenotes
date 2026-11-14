@@ -95,6 +95,32 @@
   // hops is never mistaken for an idle page. The harness' own probe uses the native method.
   const nativePost = g.MessagePort && g.MessagePort.prototype.postMessage;
   if (nativePost) g.MessagePort.prototype.postMessage = function (...args) { det.events++; note('port.post'); return nativePost.apply(this, args); };
+  // A script of the app's own origin inserted at run time (a library fetched on first need, as v6 loads pdf.js) is
+  // pending from its insertion to its load/error event: otherwise the clock could move while it loads, and whether
+  // the work after it lands at one fake millisecond or the next depended on the machine (seen as a page render at
+  // fake 0 or 16 ms from run to run). Other origins are left alone: the mock may hold their requests on purpose.
+  if (g.Node && g.HTMLScriptElement && g.location) {
+    const tracked = new WeakSet();
+    const watch = node => {
+      if (!(node instanceof g.HTMLScriptElement) || !node.isConnected || !node.src || tracked.has(node)) return;
+      let same = false;
+      try { same = new URL(node.src, g.location.href).origin === g.location.origin; } catch (error) {}
+      if (!same) return;
+      tracked.add(node);
+      begin('script');
+      const done = () => { node.removeEventListener('load', done); node.removeEventListener('error', done); end('script'); };
+      node.addEventListener('load', done); node.addEventListener('error', done);
+    };
+    for (const [owner, name] of [[g.Node.prototype, 'appendChild'], [g.Node.prototype, 'insertBefore'], [g.Element && g.Element.prototype, 'append'], [g.Element && g.Element.prototype, 'prepend']]) {
+      const original = owner && owner[name];
+      if (typeof original !== 'function') continue;
+      owner[name] = function (...args) {
+        const result = original.apply(this, args);
+        for (const node of name === 'appendChild' || name === 'insertBefore' ? [args[0]] : args) watch(node);
+        return result;
+      };
+    }
+  }
   // An image that is not in the document (`new Image()` + onload) is pending from `src = …` to its load/error event.
   det.loads = 0;
   const srcOf = g.HTMLImageElement && Object.getOwnPropertyDescriptor(g.HTMLImageElement.prototype, 'src');
