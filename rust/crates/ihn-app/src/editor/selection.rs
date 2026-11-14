@@ -374,7 +374,6 @@ fn duplicate(app: &mut App, host: &mut dyn Host) {
     }
     select(app, host, page, &copies);
     input::set_tool(app, host, Some(input::Tool::Lasso), None, None);
-    update_box(app, host);
     repaint(app, host, page);
     shell::status(app, host, "Selection duplicated", StatusOpts::from(Status::Info).preserve());
 }
@@ -657,7 +656,7 @@ fn end(app: &mut App, host: &mut dyn Host) {
             }
         }
         refresh_stamps(app);
-    } else if !changed {
+    } else {
         repaint(app, host, page);
     }
     update_box(app, host);
