@@ -544,7 +544,8 @@ test('executors: GIS, native bridges, files, clipboard, share, download, history
   await page.evaluate(() => window.handleInhouseNativeOAuth('#error=access_denied'));
   await expect.poll(async () => (await cmd(page, 'shell.fx_results')).messages.length, { timeout: 3000 }).toBeGreaterThan(0);
   await page.evaluate(() => { window.handleInhousePdfExportResult({ ok: false, message: 'disk full' }); window.handleInhouseNativeOAuth('?error=x'); });
-  expect((await cmd(page, 'shell.fx_results')).messages).toEqual([{ chan: 2, data: '{"ok":false,"message":"disk full"}' }, { chan: 1, data: 'error=x' }]);
+  // The mock bridge reports its own finished export (`ok:true`) at a time of its choosing: it is not part of this check.
+  expect((await cmd(page, 'shell.fx_results')).messages.filter(m => !m.data.includes('"ok":true'))).toEqual([{ chan: 2, data: '{"ok":false,"message":"disk full"}' }, { chan: 1, data: 'error=x' }]);
 
   // Background bridge and the boot flag.
   for (const what of [0, 1, 2]) expect((await result(page, (await fx(page, 0xab, ['r'], ['b', what], ['s', '{"busy":false,"pending":0,"errors":[]}'])).req)).status).toBe(0);
