@@ -16,12 +16,18 @@ use crate::{tag, App, Event, Host, LsOp, Mod, Node, Prop, Rect, Ui};
 use ihn_core::id::Id;
 use ihn_core::jsmath;
 
+// A listener id is attached to one event type: each type has its own.
 const L_DOWN: u32 = tag(Mod::EditorInput, 1);
 const L_MOVE: u32 = tag(Mod::EditorInput, 2);
+const L_RAW: u32 = tag(Mod::EditorInput, 9);
 const L_UP: u32 = tag(Mod::EditorInput, 3);
+const L_CANCEL: u32 = tag(Mod::EditorInput, 10);
+const L_LOST: u32 = tag(Mod::EditorInput, 11);
 const L_DOC_UP: u32 = tag(Mod::EditorInput, 4);
+const L_DOC_CANCEL: u32 = tag(Mod::EditorInput, 12);
 const L_BACKGROUND: u32 = tag(Mod::EditorInput, 5);
-const L_TOOL: u32 = tag(Mod::EditorInput, 6);
+/// One listener per toolbar button (`L_TOOL + i`; a listener id is attached once).
+const L_TOOL: u32 = tag(Mod::EditorInput, 16);
 const L_TOUCH_DRAW: u32 = tag(Mod::EditorInput, 7);
 const T_PEN_IDLE: u32 = tag(Mod::EditorInput, 8);
 
@@ -435,21 +441,17 @@ pub fn init(app: &mut App, host: &mut dyn Host) {
     }
     let out = host.out();
     out.listen(Ui::CANVAS_CONTAINER, "pointerdown", L_DOWN, 0);
-    for e in ["pointermove", "pointerrawupdate"] {
-        out.listen(Ui::CANVAS_CONTAINER, e, L_MOVE, 0);
-    }
-    for e in ["pointerup", "pointercancel", "lostpointercapture"] {
-        out.listen(Ui::CANVAS_CONTAINER, e, L_UP, 0);
+    for (e, id) in [("pointermove", L_MOVE), ("pointerrawupdate", L_RAW), ("pointerup", L_UP), ("pointercancel", L_CANCEL), ("lostpointercapture", L_LOST)] {
+        out.listen(Ui::CANVAS_CONTAINER, e, id, 0);
     }
     // v5: app-v5.js:1943 — a release that did not pass through the canvas.
-    for e in ["pointerup", "pointercancel"] {
-        out.listen(Node::DOCUMENT, e, L_DOC_UP, 0);
-    }
+    out.listen(Node::DOCUMENT, "pointerup", L_DOC_UP, 0);
+    out.listen(Node::DOCUMENT, "pointercancel", L_DOC_CANCEL, 0);
     out.listen(Ui::CANVAS_VIEWPORT, "pointerdown", L_BACKGROUND, 0);
     let mut buttons = Vec::with_capacity(TOOL_BUTTONS.len());
-    for (sel, tool, color, width) in TOOL_BUTTONS {
+    for (i, (sel, tool, color, width)) in TOOL_BUTTONS.into_iter().enumerate() {
         let node = if sel.starts_with('#') { Ui::BTN_ERASER } else { out.query(Ui::TOOLBAR, &format!("button{sel}")) };
-        out.listen(node, "click", L_TOOL, 0);
+        out.listen(node, "click", L_TOOL + i as u32, 0);
         buttons.push(ToolButton { node, tool, color, width });
     }
     out.listen(Ui::TOUCH_DRAW_TOGGLE, "change", L_TOUCH_DRAW, 0);
@@ -465,12 +467,12 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
     match *event {
         Event::Pointer(p) => match p.listener {
             L_DOWN => down(app, host, &p),
-            L_MOVE => moved(app, host, &p),
-            L_UP | L_DOC_UP => up(app, host, &p),
+            L_MOVE | L_RAW => moved(app, host, &p),
+            L_UP | L_CANCEL | L_LOST | L_DOC_UP | L_DOC_CANCEL => up(app, host, &p),
             L_BACKGROUND => background_tap(app, host, &p),
             _ => 0,
         },
-        Event::Dom(e) if e.listener == L_TOOL && e.ty == ety::CLICK => {
+        Event::Dom(e) if (L_TOOL..L_TOOL + TOOL_BUTTONS.len() as u32).contains(&e.listener) && e.ty == ety::CLICK => {
             tool_click(app, host, e.node);
             0
         }
