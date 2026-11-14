@@ -348,12 +348,16 @@ impl Session {
     /// The journal prefixes compaction may delete: `actor → through`.
     fn trimmable(&self, wall: u64) -> Through {
         let own = self.author.as_ref().map(|a| a.actor.inst());
+        // The migration actor's batches carry 5.x clocks (often older than the age limit): like own batches they
+        // stay until the relay has sealed them (SYNC §15.4).
+        let migration = own.map(|inst| ActorId::import(&ihn_core::id::migration_source(inst, &self.doc_id)).0);
+        let unsealed = |e: &Entry| Some(e.actor) == migration && self.record.relay.sealed.get(e.actor).is_none_or(|&s| e.seq > s);
         let (mut through, mut stopped, mut left) = (Through::new(), None, self.journal.bytes);
         for e in &self.journal.e {
             if stopped == Some(e.actor) {
                 continue;
             }
-            let old = e.clock.saturating_add(JOURNAL_MAX_AGE_MS) < wall;
+            let old = e.clock.saturating_add(JOURNAL_MAX_AGE_MS) < wall && !unsealed(e);
             if self.doc.vv.contains(ActorId(e.actor), e.seq) && (old || self.covered.contains(ActorId(e.actor), e.seq)) {
                 through_set(&mut through, e.actor, e.seq);
                 left -= e.bytes.len();
@@ -370,7 +374,7 @@ impl Session {
                     continue;
                 }
                 seen = Some(e.actor);
-                let key = (Some(ActorId(e.actor).inst()) == own, e.clock);
+                let key = (Some(ActorId(e.actor).inst()) == own || Some(e.actor) == migration, e.clock);
                 if best.is_none_or(|b| key < (b.0, b.1)) {
                     best = Some((key.0, key.1, i));
                 }

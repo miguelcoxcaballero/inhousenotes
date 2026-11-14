@@ -54,6 +54,8 @@ const FX_CACHES_DELETE: u8 = 0x74;
 const RETRY_MS: f64 = 4_000.0;
 /// The runner is started again at most this often while documents are not done.
 const RUNNER_EVERY_MS: f64 = 20_000.0;
+/// A run that left documents unwritten starts over at most this often.
+const RERUN_EVERY_MS: f64 = 30_000.0;
 const MEDIA_CACHES: &str = "inhouse-media-";
 const META_FIELDS: &str = "capabilities(canEdit),ownedByMe,owners(displayName,emailAddress,photoLink),resourceKey,headRevisionId,modifiedTime,parents";
 const FOLDER_MIME: &str = "application/vnd.google-apps.folder";
@@ -74,7 +76,7 @@ const READS: [(&str, &str); 11] = [
     (BACKGROUND_NOTEBOOK_DB, "stroke-ops"),
 ];
 /// 5.x localStorage keys: read by the migration, removed with the databases (ARCHITECTURE §7.2).
-pub const LS_KEYS: [&str; 7] = ["drive-session-v1", "drive-pending-exit-upload-v1", "notebook-data-v3", "background-notebook-data-v3", "notebook-view-mode-v1", "presence-client-id-v1", "background-notebook-data-v3-session"];
+pub const LS_KEYS: [&str; 6] = ["drive-session-v1", "drive-pending-exit-upload-v1", "notebook-data-v3", "background-notebook-data-v3", "notebook-view-mode-v1", "presence-client-id-v1"];
 
 // ---- the dump and the plan (pure) -----------------------------------------------------------------------------
 
@@ -352,6 +354,7 @@ pub struct State {
     /// The current run could not write every document (offline, empty pool): `written` stays false.
     deferred: bool,
     runner_at: f64,
+    rerun_at: f64,
     errors: Vec<String>,
     runs: u32,
     deletes: u32,
@@ -879,8 +882,9 @@ fn merge(app: &mut App, host: &mut dyn Host) {
     let Some(c) = st(app).cur.as_ref() else { return };
     let (at, source, base_vv, fresh) = (c.at, c.source, c.base_vv.clone(), c.meta.clone());
     let d = st(app).plan.docs[at].clone();
-    let Some((v6, inst)) = session::get(app).and_then(|s| Some((s.doc_id.clone(), s.author.as_ref()?.actor.inst()))) else {
-        st(app).errors.push(format!("{}: no session", d.v5_id));
+    // Without a persistent, writable session (degraded storage, no actor slot) nothing can be written: later.
+    let Some((v6, inst)) = session::get(app).filter(|s| s.persistent).and_then(|s| Some((s.doc_id.clone(), s.author.as_ref()?.actor.inst()))) else {
+        st(app).errors.push(format!("{}: not writable on this device now", d.v5_id));
         return finish_doc(app, host, false);
     };
     let actor = ActorId::import(&migration_source(inst, &v6));
@@ -1019,10 +1023,14 @@ fn checked(app: &mut App, host: &mut dyn Host, io: &Io) {
         rows.iter().find(|(k, _)| k.text() == *v6).is_some_and(|(_, v)| doc_done(&DocRecord::from_value(v), actor))
     });
     if !done {
+        // A run that could not write everything (offline, empty pool, busy storage) starts over when it can.
+        let t = host.now();
+        if !st(app).progress.written && online(app) && t - st(app).rerun_at > RERUN_EVERY_MS {
+            st(app).rerun_at = t;
+            return read(app, host);
+        }
         kick_runner(app, host, false);
-        // A run that could not write everything (offline, empty pool) starts over when it can.
-        let next = if st(app).progress.written { RETRY_MS } else { 2.0 * RETRY_MS };
-        return retry(app, host, next);
+        return retry(app, host, RETRY_MS);
     }
     st(app).phase = Phase::Census;
     info(app, host);
@@ -1184,7 +1192,7 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
 /// `__IHN_TEST_API__.cmd('migrate.<name>', args)`: `state` → `{phase, runs, deletes, docs, folders, written,
 /// deleted, errors}`; `run` starts a run now (as a new boot would); `has {ids}` → the 5.x stroke ids missing from
 /// the open document.
-pub fn test_cmd(app: &mut App, host: &mut dyn Host, name: &str, _args: &str) -> Option<String> {
+pub fn test_cmd(app: &mut App, host: &mut dyn Host, name: &str, args: &str) -> Option<String> {
     match name {
         "state" => {
             let s = &app.st.migrate;
@@ -1209,7 +1217,7 @@ pub fn test_cmd(app: &mut App, host: &mut dyn Host, name: &str, _args: &str) -> 
         }
         "has" => {
             // `{ids}` (5.x stroke ids) → those that are not live items of the open document.
-            let json = Json::parse(_args);
+            let json = Json::parse(args);
             let ids: Vec<String> = json.as_ref().and_then(|j| j.get("ids")).map(|l| l.items().iter().filter_map(|i| i.as_str().map(String::from)).collect()).unwrap_or_default();
             let s = session::get(app);
             let missing: Vec<String> = ids.iter().filter(|id| !s.is_some_and(|s| s.doc.items.get(&ihn_core::id::Id::legacy(id)).is_some_and(|i| i.is_live()))).map(|i| json_str(i)).collect();
