@@ -42,9 +42,12 @@ pub fn test_cmd(module: &str, name: &str, args: &str) -> Option<String> {
     f(name, args)
 }
 
-/// The protocol parts of a session, in dispatch order. W2.7 adds `relay` and `export`, W2.8 `peer`, `entropy` and
-/// `live`: one `Box::new(..)` line each, nothing else in this file changes.
-fn parts() -> Vec<Box<dyn Part>> { Vec::new() }
+/// The protocol parts of a session, in dispatch order. Each module answers with its part from `pub fn part()`
+/// (`None` until its unit has built it), so W2.7 (`relay`, `export`) and W2.8 (`peer`, `entropy`, `live`) only edit
+/// their own files.
+fn parts() -> Vec<Box<dyn Part>> {
+    [relay::part(), export::part(), peer::part(), entropy::part(), live::part()].into_iter().flatten().collect()
+}
 
 // ------------------------------------------------------------------------------------------------ effects and inputs
 
