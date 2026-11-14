@@ -334,6 +334,8 @@ pub struct OutBuf {
     pub(crate) long_style: Vec<u8>,
 }
 
+/// Payloads from this size on are reserved exactly ([`OutBuf::room`]).
+pub const BIG_PAYLOAD: usize = 64 << 10;
 /// Style values this long (template backgrounds: ~350 KB JPEG data URLs, set on every page) are sent once.
 pub const LONG_STYLE: usize = 16 << 10;
 /// In place of a STYLE record's value length: "the last long value again" (`host/dom.js` keeps it).
@@ -366,6 +368,23 @@ impl OutBuf {
         let m = self.w.rec(fam::FX, op);
         self.w.u32(id);
         self.w.end(m);
+    }
+    /// Makes room for a payload of `n` more bytes. A large one (≥ [`BIG_PAYLOAD`]: a store transaction, a blob, a
+    /// worker message) gets exactly that room plus a little slack instead of `Vec`'s doubling, which would keep up to
+    /// twice the payload reserved in wasm memory (it never shrinks).
+    pub fn room(&mut self, n: usize) {
+        let buf = &mut self.w.buf;
+        if n >= BIG_PAYLOAD && buf.capacity() - buf.len() < n + 64 {
+            buf.reserve_exact(n + (16 << 10));
+        }
+    }
+    /// Gives back the capacity a large payload left behind once the host applied it (the out-buffer is empty at the
+    /// start of every entry): wasm memory then reuses it instead of keeping it reserved for the out-buffer.
+    pub fn trim(&mut self) {
+        let buf = &mut self.w.buf;
+        if buf.is_empty() && buf.capacity() > BIG_PAYLOAD * 4 {
+            buf.shrink_to(BIG_PAYLOAD);
+        }
     }
     /// Releases a JS object handle received in an event.
     pub fn obj_release(&mut self, obj: u32) {

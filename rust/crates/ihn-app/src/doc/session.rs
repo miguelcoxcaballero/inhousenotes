@@ -135,6 +135,9 @@ pub struct Session {
     outbox: Vec<EncodedBatch>,
     queue: VecDeque<Vec<u8>>,
     queued_keys: Vec<(u64, u32)>,
+    /// Queued import batches that go straight into page chunks: neither journalled in memory nor appended to `ops`
+    /// (see [`receive_owned`]).
+    folded: Vec<(u64, u32)>,
     partial: Option<Partial>,
     covered: VersionVector,
     /// Page → chunk number.
@@ -226,6 +229,7 @@ impl Session {
             outbox: Vec::new(),
             queue: VecDeque::new(),
             queued_keys: Vec::new(),
+            folded: Vec::new(),
             partial: None,
             covered: VersionVector::default(),
             chunks: Vec::new(),
@@ -356,11 +360,18 @@ impl Session {
                     if let Some(author) = &mut self.author {
                         author.clock.observe(b.max_clock(), wall);
                     }
-                    self.queued_keys.retain(|k| *k != (b.actor.0, b.seq));
-                    if self.persistent {
-                        self.pending.ops_put(&self.doc_id, b.actor.0, b.seq, &p.bytes);
+                    let key = (b.actor.0, b.seq);
+                    self.queued_keys.retain(|k| *k != key);
+                    match self.folded.iter().position(|k| *k == key) {
+                        // Its pages are dirty: the compaction that follows writes them.
+                        Some(at) => _ = self.folded.swap_remove(at),
+                        None => {
+                            if self.persistent {
+                                self.pending.ops_put(&self.doc_id, b.actor.0, b.seq, &p.bytes);
+                            }
+                            self.journal_put(b.actor.0, b.seq, b.clock, p.bytes);
+                        }
                     }
-                    self.journal_put(b.actor.0, b.seq, b.clock, p.bytes);
                 }
             } else {
                 self.partial = None;
@@ -383,12 +394,23 @@ impl Session {
         self.queue.push_back(bytes);
     }
 
+    /// The migration actor of this installation and document (SYNC §15.4).
+    fn migration_actor(&self) -> Option<u64> {
+        self.author.as_ref().map(|a| ActorId::import(&ihn_core::id::migration_source(a.actor.inst(), &self.doc_id)).0)
+    }
+
+    /// An import batch of a Drive revision that the next compaction would trim at once (older than the journal's
+    /// age limit; not the migration actor's, which waits for the relay seal).
+    fn foldable(&self, actor: u64, clock: u64, wall: u64) -> bool {
+        ActorId(actor).is_import() && Some(actor) != self.migration_actor() && clock.saturating_add(JOURNAL_MAX_AGE_MS) < wall
+    }
+
     /// The journal prefixes compaction may delete: `actor → through`.
     fn trimmable(&self, wall: u64) -> Through {
         let own = self.author.as_ref().map(|a| a.actor.inst());
         // The migration actor's batches carry 5.x clocks (often older than the age limit): like own batches they
         // stay until the relay has sealed them (SYNC §15.4).
-        let migration = own.map(|inst| ActorId::import(&ihn_core::id::migration_source(inst, &self.doc_id)).0);
+        let migration = self.migration_actor();
         let unsealed = |e: &Entry| Some(e.actor) == migration && self.record.relay.sealed.get(e.actor).is_none_or(|&s| e.seq > s);
         let (mut through, mut stopped, mut left) = (Through::new(), None, self.journal.bytes);
         for e in &self.journal.e {
@@ -530,20 +552,36 @@ pub fn with_replica<R>(app: &mut App, host: &mut dyn Host, f: impl FnOnce(&mut d
 
 /// `Replica::receive` of batches the caller gives away (a 5.x import: megabytes): queued without a copy, and the
 /// store transaction that journals them is sized once instead of doubling.
+///
+/// Import batches of a Drive revision older than the journal's age limit would be appended to `ops`, kept in the
+/// in-memory journal and deleted from both by the compaction that follows the import (the forced one of the open,
+/// or the holder's). They are folded into page chunks directly instead: applied (their pages become dirty) but
+/// neither journalled nor appended, so megabytes are not written twice and not held three times (journal, store
+/// transaction, out-buffer) while the open runs. Only when this tab will compact: persistent, holding the network
+/// lock, storage healthy, no compaction in flight; otherwise they take the journal path.
 pub fn receive_owned(app: &mut App, host: &mut dyn Host, batches: Vec<EncodedBatch>) -> Option<ReceiveResult> {
+    let fold = !store::degraded(app) && app.st.doc_session.compact_req == 0;
     let mut s = app.st.doc_session.s.take()?;
     let contact = app.sched.is_busy();
+    let (wall, fold) = (host.time() as u64, fold && s.persistent && s.net_holder);
     s.refresh_wire();
-    if s.persistent {
-        // Each journal put adds the batch and a key of a few dozen bytes.
-        s.pending.buf.reserve(batches.iter().map(|b| b.0.len() + 128).sum());
-    }
-    let (n, mut duplicate) = (batches.len() as u32, 0);
+    let (n, mut duplicate, mut journalled) = (batches.len() as u32, 0, 0);
     for eb in batches {
         match s.wanted(&eb) {
-            Some(key) => s.enqueue(key, eb.0),
+            Some(key) => {
+                if fold && eb.header().is_some_and(|(_, _, clock)| s.foldable(key.0, clock, wall)) {
+                    s.folded.push(key);
+                } else {
+                    // Each journal put adds the batch and a key of a few dozen bytes.
+                    journalled += eb.0.len() + 128;
+                }
+                s.enqueue(key, eb.0);
+            }
             None => duplicate += 1,
         }
+    }
+    if s.persistent {
+        s.pending.buf.reserve(journalled);
     }
     let r = Rep { s: &mut s, host, contact }.drained(n, duplicate);
     app.st.doc_session.s = Some(s);
@@ -780,34 +818,7 @@ pub fn compact(app: &mut App, host: &mut dyn Host, force: bool) {
     if pages.is_empty() && !header && through.is_empty() && s.record_stored {
         return;
     }
-    let mut t = StoreTx::new();
-    let mut vv = ihn_core::codec::Writer::default();
-    s.doc.vv.encode(&mut vv);
-    s.record.vv = vv.buf;
-    if !std::mem::replace(&mut s.record_stored, true) {
-        t.doc_put(&s.doc_id, &s.record);
-    } else {
-        t.doc_patch(&s.doc_id, &[(&["vv"], Value::from(&s.record.vv[..]))]);
-    }
-    t.chunk_put(&s.doc_id, 0, &snapshot::encode_header(&s.doc));
-    for page in pages {
-        let at = s.chunks.iter().position(|c| c.0 == page);
-        if s.doc.chunk_items(page).is_empty() {
-            if let Some(at) = at {
-                t.chunk_del(&s.doc_id, s.chunks.swap_remove(at).1);
-            }
-        } else {
-            let chunk = at.map(|at| s.chunks[at].1).unwrap_or_else(|| {
-                s.next_chunk += 1;
-                s.chunks.push((page, s.next_chunk - 1));
-                s.next_chunk - 1
-            });
-            t.chunk_put(&s.doc_id, chunk, &snapshot::encode_chunk(&s.doc, page));
-        }
-    }
-    for &(actor, seq) in &through {
-        t.ops_trim(&s.doc_id, actor, seq);
-    }
+    // The trimmed journal entries are freed before the chunks are encoded (the peak of a large compaction).
     let journal = &mut s.journal;
     let mut freed = 0;
     journal.e.retain(|e| {
@@ -818,6 +829,58 @@ pub fn compact(app: &mut App, host: &mut dyn Host, force: bool) {
         keep
     });
     journal.bytes -= freed;
+    if journal.e.is_empty() {
+        journal.e = Vec::new();
+    }
+    // The page chunks are encoded twice into one reused buffer: once for their sizes, so that the transaction (a
+    // whole snapshot after an import: megabytes) is reserved once at its size instead of doubling to twice that.
+    let mut scratch = ihn_core::codec::Writer::default();
+    let header_bytes = snapshot::encode_header(&s.doc);
+    let mut size = header_bytes.len() + 512 + s.record.vv.len() + through.len() * (s.doc_id.len() + 64);
+    let mut writes = Vec::with_capacity(pages.len());
+    for page in pages {
+        let at = s.chunks.iter().position(|c| c.0 == page);
+        if s.doc.chunk_items(page).is_empty() {
+            if let Some(at) = at {
+                writes.push((page, Some(s.chunks.swap_remove(at).1), false));
+            }
+        } else {
+            scratch.buf.clear();
+            snapshot::encode_chunk_into(&s.doc, page, &mut scratch);
+            size += scratch.buf.len() + s.doc_id.len() + 48;
+            writes.push((page, at.map(|at| s.chunks[at].1), true));
+        }
+    }
+    let mut t = StoreTx::new();
+    let mut vv = ihn_core::codec::Writer::default();
+    s.doc.vv.encode(&mut vv);
+    s.record.vv = vv.buf;
+    t.reserve(size + if s.record_stored { 0 } else { 4096 });
+    if !std::mem::replace(&mut s.record_stored, true) {
+        t.doc_put(&s.doc_id, &s.record);
+    } else {
+        t.doc_patch(&s.doc_id, &[(&["vv"], Value::from(&s.record.vv[..]))]);
+    }
+    t.chunk_put(&s.doc_id, 0, &header_bytes);
+    drop(header_bytes);
+    for (page, chunk, put) in writes {
+        if !put {
+            t.chunk_del(&s.doc_id, chunk.unwrap_or(0));
+            continue;
+        }
+        let chunk = chunk.unwrap_or_else(|| {
+            s.next_chunk += 1;
+            s.chunks.push((page, s.next_chunk - 1));
+            s.next_chunk - 1
+        });
+        scratch.buf.clear();
+        snapshot::encode_chunk_into(&s.doc, page, &mut scratch);
+        t.chunk_put(&s.doc_id, chunk, &scratch.buf);
+    }
+    drop(scratch);
+    for &(actor, seq) in &through {
+        t.ops_trim(&s.doc_id, actor, seq);
+    }
     let req = app.req(Mod::DocSession);
     app.st.doc_session.compact_req = req;
     store::tx(app, host, req, t);
@@ -1025,6 +1088,8 @@ fn route_io(app: &mut App, host: &mut dyn Host, io: &crate::abi::Io) {
         if io.status < 0 {
             if let Some(s) = st.s.as_mut() {
                 s.full_compact = true;
+                // Folded import batches live only in the dirty pages until a compaction succeeds.
+                app.sched.defer(W_COMPACT, COMPACT_QUIET_MS, true);
             }
         } else if let Some(s) = st.s.as_mut() {
             // A checkpoint of the document is a local save (5.18.0 `confirmLocalSave` after `saveToIndexedDb`, which
@@ -1162,13 +1227,14 @@ mod tests {
         app.event(host, kind::TIMER, &w.buf);
     }
     /// `n` batches of another device: a page, then strokes on it.
-    fn remote(n: usize) -> Vec<EncodedBatch> {
+    fn remote(n: usize) -> Vec<EncodedBatch> { batches_of(ActorId::tab(0x0bad_cafe_0000_0200, 3), n, 1_793_354_400_000) }
+    fn batches_of(actor: ActorId, n: usize, clock: u64) -> Vec<EncodedBatch> {
         let mut doc = Doc::default();
-        let mut author = Author::new(IdGen::new(ActorId::tab(0x0bad_cafe_0000_0200, 3), 0), 0);
+        let mut author = Author::new(IdGen::new(actor, 0), 0);
         let mut out = Vec::new();
         let mut page = Id::NONE;
         for i in 0..n {
-            let mut tx = Tx::new(&doc, &mut author, 1_793_354_400_000 + i as u64);
+            let mut tx = Tx::new(&doc, &mut author, clock + i as u64);
             if i == 0 {
                 page = tx.page_new(None, Template::Default, A4, Background::Template);
             } else {
@@ -1217,6 +1283,32 @@ mod tests {
         stroke(&mut app, &mut host, 2.0);
         db.pump(&mut app, &mut host);
         assert_eq!(drain_local(&mut app).iter().map(|b| b.header().unwrap().1).collect::<Vec<_>>(), [2, 3]);
+    }
+
+    #[test]
+    fn old_import_batches_go_straight_into_chunks() {
+        let (mut app, mut host, mut db) = boot();
+        open(&mut app, &mut host, &mut db);
+        let wall = host.time() as u64;
+        // A revision older than the journal's age limit: applied, neither journalled nor appended to `ops`.
+        let old = batches_of(ActorId::import("rev-1"), 3, wall - JOURNAL_MAX_AGE_MS - 60_000);
+        receive_owned(&mut app, &mut host, old);
+        let s = get(&app).unwrap();
+        assert_eq!((s.doc.order().len(), s.doc.items.len(), s.journal.e.len(), s.folded.len()), (1, 80, 0, 0));
+        db.pump(&mut app, &mut host);
+        assert_eq!(db.dbs[store::DB_NAME][2].len(), 0, "nothing appended to `ops`");
+        compact(&mut app, &mut host, true);
+        db.pump(&mut app, &mut host);
+        let before = snap(&app);
+        close(&mut app, &mut host);
+        db.pump(&mut app, &mut host);
+        open(&mut app, &mut host, &mut db);
+        assert_eq!(snap(&app), before, "the chunks alone hold the import");
+        // A recent revision takes the journal path (it stays for peers until covered or 24 h old).
+        let recent = batches_of(ActorId::import("rev-2"), 2, wall - 1000);
+        receive_owned(&mut app, &mut host, recent);
+        db.pump(&mut app, &mut host);
+        assert_eq!((get(&app).unwrap().journal.e.len(), db.dbs[store::DB_NAME][2].len()), (2, 2));
     }
 
     #[test]

@@ -94,6 +94,8 @@ pub fn test_cmd(app: &mut App, host: &mut dyn Host, name: &str, _args: &str) -> 
     Some(match name {
         "state" => state(app),
         "selftest" => selftest(app, host),
+        // W6.3p: allocator accounting (`--features memstat`; `{}` otherwise).
+        "mem" => crate::memstat::report(_args.contains("reset")),
         "selftest_result" => selftest_result(app, host),
         // A pen stroke on the self-test button while background work is queued (e2e: no host timer per sample).
         "pen_probe" => {

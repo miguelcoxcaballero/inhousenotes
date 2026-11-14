@@ -61,6 +61,11 @@ pub struct MemDb {
     /// 5.x databases: name → `(version, [(store, rows sorted by key)])`.
     pub v5: HashMap<String, (u32, Vec<(String, Rows)>)>,
     timers: Vec<(u32, f64)>,
+    /// Operations of `TX_PART` records waiting for their `TX`.
+    parts: Vec<u8>,
+    part_ops: u32,
+    /// Transactions that arrived in `TX_PART` pieces.
+    pub split_transactions: u32,
     /// Completions collected from the store's test inbox: `(request, status, data)`.
     pub done: Vec<(u32, i32, Vec<u8>)>,
     /// The request ids of `done` with a non-negative status, in completion order.
@@ -296,7 +301,7 @@ impl MemDb {
             let mut p = Reader::new(payload);
             let ours = family == fam::FX
                 && match op {
-                    fx::OPEN..=fx::V5_READ | fx::LOCK_REQUEST..=fx::LOCK_QUERY => true,
+                    fx::OPEN..=fx::TX_PART | fx::LOCK_REQUEST..=fx::LOCK_QUERY => true,
                     abi::fx::TIMER_SET | abi::fx::TIMER_CLEAR => tag_mod(Reader::new(payload).u32().unwrap()) == Mod::Store as usize,
                     _ => false,
                 };
@@ -344,15 +349,28 @@ impl MemDb {
                 events.push((first, status, Vec::new()));
             }
             fx::CLOSE => drop(self.conns.remove(&first)),
+            fx::TX_PART => {
+                // `first` is the operation count; the operations follow.
+                self.part_ops += first;
+                self.parts.extend_from_slice(p.buf);
+            }
             fx::TX => {
-                let (conn, flags, ops) = (p.u32().unwrap(), p.u8().unwrap(), p.u32().unwrap());
+                let (conn, flags, mut ops) = (p.u32().unwrap(), p.u8().unwrap(), p.u32().unwrap());
+                let parts = std::mem::take(&mut self.parts);
+                let joined = if flags & 4 != 0 {
+                    ops += std::mem::take(&mut self.part_ops);
+                    self.split_transactions += 1;
+                    [&parts[..], p.buf].concat()
+                } else {
+                    p.buf.to_vec()
+                };
                 let Some(stores) = self.conns.get(&conn).and_then(|name| self.dbs.get_mut(name)) else {
                     return events.push((first, status::CLOSED, b"closed".to_vec()));
                 };
                 self.transactions += 1;
                 let failure = if flags & 1 != 0 { self.fail_writes.pop_front() } else { None };
                 let mut copy = stores.clone();
-                let mut r = R(*p);
+                let mut r = R(Reader::new(&joined));
                 match failure.map_or_else(|| exec(&mut copy, &mut r, ops), Err) {
                     Ok(results) => {
                         assert!(r.is_empty(), "trailing bytes after the last operation");

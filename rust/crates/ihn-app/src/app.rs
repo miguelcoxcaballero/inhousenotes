@@ -317,9 +317,11 @@ impl App {
             out.text(node, &label);
             out.release(node);
         }
-        for module in MODULES {
+        for (i, module) in MODULES.iter().enumerate() {
+            crate::memstat::set(i as u8);
             (module.init)(self, host);
         }
+        crate::memstat::set(126);
         self.booted = true;
         self.after(host);
     }
@@ -342,21 +344,28 @@ impl App {
             host.log(2, "ihn: malformed event ignored");
             return 0;
         };
+        // Nested calls (`shell::signal`) give the caller's tag back.
+        let outer = crate::memstat::set(125);
+        host.out().trim();
         let bits = self.dispatch(host, &event);
         self.after(host);
+        crate::memstat::set(outer);
         bits
     }
 
     /// `ihn_frame`: delivers `Event::Frame` to the modules that asked for this frame.
     pub fn frame(&mut self, host: &mut dyn Host, t: f64) {
+        let outer = crate::memstat::set(125);
         let mods = std::mem::take(&mut self.sched.frame_mods);
         self.sched.raf = false;
         for (i, module) in MODULES.iter().enumerate() {
             if mods & 1 << i != 0 {
+                crate::memstat::set(i as u8);
                 (module.event)(self, host, &Event::Frame(t));
             }
         }
         self.after(host);
+        crate::memstat::set(outer);
     }
 
     fn dispatch(&mut self, host: &mut dyn Host, event: &Event) -> u32 {
@@ -391,13 +400,19 @@ impl App {
             Event::Frame(_) => return 0, // frames enter through `App::frame`
         };
         match MODULES.get(tag_mod(owner)) {
-            Some(module) => (module.event)(self, host, event),
+            Some(module) => {
+                crate::memstat::set(tag_mod(owner) as u8);
+                (module.event)(self, host, event)
+            }
             None => 0,
         }
     }
 
     fn broadcast(&mut self, host: &mut dyn Host, event: &Event) -> u32 {
-        MODULES.iter().fold(0, |bits, module| bits | (module.event)(self, host, event))
+        MODULES.iter().enumerate().fold(0, |bits, (i, module)| {
+            crate::memstat::set(i as u8);
+            bits | (module.event)(self, host, event)
+        })
     }
 
     fn life(&mut self, l: abi::Life) {
@@ -429,6 +444,7 @@ impl App {
         let delay = self.sched.poll(host.now(), &mut due);
         for (id, stale) in due {
             if let Some(module) = MODULES.get(tag_mod(id)) {
+                crate::memstat::set(tag_mod(id) as u8);
                 (module.event)(self, host, &Event::Work { id, stale });
             }
         }

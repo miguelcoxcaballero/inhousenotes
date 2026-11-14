@@ -429,8 +429,15 @@ const F_BODY: u8 = 32;
 /// The chunk of one page: every item whose page register names it (live or deleted), ascending by id.
 pub fn encode_chunk(doc: &Doc, page: Id) -> Vec<u8> {
     let mut w = Writer::default();
+    encode_chunk_into(doc, page, &mut w);
+    w.buf
+}
+
+/// [`encode_chunk`] appended to `w` (a reused buffer).
+pub fn encode_chunk_into(doc: &Doc, page: Id, w: &mut Writer) {
+    let w = &mut *w;
     w.u8(CODEC_VERSION);
-    put_id(&mut w, page);
+    put_id(w, page);
     let ids = doc.chunk_items(page);
     w.leb(ids.len() as u64);
     for id in ids {
@@ -444,26 +451,25 @@ pub fn encode_chunk(doc: &Doc, page: Id) -> Vec<u8> {
             | it.deleted.v as u8 * F_DELETED
             | (it.deleted.at != Stamp::ZERO) as u8 * F_DEL_AT
             | has_body as u8 * F_BODY;
-        put_id(&mut w, id);
+        put_id(w, id);
         w.u8(flags);
-        put_stamp(&mut w, at);
+        put_stamp(w, at);
         if flags & F_PAGE_AT == 0 {
-            put_stamp(&mut w, it.page.at);
+            put_stamp(w, it.page.at);
         }
         if !z_new {
-            put_z(&mut w, it.z.v);
+            put_z(w, it.z.v);
         }
         if flags & F_Z_AT == 0 {
-            put_stamp(&mut w, it.z.at);
+            put_stamp(w, it.z.at);
         }
         if flags & F_DEL_AT != 0 {
-            put_stamp(&mut w, it.deleted.at);
+            put_stamp(w, it.deleted.at);
         }
         if has_body {
-            put_body(&mut w, &it.body.v);
+            put_body(w, &it.body.v);
         }
     }
-    w.buf
 }
 
 /// The whole document: header and every chunk.

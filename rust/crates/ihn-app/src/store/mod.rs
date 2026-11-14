@@ -63,7 +63,8 @@ pub(crate) mod fx {
     pub const OPEN: u8 = 0x20;
     /// `u32 db`.
     pub const CLOSE: u8 = 0x21;
-    /// `u32 req, u32 db, u8 flags (1 write, 2 strict), u32 n, n × operation`.
+    /// `u32 req, u32 db, u8 flags (1 write, 2 strict, 4 the operations came before in `TX_PART`s), u32 n,
+    /// n × operation`.
     pub const TX: u8 = 0x22;
     /// `u32 req, str name, f64 blocked_ms`.
     pub const DELETE_DB: u8 = 0x23;
@@ -71,6 +72,8 @@ pub(crate) mod fx {
     pub const V5_INFO: u8 = 0x24;
     /// `u32 req, str name, str store, value after, u32 limit, f64 max_bytes`.
     pub const V5_READ: u8 = 0x25;
+    /// `u32 n, n × operation`: the first operations of the next `TX` record (flag 4).
+    pub const TX_PART: u8 = 0x26;
     /// `u32 req, str name, u8 flags (1 ifAvailable, 2 shared)`.
     pub const LOCK_REQUEST: u8 = 0x80;
     /// `u32 req`.
@@ -198,6 +201,10 @@ pub fn reopen(app: &mut App, host: &mut dyn Host) { reopen_conn(app, host, MAIN)
 
 /// Runs a transaction on the application database. The completion is an `Event::Io` with `req` at the module
 /// that owns `req`: `status` is one of [`status`], `data` the results ([`Reply`]) or the failure message.
+/// Transactions larger than this are sent in [`fx::TX_PART`] pieces of about [`TX_PIECE`] bytes.
+const SPLIT_TX: usize = 512 << 10;
+const TX_PIECE: usize = 256 << 10;
+
 pub fn tx(app: &mut App, host: &mut dyn Host, req: u32, tx: Tx) { submit(app, host, MAIN, Job { caller: req, tx, attempt: 0 }) }
 
 /// Deletes a whole database (the migration's last step, tests). Completion: [`status::OK`],
@@ -277,14 +284,39 @@ fn send(app: &mut App, host: &mut dyn Host, c: usize, mut job: Job) {
     }
     let wire = app.req(Mod::Store);
     let id = conn(app, c).id;
+    let (tx, mut from) = (&job.tx, 0);
+    // A transaction of megabytes (a snapshot after an import, a journal write) leaves in pieces of whole operations,
+    // each applied by the host before the next is written: the out-buffer never holds a second copy of it.
+    if tx.buf.len() > SPLIT_TX && tx.marks.len() == tx.ops as usize {
+        let mut at = 0;
+        while at < tx.marks.len() {
+            let start = tx.marks[at] as usize;
+            let mut end = at + 1;
+            while end < tx.marks.len() && tx.marks[end] as usize - start < TX_PIECE {
+                end += 1;
+            }
+            let stop = tx.marks.get(end).map_or(tx.buf.len(), |&m| m as usize);
+            let out = host.out();
+            let m = out.w.rec(fam::FX, fx::TX_PART);
+            out.w.u32((end - at) as u32);
+            out.room(stop - start);
+            out.w.raw(&tx.buf[start..stop]);
+            out.w.end(m);
+            host.flush();
+            at = end;
+        }
+        from = tx.ops;
+    }
     let out = host.out();
     let m = out.w.rec(fam::FX, fx::TX);
     out.w.u32(wire);
     out.w.u32(id);
-    out.w.u8(job.tx.write as u8 | (job.tx.strict as u8) << 1);
-    out.w.u32(job.tx.ops);
-    out.w.buf.reserve(job.tx.buf.len() + 8);
-    out.w.raw(&job.tx.buf);
+    out.w.u8(tx.write as u8 | (tx.strict as u8) << 1 | ((from > 0) as u8) << 2);
+    out.w.u32(tx.ops - from);
+    if from == 0 {
+        out.room(tx.buf.len());
+        out.w.raw(&tx.buf);
+    }
     out.w.end(m);
     // Megabyte transactions (a journal or snapshot write) leave one at a time instead of piling up in the
     // out-buffer, which would keep their sum reserved in wasm memory.
@@ -502,6 +534,28 @@ mod tests {
         assert_eq!(db.take(a).unwrap().0, status::OK);
         assert_eq!(Value::decode(&db.take(b).unwrap().1), Some("folder".into()), "queued transactions keep their order");
         assert!(!degraded(&app));
+    }
+
+    #[test]
+    fn a_large_transaction_leaves_in_pieces_and_commits_as_one() {
+        let (mut app, mut host, mut db) = boot();
+        let chunk = vec![7u8; 100 << 10];
+        let mut t = Tx::new();
+        t.doc_put(DOC, &sample_record());
+        for n in 1..=12 {
+            t.chunk_put(DOC, n, &chunk);
+        }
+        t.chunk_scan(DOC);
+        let (status, r) = run_on(&mut app, &mut host, &mut db, t);
+        assert_eq!((status, db.split_transactions, db.transactions, r.len()), (status::OK, 1, 1, 14));
+        let Value::Arr(rows) = &r[13] else { panic!("scan result {:?}", r[13]) };
+        assert_eq!(rows.len(), 24, "every chunk stored");
+        assert!(rows.iter().skip(1).step_by(2).all(|v| *v == Value::Bytes(chunk.clone())));
+        // A small one is a single record, as before.
+        let mut t = Tx::new();
+        t.chunk_put(DOC, 1, b"x");
+        assert_eq!(run_on(&mut app, &mut host, &mut db, t).0, status::OK);
+        assert_eq!(db.split_transactions, 1);
     }
 
     #[test]

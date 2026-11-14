@@ -98,6 +98,7 @@ impl Src<'_> {
             Src::None => out.w.u8(0),
             Src::Bytes(b) => {
                 out.w.u8(1);
+                out.room(b.len() + 4);
                 out.w.bytes(b);
             }
             Src::Blob { obj, start, end } => {
@@ -189,6 +190,7 @@ pub fn fetch_abort(out: &mut OutBuf, req: u32) { out.fx_id(op::FETCH_ABORT, req)
 pub fn blob_new(out: &mut OutBuf, obj: u32, mime: &str, bytes: &[u8]) {
     let m = rec(out, op::BLOB_NEW, obj);
     out.w.str(mime);
+    out.room(bytes.len() + 4);
     out.w.bytes(bytes);
     out.w.end(m);
 }
