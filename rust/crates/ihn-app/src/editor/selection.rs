@@ -210,7 +210,7 @@ pub fn select(app: &mut App, host: &mut dyn Host, page: Id, items: &[Id]) {
     let Some(d) = doc(app) else { return };
     let mut sel: Vec<(Id, Stamp)> = items.iter().filter_map(|&id| d.live(id).filter(|i| i.page.v == page).map(|i| (id, i.body.at))).collect();
     // Draw order: images, then strokes.
-    sel.sort_by_key(|&(id, _)| !is_image(d, id));
+    ihn_core::sort::by_key(&mut sel, |&(id, _)| !is_image(d, id));
     let st = &mut app.st.editor_selection;
     st.page = page;
     st.items = sel;
@@ -363,7 +363,7 @@ fn duplicate(app: &mut App, host: &mut dyn Host) {
     }
     // v5 pushes the strokes first, then the images.
     let mut order = items.clone();
-    order.sort_by_key(|&id| is_image(d, id));
+    ihn_core::sort::by_key(&mut order, |&id| is_image(d, id));
     let points: usize = order.iter().filter_map(|&id| match d.live(id).map(|i| &i.body.v) {
         Some(Body::Stroke { xy, .. }) => Some(xy.len() / 2),
         _ => None,

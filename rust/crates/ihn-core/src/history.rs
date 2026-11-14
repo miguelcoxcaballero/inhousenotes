@@ -130,7 +130,7 @@ fn get_opt_hash(r: &mut Reader) -> Option<Option<Hash>> {
 pub fn entries(doc: &Doc) -> Vec<(Id, Record)> {
     let mut list: Vec<(Id, Record)> =
         doc.versions.iter().filter(|(_, v)| v.is_listed()).filter_map(|(id, v)| Some((*id, Record::decode(&v.data.v)?))).collect();
-    list.sort_by(|a, b| a.1.ts.total_cmp(&b.1.ts).then(a.0.cmp(&b.0)));
+    crate::sort::by(&mut list, |a, b| a.1.ts.total_cmp(&b.1.ts).then(a.0.cmp(&b.0)));
     list
 }
 
@@ -444,7 +444,7 @@ pub fn plan_prune(list: &[(Id, Record)]) -> Vec<Id> {
         }
     }
     let mut keep: Vec<&(Id, Record)> = list.iter().filter(|e| e.1.milestone).chain(winners.values().map(|&i| &list[i])).collect();
-    keep.sort_by(|a, b| a.1.ts.total_cmp(&b.1.ts).then(a.0.cmp(&b.0)));
+    crate::sort::by(&mut keep, |a, b| a.1.ts.total_cmp(&b.1.ts).then(a.0.cmp(&b.0)));
     let milestones: Vec<Id> = keep.iter().filter(|e| e.1.milestone).map(|e| e.0).collect();
     if milestones.len() > MAX_MILESTONES {
         let mut protect: HashSet<Id> = milestones[milestones.len() - MAX_MILESTONES..].iter().copied().collect();
@@ -866,7 +866,7 @@ mod tests {
         list.extend((41..=100).map(|i| (Id(i), rec(i as f64, "autosave", i as u64))));
         list.push((Id(101), rec(101.0, "autosave", 100)));
         let mut dropped = plan_prune(&list);
-        dropped.sort();
+        crate::sort::ord(&mut dropped);
         let want: Vec<Id> = (1..=10).chain(41..=51).chain([100]).map(Id).collect();
         assert_eq!(dropped, want);
         assert!(plan_prune(&list[..30]).is_empty());

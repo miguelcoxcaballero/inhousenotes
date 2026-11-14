@@ -287,7 +287,7 @@ fn v5_snapshot(v: &V5Version, z: &IdMap<Z>, bgs: &[Background], assets: &mut Vec
                     it.z = z.get(&it.id).copied().unwrap_or(Z { at: prev.at, sub: prev.sub.wrapping_add(1) });
                     prev = it.z;
                 }
-                run.sort_by_key(|it| (it.z, it.id));
+                ihn_core::sort::by_key(run, |it| (it.z, it.id));
             }
             let [images, strokes] = runs;
             SnapPage {

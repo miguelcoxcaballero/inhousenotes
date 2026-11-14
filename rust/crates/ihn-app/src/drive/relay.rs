@@ -240,7 +240,7 @@ fn done(app: &mut App, host: &mut dyn Host, io: &crate::Io) {
         (Step::Head, true) => json().map_or(String::new(), |j| j.text("headRevisionId").into()).into_bytes(),
         (Step::FolderFind, true) => {
             let mut ids: Vec<String> = json().and_then(|j| j.get("files").map(|f| f.items().iter().map(|e| e.text("id").to_string()).filter(|s| !s.is_empty()).collect())).unwrap_or_default();
-            ids.sort();
+            ihn_core::sort::ord(&mut ids);
             if let Some(id) = ids.into_iter().next() {
                 return folder_known(app, host, p.gen, p.id, id.clone(), SyncIo::Http { id: p.id, status, etag, body: id.into_bytes() });
             }

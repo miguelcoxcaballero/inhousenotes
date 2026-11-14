@@ -1040,7 +1040,7 @@ fn update_visible(app: &mut App, host: &mut dyn Host, force: bool) {
     let (visible, direct): (Vec<usize>, Vec<usize>);
     if !direct_dom.is_empty() {
         let mut d = direct_dom;
-        d.sort_by(|a, b| dist(app, *a).partial_cmp(&dist(app, *b)).unwrap_or(std::cmp::Ordering::Equal));
+        ihn_core::sort::by(&mut d, |a, b| dist(app, *a).partial_cmp(&dist(app, *b)).unwrap_or(std::cmp::Ordering::Equal));
         d.truncate(layout::MAX_ACTIVE_PAGES);
         visible = layout::expand(n, &d, layout::VISIBLE_PAGE_BUFFER);
         direct = d;
@@ -1058,7 +1058,7 @@ fn update_visible(app: &mut App, host: &mut dyn Host, force: bool) {
     }
     let (start, end) = (visible[0], visible[visible.len() - 1]);
     let mut candidates: Vec<usize> = visible.clone();
-    candidates.sort_by(|a, b| dist(app, *a).partial_cmp(&dist(app, *b)).unwrap_or(std::cmp::Ordering::Equal));
+    ihn_core::sort::by(&mut candidates, |a, b| dist(app, *a).partial_cmp(&dist(app, *b)).unwrap_or(std::cmp::Ordering::Equal));
     let ids: Vec<Id> = app.st.editor_pages.rows.iter().map(|r| r.id).collect();
     let mut ordered: Vec<usize> = Vec::new();
     let sel = ids.iter().position(|x| *x == app.st.editor_pages.selection_page && *x != Id::NONE);
