@@ -66,7 +66,7 @@ parity('selection/move', { only, ...SAVE_DOT }, async t => {
   await t.pen(path, { lift: false });
   await t.advance(32);
   await t.capture('mid');
-  await t.pen([path.at(-1)], { lift: true });
+  await t.pen([path.at(-1)], { lift: true, press: false });   // the same contact lifts (no second press)
   await t.advance(400);
   await t.capture('lift');
 });
