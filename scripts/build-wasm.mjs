@@ -1,6 +1,6 @@
 // `npm run build`: the reproducible v6 build (ARCHITECTURE §14.1). Compiles rust/ to wasm, checks the ABI, the
 // import allowlist, the exact-maths gate and the size budgets, and writes the generated files to build/:
-//   build/wasm/ihn.wasm, build/offline-assets.js, build/native-assets.json, build/index.html
+//   build/wasm/ihn.wasm, build/wasm/ihn-test.wasm (e2e), build/offline-assets.js, build/native-assets.json, build/index.html
 // Nothing generated is committed on the v6 branch; `tests/v6/server.mjs --overlay build` serves build/ over the tree.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -32,9 +32,6 @@ node('check-math.mjs');
 
 // Paths never reach the binary: the workspace has no dependencies, and both prefixes are remapped anyway.
 const cargoHome = process.env.CARGO_HOME || join(process.env.HOME || process.env.USERPROFILE || '', '.cargo');
-run(process.env.CARGO || 'cargo', ['build', '--manifest-path', 'rust/Cargo.toml', '-p', 'ihn-wasm', '--release',
-  '--target', 'wasm32-unknown-unknown', '--locked', ...(process.env.IHN_CARGO_JOBS ? ['-j', process.env.IHN_CARGO_JOBS] : [])],
-  { RUSTFLAGS: `--remap-path-prefix=${cargoHome}=/cargo --remap-path-prefix=${root}=.` });
 const linked = join(root, 'rust/target/wasm32-unknown-unknown/release/ihn.wasm');
 // W6.2s: binaryen's wasm-opt -Os (npm devDependency, pinned) removes what LLVM leaves behind: -12 % raw, which is
 // also compile time. Without node_modules/binaryen (a checkout that shares an older node_modules) the unoptimised
@@ -44,23 +41,36 @@ const linked = join(root, 'rust/target/wasm32-unknown-unknown/release/ihn.wasm')
 const WASM_FEATURES = ['bulk-memory', 'bulk-memory-opt', 'call-indirect-overlong', 'multivalue', 'mutable-globals', 'nontrapping-float-to-int', 'reference-types', 'sign-ext'];
 const wasmOpt = join(root, 'node_modules/binaryen/bin/wasm-opt');
 const optimised = existsSync(wasmOpt);
-if (optimised) run(process.execPath, [wasmOpt, '-Os', ...WASM_FEATURES.map(f => `--enable-${f}`), linked, '-o', `${linked}.opt`]);
-else if (process.env.CI) throw new Error('node_modules/binaryen is missing: run npm ci');
-else console.warn('node_modules/binaryen is missing: wasm-opt skipped, size budgets reported only');
-const wasm = await readFile(optimised ? `${linked}.opt` : linked);
+if (!optimised && process.env.CI) throw new Error('node_modules/binaryen is missing: run npm ci');
+if (!optimised) console.warn('node_modules/binaryen is missing: wasm-opt skipped, size budgets reported only');
 
-const module = await WebAssembly.compile(wasm);
-const imports = WebAssembly.Module.imports(module).map(entry => `${entry.module}.${entry.name}:${entry.kind}`).sort();
-const allowed = IMPORTS.map(name => `env.${name}:function`).sort();
-if (imports.join() !== allowed.join()) {
-  throw new Error(`Wasm imports differ from the ABI allowlist:\n  found   ${imports.join(' ')}\n  allowed ${allowed.join(' ')}`);
+// Builds, optimises and checks one variant. W6.2t: two variants from the same sources:
+// - `wasm/ihn.wasm` (production): no test API;
+// - `wasm/ihn-test.wasm` (`--features testapi`): the same crates plus `testapi::dispatch` and every module's
+//   `test_cmd` in the module table. host/main.js loads it only with `?e2e=1` on localhost (e2e, parity, perf).
+async function build(features) {
+  run(process.env.CARGO || 'cargo', ['build', '--manifest-path', 'rust/Cargo.toml', '-p', 'ihn-wasm', '--release',
+    '--target', 'wasm32-unknown-unknown', '--locked', ...features, ...(process.env.IHN_CARGO_JOBS ? ['-j', process.env.IHN_CARGO_JOBS] : [])],
+    { RUSTFLAGS: `--remap-path-prefix=${cargoHome}=/cargo --remap-path-prefix=${root}=.` });
+  if (optimised) run(process.execPath, [wasmOpt, '-Os', ...WASM_FEATURES.map(f => `--enable-${f}`), linked, '-o', `${linked}.opt`]);
+  const wasm = await readFile(optimised ? `${linked}.opt` : linked);
+
+  const module = await WebAssembly.compile(wasm);
+  const imports = WebAssembly.Module.imports(module).map(entry => `${entry.module}.${entry.name}:${entry.kind}`).sort();
+  const allowed = IMPORTS.map(name => `env.${name}:function`).sort();
+  if (imports.join() !== allowed.join()) {
+    throw new Error(`Wasm imports differ from the ABI allowlist:\n  found   ${imports.join(' ')}\n  allowed ${allowed.join(' ')}`);
+  }
+  const exported = WebAssembly.Module.exports(module).map(entry => entry.name);
+  const missing = EXPORTS.filter(name => !exported.includes(name));
+  if (missing.length) throw new Error(`Wasm exports missing: ${missing.join(', ')}`);
+  const stubs = Object.fromEntries(IMPORTS.map(name => [name, () => 0]));
+  const { exports } = await WebAssembly.instantiate(module, { env: stubs });
+  if (exports.ihn_abi() !== 6) throw new Error(`ABI mismatch: ihn_abi() = ${exports.ihn_abi()}`);
+  return wasm;
 }
-const exported = WebAssembly.Module.exports(module).map(entry => entry.name);
-const missing = EXPORTS.filter(name => !exported.includes(name));
-if (missing.length) throw new Error(`Wasm exports missing: ${missing.join(', ')}`);
-const stubs = Object.fromEntries(IMPORTS.map(name => [name, () => 0]));
-const { exports } = await WebAssembly.instantiate(module, { env: stubs });
-if (exports.ihn_abi() !== 6) throw new Error(`ABI mismatch: ihn_abi() = ${exports.ihn_abi()}`);
+const testWasm = await build(['--features', 'testapi']);
+const wasm = await build([]);
 
 const gzip = gzipSync(wasm, { level: 9 }).length;
 // IHN_SIZE_REPORT_ONLY=1 (local test builds only, never CI): the budgets are reported instead of enforced (W3.1);
@@ -78,11 +88,13 @@ if (jsBytes > LIMITS.js) sizeError(`First-party JS is ${jsBytes} bytes (limit ${
 await rm(out, { recursive: true, force: true });
 await mkdir(join(out, 'wasm'), { recursive: true });
 await writeFile(join(out, 'wasm/ihn.wasm'), wasm);
+await writeFile(join(out, 'wasm/ihn-test.wasm'), testWasm);
 node('build-offline-assets.mjs', '--out', 'build');
 node('build-native-assets.mjs', '--out', 'build');
 
 console.log(`ihn.wasm: ${wasm.length} bytes (${gzip} gzip -9), first-party JS: ${jsBytes} bytes in ${scripts.length} files`);
-for (const file of ['wasm/ihn.wasm', 'offline-assets.js', 'native-assets.json', 'index.html']) {
+console.log(`ihn-test.wasm (e2e only, not budgeted): ${testWasm.length} bytes (${gzipSync(testWasm, { level: 9 }).length} gzip -9)`);
+for (const file of ['wasm/ihn.wasm', 'wasm/ihn-test.wasm', 'offline-assets.js', 'native-assets.json', 'index.html']) {
   if (!existsSync(join(out, file))) throw new Error(`build/${file} was not written`);
   console.log(`${sha256(await readFile(join(out, file)))}  build/${file}`);
 }

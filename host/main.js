@@ -412,7 +412,8 @@ async function boot() {
   const asset = path => window.InhouseAssetUrl(`${path}?v=${config.version}`);
   performance.mark('ihn-boot-start');
   const [wasm, ...executors] = await Promise.all([
-    loadWasm(asset('wasm/ihn.wasm'), { env: imports(host) }),
+    // `?e2e=1` on localhost loads the test build: the same code plus the test API (scripts/build-wasm.mjs).
+    loadWasm(asset(config.e2e ? 'wasm/ihn-test.wasm' : 'wasm/ihn.wasm'), { env: imports(host) }),
     ...EXECUTORS.map(name => import(asset(`host/${name}.js`)))
   ]);
   performance.mark('ihn-wasm-ready');
