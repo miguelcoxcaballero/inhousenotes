@@ -267,15 +267,16 @@ export class Driver {
   async wheel(dx, dy) { await this.page.mouse.wheel(dx, dy); await this.settle(); }
   /**
    * A pointer gesture through CDP, like a stylus: `points` are `{x, y, t}` in CSS px and ms from the first sample
-   * (recorded streams of tests/v6/fixtures/ink). The clock advances between samples; `lift: false` leaves the pen down.
+   * (recorded streams of tests/v6/fixtures/ink). The clock advances between samples; `lift: false` leaves the pen down,
+   * `press: false` continues the contact a previous call left down.
    */
-  async pen(points, { pointerType = 'pen', lift = true, force = 0.5 } = {}) {
+  async pen(points, { pointerType = 'pen', lift = true, force = 0.5, press = true } = {}) {
     const send = (type, p, buttons) => this.cdp.send('Input.dispatchMouseEvent', { type, x: p.x, y: p.y, button: 'left', buttons, clickCount: 1, pointerType, force: p.p ?? force });
     let last = 0;
     for (const [index, point] of points.entries()) {
       const wait = Math.max(0, Math.round((point.t ?? index * 8) - last)); last += wait;
       if (wait) await this.advance(wait, { step: wait });
-      await send(index === 0 ? 'mousePressed' : 'mouseMoved', point, 1);
+      await send(index === 0 && press ? 'mousePressed' : 'mouseMoved', point, 1);
       await this.settle({ frames: false });
     }
     if (lift) { await send('mouseReleased', points.at(-1), 0); await this.settle(); }
@@ -290,10 +291,13 @@ export class Driver {
    * unscaled-filtered (`image-rendering: pixelated`, which stores the full-size decode) and then again normally.
    */
   async #freshRaster() {
+    // Inline SVGs are hidden for the first look too: an `image-rendering` change does not repaint them, and a partial
+    // raster left by an earlier nearby invalidation then differed by a few levels at an icon's antialiased edge (the
+    // editor header's share button on phones).
     const frames = () => this.page.evaluate(() => self.__ihnDet ? self.__ihnDet.frames(2) : null).catch(() => {});
     await this.page.evaluate(() => Promise.all(Array.from(document.images, image => image.complete && image.naturalWidth ? image.decode().catch(() => {}) : null))).catch(() => {});
     await this.cdp.send('Memory.simulatePressureNotification', { level: 'critical' }).catch(() => {});
-    await this.page.evaluate(() => { const style = document.createElement('style'); style.id = '__ihn-raster'; style.textContent = '*, *::before, *::after { image-rendering: pixelated !important; }'; document.documentElement.appendChild(style); }).catch(() => {});
+    await this.page.evaluate(() => { const style = document.createElement('style'); style.id = '__ihn-raster'; style.textContent = '*, *::before, *::after { image-rendering: pixelated !important; } svg { visibility: hidden !important; }'; document.documentElement.appendChild(style); }).catch(() => {});
     await frames();
     await this.page.evaluate(() => { const style = document.getElementById('__ihn-raster'); if (style) style.remove(); }).catch(() => {});
     await frames();

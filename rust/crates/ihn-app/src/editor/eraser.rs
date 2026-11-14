@@ -406,9 +406,6 @@ impl ToolHandler for Eraser {
             Some(s) => cuts.iter().filter(|c| s.doc.live(c.item).is_some_and(|i| i.body.at == c.at)).collect(),
             None => Vec::new(),
         };
-        // A repaint another change asked for during the gesture still runs after it.
-        let pending = app.st.editor_pages.rows.iter().find(|r| r.id == page).is_some_and(|r| r.needs_redraw);
-        let stale = pending || valid.len() != cuts.len();
         let points = if area { valid.iter().flat_map(|c| c.ranges.iter()).map(|&(a, b)| (b - a) as usize).sum() } else { 0 };
         let edit = session::edit(app, host, |tx| {
             for c in &valid {
@@ -422,23 +419,13 @@ impl ToolHandler for Eraser {
         pages::with_gfx(app, |_, g| cuts.iter().for_each(|c| g.paths.forget(&mut g.cmds, c.item)));
         pages::flush(app, host);
         pages::touch(app, page);
-        match edit {
-            Some(e) => {
-                app.st.editor_eraser.commits += 1;
-                history::record(app, host, page, e.inverse, points);
-                // The bitmap already shows the result (unless something else changed the page meanwhile).
-                if !stale {
-                    if let Some(r) = app.st.editor_pages.rows.iter_mut().find(|r| r.id == page) {
-                        if r.active.as_ref().is_some_and(|a| a.drawn) {
-                            r.needs_redraw = false;
-                        }
-                    }
-                } else {
-                    pages::request_repaint(app, host, page);
-                }
-            }
-            None => pages::request_repaint(app, host, page),
+        if let Some(e) = edit {
+            app.st.editor_eraser.commits += 1;
+            history::record(app, host, page, e.inverse, points);
         }
+        // v5 `repaintEraserDamage` ends with `page.needsRedraw = true` ("final gesture rendering still refreshes the
+        // complete cache"): the damage repaints' clipped antialiasing is replaced by a full repaint.
+        pages::request_repaint(app, host, page);
     }
 
     fn discard(&self, app: &mut App, host: &mut dyn Host) {
