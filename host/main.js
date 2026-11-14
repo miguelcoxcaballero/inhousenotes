@@ -221,7 +221,26 @@ function coreOps(host) {
       const obj = host.obj(r.u32()), bytes = r.copy();
       worker?.postMessage({ bytes, obj }, [bytes.buffer]);
     },
-    [FX | 0x72]: () => { worker?.terminate(); worker = null; }
+    [FX | 0x72]: () => { worker?.terminate(); worker = null; },
+    // Migration (ARCHITECTURE §10.2): ask the service worker which windows are v6 → JSON {windows, v6}; -1 without
+    // an answer within 3 s.
+    [FX | 0x73]: r => {
+      const req = r.u32();
+      let done = false;
+      const reply = (status, text) => { if (!done) { done = true; host.io(req, status, 0, encoder.encode(text)); } };
+      setTimeout(() => reply(-1, ''), 3000);
+      navigator.serviceWorker?.ready.then(registration => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = event => reply(0, JSON.stringify(event.data ?? null));
+        registration.active?.postMessage({ type: 'ihn6-clients' }, [channel.port2]);
+      }, () => reply(-1, ''));
+    },
+    // Deletes the Cache Storage caches whose name starts with the prefix.
+    [FX | 0x74]: r => {
+      const req = r.u32(), prefix = r.str();
+      (async () => { if (typeof caches !== 'undefined') for (const key of await caches.keys()) if (key.startsWith(prefix)) await caches.delete(key); })()
+        .then(() => host.io(req, 0), () => host.io(req, -1));
+    }
   };
 }
 
