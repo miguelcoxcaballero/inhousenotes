@@ -514,7 +514,7 @@ impl Core {
         0.8 + (self.rng >> 11) as f64 / (1u64 << 53) as f64 * 0.4
     }
     /// `min(max, base × 2^(fails−1)) × U(0.8, 1.2)` (§8.5, §10.4).
-    pub fn backoff(&mut self, base: f64, max: f64, fails: u32) -> f64 { (base * 2f64.powi(fails.saturating_sub(1).min(30) as i32)).min(max) * self.jitter() }
+    pub fn backoff(&mut self, base: f64, max: f64, fails: u32) -> f64 { (base * (1u64 << fails.saturating_sub(1).min(30)) as f64).min(max) * self.jitter() }
 
     /// Sends one frame: small ones on channel 0, larger ones as `Part`s on the bulk channel. Tabs take any size.
     /// (A sender that paces bulk data by `Drained` uses [`wire::fragment`] and [`Core::send_raw`] itself.)
