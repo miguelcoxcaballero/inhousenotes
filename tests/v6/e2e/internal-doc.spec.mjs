@@ -77,8 +77,9 @@ test('doc.selftest: a v6 container opens through the shared link, and a reload r
   expect(media(mock)).toBe(1);
   expect((await cmd(page, 'doc.links.state')).pending).toBe('');
   await expect(page.locator('#readonly-banner')).toHaveClass(/hidden/);
-  // Everything is in Drive and nothing was edited: saved.
-  expect(await cmd(page, 'doc.save_state.state')).toMatchObject({ phase: 'saved', title: 'Saved in Google Drive', shortLabel: 'Saved', badge: '' });
+  // Everything is in Drive and nothing was edited: saved. The open's checkpoint is a local save (5.18.0 `savedAt`), so
+  // the title is 5.18.0's `All changes saved` once it is stored.
+  await expect.poll(() => cmd(page, 'doc.save_state.state')).toMatchObject({ phase: 'saved', title: 'All changes saved', shortLabel: 'Saved', badge: '' });
   await expect(page.locator('#save-indicator')).toHaveClass(/saved/);
   // The editor menu shows the statistics of the open document, with the size of the Drive file.
   await page.click('#btn-drive-profile-editor');
@@ -203,8 +204,8 @@ test('a new document takes a reserved Drive id, is writable at once and survives
   expect(mock.calls.filter(call => /generateIds/.test(call.url))).toHaveLength(1);
   expect(mock.drive.file(created.docId)).toBeUndefined();
   await expect(page.locator('#editor-view')).toBeVisible();
-  // Not in Drive yet: waiting, never "saved".
-  expect(await cmd(page, 'doc.save_state.state')).toMatchObject({ phase: 'paused', badge: 'Waiting to upload' });
+  // Not in Drive yet: waiting or already preparing its create (online), never "saved".
+  expect(['paused', 'building', 'uploading']).toContain((await cmd(page, 'doc.save_state.state')).phase);
   // The rest of the pool is kept for the next creations.
   const pool = await page.evaluate(account => new Promise(resolve => {
     const request = indexedDB.open('inhouse-notes-v6');

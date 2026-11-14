@@ -47,6 +47,8 @@ async function open(page, url) {
 const opened = page => expect.poll(async () => (await cmd(page, 'doc.open.state')).log.some(e => e[0] === 'v6-doc' && e[1] === true), { timeout: 15_000 }).toBe(true);
 const settled = page => expect.poll(async () => !(await cmd(page, 'doc.open.state')).running, { timeout: 15_000 }).toBe(true);
 const session = page => cmd(page, 'doc.session.state');
+/** Stored image assets: the session's assets minus the timeline snapshots (a capture after the edits stores one). */
+const imageAssets = async page => (await session(page)).assets - (await cmd(page, 'doc.versions.state')).entries.filter(e => e.stored).length;
 const images = page => cmd(page, 'editor.images.list');
 const imgState = page => cmd(page, 'editor.images.state');
 const drawn = page => expect.poll(async () => (await cmd(page, 'editor.pages.state')).rows.filter(r => r.active && r.drawn).length).toBeGreaterThan(0);
@@ -106,6 +108,7 @@ test('paste, drop, place, transform, undo, reopen', async ({ page, context, mock
   await settled(page);
   await drawn(page);
   const base = await session(page);
+  const baseAssets = await imageAssets(page);
   const before = (await images(page)).length;
   const red = await makeImage(page, 200, 100, '#ff0000', 'image/png');
   const jpg = await makeImage(page, 300, 300, '#0000ff', 'image/jpeg');
@@ -128,7 +131,7 @@ test('paste, drop, place, transform, undo, reopen', async ({ page, context, mock
   expect(pasted).toMatchObject({ page: 0, asset: sha(red), w: 200, h: 100, rotation: 0 });
   expect(pasted.cx).toBeCloseTo(300, 0);
   expect(pasted.cy).toBeCloseTo(400, 0);
-  await expect.poll(async () => (await session(page)).assets).toBe(base.assets + 1);
+  await expect.poll(() => imageAssets(page)).toBe(baseAssets + 1);
   await expect.poll(() => pixel(page, 300, 400)).toBe('255,0,0');
   await expect(page.locator('#toolbar .tool-btn[data-tool="lasso"]')).toHaveClass(/active/);
   await expect(page.locator('#btn-undo')).toBeEnabled();
@@ -145,7 +148,7 @@ test('paste, drop, place, transform, undo, reopen', async ({ page, context, mock
   expect(jpeg.asset).not.toBe(sha(jpg));
   expect(jpeg.cx).toBeCloseTo(518, 0);
   expect(jpeg.cy).toBeCloseTo(718, 0);
-  await expect.poll(async () => (await session(page)).assets).toBe(base.assets + 2);
+  await expect.poll(() => imageAssets(page)).toBe(baseAssets + 2);
   await expect.poll(() => blue(page, 518, 718)).toBe(true);
 
   // Transform the newest image (the selection box's commit): half size, rotated a quarter turn, moved.

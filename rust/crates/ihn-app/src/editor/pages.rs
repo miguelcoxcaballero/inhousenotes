@@ -30,10 +30,13 @@ use ihn_core::render::{PageItems, PathCache};
 const CANVAS_SCALE: f64 = 2.0;
 const CANVAS_SCALE_STEP: f64 = 0.25;
 const PAGE_ACTIVATION_IDLE_TIMEOUT: f64 = 120.0;
-/// Strokes per staged-repaint slice and per scroll-preview slice (5.18.0 measured 4 ms / 3 ms; the commands run
-/// after the Rust call returns, so slices are counted).
-const STAGED_SLICE: usize = 160;
-const PREVIEW_SLICE: usize = 160;
+/// Strokes per staged-repaint chunk and per scroll-preview slice. A staged-repaint slice runs chunks (each flushed to
+/// the canvas at once) until 5.18.0's 4 ms are used, as 5.18.0 checks `performance.now()` after every stroke.
+const STAGED_SLICE: usize = 40;
+const STAGED_SLICE_MS: f64 = 4.0;
+/// 5.18.0 yields a scroll preview after more than 3 ms.
+const PREVIEW_SLICE_MS: f64 = 3.0;
+const PREVIEW_SLICE: usize = 40;
 
 const L_WRAPPER: u32 = tag(Mod::EditorPages, 1);
 const T_VISIBLE_RETRY: u32 = tag(Mod::EditorPages, 2);
@@ -43,6 +46,8 @@ const T_STAGED: u32 = tag(Mod::EditorPages, 5);
 const T_PREVIEW: u32 = tag(Mod::EditorPages, 6);
 const T_NEW_PAGE: u32 = tag(Mod::EditorPages, 7);
 const T_REPAINT: u32 = tag(Mod::EditorPages, 8);
+/// v5 PDF import: `setTimeout(() => scheduleVisiblePageUpdate(false), 80)` after the deferred `renderAllPages`.
+const T_OPEN_VISIBLE: u32 = tag(Mod::EditorPages, 30);
 
 /// v5: `SELECTION_ALLOWED_COLORS` (= `ink-palette.js`).
 pub const INK_PALETTE: [&str; 3] = ["#4D4D4D", "#002FD9", "#E81010"];
@@ -141,6 +146,8 @@ pub struct State {
     activation_armed: bool,
     visible_frame: bool,
     visible_force: bool,
+    /// A pass asked for from another frame callback of the frame that runs the pending one: the next frame.
+    visible_again: Option<bool>,
     retry_armed: bool,
     repaint_armed: bool,
     staged: Option<StagedJob>,
@@ -257,6 +264,9 @@ fn index(app: &App, id: Id) -> Option<usize> { app.st.editor_pages.rows.iter().p
 fn row(app: &App, id: Id) -> Option<&Row> { app.st.editor_pages.rows.iter().find(|r| r.id == id) }
 fn row_mut(app: &mut App, id: Id) -> Option<&mut Row> { app.st.editor_pages.rows.iter_mut().find(|r| r.id == id) }
 
+/// Some page has a canvas (v5 `activePageIndices.size > 0`).
+pub fn any_active(app: &App) -> bool { app.st.editor_pages.rows.iter().any(|r| r.active.is_some()) }
+
 /// The active canvases of a page.
 pub fn active(app: &App, id: Id) -> Option<&Active> { row(app, id).and_then(|r| r.active.as_ref()) }
 /// Page ids in display order.
@@ -368,7 +378,16 @@ fn cancel_jobs(app: &mut App, host: &mut dyn Host) {
 }
 
 /// v5: `renderAllPages()`: one row per page of the document, previews or template backgrounds, indicator last.
-pub fn rebuild(app: &mut App, host: &mut dyn Host) {
+pub fn rebuild(app: &mut App, host: &mut dyn Host) { render_all(app, host, false) }
+
+/// v5: the open's `renderAllPages({deferVisibleUpdate: true})`: no forced visible pass now (the view's alignment
+/// asks for a normal one, which waits for quiet input), and a normal pass 80 ms later.
+pub fn rebuild_opened(app: &mut App, host: &mut dyn Host) {
+    render_all(app, host, true);
+    app.sched.timer(host.out(), T_OPEN_VISIBLE, 80.0);
+}
+
+fn render_all(app: &mut App, host: &mut dyn Host, defer_visible: bool) {
     let keep_active = app.st.editor_pages.active_page;
     let previews: Vec<(Id, Option<Rc<str>>, bool)> = app.st.editor_pages.rows.iter_mut().map(|r| (r.id, r.preview.take(), r.preview_dirty)).collect();
     clear(app, host);
@@ -388,7 +407,9 @@ pub fn rebuild(app: &mut App, host: &mut dyn Host) {
     viewport::update_indicator(app, host);
     let st = &mut app.st.editor_pages;
     st.active_page = if st.rows.iter().any(|r| r.id == keep_active) { keep_active } else { st.rows.first().map_or(Id::NONE, |r| r.id) };
-    schedule_visible(app, host, true);
+    if !defer_visible {
+        schedule_visible(app, host, true);
+    }
     queue_scroll_previews(app, host, true);
 }
 
@@ -419,7 +440,10 @@ pub fn add_page(app: &mut App, host: &mut dyn Host, animate: bool) -> Option<Id>
 /// changed page list, repaints for changed pages.
 pub fn changed(app: &mut App, host: &mut dyn Host, c: &ihn_core::doc::Changes) {
     if c.order || order(app).as_slice() != doc(app).map_or(&[][..], |d| d.order()) {
-        rebuild(app, host);
+        // The pages of a document that was shown empty (its pages arrive right after the open's first render) are
+        // still the open's render: no forced visible pass (5.18.0 renders them once, deferred, `rebuild_opened`).
+        let first = app.st.editor_pages.rows.is_empty();
+        render_all(app, host, first);
         viewport::update_transform(app, host);
         return;
     }
@@ -788,6 +812,9 @@ fn attach(app: &mut App, host: &mut dyn Host, id: Id) {
     flush(app, host);
     apply_background(app, host, id, canvas);
     repaint(app, host, id);
+    // v5 `attachPageCanvases`: `redrawPage(i); clearPagePreview(i)` — cleared as soon as the paint started (a staged
+    // repaint of a dense page finishes later; a visible pass in between puts the preview back under the canvas).
+    clear_preview(app, host, id);
 }
 
 fn drop_active(app: &mut App, host: &mut dyn Host, a: Active) {
@@ -993,8 +1020,15 @@ fn staged_slice(app: &mut App, host: &mut dyn Host) {
         return;
     }
     if !job.done {
-        job.done = with_view(app, id, |g, view| job.staged.paint(&mut g.cmds, &mut g.paths, view, STAGED_SLICE)).unwrap_or(true);
-        flush(app, host);
+        let started = host.now();
+        loop {
+            job.done = with_view(app, id, |g, view| job.staged.paint(&mut g.cmds, &mut g.paths, view, STAGED_SLICE)).unwrap_or(true);
+            flush(app, host);
+            host.flush(); // the chunk is drawn now, so the clock sees its cost
+            if job.done || host.now() - started >= STAGED_SLICE_MS {
+                break;
+            }
+        }
         app.st.editor_pages.staged = Some(job);
         app.sched.timer(host.out(), T_STAGED, 0.0);
         return;
@@ -1016,6 +1050,17 @@ pub fn schedule_visible(app: &mut App, host: &mut dyn Host, force: bool) {
     st.visible_force |= force;
     if !std::mem::replace(&mut st.visible_frame, true) {
         app.sched.frame(host.out(), Mod::EditorPages);
+    }
+}
+
+/// `scheduleVisiblePageUpdate(force)` from another `requestAnimationFrame` callback: when this frame still has a
+/// pass pending, 5.18.0's handle is cleared by that pass first, so the new request is a pass in the next frame.
+pub fn schedule_visible_from_frame(app: &mut App, host: &mut dyn Host, force: bool) {
+    let st = &mut app.st.editor_pages;
+    if st.visible_frame {
+        st.visible_again = Some(st.visible_again.unwrap_or(false) || force);
+    } else {
+        schedule_visible(app, host, force);
     }
 }
 
@@ -1250,7 +1295,18 @@ fn preview_step(app: &mut App, host: &mut dyn Host) {
             with_view(app, id, |g, view| job.sp.background(&mut g.cmds, &mut g.tpl, &mut g.paths, view));
             job.background_done = true;
         }
-        let done = with_view(app, id, |g, view| job.sp.strokes(&mut g.cmds, &mut g.paths, view, PREVIEW_SLICE)).unwrap_or(true);
+        let started = host.now();
+        let done = loop {
+            let done = with_view(app, id, |g, view| job.sp.strokes(&mut g.cmds, &mut g.paths, view, PREVIEW_SLICE)).unwrap_or(true);
+            if done {
+                break true;
+            }
+            flush(app, host);
+            host.flush(); // drawn now, so the clock sees its cost (5.18.0 checks after every stroke)
+            if host.now() - started > PREVIEW_SLICE_MS {
+                break false;
+            }
+        };
         if done {
             let req = app.req(Mod::EditorPages);
             app.st.editor_pages.preview_reqs.push((req, id, job.gen));
@@ -1427,6 +1483,13 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
                 let force = std::mem::take(&mut st.visible_force);
                 update_visible(app, host, force);
             }
+            if let Some(force) = app.st.editor_pages.visible_again.take() {
+                schedule_visible(app, host, force);
+            }
+            0
+        }
+        Event::Timer(T_OPEN_VISIBLE) => {
+            schedule_visible(app, host, false);
             0
         }
         Event::Timer(T_VISIBLE_RETRY) => {

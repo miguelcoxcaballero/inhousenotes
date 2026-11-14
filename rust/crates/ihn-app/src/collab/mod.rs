@@ -90,6 +90,8 @@ pub struct Run {
     detached: Option<Detached>,
     want_lock: bool,
     leaving: bool,
+    /// Between `pagehide` and `pageshow`: a batch committed now still goes out with the keepalive flush.
+    hidden: bool,
     phase_code: u8,
 }
 
@@ -333,7 +335,7 @@ fn start(app: &mut App, host: &mut dyn Host, io: &crate::abi::Io) {
     host.out().w.end(m);
     let phase_code = save_state::phase(app).code();
     let st = &mut app.st.collab;
-    st.run = Some(Box::new(Run { sync: Sync::new(cfg), gen: st.gen, doc, account, bc, detached: None, want_lock: false, leaving: false, phase_code }));
+    st.run = Some(Box::new(Run { sync: Sync::new(cfg), gen: st.gen, doc, account, bc, detached: None, want_lock: false, leaving: false, hidden: false, phase_code }));
     pen::set_live_sink(app, true);
     eraser::set_live_sink(app, true);
     // Batches committed before the engine existed (the open itself, an edit while the keys were read).
@@ -775,9 +777,15 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
                 }
                 if !batches.is_empty() {
                     let now = host.now();
+                    let hidden = app.st.collab.run.as_ref().is_some_and(|r| r.hidden);
                     drive(app, host, |s, r| {
                         for b in &batches {
                             s.local_batch(b);
+                        }
+                        // The append finished after `pagehide` / hidden (SYNC §6 invariant 1 held the batch back
+                        // from that flush): the page may be gone in a moment, so it leaves with keepalive too.
+                        if hidden || !s.core.visible {
+                            s.core.flush = s.core.flush.max(ihn_sync::Flush::Keepalive);
                         }
                         let mut e = s.at(now).on_io(SyncIo::Lifecycle(Lifecycle::Input), r);
                         e.extend(s.tick(now, r));
@@ -803,8 +811,13 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
         },
         Event::Life(l) => match l.code {
             life::VISIBILITY => io(app, host, SyncIo::Lifecycle(if l.a != 0.0 { Lifecycle::Hidden } else { Lifecycle::Visible })),
-            life::PAGEHIDE => io(app, host, SyncIo::Lifecycle(Lifecycle::PageHide)),
-            life::PAGESHOW => io(app, host, SyncIo::Lifecycle(Lifecycle::Visible)),
+            life::PAGEHIDE | life::PAGESHOW => {
+                let hide = l.code == life::PAGEHIDE;
+                if let Some(run) = app.st.collab.run.as_mut() {
+                    run.hidden = hide;
+                }
+                io(app, host, SyncIo::Lifecycle(if hide { Lifecycle::PageHide } else { Lifecycle::Visible }))
+            }
             life::ONLINE => io(app, host, SyncIo::Lifecycle(Lifecycle::Online)),
             life::OFFLINE => io(app, host, SyncIo::Lifecycle(Lifecycle::Offline)),
             _ => {}

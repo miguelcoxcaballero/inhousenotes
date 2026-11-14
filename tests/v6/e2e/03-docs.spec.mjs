@@ -1,5 +1,5 @@
 // 03-docs (TESTING §2 row 03, BUILD-PLAN W5.5): create a PDF from Home in a folder (the reserved id is the Drive id),
-// rename it in the editor (the Drive name follows through the export), the card ⋮ menu (star, colour, move), Make a
+// rename it in the editor (the Drive name is PATCHed at once), the card ⋮ menu (star, colour, move), Make a
 // Copy (the copy request clears the source's `ihn6_*` properties), move to bin with the slider, Bin restore, a device
 // upload, and the sync folder never offered by the folder picker.
 import { test, expect, seedSession, fixtures, ANA, BEN, blankPdf } from '../mock/fixtures.mjs';
@@ -71,11 +71,9 @@ test('create, rename, card menu, copy, bin, upload', async ({ page, context, moc
   await page.keyboard.press('Enter');
   await expect(page.locator('#doc-title')).not.toHaveClass(/editing/);
   await expect(page.locator('#doc-title')).toHaveText('Lecture one');
-  // 5.18.0 PATCHes the Drive name at once. v6's `editor/view.rs` `finish_title` skips that PATCH for a document that
-  // is in Drive (its `created` test is inverted, NOTES-W6.1 — owned by the editor), so the name is pushed through the
-  // export modal's name here, which 5.18.0 also keeps.
-  await cmd(page, 'export.user.export', { name: 'Lecture one' });
-  await expect.poll(() => mock.drive.file(docId).name, { timeout: 40_000 }).toBe('Lecture one.pdf');
+  // The document is in Drive: as 5.18.0, the title rename PATCHes the Drive name at once (no export needed).
+  await expect.poll(() => mock.drive.file(docId).name, { timeout: 10_000 }).toBe('Lecture one.pdf');
+  expect(bodies.some(b => b.method === 'PATCH' && b.url.endsWith(`/files/${docId}`) && b.body === '{"name":"Lecture one.pdf"}')).toBe(true);
   await page.click('#btn-drive-home svg');
   await expect(page.locator('#drive-home')).toBeVisible();
 
