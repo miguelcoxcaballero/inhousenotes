@@ -293,6 +293,9 @@ fn probe_step(app: &mut App, host: &mut dyn Host, io: &Io) {
     }
 }
 
+/// The name of the file being opened (the editor shows it as the title at once, 5.18.0 `openDriveFile`).
+pub fn opening_name(app: &App) -> Option<&str> { app.st.doc_open.job.as_ref().map(|j| &j.file.name[..]) }
+
 /// An open is running (5.18.0 `driveOpenInProgress`).
 pub fn busy(app: &App) -> bool { app.st.doc_open.job.as_ref().is_some_and(|j| !j.shown) }
 
