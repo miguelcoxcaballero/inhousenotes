@@ -59,6 +59,8 @@ async function open(page, url = '/?e2e=1') {
   page.on('console', message => { if (message.type() === 'error') problems.push(`console: ${message.text()}`); });
   page.on('pageerror', error => problems.push(`pageerror: ${error.message}`));
   await page.route('https://accounts.google.com/**', route => route.fulfill({ contentType: 'text/javascript', body: '' }));
+  // The signed-out connectivity probe (shell) must not reach the real Drive, whose 401 logs a console error.
+  await page.route('https://www.googleapis.com/**', route => route.fulfill({ headers: { 'access-control-allow-origin': '*' }, json: { kind: 'drive#about' } }));
   await page.goto(url);
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   expect(await page.evaluate(() => window.__IHN_TEST_API__.ready())).toBe(true);

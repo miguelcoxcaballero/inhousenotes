@@ -383,6 +383,8 @@ fn viewer_ui(app: &mut App, host: &mut dyn Host) {
     out.style(Ui::MODE_TOGGLE_BTN, "display", Some(if viewer { "none" } else { "" }));
     out.prop(Ui::DOC_TITLE, "contentEditable", Prop::Str(if viewer { "false" } else { "true" }));
     out.style(Ui::DOC_TITLE, "pointer-events", Some(if viewer { "none" } else { "auto" }));
+    // v5: updateDocTitle() — the Drive name just applied (`set_meta`), not the stored record's older one.
+    crate::editor::view::update_title(app, host);
 }
 
 /// The document is ready: Drive facts, viewer state, status, overlay.

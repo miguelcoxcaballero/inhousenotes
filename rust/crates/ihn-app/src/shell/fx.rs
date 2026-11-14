@@ -479,7 +479,8 @@ pub fn probe(app: &mut App, host: &mut dyn Host, args: &str) -> Option<String> {
     let code = a.get("op")?.as_f64()?;
     if code < 0.0 {
         if !std::mem::replace(&mut app.st.shell.probe.file_listener, true) {
-            out.listen(crate::Ui::PDF_INPUT, "change", PROBE_FILES, 0);
+            // Capture: it runs before `doc::import`'s listener, which clears the input (and so its FileList).
+            out.listen(crate::Ui::PDF_INPUT, "change", PROBE_FILES, crate::abi::listen::CAPTURE);
         }
         return Some("{}".into());
     }
