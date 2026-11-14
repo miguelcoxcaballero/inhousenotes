@@ -21,15 +21,20 @@ build caches, untouched for hours) were removed (~10 GB). Not a code problem.
 | parity `open/failed`: status line ends on counts (A) vs the error (B) | under the harness every Drive answer lands at one fake ms; the line shows whichever flow needs fewer storage round trips. With a real network (traced) both apps end on `Could not open this document. Try again.` | the state holds Drive's answers for the document until Home's lists arrived (`hold`), the real order |
 | phone-412 page-edge row (Δ1, full width) | 5.18.0's global capture `pointerdown`/`touchstart`/`wheel`/`keydown` (`interruptProcessingForUserInput`) is a gesture in the editor; its settle runs a visible-pages pass (`applyPagePreview`). v6 only recorded activity, so a tap on the phone's mode-toggle group ran no pass | `shell`: document capture `pointerdown` listener; these inputs call `viewport::note_interaction` while the editor is shown (save indicator excluded) |
 | `canvas/dense-page@repaint` page-corner pixels (Δ2) | four differences in the open's page pipeline: (1) `renderAllPages({deferVisibleUpdate: true})` + the 80 ms pass of the open — v6 forced a pass; (2) the open's page list applied right after the first render rebuilt the rows with a forced pass; (3) `scheduleCanvasResolutionRetry` (no active canvas at resync → two-frame forced pass + resync) was missing; (4) `attachPageCanvases` clears the wrapper preview when the paint starts, v6 when it ends; (5) staged repaint sliced by count (160 strokes) instead of 5.18.0's 4 ms budget | `pages::rebuild_opened`, first render of an empty row list deferred, `viewport` retry frames (`schedule_visible_from_frame`: a pass asked from another frame callback runs in the next frame), `clear_preview` in `attach`, staged slices of 40-stroke chunks drawn at once (`host.flush`) until 4 ms are used; scroll-preview slices likewise until more than 3 ms (5.18.0's budgets; under the harness's frozen clock both apps then finish a slice in one go, as 5.18.0 always did there) |
+| parity `open/loading`: save dot `paused` (B) vs `saved` (A) during a held open | the record of a Drive document is marked created only when the open's metadata arrives; `sync_status` reported `not_created` meanwhile | `session::sync_status`: nothing pending while `doc::open::busy` |
+| phone icon edges, 2–3 px Δ ≤ 20 (share icon, new-folder icon), intermittent | a raster flake of Chromium at the clip edge of inline SVG icons whose stroke caps touch their own box: `--runs` showed 5.18.0 differing from itself (A run 1 ≠ run 2) as well as v6 | harness (`run.mjs` `#freshRaster`): `svg:not(:root) { overflow: visible }` in both apps before the capture; 2 runs × light/dark of `editor-view` + `canvas` on phone-360 then passed 72/72 (they flaked several times per run before) |
 
 ## Open (not fixed)
 
-- **phone-360 share-icon edge, 3 px Δ ≤ 7 at CSS (222, 25–27)**: intermittent on **both** sides — `--runs 3` once
-  showed run 2 of B differing from B's runs 1 and 3, and `--runs 2` of `canvas/dense-page` showed A run 1 ≠ A run 2
-  at the same 3 px (stability failure of 5.18.0 against itself). Layout of the header, DOM, running animations identical in the failing
-  run; the pixels are the round cap of the `+` line where it meets the SVG's own box. A forced full re-raster before
-  the capture did not remove it (reverted). Raster nondeterminism in Chromium's software rasteriser at a clip edge,
-  not reproducible on demand; a harness/Chromium raster flake, not an app difference.
+- **`home/folder-zoom-open@50`, Δ1 over the folder view (stable, both viewports)**: 5.18.0's `joinMotion` runs after
+  `zoom.ready` and builds the folder view's fade from `zoom.currentTime` with `fade.startTime = zoom.startTime`; v6
+  joins at its prepare timer with `now − click` as elapsed and a negative delay. Here: offset 0.04333 vs 0.045 and
+  local time 299 vs 300 ms → opacity 0.6929 vs 0.6947 at the 50 % capture (25/75/100 % match). Matching it needs an
+  "animation ready" completion from the host (an ABI addition in `host/dom.js` + `home/folders.rs`); not done in this
+  round (a metric-only attempt fell back because the zoom has not started at v6's join; reverted).
+- **`pages/photo-modal@added`, page-corner pixels**: 5.18.0's wrapper of the new photo page still shows the template,
+  v6 already its scroll preview (pre-existing, REPORT-B item 3): order of the new page's preview and the last visible
+  pass after the insert.
 
 ## Deviations
 

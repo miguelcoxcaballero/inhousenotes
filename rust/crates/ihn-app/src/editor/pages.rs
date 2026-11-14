@@ -262,10 +262,10 @@ fn index(app: &App, id: Id) -> Option<usize> { app.st.editor_pages.rows.iter().p
 fn row(app: &App, id: Id) -> Option<&Row> { app.st.editor_pages.rows.iter().find(|r| r.id == id) }
 fn row_mut(app: &mut App, id: Id) -> Option<&mut Row> { app.st.editor_pages.rows.iter_mut().find(|r| r.id == id) }
 
-/// The active canvases of a page.
 /// Some page has a canvas (v5 `activePageIndices.size > 0`).
 pub fn any_active(app: &App) -> bool { app.st.editor_pages.rows.iter().any(|r| r.active.is_some()) }
 
+/// The active canvases of a page.
 pub fn active(app: &App, id: Id) -> Option<&Active> { row(app, id).and_then(|r| r.active.as_ref()) }
 /// Page ids in display order.
 pub fn order(app: &App) -> Vec<Id> { app.st.editor_pages.rows.iter().map(|r| r.id).collect() }
