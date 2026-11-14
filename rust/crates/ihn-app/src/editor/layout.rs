@@ -175,7 +175,7 @@ pub fn expand(n: usize, indices: &[usize], buffer: usize) -> Vec<usize> {
             }
         }
     }
-    out.sort_unstable();
+    ihn_core::sort::ord(&mut out);
     out
 }
 

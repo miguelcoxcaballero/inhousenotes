@@ -484,7 +484,7 @@ mod tests {
         assert_eq!(MODULES[Mod::Shell as usize].name, "shell");
         assert_eq!(Mod::Shell as usize, MODULES.len() - 1, "the shell initialises last");
         let mut names: Vec<_> = MODULES.iter().map(|m| m.name).collect();
-        names.sort_unstable();
+        ihn_core::sort::ord(&mut names);
         names.dedup();
         assert_eq!(names.len(), MODULES.len());
     }

@@ -15,3 +15,9 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+# W6.2s: the UI/glue crate (dialogs, panels, migration, Drive flows, test API) is built for size; the hot crates
+# (ihn-core: document, render, maths; ihn-sync: wire, apply) keep "s", so their code and speed are unchanged. With
+# fat LTO the per-package level is carried by each function's attributes (measured: -140 KB raw, -48 KB gzip).
+[profile.release.package.ihn-app]
+opt-level = "z"

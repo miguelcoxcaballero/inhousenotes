@@ -215,7 +215,7 @@ fn image_assets(d: &Doc) -> Vec<Hash> {
         Body::Image { asset, .. } if i.is_live() => Some(*asset),
         _ => None,
     }).collect();
-    v.sort();
+    ihn_core::sort::ord(&mut v);
     v.dedup();
     v
 }

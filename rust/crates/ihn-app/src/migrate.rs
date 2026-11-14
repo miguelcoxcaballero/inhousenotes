@@ -448,7 +448,7 @@ fn info_read(app: &mut App, host: &mut dyn Host, io: &Io) {
     if s.pending.iter().any(|r| *r != 0) {
         return;
     }
-    s.fp.sort_by(|a, b| a.0.cmp(&b.0));
+    ihn_core::sort::by(&mut s.fp, |a, b| a.0.cmp(&b.0));
     let none = s.fp.iter().all(|f| f.1.is_none()) && LS_KEYS.iter().all(|k| host.ls(LsOp::Get, k, None).is_none());
     let s = st(app);
     if none {

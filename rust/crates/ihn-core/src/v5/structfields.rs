@@ -24,7 +24,7 @@ pub struct Structure {
 fn sorted_keys(v: &Value) -> Vec<(&str, &Value)> {
     let mut keys: Vec<(&str, &Value)> = v.entries().collect();
     keys.reverse();
-    keys.sort_by(|a, b| cmp_utf16(a.0, b.0));
+    crate::sort::by(&mut keys, |a, b| cmp_utf16(a.0, b.0));
     keys.dedup_by(|b, a| a.0 == b.0);
     keys
 }

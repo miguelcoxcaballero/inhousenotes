@@ -632,11 +632,11 @@ fn paint_overlays(app: &mut App, host: &mut dyn Host) {
     let Some(run) = app.st.collab.run.as_ref() else { return };
     app.st.collab.overlay_ver = run.sync.core.live.version;
     let mut pages_now: Vec<Id> = run.sync.core.live.strokes.values().filter(|s| !s.xy.is_empty()).map(|s| s.page).collect();
-    pages_now.sort_unstable();
+    ihn_core::sort::ord(&mut pages_now);
     pages_now.dedup();
     let mut todo = std::mem::replace(&mut app.st.collab.overlay_pages, pages_now.clone());
     todo.extend(pages_now);
-    todo.sort_unstable();
+    ihn_core::sort::ord(&mut todo);
     todo.dedup();
     for page in todo {
         let ink = pages::with_gfx(app, |app, g| {
