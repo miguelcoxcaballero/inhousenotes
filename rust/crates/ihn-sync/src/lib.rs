@@ -442,6 +442,8 @@ pub struct Core {
     pub peer_vv: HashMap<PeerRef, VersionVector>,
     /// The relay cannot fill a gap: the export must be downloaded (§8.6 step 3; set by `relay.rs`, cleared by `export.rs`).
     pub need_export: bool,
+    /// Remote live ink / erase previews (written by `live.rs`, drawn by the remote-ink overlay).
+    pub live: live::Previews,
     // -- private
     effects: Vec<SyncEffect>,
     owner: u8,
@@ -670,6 +672,7 @@ impl Sync {
             mail_in: Vec::new(),
             peer_vv: HashMap::new(),
             need_export: false,
+            live: live::Previews::default(),
             effects: Vec::new(),
             owner: SELF,
             owners: BTreeMap::new(),
