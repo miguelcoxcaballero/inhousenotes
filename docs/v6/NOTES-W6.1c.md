@@ -36,9 +36,25 @@ build caches, untouched for hours) were removed (~10 GB). Not a code problem.
   v6 already its scroll preview (pre-existing, REPORT-B item 3): order of the new page's preview and the last visible
   pass after the insert.
 
+- **`canvas/dense-page@repaint` desktop, 3 px at the page corner (Δ2), intermittent on the v6 side** (`--runs 3`:
+  B run 1 ≠ run 2 ≠ run 3; A stable): after the fixes above the order is right in most runs; what remains is whether
+  v6's scroll preview of the dense page exists before the second visible pass of the open (5.18.0: always). v6 starts
+  that preview job only once the page's images and template are decoded (`images_pending`), work the harness does not
+  pin to a fake instant. Not fixed.
+
+## Results
+
+- Quick matrix, every state file (`tests/v6/parity/REPORT.md`, generated): 412 comparisons, 5 failures, all listed
+  above as open (folder fade ×2, photo-page corners ×2, dense-page corner ×1); 51 expected (BEHAVIOUR-CHANGES tags).
+  Runs: `canvas`, `editor-*`, `pages`, `pdf-backgrounds`, `share`, `home`, `open` after the last code change; the other
+  files one build earlier (the last two code changes touch only the open's save state and the editor pipeline).
+- e2e: full suite 97/98 then the one failure (01 PKCE, a status-line race in the test) fixed; editor and document
+  specs re-run after the last changes: green. `cargo test -p ihn-app`: 165 passed.
+
 ## Deviations
 
 1. The full matrix (5 viewports × 2 themes, ~470 cells at ≈35 s) does not fit the time available; the quick matrix
-   was run file by file (`REPORT.md` lists which files and matrices were run).
+   was run file by file (`REPORT.md` lists which files and matrices were run), plus phone-412 and phone-360 dark/light
+   reruns of the states investigated here.
 2. `tests/v6/parity/report.mjs` gained the `--summary` CLI so the final report is generated from per-file runs.
 3. Files outside app code touched: `export/upload.rs` (`pushed_name`), `collab/mod.rs` (keepalive after pagehide).
