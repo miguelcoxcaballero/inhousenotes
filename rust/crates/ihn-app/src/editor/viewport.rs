@@ -88,6 +88,8 @@ pub struct State {
     raf_resize: Option<(f64, f64)>,
     resync_force: bool,
     resync_armed: bool,
+    /// `scheduleCanvasResolutionRetry` in flight: 1 = its first frame is due, 2 = its second; with its `force`.
+    retry: (u8, bool),
     /// Pointer ids a page canvas took for drawing (`claim`): the viewport ignores them.
     claimed: Vec<i32>,
     /// Set by the input pipeline while the pen writes (v5 `isPenWriting`).
@@ -128,6 +130,7 @@ impl Default for State {
             raf_resize: None,
             resync_force: false,
             resync_armed: false,
+            retry: (0, false),
             claimed: Vec::new(),
             pen_writing: false,
             indicator: Node::NONE,
@@ -255,6 +258,30 @@ fn resync_now(app: &mut App, host: &mut dyn Host, force: bool) {
     pages::warm_template_urls(app, host);
     pages::schedule_visible(app, host, true);
     pages::sync_resolution(app, host, force);
+    // v5: no active canvas yet (`activePageIndices.size === 0`) → `scheduleCanvasResolutionRetry({force: true})`:
+    // a forced visible pass in the next frame (it re-applies the wrapper previews made meanwhile), a resync after it.
+    if !pages::any_active(app) && app.st.editor_viewport.retry.0 == 0 {
+        app.st.editor_viewport.retry = (1, true);
+        app.sched.frame(host.out(), Mod::EditorViewport);
+    }
+}
+
+/// v5: the two nested frames of `scheduleCanvasResolutionRetry`.
+fn retry_frame(app: &mut App, host: &mut dyn Host) {
+    let (stage, force) = std::mem::take(&mut app.st.editor_viewport.retry);
+    if stage == 0 {
+        return;
+    }
+    if interacting(app, host.now()) {
+        app.st.editor_viewport.resync_force |= force;
+        schedule_resync(app, host, false, force);
+    } else if stage == 1 {
+        pages::schedule_visible_from_frame(app, host, true);
+        app.st.editor_viewport.retry = (2, force);
+        app.sched.frame(host.out(), Mod::EditorViewport);
+    } else {
+        pages::sync_resolution(app, host, force);
+    }
 }
 
 /// v5: `scheduleViewSave()`: `notebook-view-v1` 250 ms after the last change.
@@ -813,6 +840,7 @@ fn inertia_step(app: &mut App, host: &mut dyn Host, t: f64) {
 }
 
 fn frame(app: &mut App, host: &mut dyn Host, t: f64) {
+    retry_frame(app, host);
     if app.st.editor_viewport.inertia {
         inertia_step(app, host, t);
     } else if std::mem::take(&mut app.st.editor_viewport.raf_transform) {

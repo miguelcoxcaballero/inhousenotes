@@ -173,6 +173,9 @@ fn viewer_ui(app: &mut App, host: &mut dyn Host) {
 
 /// The start of an open or a creation (v5 `openDriveFile` before the download): empty column, zoom 1, Read.
 fn begin(app: &mut App, host: &mut dyn Host) {
+    // v5 `beginDocumentSession()` notes user activity: the open's first visible passes wait for quiet input (240 ms).
+    let now = host.now();
+    app.sched.activity(now);
     let name = open::opening_name(app).map(str::to_string).or_else(|| create::pending_name(app).map(|n| format!("{n}.pdf")));
     app.st.editor_view.new_doc = create::pending_name(app).is_some();
     pages::clear(app, host);
@@ -187,7 +190,7 @@ fn begin(app: &mut App, host: &mut dyn Host) {
 
 fn opened(app: &mut App, host: &mut dyn Host) {
     session::take_changes(app);
-    pages::rebuild(app, host);
+    pages::rebuild_opened(app, host);
     pages::set_active_page(app, 0);
     viewport::center_on_top(app, host);
     update_title(app, host);
