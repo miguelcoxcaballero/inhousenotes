@@ -23,7 +23,7 @@ use crate::id::{fnv1a64, ActorId, Hash, Id};
 use crate::op::{Background, Batch, Body, Color, Op, PageProp, Template, Tool, Z};
 use crate::pos::Pos;
 use crate::stamp::Stamp;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 /// Which bytes a `Background::Pdf` asset of an import holds (ARCHITECTURE §4.5: `SHA-256("ihn6-src" ‖
 /// SHA-256(revision bytes) ‖ u32 variant)`, variant little-endian).
@@ -297,11 +297,15 @@ pub fn from_pdf(kw: &str, facts: &PdfFacts, import_actor: ActorId, rev_time_ms: 
         },
         None => None,
     };
+    // A failed `STROKES_*` (not strict) skips the rest of 5.18.0's metadata block.
+    let skip = k.strokes.is_some() && entries.is_none();
     let structure = match keywords::structure_value(&k) {
+        _ if skip => None,
         Ok(v) => v,
         Err(e) => strict!(e),
     };
     let fields = match keywords::fields_value(&k) {
+        _ if skip => None,
         Ok(v) => v.map(|f| structfields::fields(&f)),
         Err(e) => strict!(e),
     };
@@ -581,7 +585,9 @@ pub fn from_local(records: &V5LocalDoc, migration_actor: ActorId, base: Option<&
                 if b.size.v != size {
                     set(&mut out, PageProp::Size(size));
                 }
-                if std::mem::discriminant(&b.background.v) != std::mem::discriminant(&background) && (pdf || matches!(background, Background::Template)) {
+                // A PDF page whose source is unknown here keeps the base's background.
+                let known = !(pdf && matches!(background, Background::Template));
+                if known && std::mem::discriminant(&b.background.v) != std::mem::discriminant(&background) {
                     set(&mut out, PageProp::Background(background));
                 }
                 if b.side_panel.v != side_panel(p) {

@@ -6,6 +6,7 @@ use crate::v5::fixtures::{self, Dump};
 use crate::v5::idb;
 use crate::v5::json::Value;
 use crate::v5::sha256::hex;
+use std::collections::HashMap;
 
 const T0: u64 = 1_793_354_000_000;
 
@@ -218,6 +219,20 @@ fn two_revisions_in_either_order_give_the_same_document_and_r1_wins() {
     c.apply(&Batch { actor: native, seq: 1, clock: T0 + 500, ops: vec![Op::ItemPut { item: Id::new(native, 1), page, z: Z::default(), body: stroke_body(&V5Stroke { xy: vec![1.0, 1.0, 2.0, 2.0], ..Default::default() }, false).unwrap() }], stamps: None });
     apply(&mut c, &r1);
     assert!(c.live(Id::new(native, 1)).is_some());
+
+    // Migrated local strokes (the migration actor is kept) survive a newer revision that never saw them.
+    let mut m = Doc::default();
+    apply(&mut m, &r0);
+    let migrate = ActorId::import("migrate:test");
+    let local = V5LocalDoc { doc_id: "d".into(), pages: vec![V5Page { page_id: "pg_mvuswpfc_ry7x67vru".into(), strokes: vec![V5Stroke { id: "local-1".into(), tool: "pen".into(), color: "#000000".into(), width: 2.0, xy: vec![1.0, 2.0, 3.0, 4.0], ..Default::default() }], has_images_key: true, background_source: "template".into(), template_kind: "default", ..Default::default() }], saved_at: (T0 + 10) as f64, ..Default::default() };
+    for b in from_local(&local, migrate, Some(&m)).unwrap().batches {
+        m.apply(&b);
+    }
+    let extra = supersede(&m, &r1.batches, &[migrate]);
+    for b in r1.batches.iter().chain(&extra) {
+        m.apply(b);
+    }
+    assert!(m.live(Id::legacy("local-1")).is_some() && m.live(Id::legacy("rev-s2")).is_none());
 }
 
 #[test]
