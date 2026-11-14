@@ -329,16 +329,20 @@ pub fn clear(app: &mut App, host: &mut dyn Host) {
     st.previews.clear();
     st.new_pages.clear();
     st.active_page = Id::NONE;
-    with_gfx(app, |_, g| {
+    let urls = with_gfx(app, |_, g| {
         g.paths.clear(&mut g.cmds);
-        for p in g.pictures.drain(..) {
-            g.cmds.image_drop(p.img);
-        }
         for (_, _, img, _, _) in g.rasters.drain(..) {
             g.cmds.image_drop(img);
         }
+        g.pictures.drain(..).filter_map(|p| {
+            g.cmds.image_drop(p.img);
+            p.url
+        }).collect::<Vec<_>>()
     });
     flush(app, host);
+    for url in urls {
+        crate::shell::fx::url_revoke(host.out(), &url);
+    }
     sync_layout(app);
 }
 
@@ -395,7 +399,6 @@ pub fn add_page(app: &mut App, host: &mut dyn Host, animate: bool) -> Option<Id>
     session::edit(app, host, |tx| {
         new_id = tx.page_new(last, kind, (w as u32, h as u32), Background::Template);
     })?;
-    session::take_changes(app);
     let i = app.st.editor_pages.rows.len();
     let r = make_row(app, host, new_id, i, animate);
     app.st.editor_pages.rows.push(r);

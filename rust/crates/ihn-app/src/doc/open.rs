@@ -306,14 +306,15 @@ pub fn open_file(app: &mut App, host: &mut dyn Host, file: File, notify: u32) ->
         return false;
     }
     abort(app, host);
-    // v5: openDriveFile — the editor with the loading overlay appears at once.
-    shell::show_view(app, host, View::Editor);
-    shell::loading(app, host, "Opening PDF...");
     let account = auth::known_account(host);
     let mut job = Job { file, notify, load_req: app.req(Mod::DocOpen), ..Job::default() };
     job.meta_req = request_meta(app, host, &job.file, META_FIELDS);
     let (id, load_req) = (job.file.id.clone(), job.load_req);
     app.st.doc_open.job = Some(job);
+    // v5: openDriveFile — the editor with the loading overlay appears at once (the editor view reads the file's
+    // name from the job for the title).
+    shell::show_view(app, host, View::Editor);
+    shell::loading(app, host, "Opening PDF...");
     session::load(app, host, &account, &id, load_req);
     true
 }
