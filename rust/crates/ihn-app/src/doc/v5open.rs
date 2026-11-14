@@ -20,7 +20,7 @@ use crate::{App, Host};
 use ihn_core::codec::{Reader, Writer};
 use ihn_core::jsmath::round;
 use ihn_core::doc::PeerRef;
-use ihn_core::id::{ActorId, Hash, Id};
+use ihn_core::id::{migration_source, ActorId, Hash, Id};
 use ihn_core::op::{Background, Batch, Body, Op};
 use ihn_core::snapshot::{encode_batch, EncodedBatch};
 use ihn_core::v5::import::{self, Asset, PdfFacts, Source};
@@ -87,6 +87,8 @@ pub struct State {
     log: Vec<(String, String)>,
     /// Main-instance memory at the start, after the batches were applied and at the end of each import (test).
     mem: Vec<f64>,
+    /// Request completed when an [`import`] ends (0 ≙ an open's import).
+    notify: u32,
 }
 
 /// Called once at boot, in `app::MODULES` order, after the `Ui` table is bound.
@@ -107,6 +109,18 @@ fn mark(app: &mut App) { app.st.doc_v5open.mem.push(memory()); }
 fn start(app: &mut App, host: &mut dyn Host) {
     let Some(f) = open::take_foreign(app) else { return };
     abandon(app, host); // a previous import still running is abandoned
+    begin(app, host, f, 0);
+}
+
+/// Imports `f` into the open session outside an open (the 5.x migration's Drive base, W5.6). `notify` completes
+/// with 0 once the batches and the source asset are in the session, -1 when the import failed.
+pub fn import(app: &mut App, host: &mut dyn Host, f: Foreign, notify: u32) {
+    abandon(app, host);
+    begin(app, host, f, notify);
+}
+
+fn begin(app: &mut App, host: &mut dyn Host, f: Foreign, notify: u32) {
+    app.st.doc_v5open.notify = notify;
     if f.kind == Kind::Plain && session::get(app).is_some_and(|s| s.doc.order().iter().any(|p| s.doc.pages.get(p).is_some_and(|p| !p.deleted.v))) {
         // A foreign app replaced an existing document: keep the v6 state, remember the revision.
         let name = format!("{} (recovered Drive version).pdf", base_name(&f.file.name));
@@ -118,7 +132,7 @@ fn start(app: &mut App, host: &mut dyn Host) {
         });
         app.st.doc_v5open.recoveries.push(Recovery { doc_id: doc_id.clone(), name, head, blob: f.blob, size: f.size });
         log(app, &doc_id, "recovery".into());
-        return open::finish_foreign(app, host, true);
+        return finish(app, host, true);
     }
     if check_page_count(f.opened.pages).is_err() {
         log(app, &f.file.id, "error:PDF page count exceeds the safe limit".into());
@@ -346,7 +360,11 @@ fn imported(app: &mut App, host: &mut dyn Host, r: Result<(Option<(Source, Hash)
             return close(app, host, j.f);
         }
     };
-    let sup = session::get(app).and_then(|s| import::supersede(&s.doc, &j.skeletons, &[]));
+    // This installation's migration actor holds 5.x data no revision has seen: never deleted by one (SYNC §15.4).
+    let sup = session::get(app).and_then(|s| {
+        let keep: Vec<ActorId> = s.author.iter().map(|a| ActorId::import(&migration_source(a.actor.inst(), &s.doc_id))).collect();
+        import::supersede(&s.doc, &j.skeletons, &keep)
+    });
     let pages = j.skeletons.iter().flat_map(|b| &b.ops).filter(|o| matches!(o, Op::PageNew { .. })).count();
     j.skeletons = Vec::new();
     for e in std::mem::take(&mut j.encoded).into_iter().chain(sup.as_ref().map(encode_batch)) {
@@ -425,7 +443,14 @@ fn done(app: &mut App, host: &mut dyn Host) {
     if let Some(j) = app.st.doc_v5open.job.take() {
         close_with(host, &j.f, j.blob_kept);
         mark(app);
-        open::finish_foreign(app, host, true);
+        finish(app, host, true);
+    }
+}
+
+fn finish(app: &mut App, host: &mut dyn Host, ok: bool) {
+    match std::mem::take(&mut app.st.doc_v5open.notify) {
+        0 => open::finish_foreign(app, host, ok),
+        n => crate::shell::deliver(app, host, n, if ok { 0 } else { -1 }, 0, &[]),
     }
 }
 
@@ -439,7 +464,7 @@ fn close_with(host: &mut dyn Host, f: &Foreign, blob_kept: bool) {
 
 fn close(app: &mut App, host: &mut dyn Host, f: Foreign) {
     close_with(host, &f, false);
-    open::finish_foreign(app, host, false);
+    finish(app, host, false);
 }
 
 /// Abandons a running import (a new open replaced it, or the document closed); the open is not told.
@@ -447,6 +472,7 @@ fn abandon(app: &mut App, host: &mut dyn Host) {
     if let Some(j) = app.st.doc_v5open.job.take() {
         close_with(host, &j.f, j.blob_kept);
     }
+    app.st.doc_v5open.notify = 0;
 }
 
 fn worker_msg(app: &mut App, host: &mut dyn Host, obj: u32, data: &[u8]) {
