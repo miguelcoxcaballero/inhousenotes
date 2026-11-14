@@ -387,6 +387,15 @@ async function main() {
   const onlyViewports = opt('viewports', '').split(',').filter(Boolean);
   for (const state of states) for (const cell of cellsFor(state, { quick })) if (!onlyViewports.length || onlyViewports.includes(cell.viewport)) jobs.push({ state, cell });
 
+  // A passing comparison keeps only its verdict: the screenshots, DOMs and traces of the whole matrix do not fit in
+  // the heap at once (the full matrix of a large state file ran out of memory). Failures, warnings and expected
+  // differences keep theirs for the report; `--save-all` keeps everything.
+  const saveAll = flag('save-all');
+  const lighten = r => {
+    if (saveAll || r.status !== 'pass') return r;
+    const c = r.comparison;
+    return { ...r, a: undefined, b: undefined, comparison: c && { pixelsEqual: c.pixelsEqual, dom: c.dom, trace: c.trace, pixels: { different: c.pixels.different, box: c.pixels.box } } };
+  };
   const runJob = async ({ state, cell }) => {
     const id = cellId(cell), dpr = VIEWPORTS[cell.viewport].dpr, previous = {};
     for (let run = 0; run < runs; run++) {
@@ -400,7 +409,7 @@ async function main() {
       } else {
         a.captures.forEach((capture, index) => {
           const verdict = judge(state, capture, b.captures[index], dpr), problems = [...new Set([...a.problems.map(p => `A ${p}`), ...b.problems.map(p => `B ${p}`)])];
-          results.push({ ...base, capture: capture.label, kind: 'parity', ...verdict, problems: index === 0 ? problems : [], a: capture, b: b.captures[index] });
+          results.push(lighten({ ...base, capture: capture.label, kind: 'parity', ...verdict, problems: index === 0 ? problems : [], a: capture, b: b.captures[index] }));
         });
       }
       for (const [side, now] of [['a', a], ['b', b]]) {
@@ -408,7 +417,7 @@ async function main() {
         if (before && !now.error && !before.error) now.captures.forEach((capture, index) => {
           if (!before.captures[index]) return;
           const comparison = compareCaptures(before.captures[index], capture);
-          results.push({ ...base, capture: capture.label, kind: 'stability', sides: `${side.toUpperCase()} run ${run} vs ${run + 1}`, status: comparison.pixelsEqual ? (comparison.dom || comparison.trace ? 'warn' : 'pass') : 'fail', comparison, a: before.captures[index], b: capture });
+          results.push(lighten({ ...base, capture: capture.label, kind: 'stability', sides: `${side.toUpperCase()} run ${run} vs ${run + 1}`, status: comparison.pixelsEqual ? (comparison.dom || comparison.trace ? 'warn' : 'pass') : 'fail', comparison, a: before.captures[index], b: capture }));
         });
         previous[side] = now;
       }
@@ -421,7 +430,7 @@ async function main() {
   await Promise.all(Array.from({ length: Math.min(workers, jobs.length) }, async () => { while (next < jobs.length) await runJob(jobs[next++]); }));
 
   await serverA.close(); await serverB.close();
-  const summary = writeReport(outDir, results, { title: self ? '5.18.0 against itself' : '5.18.0 vs v6', a: `5.18.0 (${path.relative(REPO, aRoot) || '.'})`, b: self ? `5.18.0 (${path.relative(REPO, bRoot) || '.'}, second origin)` : `v6 (${path.relative(REPO, bRoot) || '.'}${bOverlay ? ' + ' + path.relative(REPO, bOverlay) : ''})`, quick, runs, saveAll: flag('save-all'), startedAt: new Date(started).toISOString(), durationMs: Date.now() - started });
+  const summary = writeReport(outDir, results, { title: self ? '5.18.0 against itself' : '5.18.0 vs v6', a: `5.18.0 (${path.relative(REPO, aRoot) || '.'})`, b: self ? `5.18.0 (${path.relative(REPO, bRoot) || '.'}, second origin)` : `v6 (${path.relative(REPO, bRoot) || '.'}${bOverlay ? ' + ' + path.relative(REPO, bOverlay) : ''})`, quick, runs, saveAll, startedAt: new Date(started).toISOString(), durationMs: Date.now() - started });
   console.log(`\n${summary.failed ? 'FAIL' : 'PASS'}: ${summary.passed} pass, ${summary.failed} fail/error, ${summary.expected} expected, ${summary.warned} warnings — ${path.relative(process.cwd(), summary.file)}`);
   process.exit(summary.failed ? 1 : 0);
 }
