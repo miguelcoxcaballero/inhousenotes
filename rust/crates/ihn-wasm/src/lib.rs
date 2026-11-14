@@ -160,7 +160,14 @@ pub extern "C" fn ihn_out_len() -> usize { out().w.buf.len() }
 
 /// The host applied everything up to `ihn_out_len()`.
 #[no_mangle]
-pub extern "C" fn ihn_out_reset() { out().w.buf.clear(); }
+pub extern "C" fn ihn_out_reset() {
+    let buf = &mut out().w.buf;
+    buf.clear();
+    // One large flush (a store transaction, the pages of a document) must not keep megabytes reserved for good.
+    if buf.capacity() > 1 << 20 {
+        buf.shrink_to(256 << 10);
+    }
+}
 
 /// Export-worker entry: one message (`[u8 role][payload]`).
 ///

@@ -270,7 +270,7 @@ fn dispatch(app: &mut App, host: &mut dyn Host, c: usize, job: Job) {
     }
 }
 
-fn send(app: &mut App, host: &mut dyn Host, c: usize, job: Job) {
+fn send(app: &mut App, host: &mut dyn Host, c: usize, mut job: Job) {
     if job.tx.is_empty() {
         // IndexedDB has no transaction over zero stores: nothing to do is a success.
         return later(app, host, job.caller, status::OK);
@@ -283,8 +283,19 @@ fn send(app: &mut App, host: &mut dyn Host, c: usize, job: Job) {
     out.w.u32(id);
     out.w.u8(job.tx.write as u8 | (job.tx.strict as u8) << 1);
     out.w.u32(job.tx.ops);
+    out.w.buf.reserve(job.tx.buf.len() + 8);
     out.w.raw(&job.tx.buf);
     out.w.end(m);
+    // Megabyte transactions (a journal or snapshot write) leave one at a time instead of piling up in the
+    // out-buffer, which would keep their sum reserved in wasm memory.
+    if out.w.buf.len() > 1 << 20 {
+        host.flush();
+    }
+    // Kept for a retry until the transaction completes: without the slack of its growth (a journal or snapshot
+    // write is megabytes).
+    if job.tx.buf.capacity() - job.tx.buf.len() > 64 << 10 {
+        job.tx.buf.shrink_to_fit();
+    }
     app.st.store.pending.push((wire, c, job));
 }
 

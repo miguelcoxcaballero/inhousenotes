@@ -500,11 +500,20 @@ pub fn warm_template_urls(app: &mut App, host: &mut dyn Host) {
     flush(app, host);
 }
 
+/// `url("<u>")`, allocated once (`format!` doubles its buffer through a 350 KB data URL).
+fn css_url(u: &str) -> String {
+    let mut css = String::with_capacity(u.len() + 7);
+    css.push_str("url(\"");
+    css.push_str(u);
+    css.push_str("\")");
+    css
+}
+
 fn set_wrapper_bg(host: &mut dyn Host, r: &mut Row, url: Option<Rc<str>>, size: &str) {
     if r.wrapper_bg.as_deref() == url.as_deref() {
         return;
     }
-    let css = url.as_ref().map(|u| format!("url(\"{u}\")")).unwrap_or_default();
+    let css = url.as_ref().map(|u| css_url(u)).unwrap_or_default();
     let out = host.out();
     out.style(r.wrapper, "background-image", Some(&css));
     if url.is_some() {
@@ -603,7 +612,7 @@ fn apply_background(app: &mut App, host: &mut dyn Host, id: Id, canvas: Node) {
     };
     flush(app, host);
     let out = host.out();
-    out.style(canvas, "background-image", Some(&url.as_ref().map(|u| format!("url(\"{u}\")")).unwrap_or_default()));
+    out.style(canvas, "background-image", Some(&url.as_deref().map(css_url).unwrap_or_default()));
     if url.is_some() {
         out.style(canvas, "background-size", Some(size));
         out.style(canvas, "background-repeat", Some("no-repeat"));

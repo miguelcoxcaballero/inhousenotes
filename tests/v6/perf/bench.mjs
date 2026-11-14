@@ -26,6 +26,16 @@ import { ensureV5Ref, REPO } from '../parity/run.mjs';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const median = xs => { const s = xs.slice().sort((a, b) => a - b); return s.length ? s[Math.floor((s.length - 1) / 2)] : null; };
 const pct = (xs, p) => { const s = xs.slice().sort((a, b) => a - b); return s.length ? s[Math.min(s.length - 1, Math.floor(s.length * p))] : null; };
+// Polls from Node (5.18.0's e2e mode replaces page timers, which stalls Playwright's in-page polling).
+async function poll(page, fn, timeout = 60_000) {
+  const end = Date.now() + timeout;
+  for (;;) {
+    const v = await page.evaluate(fn).catch(() => 0);
+    if (v) return v;
+    if (Date.now() > end) throw new Error(`timeout waiting for ${fn}`);
+    await sleep(5);
+  }
+}
 const r2 = x => x == null ? null : Math.round(x * 100) / 100;
 
 // Runs in the page before any app script.
@@ -77,16 +87,22 @@ export async function bench({ app = 'v5', root, overlay = null, throttle = 1, ru
     if (!process.env.NO_INSTR) await context.addInitScript(instrument);
     const page = await context.newPage();
     const errors = []; page.on('pageerror', error => errors.push(error.message));
-    const cdp = await context.newCDPSession(page);
-    await cdp.send('Performance.enable');
-    if (throttle > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle });
-    const metrics = async () => Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map(m => [m.name, m.value]));
-    return { context, mock, file, page, cdp, metrics, errors };
+    // CDP attaches only after the boot or open being timed: with a CDP session attached from the start, 5.18.0's
+    // Home stays on its skeleton for ~30 s.
+    const s = { context, mock, file, page, errors, cdp: null };
+    s.attach = async () => {
+      if (s.cdp) return;
+      s.cdp = await context.newCDPSession(page);
+      await s.cdp.send('Performance.enable');
+      if (throttle > 1) await s.cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle });
+    };
+    s.metrics = async () => { await s.attach(); return Object.fromEntries((await s.cdp.send('Performance.getMetrics')).metrics.map(m => [m.name, m.value])); };
+    return s;
   }
   async function openEditor(s, { edit = true } = {}) {
     const t0 = Date.now();
     await s.page.goto(`${server.url}/?drive=${s.file.id}&e2e=1`);
-    const first = await s.page.waitForFunction(() => { const c = document.querySelector('canvas.page-canvas'); return c && c.offsetParent && c.width > 0 ? performance.now() : 0; }, null, { timeout: 120_000, polling: 'raf' }).then(h => h.jsonValue());
+    const first = await poll(s.page, () => { const c = document.querySelector('canvas.page-canvas'); return c && c.offsetParent && c.width > 0 ? performance.now() : 0; }, 120_000);
     const wall = Date.now() - t0;
     if (edit) {
       await s.page.locator('#mode-toggle-btn').first().click();
@@ -111,7 +127,7 @@ export async function bench({ app = 'v5', root, overlay = null, throttle = 1, ru
       cpuPerStep: r2((m1.TaskDuration - m0.TaskDuration) * 1000 / steps), scriptPerStep: r2((m1.ScriptDuration - m0.ScriptDuration) * 1000 / steps),
       rafP95: r2(pct(data.frames, 0.95)), rafMax: r2(Math.max(0, ...data.frames)), frameP95: r2(pct(data.intervals, 0.95)), frameMax: r2(Math.max(0, ...data.intervals)), janky: data.intervals.filter(x => x > 34).length, secs: (Date.now() - t0) / 1000 };
   }
-  const mouse = (s, type, x, y, buttons) => s.cdp.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons, clickCount: 1, pointerType: 'pen' });
+  const mouse = async (s, type, x, y, buttons) => (await s.attach(), s.cdp).send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons, clickCount: 1, pointerType: 'pen' });
   async function strokes(s, r, count, points, { dx = 2.2, dy = 12 } = {}) {
     for (let n = 0; n < count; n++) {
       const sx = r.x + r.w * (0.1 + (n % 6) * 0.13), sy = r.y + r.h * (0.15 + (Math.floor(n / 6) % 8) * 0.09);
@@ -128,7 +144,7 @@ export async function bench({ app = 'v5', root, overlay = null, throttle = 1, ru
       for (let i = 0; i < runs; i++) {
         const s = await session({ library: true });
         await s.page.goto(`${server.url}/?e2e=1`);
-        const home = await s.page.waitForFunction(() => { const c = document.querySelector('#drive-recents .drive-card'); return c && c.offsetParent ? performance.now() : 0; }, null, { timeout: 60_000, polling: 'raf' }).then(h => h.jsonValue());
+        const home = await poll(s.page, () => { const c = document.querySelector('#drive-recents .drive-card'); return c && c.offsetParent ? performance.now() : 0; }, 60_000);
         const marks = await s.page.evaluate(() => Object.fromEntries(performance.getEntriesByType('mark').map(m => [m.name, m.startTime])));
         const res = await s.page.evaluate(() => { const e = performance.getEntriesByType('resource'); return { requests: e.length, kb: Math.round(e.reduce((n, r) => n + (r.encodedBodySize || r.transferSize || 0), 0) / 1024) }; });
         let instantiate = null;
@@ -142,7 +158,7 @@ export async function bench({ app = 'v5', root, overlay = null, throttle = 1, ru
         rows.push({ home, marks, res, instantiate });
         await s.context.close();
       }
-      out.boot = { homeMs: Math.round(median(rows.map(r => r.home))), requests: rows[0].res.requests, kb: rows[0].res.kb,
+      out.boot = { homeMs: Math.round(median(rows.map(r => r.home))), homeMinMs: Math.round(Math.min(...rows.map(r => r.home))), stalled: rows.filter(r => r.home > 10_000).length, requests: rows[0].res.requests, kb: rows[0].res.kb,
         wasmReadyMs: app === 'v6' ? r2(median(rows.map(r => r.marks['ihn-wasm-ready'] - r.marks['ihn-boot-start']))) : null,
         compileMs: app === 'v6' ? r2(median(rows.map(r => r.instantiate.compile))) : null, instantiateMs: app === 'v6' ? r2(median(rows.map(r => r.instantiate.instantiate))) : null };
       log(`boot ${JSON.stringify(out.boot)}`);
@@ -152,8 +168,9 @@ export async function bench({ app = 'v5', root, overlay = null, throttle = 1, ru
       for (let i = 0; i < (want('open') ? runs : 1); i++) {
         const s = await session({ scene: 'dense-20' });
         const opened = await openEditor(s, { edit: false });
-        const pages = await s.page.waitForFunction(() => document.querySelectorAll('.page-wrapper').length >= 20 ? performance.now() : 0, null, { timeout: 60_000, polling: 'raf' }).then(h => h.jsonValue());
+        const pages = await poll(s.page, () => document.querySelectorAll('.page-wrapper').length >= 20 ? performance.now() : 0);
         await settle(s);
+        await s.attach();
         await s.cdp.send('HeapProfiler.collectGarbage');
         const m = await s.metrics();
         const wasm = await s.page.evaluate(() => self.__IHN_TEST_API__?.wasmMemoryBytes?.() || 0);
@@ -161,13 +178,15 @@ export async function bench({ app = 'v5', root, overlay = null, throttle = 1, ru
         if (want('export') && i === 0) {
           await s.page.locator('#mode-toggle-btn').first().click().catch(() => {});
           await sleep(500);
+          // The button sits in the pages panel (closed): both apps take the dispatched click, as in parity.
+          await s.page.locator('#btn-export-pdf').dispatchEvent('click');
+          await s.page.locator('#modal-export-confirm').waitFor({ state: 'visible', timeout: 10_000 });
           const t0 = Date.now();
           const download = s.page.waitForEvent('download', { timeout: 120_000 });
-          await s.page.locator('#btn-export-pdf').first().click();
           await s.page.locator('#modal-export-confirm').click();
-          const d = await download;
+          const d = await download.catch(error => { row.exportError = error.message.split('\n')[0]; return null; });
           row.exportMs = Date.now() - t0;
-          row.exportKB = Math.round(fs.statSync(await d.path()).size / 1024);
+          if (d) row.exportKB = Math.round(fs.statSync(await d.path()).size / 1024);
           await s.cdp.send('HeapProfiler.collectGarbage');
           const m2 = await s.metrics();
           row.heapAfterExportMB = r2(m2.JSHeapUsedSize / 1048576);
@@ -178,7 +197,7 @@ export async function bench({ app = 'v5', root, overlay = null, throttle = 1, ru
         await s.context.close();
       }
       out.open = { firstCanvasMs: median(rows.map(r => r.first)), allPagesMs: median(rows.map(r => r.pages)), heapMB: median(rows.map(r => r.heapMB)), wasmMB: median(rows.map(r => r.wasmMB)), nodes: rows[0].nodes, errors: rows[0].errors };
-      if (rows[0].exportMs != null) out.export = { ms: rows[0].exportMs, kb: rows[0].exportKB, heapAfterMB: rows[0].heapAfterExportMB, wasmAfterMB: rows[0].wasmAfterExportMB };
+      if (rows[0].exportMs != null) out.export = { ms: rows[0].exportMs, kb: rows[0].exportKB, error: rows[0].exportError, heapAfterMB: rows[0].heapAfterExportMB, wasmAfterMB: rows[0].wasmAfterExportMB };
       log(`open ${JSON.stringify(out.open)} export ${JSON.stringify(out.export)}`);
     }
     if (['pen', 'erase', 'lasso', 'scroll', 'zoom'].some(want)) {
@@ -245,6 +264,7 @@ export async function bench({ app = 'v5', root, overlay = null, throttle = 1, ru
       await settle(s);
       const r = await canvasRect(s, 0);
       const cx = r.x + r.w / 2, cy = 450;
+      await s.attach();
       const touch = (type, points) => s.cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y], id) => ({ x, y, id })) });
       out.pinch = await phase(s, 'touchmove', 60, async () => {
         for (let round = 0; round < 2; round++) {
