@@ -769,7 +769,9 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
             }
             _ => {}
         },
-        Event::Msg(m) if app.cfg.has(mode::E2E) => {
+        // Worker and peer traffic is binary and large (a whole 5.x import passes through the worker channel): the
+        // probe records only the other channels, so e2e runs measure the app's memory, not this log's.
+        Event::Msg(m) if app.cfg.has(mode::E2E) && !matches!(m.chan, abi::chan::WORKER | abi::chan::PEER) && m.data.len() <= 64 << 10 => {
             let text = String::from_utf8_lossy(m.data).into_owned();
             if m.chan >= sig::AUTH {
                 app.st.shell.probe_log.push((m.chan, text));

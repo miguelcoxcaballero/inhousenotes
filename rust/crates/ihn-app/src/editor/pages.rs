@@ -15,6 +15,7 @@ use crate::doc::session;
 use crate::shell::{self, Status, StatusOpts};
 use crate::{tag, App, Event, Host, Mod, Node, Rect, Ui};
 use ihn_core::doc::Doc;
+use std::rc::Rc;
 use ihn_core::geom::{js_max, js_min};
 use ihn_core::id::{Hash, Id};
 use ihn_core::jsfmt::num;
@@ -80,10 +81,11 @@ pub struct Row {
     pub active: Option<Active>,
     pub needs_redraw: bool,
     /// v5 `page.preview` (JPEG data URL) and `scrollPreviewDirty`.
-    preview: Option<String>,
+    preview: Option<Rc<str>>,
     preview_dirty: bool,
-    /// The wrapper's current CSS background (to skip identical writes).
-    wrapper_bg: String,
+    /// The URL of the wrapper's current CSS background (to skip identical writes). Data URLs are shared, not
+    /// copied: a template URL is a ~350 KB JPEG data URL used by every page.
+    wrapper_bg: Option<Rc<str>>,
     /// Bumped whenever the page's items or background change (v5 `pageDirtyGeneration`).
     gen: u32,
     preview_failed_at: f64,
@@ -106,7 +108,7 @@ pub struct Gfx {
     pub paths: PathCache,
     pub urls: BgUrls,
     /// Template CSS JPEG data URLs by kind (v5 `_templateBgUrlCache`) and their pending requests.
-    tpl_urls: [Option<String>; 3],
+    tpl_urls: [Option<Rc<str>>; 3],
     tpl_url_req: [u32; 3],
     pictures: Vec<Picture>,
     /// PDF page rasters (`doc::backgrounds`): page → (blob URL, image, decoded).
@@ -304,7 +306,7 @@ fn make_row(app: &mut App, host: &mut dyn Host, id: Id, i: usize, animate: bool)
         out.class(wrapper, "new-page", true);
     }
     out.listen(wrapper, "pointerdown", L_WRAPPER, 0);
-    Row { id, row, wrapper, w, h, active: None, needs_redraw: true, preview: None, preview_dirty: false, wrapper_bg: String::new(), gen: 0, preview_failed_at: f64::NEG_INFINITY }
+    Row { id, row, wrapper, w, h, active: None, needs_redraw: true, preview: None, preview_dirty: false, wrapper_bg: None, gen: 0, preview_failed_at: f64::NEG_INFINITY }
 }
 
 fn drop_row(app: &mut App, host: &mut dyn Host, mut r: Row) {
@@ -368,7 +370,7 @@ fn cancel_jobs(app: &mut App, host: &mut dyn Host) {
 /// v5: `renderAllPages()`: one row per page of the document, previews or template backgrounds, indicator last.
 pub fn rebuild(app: &mut App, host: &mut dyn Host) {
     let keep_active = app.st.editor_pages.active_page;
-    let previews: Vec<(Id, Option<String>, bool)> = app.st.editor_pages.rows.iter_mut().map(|r| (r.id, r.preview.take(), r.preview_dirty)).collect();
+    let previews: Vec<(Id, Option<Rc<str>>, bool)> = app.st.editor_pages.rows.iter_mut().map(|r| (r.id, r.preview.take(), r.preview_dirty)).collect();
     clear(app, host);
     let ids: Vec<Id> = doc(app).map(|d| d.order().to_vec()).unwrap_or_default();
     for (i, id) in ids.iter().enumerate() {
@@ -469,7 +471,7 @@ pub fn touch(app: &mut App, id: Id) {
 
 /// The template URL of a kind at the current zoom, requesting a sharper one when needed
 /// (v5 `ensureTemplateBackgroundUrl`).
-fn template_url(app: &mut App, kind: Template) -> Option<String> {
+fn template_url(app: &mut App, kind: Template) -> Option<Rc<str>> {
     let (zoom, pc) = (app.st.editor_viewport.zoom, is_pc(app));
     let req = app.req(Mod::EditorPages);
     with_gfx(app, |_, g| {
@@ -498,11 +500,11 @@ pub fn warm_template_urls(app: &mut App, host: &mut dyn Host) {
     flush(app, host);
 }
 
-fn set_wrapper_bg(host: &mut dyn Host, r: &mut Row, url: Option<&str>, size: &str) {
-    let css = url.map(|u| format!("url(\"{u}\")")).unwrap_or_default();
-    if r.wrapper_bg == css {
+fn set_wrapper_bg(host: &mut dyn Host, r: &mut Row, url: Option<Rc<str>>, size: &str) {
+    if r.wrapper_bg.as_deref() == url.as_deref() {
         return;
     }
+    let css = url.as_ref().map(|u| format!("url(\"{u}\")")).unwrap_or_default();
     let out = host.out();
     out.style(r.wrapper, "background-image", Some(&css));
     if url.is_some() {
@@ -510,7 +512,7 @@ fn set_wrapper_bg(host: &mut dyn Host, r: &mut Row, url: Option<&str>, size: &st
         out.style(r.wrapper, "background-repeat", Some("no-repeat"));
         out.style(r.wrapper, "background-position", Some("center"));
     }
-    r.wrapper_bg = css;
+    r.wrapper_bg = url;
 }
 
 /// v5: `applyPagePreview(i)`: the preview, else the template URL (not for PDF pages), else nothing.
@@ -521,9 +523,9 @@ fn apply_preview(app: &mut App, host: &mut dyn Host, id: Id) {
     flush(app, host);
     let Some(r) = row_mut(app, id) else { return };
     if let Some(p) = r.preview.clone() {
-        set_wrapper_bg(host, r, Some(&p), "cover");
+        set_wrapper_bg(host, r, Some(p), "cover");
     } else {
-        set_wrapper_bg(host, r, url.as_deref(), "100% 100%");
+        set_wrapper_bg(host, r, url, "100% 100%");
     }
 }
 
@@ -592,11 +594,11 @@ fn apply_background(app: &mut App, host: &mut dyn Host, id: Id, canvas: Node) {
         Background::Template => (template_url(app, page_template(app, id)), "100% 100%"),
         Background::Custom { asset } => {
             picture(app, asset);
-            (picture_url(app, &asset), "cover")
+            (picture_url(app, &asset).map(Rc::from), "cover")
         }
         Background::Pdf { .. } => {
             crate::doc::backgrounds::apply(app, host, id);
-            (raster(app, id).map(|r| r.0), "100% 100%")
+            (raster(app, id).map(|r| Rc::from(r.0)), "100% 100%")
         }
     };
     flush(app, host);
@@ -1316,7 +1318,7 @@ fn io(app: &mut App, host: &mut dyn Host, io: &abi::Io) -> u32 {
     let kind = app.st.editor_pages.gfx.as_ref().and_then(|g| g.tpl_url_req.iter().position(|r| *r == io.req));
     if let Some(k) = kind {
         if ok {
-            with_gfx(app, |_, g| g.tpl_urls[k] = Some(text.to_string()));
+            with_gfx(app, |_, g| g.tpl_urls[k] = Some(text.into()));
             let ids: Vec<Id> = app.st.editor_pages.rows.iter().map(|r| r.id).collect();
             for id in ids {
                 if page_bg(app, id) == Background::Template && kind_index(page_template(app, id)) == k {
@@ -1346,7 +1348,7 @@ fn io(app: &mut App, host: &mut dyn Host, io: &abi::Io) -> u32 {
             r.preview_failed_at = now;
             return 0;
         }
-        r.preview = Some(text.to_string());
+        r.preview = Some(text.into());
         r.preview_dirty = r.gen != gen;
         let show = r.active.as_ref().is_none_or(|a| !a.drawn);
         if show {
