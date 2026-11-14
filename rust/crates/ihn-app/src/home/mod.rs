@@ -542,7 +542,11 @@ fn on_dom(app: &mut App, host: &mut dyn Host, e: &DomEvent) -> u32 {
         l if (L_SLOT_CLICK..L_SLOT_ANIM + 8).contains(&l) => return slot_event(app, host, Slot::ALL[((l - L_SLOT_CLICK) % 8) as usize % 7], e),
         _ => {
             if app.st.home.anim.as_ref().is_some_and(|a| a.zoom_listener() == e.listener) {
-                folders::cleanup(app, host);
+                if e.ty == ety::READY {
+                    folders::join_motion(app, host);
+                } else {
+                    folders::cleanup(app, host);
+                }
             } else {
                 lists::decode_event(app, host, e);
             }

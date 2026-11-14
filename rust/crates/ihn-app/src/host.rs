@@ -46,6 +46,8 @@ pub enum Metric {
     Connected = 20,
     ScrollX = 21,
     ScrollY = 22,
+    /// An animation handle's `currentTime` (0 when it is unresolved).
+    AnimCurrentTime = 23,
 }
 
 /// `host_ls` operations.

@@ -280,6 +280,7 @@ function imports(host) {
       case 20: return node?.isConnected ? 1 : 0;
       case 21: return window.scrollX;
       case 22: return window.scrollY;
+      case 23: return Number(node?.currentTime) || 0;
       default: return 0;
     }
   };

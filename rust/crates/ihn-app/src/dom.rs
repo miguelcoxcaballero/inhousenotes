@@ -25,6 +25,15 @@ pub enum Scroll {
     Instant = 2,
 }
 
+/// What [`OutBuf::anim_set`] does with the animation's play state.
+#[derive(Clone, Copy, Debug)]
+#[repr(u8)]
+pub enum AnimPlay {
+    Keep = 0,
+    Play = 1,
+    Pause = 2,
+}
+
 /// `dialog` actions.
 #[derive(Clone, Copy, Debug)]
 #[repr(u8)]
@@ -67,6 +76,7 @@ pub const LAYOUT: &[(u8, &str, &str)] = &[
     (op::SELECT, "select", "h"),
     (op::OBSERVE, "observe", "hubs"),
     (op::UNOBSERVE, "unobserve", "u"),
+    (op::ANIM_SET, "anim_set", "hboh"),
 ];
 
 impl OutBuf {
@@ -249,6 +259,15 @@ impl OutBuf {
     }
     pub fn anim_cancel(&mut self, anim: Node) { self.dom_h(op::ANIM_CANCEL, anim); }
     pub fn anim_finish(&mut self, anim: Node) { self.dom_h(op::ANIM_FINISH, anim); }
+    /// `anim.effect.setKeyframes(keyframes)` when given, then `anim.play()` / `anim.pause()` ([`AnimPlay`]), then
+    /// `anim.startTime = with.startTime` when `with` is an animation: an effect joins another one's timeline.
+    pub fn anim_set(&mut self, anim: Node, play: AnimPlay, keyframes_json: Option<&str>, with: Node) {
+        let m = self.dom(op::ANIM_SET, anim);
+        self.w.u8(play as u8);
+        self.w.opt_str(keyframes_json);
+        self.w.u32(with.0);
+        self.w.end(m);
+    }
     /// `h.setPointerCapture(id)` / `h.releasePointerCapture(id)`; failures are swallowed as in 5.18.0.
     pub fn pointer_capture(&mut self, h: Node, pointer_id: i32, on: bool) {
         let m = self.dom(op::POINTER_CAPTURE, h);

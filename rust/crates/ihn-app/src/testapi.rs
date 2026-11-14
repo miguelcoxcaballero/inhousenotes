@@ -227,6 +227,7 @@ fn selftest(app: &mut App, host: &mut dyn Host) -> String {
     out.listen(anim, "finish", FINISH, 0);
     out.anim_finish(anim);
     let cancelled = out.animate(span, "[{\"opacity\":1},{\"opacity\":0}]", "{\"duration\":50}");
+    out.anim_set(cancelled, crate::dom::AnimPlay::Pause, Some("[{\"opacity\":1}]"), anim);
     out.anim_cancel(cancelled);
     out.release(cancelled);
     for node in [input, dialog, made] {
@@ -419,6 +420,7 @@ animate 1030 1025 \"[{\\\"opacity\\\":0},{\\\"opacity\\\":1}]\" \"{\\\"duration\
 listen 1030 \"finish\" 3 0
 anim_finish 1030
 animate 1031 1025 \"[{\\\"opacity\\\":1},{\\\"opacity\\\":0}]\" \"{\\\"duration\\\":50}\"
+anim_set 1031 2 \"[{\\\"opacity\\\":1}]\" 1030
 anim_cancel 1031
 release 1031
 release 1026
