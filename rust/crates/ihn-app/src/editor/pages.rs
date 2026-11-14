@@ -149,6 +149,8 @@ pub struct State {
     preview_reqs: Vec<(u32, Id, u32)>,
     new_pages: Vec<Id>,
     is_pc: Option<bool>,
+    /// Backing-store resizes of page canvases (gesture budget test).
+    pub resizes: u32,
     /// The page holding the lasso selection (set by `editor::selection`): it keeps its canvases first.
     pub selection_page: Id,
 }
@@ -833,6 +835,7 @@ fn resize(app: &mut App, host: &mut dyn Host, id: Id, force: bool) {
         a.cursor_scale = cpx.0 as f64 / w.max(1.0);
     }
     if resized {
+        app.st.editor_pages.resizes += 1;
         app.st.editor_pages.rows[i].needs_redraw = true;
         repaint(app, host, id);
     }

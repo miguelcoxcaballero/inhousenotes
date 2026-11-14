@@ -38,6 +38,9 @@ const T_OVERSCROLL: u32 = tag(Mod::EditorViewport, 11);
 const T_SAVE: u32 = tag(Mod::EditorViewport, 12);
 const T_RESYNC: u32 = tag(Mod::EditorViewport, 13);
 const T_TRANSITION: u32 = tag(Mod::EditorViewport, 14);
+const T_GESTURE: u32 = tag(Mod::EditorViewport, 15);
+/// v5: `INTERACTION_IDLE_MS`.
+const INTERACTION_IDLE_MS: f64 = 100.0;
 
 /// Axis lock of a one-finger pan (v5 `scrollLocked`).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -87,6 +90,10 @@ pub struct State {
     /// Set by the input pipeline while the pen writes (v5 `isPenWriting`).
     pub pen_writing: bool,
     indicator: Node,
+    /// v5 `isGestureInteracting` and its idle deadline.
+    gesture: bool,
+    gesture_deadline: f64,
+    gesture_armed: bool,
     /// Layout reads made by this module (gesture budget test).
     pub reads: u32,
 }
@@ -121,6 +128,9 @@ impl Default for State {
             claimed: Vec::new(),
             pen_writing: false,
             indicator: Node::NONE,
+            gesture: false,
+            gesture_deadline: 0.0,
+            gesture_armed: false,
             reads: 0,
         }
     }
@@ -141,7 +151,7 @@ pub fn claim(app: &mut App, pointer_id: i32) {
 /// v5: `isViewportInteracting()`.
 pub fn interacting(app: &App, now: f64) -> bool {
     let st = &app.st.editor_viewport;
-    st.is_panning || !st.pointers.is_empty() || st.inertia || st.pen_writing || app.sched.quiet_for(now) < RECENT_ACTIVITY_MS
+    st.is_panning || !st.pointers.is_empty() || st.inertia || st.pen_writing || st.gesture || app.sched.quiet_for(now) < RECENT_ACTIVITY_MS
 }
 
 /// A gesture holds cached geometry (v5 `viewportGestureGeometry` is set).
@@ -505,9 +515,50 @@ fn pinch_distance(st: &State) -> f64 {
     (dx * dx + dy * dy).sqrt()
 }
 
+/// v5: `noteInteractionActivity()` / `refreshInteractionIdleTimer()`: one idle deadline 100 ms after the last
+/// gesture event; when it passes with nothing held, the gesture has settled (resync, visible pages, previews, save).
+pub fn note_interaction(app: &mut App, host: &mut dyn Host, t: f64) {
+    app.sched.activity(t);
+    let now = host.now();
+    let st = &mut app.st.editor_viewport;
+    st.gesture = true;
+    st.gesture_deadline = now + INTERACTION_IDLE_MS;
+    if !std::mem::replace(&mut st.gesture_armed, true) {
+        app.sched.timer(host.out(), T_GESTURE, INTERACTION_IDLE_MS);
+    }
+}
+
+/// v5: `isGestureInteracting = false` (Read mode ends gestures).
+pub fn end_interaction(app: &mut App, host: &mut dyn Host) {
+    let st = &mut app.st.editor_viewport;
+    st.gesture = false;
+    if std::mem::take(&mut st.gesture_armed) {
+        app.sched.clear(host.out(), T_GESTURE);
+    }
+}
+
+fn gesture_settle(app: &mut App, host: &mut dyn Host) {
+    let now = host.now();
+    let st = &mut app.st.editor_viewport;
+    st.gesture_armed = false;
+    let remaining = st.gesture_deadline - now;
+    if remaining > 0.0 || !st.pointers.is_empty() || st.is_panning || st.inertia {
+        st.gesture_armed = true;
+        app.sched.timer(host.out(), T_GESTURE, INTERACTION_IDLE_MS.max(remaining));
+        return;
+    }
+    st.gesture = false;
+    st.gesture_deadline = 0.0;
+    st.geometry = None;
+    schedule_resync(app, host, false, false);
+    pages::schedule_visible(app, host, false);
+    pages::queue_scroll_previews(app, host, false);
+    schedule_save(app, host);
+}
+
 /// v5: `handleWheel(e)`.
 fn wheel(app: &mut App, host: &mut dyn Host, e: &DomEvent) -> u32 {
-    app.sched.activity(e.t);
+    note_interaction(app, host, e.t);
     let g = geometry(app, host);
     let scale = match e.delta_mode {
         1 => 16.0,
@@ -545,6 +596,7 @@ fn down(app: &mut App, host: &mut dyn Host, p: &PointerBatch) -> u32 {
     if p.ptype == ptr::TOUCH && app.st.editor_viewport.pen_writing {
         return 0;
     }
+    note_interaction(app, host, p.raw.t);
     stop_inertia(app, host, false);
     geometry(app, host);
     let (x, y) = (p.raw.x, p.raw.y);
@@ -589,6 +641,10 @@ fn move_(app: &mut App, host: &mut dyn Host, p: &PointerBatch) -> u32 {
         return 0;
     }
     let (x, y) = (p.raw.x, p.raw.y);
+    if !app.st.editor_viewport.pointers.iter().any(|e| e.0 == p.pointer_id) {
+        return 0;
+    }
+    note_interaction(app, host, p.raw.t);
     let st = &mut app.st.editor_viewport;
     let Some(e) = st.pointers.iter_mut().find(|e| e.0 == p.pointer_id) else { return 0 };
     (e.1, e.2) = (x, y);
@@ -848,6 +904,10 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
             save_view(app, host);
             0
         }
+        Event::Timer(T_GESTURE) => {
+            gesture_settle(app, host);
+            0
+        }
         Event::Timer(T_TRANSITION) => {
             host.out().style(Ui::CANVAS_CONTAINER, "transition", Some(""));
             0
@@ -891,5 +951,162 @@ pub fn test_cmd(app: &mut App, _host: &mut dyn Host, name: &str, _args: &str) ->
             st.reads
         )),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::abi::{kind, mode, Config};
+    use crate::doc::session;
+    use crate::host::FakeHost;
+    use ihn_core::codec::Writer;
+    use ihn_core::op::{Background, Template};
+
+    fn boot() -> (App, FakeHost) {
+        let cfg = Config { version: "6.0.0".into(), url: "http://127.0.0.1/?e2e=1".into(), user_agent: "test".into(), language: "en".into(), flags: mode::E2E | mode::ONLINE, viewport: (1280.0, 800.0), dpr: 1.0, max_touch_points: 0 };
+        let (mut app, mut host) = (App::new(cfg), FakeHost::default());
+        app.init(&mut host);
+        host.rects.insert(Ui::CANVAS_VIEWPORT, Rect { x: 0.0, y: 69.0, w: 1280.0, h: 731.0 });
+        session::load(&mut app, &mut host, "", "d", 0);
+        timer(&mut app, &mut host, tag(Mod::DocSession, 1));
+        session::edit(&mut app, &mut host, |tx| {
+            let mut after = None;
+            for _ in 0..3 {
+                after = Some(tx.page_new(after, Template::Default, (794, 1123), Background::Template));
+            }
+        })
+        .expect("a memory session is writable");
+        shell::show_view(&mut app, &mut host, shell::View::Editor);
+        shell::signal(&mut app, &mut host, session::sig::OPENED, "d");
+        host.advance(500.0);
+        { let t = host.now; app.frame(&mut host, t); }
+        host.take();
+        (app, host)
+    }
+
+    fn timer(app: &mut App, host: &mut FakeHost, id: u32) {
+        let mut w = Writer::default();
+        w.u32(id);
+        app.event(host, kind::TIMER, &w.buf);
+    }
+
+    fn wheel(app: &mut App, host: &mut FakeHost, dy: f64, ctrl: bool) {
+        let mut w = Writer::default();
+        w.u32(L_WHEEL);
+        w.u32(Ui::CANVAS_VIEWPORT.0);
+        w.u8(ety::WHEEL);
+        w.u32(if ctrl { crate::abi::ev::CTRL } else { 0 });
+        w.f64(host.now);
+        w.i32(0);
+        w.u32(0);
+        w.f64(640.0);
+        w.f64(400.0);
+        w.f64(0.0);
+        w.f64(dy);
+        w.u32(0);
+        w.i32(0);
+        w.u8(0);
+        w.u32(0);
+        for _ in 0..3 {
+            w.str("");
+        }
+        for _ in 0..4 {
+            w.u32(0);
+        }
+        assert_eq!(app.event(host, kind::DOM, &w.buf), ret::PREVENT_DEFAULT);
+    }
+
+    fn touch(app: &mut App, host: &mut FakeHost, listener: u32, k: u8, id: i32, x: f64, y: f64) {
+        let mut w = Writer::default();
+        w.u32(listener);
+        w.u32(Ui::CANVAS_VIEWPORT.0);
+        w.u8(k);
+        w.u8(ptr::TOUCH);
+        w.i32(id);
+        w.i32(0);
+        w.u32(0);
+        w.f64(x);
+        w.f64(y);
+        w.f64(host.now);
+        w.f32(0.5);
+        w.f32(0.0);
+        w.f32(0.0);
+        w.u32(1);
+        w.u32(0);
+        w.u32(0);
+        app.event(host, kind::POINTER, &w.buf);
+    }
+
+    use crate::abi::ety;
+
+    /// spec/editor.md §10.4: a wheel or pinch gesture reads layout once and resizes no canvas; the resync follows
+    /// 90 ms after the gesture settled.
+    #[test]
+    fn gesture_budget_no_resizes_and_at_most_three_layout_reads() {
+        let (mut app, mut host) = boot();
+        let active = |app: &App| app.st.editor_pages.rows.iter().filter(|r| r.active.is_some()).count();
+        assert_eq!(active(&app), 1, "page 1 fills the viewport at 100 %");
+        assert_eq!((app.st.editor_viewport.zoom, app.st.editor_viewport.pan_x, app.st.editor_viewport.pan_y), (1.0, 213.0, 20.0));
+        let (reads, resizes) = (app.st.editor_viewport.reads, app.st.editor_pages.resizes);
+        for _ in 0..20 {
+            host.advance(16.0);
+            wheel(&mut app, &mut host, -100.0, true);
+            { let t = host.now; app.frame(&mut host, t); }
+        }
+        assert!((app.st.editor_viewport.zoom - jsmath::pow(1.06, 20.0).min(3.0)).abs() < 1e-9);
+        assert_eq!(app.st.editor_pages.resizes, resizes, "no canvas resize mid-gesture");
+        assert!(app.st.editor_viewport.reads - reads <= 3, "{} layout reads", app.st.editor_viewport.reads - reads);
+        // Pinch with two fingers, then one lifts and the other pans.
+        let reads = app.st.editor_viewport.reads;
+        touch(&mut app, &mut host, L_DOWN, ptr::DOWN, 1, 500.0, 400.0);
+        touch(&mut app, &mut host, L_DOWN, ptr::DOWN, 2, 700.0, 400.0);
+        for i in 1..=20 {
+            host.advance(16.0);
+            touch(&mut app, &mut host, L_MOVE, ptr::MOVE, 1, 500.0 + i as f64 * 3.0, 400.0);
+            touch(&mut app, &mut host, L_MOVE, ptr::MOVE, 2, 700.0 - i as f64 * 3.0, 400.0);
+            { let t = host.now; app.frame(&mut host, t); }
+        }
+        assert!(app.st.editor_viewport.zoom < 3.0);
+        assert_eq!(app.st.editor_pages.resizes, resizes);
+        assert!(app.st.editor_viewport.reads - reads <= 3, "{} layout reads", app.st.editor_viewport.reads - reads);
+        touch(&mut app, &mut host, L_UP, ptr::UP, 2, 640.0, 400.0);
+        touch(&mut app, &mut host, L_UP, ptr::UP, 1, 560.0, 400.0);
+        assert!(app.st.editor_viewport.pointers.is_empty() && !app.st.editor_viewport.is_panning);
+        // Settled: the idle deadline passes, then the 90 ms resync re-rasters the active pages.
+        host.advance(300.0);
+        timer(&mut app, &mut host, T_GESTURE);
+        host.advance(100.0);
+        timer(&mut app, &mut host, T_RESYNC);
+        assert!(app.st.editor_pages.resizes > resizes, "the resync follows the gesture");
+    }
+
+    #[test]
+    fn clamp_keeps_five_pixels_of_content_and_pull_to_add_needs_the_threshold() {
+        let (mut app, mut host) = boot();
+        // Far up: clamped so that 5 px of the last page stay visible.
+        app.st.editor_viewport.pan_y = -100000.0;
+        update_transform(&mut app, &mut host);
+        let bottom = layout::metrics(&app).bounds[3];
+        assert_eq!(app.st.editor_viewport.pan_y, 5.0 - bottom);
+        // Read mode: no overscroll.
+        app.st.editor_viewport.pan_y = -2000.0;
+        vertical_pan(&mut app, &mut host, -500.0);
+        assert_eq!(app.st.editor_viewport.overscroll_y, 0.0);
+        // Edit mode: wheel down past the end accumulates overscroll and arms the creation.
+        view::set_read_only(&mut app, &mut host, false, false);
+        center_on_top(&mut app, &mut host);
+        let mut n = 0;
+        while !app.st.editor_viewport.pending_create && n < 200 {
+            host.advance(16.0);
+            wheel(&mut app, &mut host, 120.0, false);
+            n += 1;
+        }
+        assert!(app.st.editor_viewport.pending_create && app.st.editor_viewport.overscroll_y >= OVERSCROLL_THRESHOLD);
+        host.take();
+        timer(&mut app, &mut host, T_WHEEL);
+        assert_eq!(app.st.editor_pages.rows.len(), 4);
+        assert_eq!(app.st.editor_viewport.overscroll_y, 0.0);
+        assert!(host.take().contains("\"transition\" \"transform 0.35s ease\""));
     }
 }
