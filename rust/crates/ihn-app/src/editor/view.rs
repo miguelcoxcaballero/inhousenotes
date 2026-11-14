@@ -173,6 +173,9 @@ fn viewer_ui(app: &mut App, host: &mut dyn Host) {
 
 /// The start of an open or a creation (v5 `openDriveFile` before the download): empty column, zoom 1, Read.
 fn begin(app: &mut App, host: &mut dyn Host) {
+    // v5 `beginDocumentSession()` notes user activity: the open's first visible passes wait for quiet input (240 ms).
+    let now = host.now();
+    app.sched.activity(now);
     let name = open::opening_name(app).map(str::to_string).or_else(|| create::pending_name(app).map(|n| format!("{n}.pdf")));
     app.st.editor_view.new_doc = create::pending_name(app).is_some();
     pages::clear(app, host);
@@ -187,7 +190,7 @@ fn begin(app: &mut App, host: &mut dyn Host) {
 
 fn opened(app: &mut App, host: &mut dyn Host) {
     session::take_changes(app);
-    pages::rebuild(app, host);
+    pages::rebuild_opened(app, host);
     pages::set_active_page(app, 0);
     viewport::center_on_top(app, host);
     update_title(app, host);
@@ -217,8 +220,10 @@ fn finish_title(app: &mut App, host: &mut dyn Host, commit: bool, text: &str) {
     }
     if next != original {
         session::edit(app, host, |tx| tx.set_name(&next));
-        let created = session::get(app).is_none_or(|s| s.record.flags.created || s.account.is_empty());
-        if created {
+        // Only a document already in Drive is PATCHed (5.18.0 `renameDriveFile` needs `driveFileId`); one created on
+        // this device and not in Drive yet carries the new name in its create.
+        let local = session::get(app).is_none_or(|s| !s.record.flags.created || s.account.is_empty());
+        if local {
             if let Some(s) = session::get_mut(app) {
                 s.record.name = format!("{next}.pdf");
             }
@@ -232,9 +237,8 @@ fn finish_title(app: &mut App, host: &mut dyn Host, commit: bool, text: &str) {
             };
             app.st.editor_view.rename_req = client::request(app, host, Mod::EditorView, req);
             // The logical name changes at once; the Drive name follows the answer.
-            if let Some(s) = session::get_mut(app) {
-                s.record.name = format!("{next}.pdf");
-            }
+            let actor = session::get(app).and_then(|s| s.author.as_ref()).map_or(ihn_core::id::ActorId(0), |a| a.actor);
+            crate::export::upload::pushed_name(app, host, format!("{next}.pdf"), actor);
         }
     }
     update_title(app, host);

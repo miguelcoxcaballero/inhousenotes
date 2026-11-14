@@ -250,6 +250,7 @@ const L_POINTER_CANCEL: u32 = id(25);
 const L_ACT_TOUCH: u32 = id(26);
 const L_ACT_WHEEL: u32 = id(27);
 const L_ACT_KEY: u32 = id(28);
+const L_ACT_DOWN: u32 = id(29);
 const T_SOON: u32 = id(40);
 const T_LOADING_FADE: u32 = id(41);
 const T_LOADING_CLEANUP: u32 = id(42);
@@ -630,7 +631,23 @@ fn listeners(_app: &mut App, host: &mut dyn Host) {
     out.listen(Node::DOCUMENT, "touchstart", L_ACT_TOUCH, listen::CAPTURE | listen::PASSIVE);
     out.listen(Node::DOCUMENT, "wheel", L_ACT_WHEEL, listen::CAPTURE | listen::PASSIVE);
     out.listen(Node::DOCUMENT, "keydown", L_ACT_KEY, listen::CAPTURE);
+    out.listen(Node::DOCUMENT, "pointerdown", L_ACT_DOWN, listen::CAPTURE | listen::PASSIVE);
 }
+
+/// v5: `interruptProcessingForUserInput()` — fresh input postpones background work and, with the editor on screen,
+/// is a gesture (`noteInteractionActivity`): when it settles, the visible-pages pass, canvas resync and previews run.
+/// Input on the save indicator is watched, not worked on (`isSaveDebugInteraction`).
+fn interrupt(app: &mut App, host: &mut dyn Host, t: f64, watched: bool) {
+    if watched {
+        return;
+    }
+    app.sched.activity(t);
+    if view(app) == View::Editor {
+        crate::editor::viewport::note_interaction(app, host, t);
+    }
+}
+
+const WATCHED: [Node; 3] = [Ui::SAVE_INDICATOR, Ui::SAVE_STATUS_LABEL, Ui::SAVE_TIMESTAMP];
 
 fn close_sheet(app: &mut App, host: &mut dyn Host) {
     if std::mem::take(&mut app.st.shell.sheet_open) {
@@ -684,9 +701,8 @@ fn on_dom(app: &mut App, host: &mut dyn Host, e: &abi::DomEvent) -> u32 {
         L_DOC_KEY if e.key == "Escape" => close_profile_menus(app, host),
         L_ACT_TOUCH | L_ACT_WHEEL | L_ACT_KEY => {
             // v5: isSaveDebugInteraction — the save indicator is watched, not worked on.
-            let watched = [Ui::SAVE_INDICATOR, Ui::SAVE_STATUS_LABEL, Ui::SAVE_TIMESTAMP].iter().any(|n| e.path.contains(*n));
-            if !watched && !(e.ty == ety::KEYDOWN && e.has(ev::COMPOSING)) {
-                app.sched.activity(e.t);
+            if !(e.ty == ety::KEYDOWN && e.has(ev::COMPOSING)) {
+                interrupt(app, host, e.t, WATCHED.iter().any(|n| e.path.contains(*n)));
             }
         }
         l if (L_AVATAR..L_AVATAR + 4).contains(&l) => {
@@ -701,6 +717,7 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
     match *event {
         Event::Dom(e) if e.listener == fx::PROBE_FILES => fx::probe_files(app, host, e.obj),
         Event::Dom(e) => return on_dom(app, host, &e),
+        Event::Pointer(p) if p.listener == L_ACT_DOWN => interrupt(app, host, p.raw.t, WATCHED.iter().any(|n| p.path.contains(*n))),
         // v5: clearTouchPressedState — a tapped button must not keep its pressed look; blur it in the next frame.
         Event::Pointer(p) if matches!(p.listener, L_POINTER_UP | L_POINTER_CANCEL) && p.ptype != ptr::MOUSE => {
             app.st.shell.blur = true;

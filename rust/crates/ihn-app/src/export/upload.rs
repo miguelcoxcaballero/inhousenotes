@@ -259,7 +259,12 @@ fn push_name_now(app: &mut App, host: &mut dyn Host) {
     let actor = s.author.as_ref().map_or(ihn_core::id::ActorId(0), |a| a.actor);
     app.st.export_upload.rename_req = revisions::rename(app, host, Mod::ExportUpload, &doc, &name);
     app.st.export_upload.log.push("name".into());
-    // Recorded as pushed now, so the next poll does not take our own name for an outside rename.
+    pushed_name(app, host, name, actor);
+}
+
+/// Records a Drive name this device is PATCHing now (here or the editor's title rename), so the next poll does not
+/// take our own name for an outside rename and no later export pushes it again.
+pub fn pushed_name(app: &mut App, host: &mut dyn Host, name: String, actor: ihn_core::id::ActorId) {
     let observed_at = Stamp::new(host.time() as u64, actor, 0);
     record(app, host, SyncRecord::DriveName { v: name.clone(), observed_at });
     if let Some(s) = session::get_mut(app) {

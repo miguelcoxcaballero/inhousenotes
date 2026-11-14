@@ -582,7 +582,9 @@ pub fn sync_status(app: &App) -> SyncStatus {
     let Some(s) = get(app) else { return SyncStatus::default() };
     let mut st = s.sync.clone().unwrap_or_else(|| SyncStatus {
         unsealed_local: s.unsealed_local(),
-        not_created: !s.record.flags.created,
+        // While an open runs the Drive facts are not known yet (`set_meta` marks the document created): 5.18.0's
+        // indicator shows nothing pending there.
+        not_created: !s.record.flags.created && !crate::doc::open::busy(app),
         export_pending: s.record.flags.export_pending,
         online: !shell::offline(app),
         auth_paused: auth::reconnecting(app),
