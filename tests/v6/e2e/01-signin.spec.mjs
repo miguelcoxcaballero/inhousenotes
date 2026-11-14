@@ -224,6 +224,9 @@ test('app mode: PKCE through InhouseNative.openAuthUrl and handleInhouseNativeOA
   await expect.poll(() => calls.token.length).toBe(2);
   expect(calls.token[1]).toEqual({ client_id: '435784295430-9ta7t92s33r25bamvrnbmgt65iihqpfo.apps.googleusercontent.com', grant_type: 'refresh_token', refresh_token: 'refresh-1' });
   await expect.poll(async () => (await cmd(page, 'auth.state')).signedIn).toBe(true);
+  // Home's folder listing has answered (this stub refuses it: 5.18.0's `Unable to load this folder.` replaces the
+  // status line), so the OAuth error is the line's last word.
+  await expect(page.locator('#drive-status')).toHaveText(/^(Recents: |Unable to load this folder)/, { useInnerText: false });
   expect(await page.evaluate(() => window.handleInhouseNativeOAuth('#error=access_denied'))).toBe(false);
   await expect(page.locator('#drive-status')).toHaveText('Sign-in failed: access_denied', { useInnerText: false });
 });
