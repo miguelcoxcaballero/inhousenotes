@@ -282,6 +282,8 @@ impl Session {
                 add(*asset);
             }
         }
+        // Timeline snapshots and their delta bases (W5.3): loaded at open, kept by the GC, wanted from peers.
+        ihn_core::history::needed_assets(&self.doc).into_iter().for_each(add);
         out
     }
 
