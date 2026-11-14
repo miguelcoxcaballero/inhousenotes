@@ -44,7 +44,9 @@ test('boots signed out into Welcome with v6.0.0 labels and a clean console', asy
   // Nothing of 5.x and no PDF library on the boot path.
   const local = requests.map(url => new URL(url)).filter(url => url.hostname === '127.0.0.1').map(url => url.pathname);
   expect(local.filter(path => /vendor\/(pdfjs|pdf-lib|jspdf)|-v5\.js|rust-core/.test(path))).toEqual([]);
-  expect(local).toEqual(expect.arrayContaining(['/boot.js', '/host/main.js', '/host/dom.js', '/wasm/ihn.wasm']));
+  // `?e2e=1` boots the test build (W6.2t): production code plus the test API.
+  expect(local).toEqual(expect.arrayContaining(['/boot.js', '/host/main.js', '/host/dom.js', '/wasm/ihn-test.wasm']));
+  expect(local).not.toContain('/wasm/ihn.wasm');
   expect(await page.evaluate(() => [typeof window.pdfjsLib, typeof window.PDFLib, typeof window.jspdf])).toEqual(['undefined', 'undefined', 'undefined']);
   expect(await page.evaluate(() => performance.getEntriesByName('ihn-wasm-ready').length)).toBe(1);
 
@@ -54,9 +56,12 @@ test('boots signed out into Welcome with v6.0.0 labels and a clean console', asy
 
 test('the test API exists only on localhost with ?e2e=1', async ({ page }) => {
   await page.route('https://accounts.google.com/**', route => route.fulfill({ contentType: 'text/javascript', body: '' }));
+  const wasm = [];
+  page.on('request', request => { if (request.url().includes('/wasm/')) wasm.push(new URL(request.url()).pathname); });
   await page.goto('/');
   await expect(page.locator('[data-app-version]').first()).toHaveText('v6.0.0');
   expect(await page.evaluate(() => typeof window.__IHN_TEST_API__)).toBe('undefined');
+  expect(wasm).toEqual(['/wasm/ihn.wasm']); // the production build, without the test API
 });
 
 test('a returning user boots to the Home skeleton, not Welcome', async ({ page }) => {

@@ -50,6 +50,15 @@ pub struct Module {
     pub test_cmd: fn(&mut App, &mut dyn Host, &str, &str) -> Option<String>,
 }
 
+// W6.2t: test commands are linked only into the test build (`--features testapi`, `wasm/ihn-test.wasm`, loaded by
+// the host with `?e2e=1`) and into `cargo test`; the production table holds `no_test_cmd`, so LTO drops them.
+#[cfg(any(test, feature = "testapi"))]
+macro_rules! test_cmd { ($module:ident) => { $module::test_cmd }; }
+#[cfg(not(any(test, feature = "testapi")))]
+macro_rules! test_cmd { ($module:ident) => { no_test_cmd }; }
+#[cfg(not(any(test, feature = "testapi")))]
+fn no_test_cmd(_: &mut App, _: &mut dyn Host, _: &str, _: &str) -> Option<String> { None }
+
 macro_rules! modules {
     ($($variant:ident $module:ident $name:literal;)*) => {
         /// Module ids (the high byte of every id made with [`abi::tag`]).
@@ -64,7 +73,7 @@ macro_rules! modules {
         /// The module table, in `Mod` order. `init` runs in this order: infrastructure first, the shell (boot
         /// routing) last, so that it can call into every other module.
         pub static MODULES: &[Module] = &[
-            $(Module { name: $name, init: $module::init, event: $module::event, test_cmd: $module::test_cmd }),*
+            $(Module { name: $name, init: $module::init, event: $module::event, test_cmd: test_cmd!($module) }),*
         ];
     };
 }
@@ -367,9 +376,11 @@ impl App {
             Event::Io(io) => io.req,
             Event::Test { name, args } => {
                 // The host only sends these with `?e2e=1` on localhost; refuse them anywhere else.
+                #[cfg(any(test, feature = "testapi"))]
                 if self.cfg.has(mode::E2E) {
                     crate::testapi::dispatch(self, host, name, args);
                 }
+                let _ = (name, args);
                 return 0;
             }
             Event::Life(l) => {
