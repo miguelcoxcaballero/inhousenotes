@@ -71,7 +71,9 @@ pub struct State {
     merge_job: (u32, u32),
     merge: Option<Merge>,
     /// A recovered copy written before the build `(gen, job)`: its request.
-    recovery: Option<(u32, u32, u32)>,
+    recovery: Option<(u32, String)>,
+    /// Foreign heads already saved as a recovered copy: a merge of one of them only answers.
+    preserved: Vec<String>,
     /// The newest `desk.done` handled (name push).
     done: Option<String>,
     rename_req: u32,
@@ -206,22 +208,32 @@ pub fn built(app: &mut App, host: &mut dyn Host, purpose: Purpose, out: Built) {
 pub fn desk(app: &mut App, host: &mut dyn Host) {
     let g = gen(app);
     let Some((build, merge, done)) = collab::with_sync(app, |s| (s.core.export.build, s.core.export.merge.as_ref().map(|m| m.0), s.core.export.done.clone())) else { return };
+    // A foreign revision found at open (`doc::v5open`): its copy is written before anything else.
+    if app.st.export_upload.recovery.is_none() {
+        let doc = session::doc_id(app).to_string();
+        if let Some(rec) = v5open::take_recovery(app, &doc) {
+            let parents = parents(app);
+            let req = revisions::recovered_copy(app, host, Mod::ExportUpload, &rec.name, &parents, rec.blob);
+            host.out().obj_release(rec.blob);
+            app.st.export_upload.recovery = Some((req, rec.head));
+        }
+    }
+    if app.st.export_upload.recovery.is_some() {
+        return; // the build and any merge wait for the copy
+    }
     if let Some(job) = build.filter(|j| app.st.export_upload.built_job != (g, *j)) {
         app.st.export_upload.built_job = (g, job);
-        let doc = session::doc_id(app).to_string();
-        match v5open::take_recovery(app, &doc) {
-            Some(rec) => {
-                let parents = parents(app);
-                let req = revisions::recovered_copy(app, host, Mod::ExportUpload, &rec.name, &parents, rec.blob);
-                host.out().obj_release(rec.blob);
-                app.st.export_upload.recovery = Some((req, g, job));
-            }
-            None => pdf::start(app, host, Purpose::Desk(job)),
-        }
+        pdf::start(app, host, Purpose::Desk(job));
     }
     if let Some(job) = merge.filter(|j| app.st.export_upload.merge_job != (g, *j)) {
         app.st.export_upload.merge_job = (g, job);
-        start_merge(app, host, g, job);
+        let head = collab::with_sync(app, |s| s.core.export.merge.as_ref().map(|m| m.1.clone())).flatten().unwrap_or_default();
+        if app.st.export_upload.preserved.contains(&head) {
+            collab::with_sync(app, |s| s.core.export.merged = Some((job, Some(VersionVector::default()))));
+            collab::kick(app, host);
+        } else {
+            start_merge(app, host, g, job);
+        }
     }
     if done.is_some() && done != app.st.export_upload.done {
         app.st.export_upload.done = done;
@@ -357,6 +369,9 @@ fn merge_io(app: &mut App, host: &mut dyn Host, io: &Io) -> bool {
         revisions::release_body(app, host, io.req);
         let ok = (200..300).contains(&io.status);
         app.st.export_upload.log.push(format!("copy:{}", io.status));
+        if let (true, Some(head)) = (ok, collab::with_sync(app, |s| s.core.export.merge.as_ref().map(|m| m.1.clone())).flatten()) {
+            app.st.export_upload.preserved.push(head);
+        }
         merged(app, host, ok.then(VersionVector::default));
     } else {
         return false;
@@ -387,12 +402,12 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
             let st = &app.st.export_upload;
             if st.create.as_ref().is_some_and(|c| c.stage == Stage::Uploading(io.req)) {
                 create_answer(app, host, &io);
-            } else if st.recovery.is_some_and(|r| r.0 == io.req) {
-                let (_, g, job) = app.st.export_upload.recovery.take().unwrap();
+            } else if st.recovery.as_ref().is_some_and(|r| r.0 == io.req) {
+                let (_, head) = app.st.export_upload.recovery.take().unwrap();
                 revisions::release_body(app, host, io.req);
                 app.st.export_upload.log.push(format!("copy:{}", io.status));
-                if gen(app) == g {
-                    pdf::start(app, host, Purpose::Desk(job));
+                if (200..300).contains(&io.status) {
+                    app.st.export_upload.preserved.push(head);
                 }
                 collab::kick(app, host);
             } else if io.req == st.rename_req {
