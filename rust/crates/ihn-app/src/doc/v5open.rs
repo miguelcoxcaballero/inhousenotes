@@ -248,7 +248,10 @@ pub fn worker(host: &mut dyn Host, msg: &[u8]) {
         host.flush();
     };
     let imp = match parsed.map(|(facts, actor, time, kw)| import::from_pdf(kw, &facts, actor, time)) {
-        Some(Ok(i)) => i,
+        Some(Ok(mut i)) => {
+            super::versions::add_v5(&mut i);
+            i
+        }
         e => {
             let mut w = part_header(req, part::ERROR);
             w.str(match e {
@@ -315,7 +318,8 @@ fn add_asset(app: &mut App, host: &mut dyn Host, a: &Asset) {
 fn import_here(app: &mut App, host: &mut dyn Host, actor: ActorId, time: u64) {
     let Some(j) = job(app) else { return };
     match import::from_pdf(&j.f.opened.keywords, &j.facts, actor, time) {
-        Ok(imp) => {
+        Ok(mut imp) => {
+            super::versions::add_v5(&mut imp);
             for b in imp.batches {
                 let e = encode_batch(&b);
                 add_batch(app, &b, e);

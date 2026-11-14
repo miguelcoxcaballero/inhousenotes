@@ -675,6 +675,8 @@ impl<'a> Tx<'a> {
     pub fn new(doc: &'a Doc, author: &'a mut Author, wall_ms: u64) -> Tx<'a> { Tx { doc, author, wall_ms, ops: Vec::new(), pages: None } }
     pub fn is_empty(&self) -> bool { self.ops.is_empty() }
     pub fn ops(&self) -> &[Op] { &self.ops }
+    /// The document this transaction is built against (W5.3: `history::Planned::commit` inside `session::edit`).
+    pub fn doc(&self) -> &'a Doc { self.doc }
     /// Adds raw ops (undo/redo inverses, timeline restore plans, imports of the editor).
     pub fn push(&mut self, op: Op) { self.ops.push(op) }
 

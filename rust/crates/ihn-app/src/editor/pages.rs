@@ -538,6 +538,11 @@ fn clear_preview(app: &mut App, host: &mut dyn Host, id: Id) {
     }
 }
 
+/// W5.3 (timeline preview): the decoded image of an asset (its decode starts on the first call), and the decoded
+/// pdf.js raster of page `id`.
+pub fn image_of(app: &mut App, hash: Hash) -> Option<Img> { picture(app, hash) }
+pub fn pdf_raster_of(app: &App, id: Id) -> Option<Img> { raster(app, id).filter(|r| r.2).map(|r| r.1) }
+
 /// Whether the editor holds a pdf.js raster for page `id` (`doc::backgrounds`).
 pub fn has_pdf_raster(app: &App, id: Id) -> bool { raster(app, id).is_some() }
 
