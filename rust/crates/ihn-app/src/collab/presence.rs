@@ -330,8 +330,8 @@ fn position(app: &mut App, host: &mut dyn Host) {
         top = if above >= margin { above } else { margin.max(vh - popup.h - margin) };
     }
     let out = host.out();
-    out.style(Ui::PRESENCE_POPUP, "left", Some(&format!("{}px", jsfmt::num(left.round()))));
-    out.style(Ui::PRESENCE_POPUP, "top", Some(&format!("{}px", jsfmt::num(top.round()))));
+    out.style(Ui::PRESENCE_POPUP, "left", Some(&format!("{}px", jsfmt::num(ihn_core::jsmath::round(left)))));
+    out.style(Ui::PRESENCE_POPUP, "top", Some(&format!("{}px", jsfmt::num(ihn_core::jsmath::round(top)))));
 }
 
 fn open(app: &mut App, host: &mut dyn Host) {

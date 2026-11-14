@@ -566,7 +566,12 @@ fn after(app: &mut App, host: &mut dyn Host) {
     }
     session::set_sync_status(app, host, Some(status));
     save_state::set_catching_up(app, host, catching);
-    if let Some(name) = rename {
+    if let Some(drive_name) = rename {
+        // §14.7: the register holds the title (5.18.0 `getBaseDocTitle`); the record keeps the Drive name.
+        let name = crate::editor::view::base_title(&drive_name);
+        if let Some(s) = session::get_mut(app) {
+            s.record.name = drive_name;
+        }
         if session::get(app).is_some_and(|s| s.doc.name.v != name) {
             session::edit(app, host, |tx| tx.set_name(&name));
         }
@@ -593,19 +598,13 @@ pub fn wake(app: &mut App, host: &mut dyn Host) {
     }
     let now = host.now();
     drive(app, host, |s, r| {
-        let mut e = Vec::new();
-        if contact {
-            e.extend(s.at(now).on_io(SyncIo::Lifecycle(Lifecycle::Contact(busy)), r));
-        }
+        // The packets are queued first: any pump below sends them before the batch they precede (`InkEnd`).
         let begun = packets.iter().any(|p| matches!(p, LivePreview::Begin { .. }));
-        if begun && !contact {
-            e.extend(s.at(now).on_io(SyncIo::Lifecycle(Lifecycle::Input), r));
-        }
         for p in packets {
             s.live(p);
         }
-        e.extend(s.tick(now, r));
-        e
+        let ev = if contact { Lifecycle::Contact(busy) } else if begun { Lifecycle::Input } else { return s.tick(now, r) };
+        s.at(now).on_io(SyncIo::Lifecycle(ev), r)
     });
 }
 
@@ -730,11 +729,10 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
                 let Some(run) = app.st.collab.run.as_mut().filter(|r| !r.leaving && r.phase_code != code) else { return 0 };
                 run.phase_code = code;
                 run.sync.core.profile.save_phase = code;
-                let now = host.now();
-                drive(app, host, |s, r| {
-                    s.presence(own_presence(code));
-                    s.tick(now, r)
-                });
+                // Queued, not pumped here: this signal can come from inside `session::edit`, before the pen's
+                // `InkEnd` is out, and a pump would send the new batch ahead of it.
+                run.sync.presence(own_presence(code));
+                app.sched.timer(host.out(), T_TICK, 0.0);
             }
             shell::sig::VIEW if m.data != b"editor" => leave(app, host),
             shell::sig::SIGNED_OUT => stop(app, host),
@@ -812,7 +810,7 @@ pub fn test_cmd(app: &mut App, _host: &mut dyn Host, name: &str, _args: &str) ->
         }
         "live" => {
             let run = st.run.as_ref()?;
-            let items: Vec<String> = run.sync.core.live.strokes.values().map(|s| format!("{{\"page\":\"{:032x}\",\"points\":{}}}", s.page.0, s.xy.len() / 2)).collect();
+            let items: Vec<String> = run.sync.core.live.strokes.values().map(|s| format!("{{\"page\":\"{:032x}\",\"points\":{},\"ended\":{}}}", s.page.0, s.xy.len() / 2, s.item.is_some())).collect();
             Some(format!("[{}]", items.join(",")))
         }
         _ => None,
