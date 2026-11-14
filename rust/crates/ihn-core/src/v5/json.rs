@@ -396,7 +396,7 @@ fn write(out: &mut String, v: &Value, sorted: bool) {
         }
         Value::Pt { x, y, p } => {
             // Source order is x, y, p; sorted order is p, x, y.
-            let mut field = |out: &mut String, name: &str, n: f64, first: bool| {
+            let field = |out: &mut String, name: &str, n: f64, first: bool| {
                 out.push_str(if first { "{\"" } else { ",\"" });
                 out.push_str(name);
                 out.push_str("\":");
