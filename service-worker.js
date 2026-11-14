@@ -9,6 +9,8 @@ const LEGACY_CACHE=`inhouse-shell-${LEGACY_VERSION}`;
 // One entry per window that announced itself as v6; survives worker restarts.
 const CLIENTS='ihn6-clients';
 importScripts('offline-assets.js');
+// On localhost `?e2e=1` boots the test build (host/main.js): keep it in the shell there so offline tests match production.
+if(['127.0.0.1','localhost','[::1]'].includes(self.location.hostname))self.INHOUSE_OFFLINE_ASSETS.push('/wasm/ihn-test.wasm');
 self.addEventListener('install',event=>event.waitUntil((async()=>{
     const cache=await caches.open(CACHE);
     // Installation is atomic: an incomplete shell never displaces a working one.
