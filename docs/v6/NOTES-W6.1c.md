@@ -20,15 +20,16 @@ build caches, untouched for hours) were removed (~10 GB). Not a code problem.
 | internal-doc selftest / reserved id | expectations older than W6.1 (a checkpoint is a local save → `All changes saved`; a new document's create starts at once online → `building`) | expectations follow the current (5.18.0-matching) behaviour |
 | parity `open/failed`: status line ends on counts (A) vs the error (B) | under the harness every Drive answer lands at one fake ms; the line shows whichever flow needs fewer storage round trips. With a real network (traced) both apps end on `Could not open this document. Try again.` | the state holds Drive's answers for the document until Home's lists arrived (`hold`), the real order |
 | phone-412 page-edge row (Δ1, full width) | 5.18.0's global capture `pointerdown`/`touchstart`/`wheel`/`keydown` (`interruptProcessingForUserInput`) is a gesture in the editor; its settle runs a visible-pages pass (`applyPagePreview`). v6 only recorded activity, so a tap on the phone's mode-toggle group ran no pass | `shell`: document capture `pointerdown` listener; these inputs call `viewport::note_interaction` while the editor is shown (save indicator excluded) |
-| `canvas/dense-page@repaint` page-corner pixels (Δ2) | four differences in the open's page pipeline: (1) `renderAllPages({deferVisibleUpdate: true})` + the 80 ms pass of the open — v6 forced a pass; (2) the open's page list applied right after the first render rebuilt the rows with a forced pass; (3) `scheduleCanvasResolutionRetry` (no active canvas at resync → two-frame forced pass + resync) was missing; (4) `attachPageCanvases` clears the wrapper preview when the paint starts, v6 when it ends; (5) staged repaint sliced by count (160 strokes) instead of 5.18.0's 4 ms budget | `pages::rebuild_opened`, first render of an empty row list deferred, `viewport` retry frames (`schedule_visible_from_frame`: a pass asked from another frame callback runs in the next frame), `clear_preview` in `attach`, staged slices of 40-stroke chunks drawn at once (`host.flush`) until 4 ms are used |
+| `canvas/dense-page@repaint` page-corner pixels (Δ2) | four differences in the open's page pipeline: (1) `renderAllPages({deferVisibleUpdate: true})` + the 80 ms pass of the open — v6 forced a pass; (2) the open's page list applied right after the first render rebuilt the rows with a forced pass; (3) `scheduleCanvasResolutionRetry` (no active canvas at resync → two-frame forced pass + resync) was missing; (4) `attachPageCanvases` clears the wrapper preview when the paint starts, v6 when it ends; (5) staged repaint sliced by count (160 strokes) instead of 5.18.0's 4 ms budget | `pages::rebuild_opened`, first render of an empty row list deferred, `viewport` retry frames (`schedule_visible_from_frame`: a pass asked from another frame callback runs in the next frame), `clear_preview` in `attach`, staged slices of 40-stroke chunks drawn at once (`host.flush`) until 4 ms are used; scroll-preview slices likewise until more than 3 ms (5.18.0's budgets; under the harness's frozen clock both apps then finish a slice in one go, as 5.18.0 always did there) |
 
 ## Open (not fixed)
 
-- **phone-360 share-icon edge, 3 px Δ ≤ 7 at CSS (222, 25–27)**: B-only and intermittent (`--runs 3`: run 2 of B
-  differed from runs 1 and 3 of B; A stable). Layout of the header, DOM, running animations identical in the failing
+- **phone-360 share-icon edge, 3 px Δ ≤ 7 at CSS (222, 25–27)**: intermittent on **both** sides — `--runs 3` once
+  showed run 2 of B differing from B's runs 1 and 3, and `--runs 2` of `canvas/dense-page` showed A run 1 ≠ A run 2
+  at the same 3 px (stability failure of 5.18.0 against itself). Layout of the header, DOM, running animations identical in the failing
   run; the pixels are the round cap of the `+` line where it meets the SVG's own box. A forced full re-raster before
   the capture did not remove it (reverted). Raster nondeterminism in Chromium's software rasteriser at a clip edge,
-  not reproducible on demand; no behaviour difference found.
+  not reproducible on demand; a harness/Chromium raster flake, not an app difference.
 
 ## Deviations
 
