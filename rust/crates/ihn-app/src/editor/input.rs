@@ -10,7 +10,7 @@
 //! pen's background double tap and "Draw with finger" (`touchDrawEnabled`) live here because the acceptance rule
 //! needs them; `editor::toolbar` owns the toolbar's drag and the eraser menu (called where 5.18.0 opens/closes it).
 
-use super::{pages, pen, toolbar, view, viewport};
+use super::{eraser, pages, pen, toolbar, view, viewport};
 use crate::abi::{ety, ev, life, ptr, ret, PointerBatch, Sample};
 use crate::{tag, App, Event, Host, LsOp, Mod, Node, Prop, Rect, Ui};
 use ihn_core::id::Id;
@@ -64,8 +64,8 @@ impl Tool {
     pub fn is_eraser(self) -> bool { matches!(self, Tool::EraserStroke | Tool::EraserArea) }
 }
 
-/// A tool that takes contacts on a page canvas. Implemented by `pen` (pen, highlighter); the eraser (W4.1) and the
-/// lasso (W4.2) add their arms to [`handler`]. The pipeline calls, in order: `down` once (the pointer is already
+/// A tool that takes contacts on a page canvas. Implemented by `pen` (pen, highlighter) and `eraser` (both erasers);
+/// the lasso (W4.2) adds its arm to [`handler`]. The pipeline calls, in order: `down` once (the pointer is already
 /// captured and [`contact`] is set), `moved` for every pointermove / pointerrawupdate of the contact (and the
 /// pointerup itself, for its release samples), then exactly one of `end` (pointerup, pointercancel, lost capture,
 /// window blur, a new pen down: the gesture is committed) or `discard` (Read mode switched on mid-contact).
@@ -81,7 +81,8 @@ pub trait ToolHandler: Sync {
 pub fn handler(tool: Tool) -> Option<&'static dyn ToolHandler> {
     match tool {
         Tool::Pen | Tool::Highlighter => Some(&pen::Pen),
-        Tool::EraserStroke | Tool::EraserArea | Tool::Lasso => None,
+        Tool::EraserStroke | Tool::EraserArea => Some(&eraser::Eraser),
+        Tool::Lasso => None,
     }
 }
 
