@@ -289,6 +289,7 @@ fn publish(app: &mut App, host: &mut dyn Host) {
     st.out.push(LivePreview::Erase { gesture: st.gesture, page: st.page, hidden, fragments });
     st.unsent = false;
     st.sent_at = now;
+    crate::collab::wake(app, host);
 }
 
 /// One frame of the gesture: test, repaint the damage, draw the cursor, publish.
@@ -316,6 +317,7 @@ fn abandon(app: &mut App, host: &mut dyn Host) {
         st.out.push(LivePreview::EraseEnd { gesture: st.gesture });
     }
     clear_cursor(app, host);
+    crate::collab::wake(app, host);
     let page = app.st.editor_eraser.page;
     if had {
         pages::touch(app, page);
@@ -394,6 +396,7 @@ impl ToolHandler for Eraser {
             app.st.editor_eraser.out.push(LivePreview::EraseEnd { gesture: g });
         }
         clear_cursor(app, host);
+        crate::collab::wake(app, host);
         if cuts.is_empty() {
             return;
         }

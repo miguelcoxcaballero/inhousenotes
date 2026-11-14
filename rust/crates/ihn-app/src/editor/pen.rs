@@ -119,6 +119,7 @@ fn paint(app: &mut App, host: &mut dyn Host) {
         st.out.push(LivePreview::Points { live: st.live_id, from: st.sent as u32, xy: st.xy[2 * st.sent..].to_vec(), p: Some(st.p[st.sent..].to_vec()) });
         st.sent = n;
     }
+    crate::collab::wake(app, host);
 }
 
 /// v5: `clearEraserPreview(pageIndex)` (how the live tip is removed at lift).
@@ -241,6 +242,7 @@ impl ToolHandler for Pen {
             app.st.editor_pen.out.push(LivePreview::End { live: live_id, item });
         }
         clear_cursor(app, host, page);
+        crate::collab::wake(app, host);
     }
 
     fn discard(&self, app: &mut App, host: &mut dyn Host) {
@@ -253,6 +255,7 @@ impl ToolHandler for Pen {
             st.out.push(LivePreview::Cancel { live: live_id });
         }
         clear_cursor(app, host, page);
+        crate::collab::wake(app, host);
     }
 }
 
