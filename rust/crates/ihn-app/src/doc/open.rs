@@ -231,6 +231,8 @@ struct Job {
     yields: Option<u32>,
     /// Animation frames still to wait before the document is shown ([`finish_foreign`]).
     frames: u32,
+    /// The import stored a clean source PDF ([`set_clean_source`]).
+    clean_source: bool,
 }
 
 /// This module's state, stored in `App::st`.
@@ -401,6 +403,9 @@ fn show(app: &mut App, host: &mut dyn Host) {
         shell::status(app, host, if can_edit { "PDF loaded" } else { "PDF loaded (View Only)" }, StatusOpts::from(Status::Info).preserve());
         shell::hide_loading(app, host);
         shell::signal(app, host, sig::OPENED, &id);
+        if app.st.doc_open.job.as_ref().is_some_and(|j| j.clean_source) {
+            crate::editor::pages::arm_clean_swap(app, host);
+        }
         app.st.doc_open.log.push((id, true));
         if notify != 0 {
             shell::deliver(app, host, notify, 0, 0, &[]);
@@ -593,6 +598,14 @@ pub fn finish_foreign(app: &mut App, host: &mut dyn Host, ok: bool) {
         }
     }
     loaded(app, host);
+}
+
+/// The import stored the clean source PDF its pages show (stripped of the overlays, or the attached original):
+/// 5.18.0 swaps its displayed document to it later ([`crate::editor::pages::arm_clean_swap`]).
+pub fn set_clean_source(app: &mut App) {
+    if let Some(j) = job(app) {
+        j.clean_source = true;
+    }
 }
 
 /// The frame yields 5.18.0's import of this download makes (`ihn_core::v5::import::Import::open_yields`).

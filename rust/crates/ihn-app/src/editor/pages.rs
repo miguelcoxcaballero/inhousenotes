@@ -48,6 +48,7 @@ const T_NEW_PAGE: u32 = tag(Mod::EditorPages, 7);
 const T_REPAINT: u32 = tag(Mod::EditorPages, 8);
 /// v5 PDF import: `setTimeout(() => scheduleVisiblePageUpdate(false), 80)` after the deferred `renderAllPages`.
 const T_OPEN_VISIBLE: u32 = tag(Mod::EditorPages, 30);
+const T_CLEAN_SWAP: u32 = tag(Mod::EditorPages, 31);
 
 /// v5: `SELECTION_ALLOWED_COLORS` (= `ink-palette.js`).
 pub const INK_PALETTE: [&str; 3] = ["#4D4D4D", "#002FD9", "#E81010"];
@@ -344,6 +345,7 @@ pub fn clear(app: &mut App, host: &mut dyn Host) {
     st.new_pages.clear();
     st.open_rendered = false;
     st.active_page = Id::NONE;
+    app.sched.clear(host.out(), T_CLEAN_SWAP);
     let urls = with_gfx(app, |_, g| {
         g.paths.clear(&mut g.cmds);
         for (_, _, img, _, _) in g.rasters.drain(..) {
@@ -398,6 +400,28 @@ pub fn rebuild_opened(app: &mut App, host: &mut dyn Host) {
 pub fn render_opened(app: &mut App, host: &mut dyn Host) {
     render_all(app, host, true);
     app.st.editor_pages.open_rendered = true;
+}
+
+/// v5: `importPDFData`'s deferred PDF maintenance (`scheduleDeferredPdfMaintenance`, 1.8 s after `hideLoading`,
+/// postponed by 0.7 s while a smooth interaction runs or within 1.8 s of user input), for an import whose clean
+/// source PDF exists (`doc::v5open`: stripped or attachment). 5.18.0 then swaps the displayed pdf.js document to
+/// it (`swapDisplayDocToCleanOriginal`): every page needs a redraw and a forced visible pass runs, which puts the
+/// previews of the drawn pages back under their canvases. v6 stored that source at the import; the pass remains.
+pub fn arm_clean_swap(app: &mut App, host: &mut dyn Host) { app.sched.timer(host.out(), T_CLEAN_SWAP, 1800.0); }
+
+fn clean_swap(app: &mut App, host: &mut dyn Host) {
+    if app.st.editor_pages.rows.is_empty() {
+        return;
+    }
+    let now = host.now();
+    if viewport::smooth(app) || app.sched.quiet_for(now) < 1800.0 {
+        app.sched.timer(host.out(), T_CLEAN_SWAP, 700.0);
+        return;
+    }
+    for r in app.st.editor_pages.rows.iter_mut() {
+        r.needs_redraw = true;
+    }
+    schedule_visible(app, host, true);
 }
 
 fn render_all(app: &mut App, host: &mut dyn Host, defer_visible: bool) {
@@ -1504,6 +1528,10 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
             if let Some(force) = app.st.editor_pages.visible_again.take() {
                 schedule_visible(app, host, force);
             }
+            0
+        }
+        Event::Timer(T_CLEAN_SWAP) => {
+            clean_swap(app, host);
             0
         }
         Event::Timer(T_OPEN_VISIBLE) => {

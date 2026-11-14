@@ -449,6 +449,9 @@ fn source_blob(app: &mut App, host: &mut dyn Host, obj: u32, size: f64) {
         let id = j.f.file.id.clone();
         log(app, &id, format!("source:{variant:?}"));
         session::put_asset(app, host, hash, obj, "application/pdf", size);
+        if app.st.doc_v5open.notify == 0 {
+            open::set_clean_source(app);
+        }
         return done(app, host);
     }
     // v5: the recovery order falls back to the attachment, then to the saved bytes.
