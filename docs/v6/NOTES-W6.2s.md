@@ -7,9 +7,10 @@
 | Baseline (`opt-level="s"`, fat LTO, cgu 1, `panic="abort"`, `strip`: already set) | 2,144,606 | 840,684 |
 | Cold `slice::sort*` call sites → `ihn_core::sort` (one non-generic merge sort) | 2,018,799 | 797,787 |
 | `[profile.release.package.ihn-app] opt-level = "z"` | 1,873,775 | 749,908 |
-| binaryen `wasm-opt -Os` in `scripts/build-wasm.mjs` | **1,641,154** | **721,359** |
+| binaryen `wasm-opt -Os` in `scripts/build-wasm.mjs` | 1,641,154 | 721,359 |
+| Sort helper without heap allocation up to 16 elements (final) | **1,646,831** | **723,729** |
 
-Total: −503 KB raw (−23 %), −119 KB gzip (−14 %). First-party JS unchanged at 120,398 bytes. The build is
+Total: −498 KB raw (−23 %), −117 KB gzip (−14 %). First-party JS unchanged at 120,398 bytes. The build is
 reproducible (same SHA-256 on rebuild). Behaviour is unchanged: sort helpers are stable and return exactly what the
 std sorts returned (unit test against std), wasm-opt is semantics-preserving, opt levels change codegen only.
 
@@ -60,7 +61,10 @@ migration, importer, export, test API) is ~1.7 MB of code even at `z` + wasm-opt
 ## Tests
 
 - `cargo test --workspace`: all green (165 + 135 + 49), including the new `sort::tests::matches_std_stable_sort`.
-- e2e 00, 02, 04, 12: green. 08: the three tests fail identically on `v6-int` without these changes
-  (`session.missing` is 2 after reopen, `08-save-reopen.spec.mjs:108`): pre-existing. 11: flaky under machine
-  load on both builds (a different one of (b)/(c)/(d) fails per run; all pass individually).
-- Quick parity, baseline v6 build (A) vs this build (B): see the report in the unit summary.
+- e2e 00, 02, 04, 12: green. 08: tests at :88 and :118 (and sometimes :138) fail identically on `v6-int` without
+  these changes (`session.missing` is 2 after reopen, `08-save-reopen.spec.mjs:108`): pre-existing. 11: flaky under
+  machine load on both builds (a different one of (b)/(c)/(d) fails per run, baseline included).
+- Quick parity with A = the `v6-int` build and B = this build (so any diff would be a regression): 375 pass, 11 fail,
+  6 errors. All fails are 2–76 px antialiasing noise at phone-360 that moves between states on reruns and also
+  appears with `--self` on the baseline alone; the errors are renderer crashes (`zoom-2/3`, both sides) and
+  `presence/popup` timing out on the A side. No reproducible difference.
