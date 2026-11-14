@@ -480,7 +480,7 @@ impl Relay {
 
     /// When the next write is due (`None`: nothing to write).
     fn due(&self, cx: &Core, r: &dyn Replica) -> Option<f64> {
-        let cap = self.wrote_at + WRITE_CAP_MS;
+        let cap = if self.wrote_at.is_finite() { self.wrote_at + WRITE_CAP_MS } else { cx.now };
         let keepalive = cx.flush == Flush::Keepalive;
         if self.want_left {
             return Some(cx.now);
@@ -507,16 +507,20 @@ impl Relay {
     fn start(&mut self, cx: &mut Core, r: &mut dyn Replica, left: bool) {
         let keepalive = cx.flush == Flush::Keepalive || left;
         let floor = archived(&cx.stored);
-        let Some(tail) = Self::own_batches(cx, r, &floor).or_else(|| {
-            let mut floor = floor.clone();
-            for (&a, &s) in &cx.stored.sealed {
-                let e = floor.entry(a).or_insert(0);
+        // Journal retention may have folded batches the newest export covers (§7.3): the tail then starts above the
+        // export (a reader below it takes the export), and in the worst case above the seal.
+        let raised = |by: Option<&VersionVector>, sealed: bool| {
+            let mut f = floor.clone();
+            for (a, s) in by.map(|vv| vv.iter().collect::<Vec<_>>()).unwrap_or_default().into_iter().chain(if sealed { cx.stored.sealed.iter().map(|(&a, &s)| (a, s)).collect() } else { Vec::new() }) {
+                let e = f.entry(a).or_insert(0);
                 *e = (*e).max(s);
             }
-            Self::own_batches(cx, r, &floor)
-        }) else {
-            return;
+            f
         };
+        let tail = Self::own_batches(cx, r, &floor)
+            .or_else(|| Self::own_batches(cx, r, &raised(cx.stored.export_vv(), false)))
+            .or_else(|| Self::own_batches(cx, r, &raised(None, true)));
+        let Some(tail) = tail else { return };
         // Archives an export covers are dropped from the header and deleted after the seal (§8.7).
         let (mut archives, mut drop_archives) = (Vec::new(), Vec::new());
         for a in cx.stored.archives.clone() {
@@ -617,13 +621,15 @@ impl Relay {
             };
             let w = self.w.as_mut().expect("write");
             (w.file_id, w.create) = (id, true);
-            for old in [Some(prev), own.as_ref().map(|o| o.file_id.clone())].into_iter().flatten() {
-                if !old.is_empty() && old != w.file_id && !self.to_delete.iter().any(|d| d.0 == old) {
-                    w.drop_archives.push(old);
-                }
-            }
         } else {
-            w.file_id = prev;
+            w.file_id = prev.clone();
+        }
+        // The previous epoch's file, and one a crash during a rotation left behind (still named by our record).
+        let w = self.w.as_mut().expect("write");
+        for old in [Some(prev), own.as_ref().map(|o| o.file_id.clone())].into_iter().flatten() {
+            if !old.is_empty() && old != w.file_id && !self.to_delete.iter().any(|d| d.0 == old) && !w.drop_archives.contains(&old) {
+                w.drop_archives.push(old);
+            }
         }
         let w = self.w.as_mut().expect("write");
         w.gen = cx.stored.relay_gen.max(own.map_or(0, |o| o.gen)) + 1;
@@ -813,9 +819,9 @@ impl Relay {
             if w.stage == WStage::Upload && (w.file_req.is_none() && !w.file_ok || w.rec_req.is_none() && !w.rec_ok) {
                 if cx.now >= self.retry_at && cx.online {
                     self.upload(cx);
-                } else {
+                } else if cx.online {
                     cx.wake(self.retry_at);
-                }
+                } // offline: `online` resumes (§8.5 "Fail")
             }
             return;
         }

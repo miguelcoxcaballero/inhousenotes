@@ -17,6 +17,12 @@ const VIC: &str = "vic@example.org";
 
 fn all() -> Vec<Box<dyn Part>> { crate::parts() }
 
+thread_local! {
+    /// Export builds served per device.
+    static BUILDS: std::cell::RefCell<BTreeMap<usize, u32>> = Default::default();
+}
+fn builds(d: usize) -> u32 { BUILDS.with(|b| b.borrow().get(&d).copied().unwrap_or(0)) }
+
 // ------------------------------------------------------------------------------------------------ codecs
 
 fn rand_file(rng: &mut Rng) -> RelayFile {
@@ -119,6 +125,7 @@ fn serve(sim: &mut Sim) {
         let mut touched = false;
         if let (Some(job), None) = (desk.build, &desk.built) {
             desk.built = Some((job, Some(([b"IHN6:".to_vec(), rep.snapshot().0].concat(), rep.doc.vv.clone()))));
+            BUILDS.with(|b| *b.borrow_mut().entry(d).or_default() += 1);
             touched = true;
         }
         if let (Some((job, _, _, bytes)), None) = (&desk.merge, &desk.merged) {
@@ -160,10 +167,11 @@ fn serve(sim: &mut Sim) {
 }
 
 /// Runs `ms` in 10 ms steps, serving the desks.
-fn go(sim: &mut Sim, ms: f64) {
+fn go(sim: &mut Sim, ms: f64) { go_by(sim, ms, 10.0) }
+fn go_by(sim: &mut Sim, ms: f64, step: f64) {
     let end = sim.now + ms;
     while sim.now < end {
-        sim.run(10.0f64.min(end - sim.now));
+        sim.run(step.min(end - sim.now));
         serve(sim);
     }
 }
@@ -317,4 +325,325 @@ fn viewer_receives_everything_and_writes_nothing() {
     assert!(!sim.devs[v].effects.iter().any(|e| matches!(e, SyncEffect::Rtc(_) | SyncEffect::Send { to: Dest::Peer(_), .. })));
     assert!(sim.drive.files[&doc].props.keys().all(|k| *k != record_key(sim.devs[v].inst)));
     assert!(sim.devs[v].replica.received.iter().any(|r| matches!(r, PeerRef::Relay(_))));
+}
+
+fn edits(sim: &mut Sim, d: usize, n: usize, every: f64) -> Vec<EncodedBatch> {
+    (0..n)
+        .map(|_| {
+            let b = sim.edit(d);
+            go(sim, every);
+            b
+        })
+        .collect()
+}
+
+#[test]
+fn offline_three_days_catches_up_through_export_and_tails() {
+    let (mut sim, doc, d) = world(24, &[ANN, BOB, EVE], false);
+    let (a, b, c) = (d[0], d[1], d[2]);
+    meet(&mut sim, &doc, &[a, b, c]);
+    sim.set_online(c, false);
+    let offline: Vec<_> = (0..5).map(|_| sim.edit(c)).collect();
+    // A writes far more than one 48 KiB tail: archives rotate out (each rotation is a new epoch).
+    edits(&mut sim, a, 400, 150.0);
+    edits(&mut sim, b, 20, 300.0);
+    assert!(until(&mut sim, 60_000.0, |s| s.converged(&[a, b])));
+    let archives = sim.drive.files.values().filter(|f| f.app.get("ihn6Kind").map(String::as_str) == Some("archive")).count();
+    assert!(archives >= 1 && !sim.devs[a].stored.archives.is_empty(), "no archive rotation");
+    // Idle: the scribe exports; the export covers the archives, which are then deleted.
+    assert!(until(&mut sim, 200_000.0, |s| !s.drive.files.values().any(|f| f.app.get("ihn6Kind").map(String::as_str) == Some("archive"))));
+    assert!(sim.devs[a].stored.archives.is_empty());
+    let deleted = sim.drive.log.iter().filter(|l| l.dev == a && l.kind == "delete" && l.status == 204).count();
+    assert!(deleted >= archives);
+    // Three days later C comes back: its own batches were durable locally all along.
+    // The others close the document (Home); three days later C comes back with its offline batches.
+    for x in [a, b] {
+        sim.io(x, SyncIo::Lifecycle(Lifecycle::Leave));
+    }
+    assert!(until(&mut sim, 40_000.0, |s| s.phase(a) == Phase::Closed && s.phase(b) == Phase::Closed));
+    go_by(&mut sim, 3.0 * 86_400_000.0, 60_000.0);
+    sim.set_online(c, true);
+    assert!(until(&mut sim, 60_000.0, |s| [a, b].iter().all(|&x| s.devs[c].replica.doc.vv.covers(&s.devs[x].replica.doc.vv)) && s.sync(c).status().unsealed_local == 0), "catch-up failed");
+    assert!(sim.devs[c].replica.received.contains(&PeerRef::Export), "the gap needed the export");
+    // A opens again: C's offline batches come from C's relay file.
+    sim.open(a, &doc);
+    sim.open(b, &doc);
+    assert!(until(&mut sim, 60_000.0, |s| s.converged(&[a, b, c])));
+    for x in &offline {
+        assert!(has(&sim, a, x) && has(&sim, b, x));
+    }
+    assert_eq!(sim.sync(c).status().unsealed_local, 0);
+}
+
+#[test]
+fn demoted_editor_is_dropped_and_its_unsealed_writes_never_apply() {
+    let (mut sim, doc, d) = world(25, &[ANN, BOB], true);
+    let (a, b) = (d[0], d[1]);
+    meet(&mut sim, &doc, &[a, b]);
+    assert!(until(&mut sim, 60_000.0, |s| s.core(a).open_peers() == [s.devs[b].inst]), "P2P never opened");
+    let ib = sim.devs[b].inst;
+    sim.drive.share(&doc, BOB, false);
+    assert!(until(&mut sim, 25_000.0, |s| s.phase(b) == Phase::Live(Mode::Viewer)));
+    // B (stale or hostile) keeps editing and rewrites its own relay file without a seal: never applied.
+    let file = record(&sim, &doc, b).unwrap().file_id;
+    let late: Vec<_> = (0..3).map(|_| sim.edit(b)).collect();
+    let forged = RelayFile { doc_id: doc.clone(), inst: ib, gen: 999, batches: late.clone(), ranges: ranges_of(&late), ..Default::default() };
+    let req = HttpReq::Update { file: file.clone(), bytes: wrap(false, false, &forged.payload()), keepalive: false };
+    assert_eq!(sim.drive.request(b, BOB, &req, sim.now).0, 200);
+    go(&mut sim, 60_000.0);
+    assert!(late.iter().all(|x| !has(&sim, a, x)));
+    assert!(sim.drive.log.iter().filter(|l| l.dev == b && l.at > sim.now - T0 - 50_000.0).all(|l| matches!(l.kind, "meta" | "media")));
+    // A drops the channel within 10 minutes of B's last record change.
+    assert!(until(&mut sim, 660_000.0, |s| !s.core(a).open_peers().contains(&ib)));
+    assert!(late.iter().all(|x| !has(&sim, a, x)));
+}
+
+#[test]
+fn removed_reader_epochs_rotate_and_old_files_go() {
+    let (mut sim, doc, d) = world(26, &[ANN, BOB], false);
+    sim.drive.share(&doc, VIC, false);
+    let (a, b) = (d[0], d[1]);
+    meet(&mut sim, &doc, &[a, b]);
+    go(&mut sim, 5_000.0);
+    let before = [record(&sim, &doc, a).unwrap().file_id, record(&sim, &doc, b).unwrap().file_id];
+    sim.drive.unshare(&doc, VIC);
+    go(&mut sim, 2_000.0);
+    sim.edit(a);
+    sim.edit(b);
+    assert!(until(&mut sim, 30_000.0, |s| s.converged(&[a, b]) && [a, b].iter().zip(&before).all(|(&x, old)| record(s, &doc, x).is_some_and(|r| r.file_id != *old))));
+    go(&mut sim, 12_000.0);
+    for old in &before {
+        assert!(!sim.drive.files.contains_key(old), "old epoch file {old} still exists");
+    }
+    // New content only in the new epoch's files.
+    let x = sim.edit(a);
+    assert!(until(&mut sim, 10_000.0, |s| has(s, b, &x)));
+}
+
+#[test]
+fn copied_document_never_applies_the_originals_relays() {
+    let (mut sim, doc, d) = world(27, &[ANN, BOB], false);
+    let (a, b) = (d[0], d[1]);
+    meet(&mut sim, &doc, &[a, b]);
+    edits(&mut sim, a, 3, 500.0);
+    go(&mut sim, 5_000.0);
+    let copy = sim.drive.copy(&doc, EVE);
+    assert_eq!(sim.drive.files[&copy].props.len(), 2);
+    let e = sim.add_dev(EVE, 0x7000, 0.0, all);
+    sim.open(e, &copy);
+    go(&mut sim, 15_000.0);
+    assert!(!sim.devs[e].replica.received.iter().any(|r| matches!(r, PeerRef::Relay(_))));
+    sim.edit(e);
+    let ok = until(&mut sim, 30_000.0, |s| s.drive.files[&copy].props.keys().cloned().collect::<Vec<_>>() == [record_key(s.devs[e].inst)]);
+    assert!(ok, "{:?} {:?}", sim.drive.files[&copy].props, sim.drive.log.iter().filter(|l| l.dev == e).collect::<Vec<_>>());
+    assert!(!sim.devs[e].replica.received.iter().any(|r| matches!(r, PeerRef::Relay(_))));
+    // The original is untouched.
+    assert_eq!(sim.drive.files[&doc].props.len(), 2);
+}
+
+#[test]
+fn one_scribe_exports_etag_churn_needs_no_rebuild_and_descriptors_prevent_downloads() {
+    let (mut sim, doc, d) = world(28, &[ANN, BOB, EVE], false);
+    let (a, b, c) = (d[0], d[1], d[2]);
+    meet(&mut sim, &doc, &[a, b, c]);
+    go(&mut sim, 30_000.0);
+    let t = sim.now - T0;
+    let (ba, bb, bc) = (builds(a), builds(b), builds(c));
+    for round in 0..4 {
+        for &x in &[a, b, c] {
+            edits(&mut sim, x, 3, 400.0);
+        }
+        // The next export's first PUT meets a moved etag (another device's record write): same head ⇒ the same
+        // bytes again at once.
+        if round == 1 {
+            sim.drive.inject(|r| matches!(r, HttpReq::Put { .. }), 412, "conditionNotMet", 1);
+        }
+        go(&mut sim, 75_000.0);
+    }
+    let puts = sim.drive.log.iter().filter(|l| l.at >= t && l.kind == "put" && l.status == 200).count();
+    assert!(puts >= 3, "{puts} exports");
+    assert!(sim.drive.log.iter().filter(|l| l.at >= t && l.kind == "put").all(|l| l.dev == a), "only the scribe exports");
+    assert!(sim.drive.log.iter().any(|l| l.at >= t && l.kind == "put" && l.status == 412));
+    assert_eq!(builds(a) - ba, puts as u32, "a 412 with an unchanged head never rebuilds");
+    assert_eq!((builds(b), builds(c)), (bb, bc));
+    let downloads = sim.drive.log.iter().filter(|l| l.at >= t && l.kind == "media" && l.file == doc).count();
+    assert_eq!(downloads, 0, "the export descriptor arrives before anyone downloads");
+    assert!(sim.converged(&[a, b, c]));
+}
+
+#[test]
+fn forced_export_by_a_non_scribe_while_the_scribe_writes() {
+    let (mut sim, doc, d) = world(29, &[ANN, BOB], false);
+    let (a, b) = (d[0], d[1]);
+    meet(&mut sim, &doc, &[a, b]);
+    edits(&mut sim, a, 10, 500.0);
+    let t = sim.now - T0;
+    let bb = builds(b);
+    sim.sync(b).core.export.force = true;
+    sim.tick(b);
+    let mut done = false;
+    for _ in 0..20 {
+        sim.edit(a);
+        go(&mut sim, 500.0);
+        done |= sim.core(b).export.done.is_some();
+    }
+    assert!(done, "the forced export did not finish");
+    assert_eq!(builds(b) - bb, 1, "one loop");
+    assert_eq!(sim.drive.log.iter().filter(|l| l.dev == b && l.at >= t && l.kind == "put" && l.status == 200).count(), 1);
+    assert_eq!(sim.drive.count(a, "put", t, f64::MAX), 0, "the scribe never was idle");
+    assert!(!sim.core(b).export.force);
+}
+
+#[test]
+fn rename_outside_the_editor_wins_and_is_never_reverted() {
+    let (mut sim, doc, d) = world(30, &[ANN, BOB], false);
+    let (a, b) = (d[0], d[1]);
+    meet(&mut sim, &doc, &[a, b]);
+    let f = sim.drive.files.get_mut(&doc).unwrap();
+    f.name = "Renamed on Home".into();
+    f.etag += 1;
+    assert!(until(&mut sim, 30_000.0, |s| [a, b].iter().all(|&x| s.devs[x].replica.doc.name.v == "Renamed on Home")));
+    assert!(until(&mut sim, 30_000.0, |s| s.converged(&[a, b])));
+    go(&mut sim, 90_000.0);
+    assert!(sim.drive.count(a, "put", 0.0, f64::MAX) >= 1);
+    assert_eq!(sim.drive.files[&doc].name, "Renamed on Home");
+    for x in [a, b] {
+        let (v, at) = sim.devs[x].stored.drive_name.clone().unwrap();
+        assert_eq!(v, "Renamed on Home");
+        assert!(!push_name(&sim.devs[x].replica.doc.name.v, sim.devs[x].replica.doc.name.at, &Some((v, at))));
+    }
+}
+
+#[test]
+fn a_5x_save_after_the_export_is_imported_merged_and_exported() {
+    let (mut sim, doc, d) = world(31, &[ANN], false);
+    let a = d[0];
+    sim.open(a, &doc);
+    edits(&mut sim, a, 5, 300.0);
+    assert!(until(&mut sim, 60_000.0, |s| s.drive.files[&doc].bytes.starts_with(b"IHN6:")));
+    // A 5.x device saves its own revision over the export.
+    let mut old = SimReplica::new(&doc, ActorId::import("rev-5x"));
+    let v5 = old.edit(sim.now as u64, &mut Rng::new(3));
+    let f = sim.drive.files.get_mut(&doc).unwrap();
+    (f.bytes, f.head, f.etag) = ([b"STROKES_".to_vec(), v5.0.clone()].concat(), f.head + 1, f.etag + 1);
+    let head5 = f.head_id();
+    assert!(until(&mut sim, 60_000.0, |s| has(s, a, &v5)), "5.x revision not imported");
+    assert!(until(&mut sim, 90_000.0, |s| s.drive.files[&doc].head_id() != head5 && s.drive.files[&doc].bytes.starts_with(b"IHN6:")));
+    let exported = EncodedSnapshot(sim.drive.files[&doc].bytes[5..].to_vec()).decode().unwrap();
+    assert!(exported.vv.covers(&sim.devs[a].replica.doc.vv));
+    assert_eq!(exported.vv.get(ActorId::import("rev-5x")), 1);
+    assert_eq!(exported.items.len(), 6, "nothing overwritten");
+}
+
+#[test]
+fn throttled_record_writes_back_off_lose_nothing_and_recover() {
+    let (mut sim, doc, d) = world(32, &[ANN, BOB], false);
+    let (a, b) = (d[0], d[1]);
+    meet(&mut sim, &doc, &[a, b]);
+    sim.drive.rate_limit = Some((1, 3000.0));
+    let mut sent = Vec::new();
+    for i in 0..40 {
+        sent.push(sim.edit([a, b][i % 2]));
+        go(&mut sim, 700.0);
+    }
+    assert!(sim.drive.log.iter().any(|l| l.kind == "props" && l.status == 403));
+    sim.drive.rate_limit = None;
+    assert!(until(&mut sim, 60_000.0, |s| s.converged(&[a, b])));
+    assert!(sent.iter().all(|x| has(&sim, a, x) && has(&sim, b, x)));
+    go(&mut sim, 5_000.0);
+    let mut lat = Vec::new();
+    for _ in 0..10 {
+        let x = sim.edit(a);
+        let t = sim.now;
+        assert!(until(&mut sim, 20_000.0, |s| has(s, b, &x)));
+        lat.push(sim.now - t);
+        go(&mut sim, 1500.0);
+    }
+    assert!(p95(lat.clone()) < 4000.0, "{lat:?}");
+    assert!(record(&sim, &doc, a).is_some() && sim.phase(a) != Phase::Live(Mode::Viewer), "a rate limit is not a demotion");
+}
+
+fn own_gens(sim: &Sim, d: usize) -> Vec<(u64, String)> {
+    let key = record_key(sim.devs[d].inst);
+    sim.devs[d]
+        .effects
+        .iter()
+        .filter_map(|e| match e {
+            SyncEffect::Http { req: HttpReq::Props { set, .. }, .. } => set.iter().find(|(k, _)| *k == key).and_then(|(_, v)| Record::parse(v.as_deref()?)),
+            _ => None,
+        })
+        .map(|r| (r.gen, r.d16))
+        .collect()
+}
+
+#[test]
+fn crash_points_lose_nothing_and_never_reuse_a_gen() {
+    let (mut sim, doc, d) = world(33, &[ANN, BOB], false);
+    let (a, b) = (d[0], d[1]);
+    meet(&mut sim, &doc, &[a, b]);
+    let mut sent = Vec::new();
+    // 1. Committed locally, crashed before sync saw it: the restart's writer finds it in the journal.
+    let wall = sim.local(a) as u64;
+    let rng = &mut Rng::new(9);
+    sent.push(sim.devs[a].replica.edit(wall, rng));
+    sim.crash(a);
+    sim.open(a, &doc);
+    assert!(until(&mut sim, 30_000.0, |s| has(s, b, &sent[0])));
+    // 2. After the gen was persisted, before the upload.
+    sim.crash_on(a, |e| matches!(e, SyncEffect::Persist(SyncRecord::RelayPlan { .. })), true);
+    sent.push(sim.edit(a));
+    assert!(until(&mut sim, 30_000.0, |s| s.devs[a].sync.is_none()));
+    sim.open(a, &doc);
+    // 3. After the upload left, before the seal was persisted.
+    sim.crash_on(a, |e| matches!(e, SyncEffect::Http { req: HttpReq::Props { .. }, .. }), true);
+    sent.push(sim.edit(a));
+    assert!(until(&mut sim, 30_000.0, |s| s.devs[a].sync.is_none()));
+    go(&mut sim, 2000.0);
+    sim.open(a, &doc);
+    // 4. During an epoch rotation (the permissions changed): the new file's create left, nothing else.
+    go(&mut sim, 5000.0);
+    sim.drive.share(&doc, VIC, false);
+    go(&mut sim, 2000.0);
+    sim.crash_on(a, |e| matches!(e, SyncEffect::Http { req: HttpReq::Create { .. }, .. }), true);
+    sent.push(sim.edit(a));
+    assert!(until(&mut sim, 30_000.0, |s| s.devs[a].sync.is_none()));
+    sim.open(a, &doc);
+    sent.extend(edits(&mut sim, a, 3, 800.0));
+    assert!(until(&mut sim, 60_000.0, |s| s.converged(&[a, b])));
+    assert!(sent.iter().all(|x| has(&sim, b, x)), "a batch was lost");
+    let gens = own_gens(&sim, a);
+    assert!(gens.windows(2).all(|w| w[0].0 < w[1].0 || w[0] == w[1]), "gen reused: {gens:?}");
+    assert_eq!(sim.devs[b].replica.doc.items.len(), sim.devs[a].replica.doc.items.len());
+    assert_eq!(sim.sync(a).status().unsealed_local, 0);
+    // The epoch left behind by crash 4 is cleaned up once the next write seals.
+    go(&mut sim, 15_000.0);
+    let relay_files = sim.drive.files.values().filter(|f| f.owner == ANN && f.app.get("ihn6Kind").map(String::as_str) == Some("relay")).count();
+    assert_eq!(relay_files, 1);
+}
+
+#[test]
+fn degraded_storage_seals_from_memory_and_a_reload_loses_nothing() {
+    let (mut sim, doc, d) = world(34, &[ANN, BOB], false);
+    let (a, b) = (d[0], d[1]);
+    meet(&mut sim, &doc, &[a, b]);
+    let sent = edits(&mut sim, a, 5, 400.0);
+    assert!(sim.sync(a).status().unsealed_local > 0 || sim.devs[a].stored.relay_pending);
+    assert!(until(&mut sim, 30_000.0, |s| s.sync(a).status().unsealed_local == 0));
+    let state = sim.devs[a].replica.state();
+    let gen = record(&sim, &doc, a).unwrap().gen;
+    // Reload without IndexedDB: nothing persisted, the journal was in memory only.
+    sim.crash(a);
+    let actor = sim.devs[a].replica.author.actor;
+    sim.devs[a].stored = Stored { created: true, ..Default::default() };
+    sim.devs[a].replica = SimReplica::new(&doc, actor);
+    sim.open(a, &doc);
+    assert!(until(&mut sim, 30_000.0, |s| s.devs[a].replica.state() == state), "own sealed batches not recovered");
+    assert!(sim.devs[a].stored.relay_gen >= gen);
+    // The session resumes the author above what it recovered (W3.1's job; done by hand here).
+    let seq = sim.devs[a].replica.doc.vv.get(actor);
+    sim.devs[a].replica.author = ihn_core::doc::Author::new(ihn_core::id::IdGen::new(actor, 1 << 20), seq);
+    let more = edits(&mut sim, a, 3, 500.0);
+    assert!(until(&mut sim, 30_000.0, |s| s.converged(&[a, b])));
+    assert!(sent.iter().chain(&more).all(|x| has(&sim, b, x)));
+    assert!(record(&sim, &doc, a).unwrap().gen > gen, "a gen was reused");
 }
