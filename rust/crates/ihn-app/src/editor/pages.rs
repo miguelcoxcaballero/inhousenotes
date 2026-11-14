@@ -1269,67 +1269,67 @@ fn schedule_previews(app: &mut App, host: &mut dyn Host, ms: f64) {
     app.sched.timer(host.out(), T_PREVIEW, ms);
 }
 
-/// v5: `processScrollPagePreview()`: one page at a time; waits while the viewport is interacting.
+/// v5: `processScrollPagePreview()`: one page at a time; waits while the viewport is interacting. A page whose
+/// images are decoded is drawn and encoded in the task that picks it, as 5.18.0 does (its only yields are an image
+/// decode and a stroke slice past 3 ms): no frame can run between the start of a preview and its result.
 fn preview_step(app: &mut App, host: &mut dyn Host) {
     app.st.editor_pages.preview_armed = false;
     if viewport::interacting(app, host.now()) {
         schedule_previews(app, host, 240.0);
         return;
     }
-    if let Some(mut job) = app.st.editor_pages.preview_job.take() {
-        let id = job.page;
-        if row(app, id).is_none_or(|r| r.gen != job.gen) {
-            with_gfx(app, |_, g| job.sp.cancel(&mut g.cmds));
-            flush(app, host);
-            schedule_previews(app, host, 16.0);
-            return;
+    if app.st.editor_pages.preview_job.is_none() {
+        let st = &mut app.st.editor_pages;
+        let Some(at) = st.previews.iter().enumerate().min_by_key(|(_, p)| p.1).map(|(i, _)| i) else { return };
+        let (id, _) = st.previews.remove(at);
+        let Some(r) = row(app, id) else { return schedule_previews(app, host, 16.0) };
+        if r.preview.is_some() && !r.preview_dirty {
+            return schedule_previews(app, host, 16.0);
         }
-        if !job.background_done {
-            // Every image of the page (and a photo background) must be decoded first.
-            let waiting = images_pending(app, id);
-            if waiting {
-                app.st.editor_pages.preview_job = Some(job);
-                schedule_previews(app, host, 50.0);
-                return;
-            }
-            with_view(app, id, |g, view| job.sp.background(&mut g.cmds, &mut g.tpl, &mut g.paths, view));
-            job.background_done = true;
-        }
-        let started = host.now();
-        let done = loop {
-            let done = with_view(app, id, |g, view| job.sp.strokes(&mut g.cmds, &mut g.paths, view, PREVIEW_SLICE)).unwrap_or(true);
-            if done {
-                break true;
-            }
-            flush(app, host);
-            host.flush(); // drawn now, so the clock sees its cost (5.18.0 checks after every stroke)
-            if host.now() - started > PREVIEW_SLICE_MS {
-                break false;
-            }
-        };
-        if done {
-            let req = app.req(Mod::EditorPages);
-            app.st.editor_pages.preview_reqs.push((req, id, job.gen));
-            with_gfx(app, |_, g| job.sp.finish(&mut g.cmds, req));
-        } else {
-            app.st.editor_pages.preview_job = Some(job);
-        }
+        let (w, h, gen) = (r.w, r.h, r.gen);
+        let sp = with_gfx(app, |_, g| ScrollPreview::begin(&mut g.cmds, w, h));
+        app.st.editor_pages.preview_job = Some(PreviewJob { page: id, gen, sp, background_done: false });
+    }
+    let Some(mut job) = app.st.editor_pages.preview_job.take() else { return };
+    let id = job.page;
+    if row(app, id).is_none_or(|r| r.gen != job.gen) {
+        with_gfx(app, |_, g| job.sp.cancel(&mut g.cmds));
         flush(app, host);
-        schedule_previews(app, host, if done { 16.0 } else { 0.0 });
+        schedule_previews(app, host, 16.0);
         return;
     }
-    let st = &mut app.st.editor_pages;
-    let Some(at) = st.previews.iter().enumerate().min_by_key(|(_, p)| p.1).map(|(i, _)| i) else { return };
-    let (id, _) = st.previews.remove(at);
-    let Some(r) = row(app, id) else { return schedule_previews(app, host, 16.0) };
-    if r.preview.is_some() && !r.preview_dirty {
-        return schedule_previews(app, host, 16.0);
+    if !job.background_done {
+        // Every image of the page (and a photo background) must be decoded first.
+        if images_pending(app, id) {
+            app.st.editor_pages.preview_job = Some(job);
+            flush(app, host);
+            schedule_previews(app, host, 50.0);
+            return;
+        }
+        with_view(app, id, |g, view| job.sp.background(&mut g.cmds, &mut g.tpl, &mut g.paths, view));
+        job.background_done = true;
     }
-    let (w, h, gen) = (r.w, r.h, r.gen);
-    let sp = with_gfx(app, |_, g| ScrollPreview::begin(&mut g.cmds, w, h));
-    app.st.editor_pages.preview_job = Some(PreviewJob { page: id, gen, sp, background_done: false });
+    let started = host.now();
+    let done = loop {
+        let done = with_view(app, id, |g, view| job.sp.strokes(&mut g.cmds, &mut g.paths, view, PREVIEW_SLICE)).unwrap_or(true);
+        if done {
+            break true;
+        }
+        flush(app, host);
+        host.flush(); // drawn now, so the clock sees its cost (5.18.0 checks after every stroke)
+        if host.now() - started > PREVIEW_SLICE_MS {
+            break false;
+        }
+    };
+    if done {
+        let req = app.req(Mod::EditorPages);
+        app.st.editor_pages.preview_reqs.push((req, id, job.gen));
+        with_gfx(app, |_, g| job.sp.finish(&mut g.cmds, req));
+    } else {
+        app.st.editor_pages.preview_job = Some(job);
+    }
     flush(app, host);
-    schedule_previews(app, host, 0.0);
+    schedule_previews(app, host, if done { 16.0 } else { 0.0 });
 }
 
 fn images_pending(app: &mut App, id: Id) -> bool {
