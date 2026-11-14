@@ -217,8 +217,10 @@ fn finish_title(app: &mut App, host: &mut dyn Host, commit: bool, text: &str) {
     }
     if next != original {
         session::edit(app, host, |tx| tx.set_name(&next));
-        let created = session::get(app).is_none_or(|s| s.record.flags.created || s.account.is_empty());
-        if created {
+        // Only a document already in Drive is PATCHed (5.18.0 `renameDriveFile` needs `driveFileId`); one created on
+        // this device and not in Drive yet carries the new name in its create.
+        let local = session::get(app).is_none_or(|s| !s.record.flags.created || s.account.is_empty());
+        if local {
             if let Some(s) = session::get_mut(app) {
                 s.record.name = format!("{next}.pdf");
             }
@@ -232,9 +234,8 @@ fn finish_title(app: &mut App, host: &mut dyn Host, commit: bool, text: &str) {
             };
             app.st.editor_view.rename_req = client::request(app, host, Mod::EditorView, req);
             // The logical name changes at once; the Drive name follows the answer.
-            if let Some(s) = session::get_mut(app) {
-                s.record.name = format!("{next}.pdf");
-            }
+            let actor = session::get(app).and_then(|s| s.author.as_ref()).map_or(ihn_core::id::ActorId(0), |a| a.actor);
+            crate::export::upload::pushed_name(app, host, format!("{next}.pdf"), actor);
         }
     }
     update_title(app, host);

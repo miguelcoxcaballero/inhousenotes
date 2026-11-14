@@ -46,6 +46,9 @@ async function openDoc(page, id, { edit = true, app = false } = {}) {
 }
 
 async function stroke(page, points) {
+  // The page must be on screen and drawn before the pen lands (a contact on a page still loading is not ink).
+  await expect.poll(async () => (await cmd(page, 'editor.pages.state')).rows[0]?.drawn === true, { timeout: 15_000 }).toBe(true);
+  const live = (await session(page)).live;
   const cdp = await page.context().newCDPSession(page);
   const box = await page.locator('canvas.page-canvas[data-page="0"]').boundingBox();
   const at = p => [box.x + p[0] * box.width / 794, box.y + p[1] * box.height / 1123];
@@ -54,6 +57,7 @@ async function stroke(page, points) {
   for (const p of points.slice(1)) await send('mouseMoved', p, 1);
   await send('mouseReleased', points.at(-1), 0);
   await cdp.detach();
+  await expect.poll(async () => (await session(page)).live).toBe(live + 1);
 }
 const line = (x, y, n = 8) => Array.from({ length: n }, (_, i) => [x + i * 14, y + (i % 2) * 7]);
 const revisions = (mock, id) => mock.drive.file(id).revisions.length;
@@ -183,7 +187,7 @@ test('export to the user: web download, Android bridge v2 and navigator.share', 
   // Web: the modal prefills the name; the confirmed name is sanitized; the head revision is downloaded as is.
   const A = await device(browser, mock);
   await openDoc(A.page, id);
-  await stroke(A.page, line(120, 700));
+  await stroke(A.page, line(120, 600));
   // The button lives in the pages panel (its own unit); its click is what matters here.
   await A.page.locator('#btn-export-pdf').dispatchEvent('click');
   await expect(A.page.locator('#modal-export-pdf')).toHaveClass(/visible/);

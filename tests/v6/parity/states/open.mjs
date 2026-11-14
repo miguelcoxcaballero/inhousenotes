@@ -47,8 +47,13 @@ parity('open/viewer-banner', {}, async t => {
   await t.open({ account: BEN, scene: 'template', sceneOptions: { permissions: [{ type: 'user', role: 'reader', emailAddress: BEN }] } });
 });
 
-// Drive refuses the document: back on Home with `Could not open this document. Try again.`
-parity('open/failed', { drive: mock => mock.inject({ host: 'www.googleapis.com', path: /\/drive\/v3\/files\/scene-/, times: Infinity, status: 404, reason: 'notFound' }) }, async t => {
+// Drive refuses the document: back on Home with `Could not open this document. Try again.` Drive answers for the
+// document only after Home's lists arrived (the order of a real network, where both apps end on the error): under the
+// harness every answer lands at the same fake millisecond, and the line would show whichever flow needs fewer
+// storage round trips (5.18.0: its open; v6: the lists).
+parity('open/failed', { drive: mock => mock.inject({ host: 'www.googleapis.com', path: /\/drive\/v3\/files\/scene-/, times: Infinity, status: 404, reason: 'notFound', hold: true }) }, async t => {
   await t.open({ account: ANA, scene: 'template' });
+  for (const rule of t.mock.rules) rule.hold = false;
+  t.mock.release();
   await t.advance(1000);
 });
