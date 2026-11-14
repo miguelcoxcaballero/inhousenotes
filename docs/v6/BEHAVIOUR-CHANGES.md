@@ -120,3 +120,24 @@ Notes" folder lookup matches a folder of that name anywhere in Drive; Import PDF
 
 Approval checklist for release: the user approves §2, §3 (including §3.1) and any §5 changes; W6.1's parity report
 lists every state that differs and the id that explains it.
+
+## 6. N-2 — exact strings of the save indicator and the save-details popup (appended by W3.1)
+
+Source: `rust/crates/ihn-app/src/doc/save_state.rs` (`derive`, `present`); 5.18.0: `getSavePresentation`,
+`renderSaveDebugPopup`. Markup, class names, row order (`This device`, `Google Drive`) and every string not listed
+here are 5.18.0's. "Unsynced" = own batches not sealed in the relay, or the document not created in Drive yet.
+
+| Where | 5.18.0 | 6.0.0 |
+|---|---|---|
+| Indicator class | `building` never set by `getSavePresentation` (phases: error, saving, uploading, syncing, paused, saved) | `building` while this device builds an export |
+| Indicator title, phase `uploading` | `Saving to Google Drive` (upload) / `Checking Google Drive` (verifying) / `Preparing Drive copy` (other) | `Saving to Google Drive` (relay write with own batches, export upload) / `Checking Google Drive` (export `Checking`) / `Preparing Drive copy` (export `Merging`, `Preserving`; also the title of phase `building`) |
+| Short label, phase `building` | — | `Syncing` (as `uploading`) |
+| `Google Drive` row, an export running | outbox: `Checking Drive` / `Preparing` / `Merging changes` / `Uploading`, else `Syncing`; live save: `Uploading` / `Checking Drive` / `Preparing` | export phase: `Checking Drive` / `Preparing` / `Merging changes` / `Uploading`, and **new** `Keeping both versions` (export `Preserving`; 5.18.0 showed `Syncing` for that outbox phase) |
+| `Google Drive` row, relay write in flight with own batches | — | `Uploading` |
+| `Google Drive` row, unsynced, nothing running | `Waiting`, or `Retrying` / `Upload failed` while `driveSavePhase === 'retrying'` | `Waiting`, or `Upload failed` when the last relay write or export failed (`Retrying` is gone: retries are the engine's) |
+| `Google Drive` row `Strokes saved` | ink journal acknowledged while the PDF upload is pending | everything sealed in the relay while an export is still pending (ARCHITECTURE §6.6) |
+| `Google Drive` row `Needs attention` | `driveSaveBlockedReason` (pages that could not be recovered) | not shown (that failure mode does not exist; a failed export is `Upload failed`) |
+| Notice line | local error: `Keep this document open and retry.`; blocked: `Some pages could not be recovered. Keep this document open.`; else the outbox error text | local error (also degraded storage, N-6): `Keep this document open and retry.`; else the detail of the last sync error while unsynced |
+| Button | `Retry save` / `Save now` / `Reconnect Drive`; `Save now` runs `queueSave` then the outbox upload | same labels; `Save now` / `Retry save` ask the sync binding for an immediate relay flush (`save_state::SIG_SAVE_NOW`) |
+| Popup detail sentences (`driveDetail`, `localDetail`, `detail`) | computed, never rendered by `renderSaveDebugPopup` | not computed |
+| `#save-timestamp` | `Last saved <t>` title, element `hidden` and `display: none` | not written (never visible) |
