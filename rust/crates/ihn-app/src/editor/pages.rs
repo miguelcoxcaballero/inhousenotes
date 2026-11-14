@@ -538,6 +538,11 @@ fn clear_preview(app: &mut App, host: &mut dyn Host, id: Id) {
     }
 }
 
+/// W5.3 (timeline preview): the decoded image of an asset (its decode starts on the first call), and the decoded
+/// pdf.js raster of page `id`.
+pub fn image_of(app: &mut App, hash: Hash) -> Option<Img> { picture(app, hash) }
+pub fn pdf_raster_of(app: &App, id: Id) -> Option<Img> { raster(app, id).filter(|r| r.2).map(|r| r.1) }
+
 /// Whether the editor holds a pdf.js raster for page `id` (`doc::backgrounds`).
 pub fn has_pdf_raster(app: &App, id: Id) -> bool { raster(app, id).is_some() }
 
@@ -626,6 +631,27 @@ fn decoded_images(app: &mut App, id: Id) -> Vec<(Hash, Img)> {
         }).collect()
     });
     hashes.into_iter().filter_map(|h| picture(app, h).map(|img| (h, img))).collect()
+}
+
+/// v5: `state.activePageIndex`.
+pub fn active_index(app: &App) -> Option<usize> { index(app, app.st.editor_pages.active_page) }
+
+/// v5: `generateThumbnail(i)` for the Pages panel: paints page `id` on `thumb` (`tw × th` backing pixels). Returns
+/// false while its background or an image is still decoding (5.18.0 repaints in the image's `onload`).
+pub fn panel_thumb(app: &mut App, host: &mut dyn Host, id: Id, thumb: Surf, tw: u32, th: u32) -> bool {
+    let done = with_view(app, id, |g, view| {
+        let (bg, mut done) = match view.bg {
+            Bg::Template(kind) => (thumb::ThumbBg::Template(kind), true),
+            Bg::Image(Some(img)) => (thumb::ThumbBg::Image(img), true),
+            Bg::Image(None) => (thumb::ThumbBg::Waiting, false),
+            Bg::PdfPending => (thumb::ThumbBg::PdfPlaceholder, true),
+        };
+        done &= view.items.images.iter().all(|i| i.img.is_some());
+        thumb::panel(&mut g.cmds, &mut g.tpl, &mut g.paths, thumb, tw, th, bg, view);
+        done
+    });
+    flush(app, host);
+    done.unwrap_or(true)
 }
 
 /// Paints page `id` with `f(gfx, view)`; `None` when the page or the document is gone.
