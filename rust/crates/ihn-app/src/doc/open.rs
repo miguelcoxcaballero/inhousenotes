@@ -227,6 +227,10 @@ struct Job {
     public: bool,
     /// [`open_public`] refreshing the open document: no overlay, a failure leaves it as it is.
     quiet: bool,
+    /// The 5.x import's frame yields before its render ([`set_import_yields`]).
+    yields: Option<u32>,
+    /// Animation frames still to wait before the document is shown ([`finish_foreign`]).
+    frames: u32,
 }
 
 /// This module's state, stored in `App::st`.
@@ -573,11 +577,42 @@ pub fn take_foreign(app: &mut App) -> Option<Foreign> { job(app).and_then(|j| j.
 
 /// The importer finished. On success the session's state is recorded as holding the downloaded revision (so the
 /// next open does not download it again) and the document is shown; otherwise the open fails.
+///
+/// v5 `importPDFData` waits for animation frames (`yieldToMainThread`) while it builds the pages, renders them
+/// (`renderAllPages`) one frame later and hides the overlay one frame after that: the document of a first open is
+/// rendered and shown on those frames (the scroll previews and visible passes the render arms keep 5.18.0's timing).
 pub fn finish_foreign(app: &mut App, host: &mut dyn Host, ok: bool) {
-    if ok {
-        loaded(app, host);
-    } else {
-        fail(app, host);
+    if !ok {
+        return fail(app, host);
+    }
+    if let Some(j) = job(app).filter(|j| !j.shown && !j.quiet) {
+        if let Some(yields) = j.yields {
+            j.frames = yields + 2;
+            app.sched.frame(host.out(), Mod::DocOpen);
+            return;
+        }
+    }
+    loaded(app, host);
+}
+
+/// The frame yields 5.18.0's import of this download makes (`ihn_core::v5::import::Import::open_yields`).
+pub fn set_import_yields(app: &mut App, yields: u32) {
+    if let Some(j) = job(app) {
+        j.yields = Some(yields);
+    }
+}
+
+fn import_frame(app: &mut App, host: &mut dyn Host) {
+    let Some(j) = job(app).filter(|j| j.frames > 0) else { return };
+    j.frames -= 1;
+    match j.frames {
+        0 => loaded(app, host),
+        left => {
+            if left == 1 {
+                crate::editor::view::render_opened(app, host);
+            }
+            app.sched.frame(host.out(), Mod::DocOpen);
+        }
     }
 }
 
@@ -673,6 +708,7 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
             }
         }
         Event::Msg(m) if m.chan == shell::sig::SIGNED_OUT => abort(app, host),
+        Event::Frame(_) => import_frame(app, host),
         _ => {}
     }
     0

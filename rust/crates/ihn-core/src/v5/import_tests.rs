@@ -365,3 +365,14 @@ fn xor_packed_rows_decode_bit_exactly() {
     assert!(packed > 0);
 }
 
+
+#[test]
+fn open_yields_follow_import_pdf_data() {
+    let page = |strokes: usize| Some(V5Page { strokes: vec![V5Stroke::default(); strokes], ..V5Page::default() });
+    // The page loop alone: every second PDF page (3 pages → 1, as traced in 5.18.0's open of the template scene).
+    assert_eq!(open_yields(3, None, false), 1);
+    assert_eq!(open_yields(1, None, false), 0);
+    assert_eq!(open_yields(4, Some(&[page(0), page(2), None, page(5)]), true), 2);
+    // Without IH_NORM: twice per 256 strokes of a page with more than one stroke, and every third entry.
+    assert_eq!(open_yields(4, Some(&[page(600), page(1), None, page(256)]), false), 2 + 4 + 2 + 1);
+}

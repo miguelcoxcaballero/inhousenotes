@@ -89,6 +89,26 @@ pub struct Import {
     pub source: Option<(Source, Hash)>,
     /// `IH_SYNC.contentHash` (5.18.0 `driveConfirmedContentHash`).
     pub content_hash: String,
+    /// The animation frames 5.18.0's `importPDFData` (a Drive or shared-link download, no cached analysis) waits
+    /// for before `migrateLegacyPayload` (`yieldToMainThread`: one `requestAnimationFrame` each): the id-repair scan
+    /// of a document without `IH_NORM` (every 256 strokes of a page, twice, and every third page entry), then the
+    /// page loop (every second PDF page). The open then waits one more frame before `renderAllPages` and another
+    /// before `hideLoading` (see `doc::open::finish_foreign`).
+    pub open_yields: u32,
+}
+
+/// [`Import::open_yields`] for `pages` PDF pages and the `STROKES_*` entries (`None`: no 5.x ink).
+pub fn open_yields(pages: usize, entries: Option<&[Option<V5Page>]>, normalized: bool) -> u32 {
+    let mut n = pages / 2;
+    if let (Some(entries), false) = (entries, normalized) {
+        for e in entries.iter().flatten() {
+            if e.strokes.len() > 1 {
+                n += 2 * (e.strokes.len() / 256);
+            }
+        }
+        n += entries.len() / 3;
+    }
+    n as u32
 }
 
 // ------------------------------------------------------------------------------------- batch builder
@@ -314,6 +334,7 @@ pub fn from_pdf(kw: &str, facts: &PdfFacts, import_actor: ActorId, rev_time_ms: 
     out.imp.v5 = entries.is_some();
     out.imp.pages = facts.page_sizes.len();
 
+    out.imp.open_yields = open_yields(facts.page_sizes.len(), entries.as_deref(), k.normalized);
     let mut entries = entries.unwrap_or_default();
     for (i, e) in entries.iter_mut().enumerate().take(facts.page_sizes.len()) {
         if let Some(p) = e {
