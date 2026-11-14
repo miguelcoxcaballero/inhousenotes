@@ -66,7 +66,7 @@ export function comparePixels(pngA, pngB) {
     for (let k = 0; k < 4; k++) maxDelta = Math.max(maxDelta, Math.abs(a.data[i + k] - b.data[i + k]));
   }
   return {
-    equal: different === 0, different, total: a.width * a.height, maxDelta,
+    equal: different === 0, different, total: a.width * a.height, maxDelta, width: a.width, marks,
     box: different ? { x: x0, y: y0, width: x1 - x0 + 1, height: y1 - y0 + 1 } : null,
     /** A (dimmed) with every differing pixel in red. */
     diff: () => { const out = Buffer.from(a.data); for (let i = 0; i < out.length; i += 4) { out[i] = 170 + (out[i] >> 2); out[i + 1] = 170 + (out[i + 1] >> 2); out[i + 2] = 170 + (out[i + 2] >> 2); out[i + 3] = 255; } for (const i of marks) { out[i] = 255; out[i + 1] = 0; out[i + 2] = 0; } return encodePng({ width: a.width, height: a.height, data: out }); }

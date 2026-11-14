@@ -4,6 +4,7 @@
 // line (B-E6: v6 erases it). Desktop and tablet only: on phones the eraser button of the toolbar's initial position
 // is below the window in 5.18.0 (see toolbar.mjs). Area mode is chosen in the eraser menu (W4.4).
 import { parity } from '../run.mjs';
+import { SAVE_DOT, rules } from '../support/editor.mjs';
 import { ANA } from '../../mock/fixtures.mjs';
 
 const only = { viewports: ['desktop-1280', 'desktop-1920', 'tablet-800'] };
@@ -49,7 +50,7 @@ async function areaMode(t) {
   await t.advance(400);
 }
 
-parity('erasers/stroke', { only }, async t => {
+parity('erasers/stroke', { only, ...SAVE_DOT }, async t => {
   await inked(t);
   await t.click('#btn-eraser', { force: true });
   await t.pen(await path(t, [290, 380], [300, 470], 12), { lift: false });
@@ -60,7 +61,7 @@ parity('erasers/stroke', { only }, async t => {
   await t.capture('lift');
 });
 
-parity('erasers/area', { only }, async t => {
+parity('erasers/area', { only, ...SAVE_DOT }, async t => {
   await inked(t);
   await areaMode(t);
   await t.pen(await path(t, [300, 380], [300, 470], 12), { lift: false });
@@ -77,7 +78,7 @@ const band = async t => {
   return [{ x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y }];
 };
 
-parity('erasers/area-undo', { only, tags: ['B-E4'], expected: band }, async t => {
+parity('erasers/area-undo', { only, ...rules({ tags: ['B-E4'], expected: band }, SAVE_DOT) }, async t => {
   await inked(t);
   await areaMode(t);
   await t.pen(await path(t, [300, 380], [300, 470], 12));
@@ -87,7 +88,7 @@ parity('erasers/area-undo', { only, tags: ['B-E4'], expected: band }, async t =>
 });
 
 // Two samples 60 px apart across a pen line: 5.18.0 tests the samples only and misses it; v6 sweeps between them.
-parity('erasers/fast-swipe', { only, tags: ['B-E6'], expected: band }, async t => {
+parity('erasers/fast-swipe', { only, ...rules({ tags: ['B-E6'], expected: band }, SAVE_DOT) }, async t => {
   await doc(t);
   await edit(t);
   await t.pen(await curve(t, 20, { y0: 420 }));

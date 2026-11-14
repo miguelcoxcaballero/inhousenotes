@@ -126,6 +126,10 @@ pub struct Session {
     record_stored: bool,
     journal: Journal,
     uncommitted: u32,
+    /// Own batches whose IDB append is in flight: kept off every transport until the commit (SYNC §6 invariant 1).
+    unstored: Vec<(u64, u32)>,
+    /// `doc.vv` without `unstored` (what the sync engine is told while `unstored` is not empty).
+    wire_vv: VersionVector,
     failed: bool,
     saved_at: f64,
     outbox: Vec<EncodedBatch>,
@@ -215,6 +219,8 @@ impl Session {
             record_stored: false,
             journal: Journal::default(),
             uncommitted: 0,
+            unstored: Vec::new(),
+            wire_vv: VersionVector::default(),
             failed: false,
             saved_at: 0.0,
             outbox: Vec::new(),
@@ -244,6 +250,24 @@ impl Session {
     }
 
     fn journal_put(&mut self, actor: u64, seq: u32, clock: u64, bytes: Vec<u8>) { self.journal.put(actor, seq, clock, bytes) }
+
+    /// Rebuilds `wire_vv` (own uncommitted batches are always each actor's newest seqs).
+    fn refresh_wire(&mut self) {
+        if self.unstored.is_empty() {
+            return;
+        }
+        let (mut vv, out) = (VersionVector::default(), &self.unstored);
+        for (a, top) in self.doc.vv.iter() {
+            let cut = out.iter().filter(|k| k.0 == a.0).map(|k| k.1).min().map_or(top, |m| top.min(m - 1));
+            vv.raise(a, cut);
+        }
+        for (a, seq) in self.doc.vv.extras() {
+            if !out.contains(&(a.0, seq)) {
+                vv.add(a, seq);
+            }
+        }
+        self.wire_vv = vv;
+    }
 
     fn note(&mut self, c: Changes) {
         let m = &mut self.changes;
@@ -401,16 +425,16 @@ pub struct Rep<'a> {
 
 impl Replica for Rep<'_> {
     fn doc_id(&self) -> &DocId { &self.s.doc_id }
-    fn version_vector(&self) -> &VersionVector { &self.s.doc.vv }
+    fn version_vector(&self) -> &VersionVector { if self.s.unstored.is_empty() { &self.s.doc.vv } else { &self.s.wire_vv } }
 
     fn batches_since(&self, have: &VersionVector, max_bytes: usize) -> Result<Vec<EncodedBatch>, Compacted> {
-        let (s, mut out, mut size) = (&*self.s, Vec::new(), 0);
-        let pairs = s.doc.vv.iter().flat_map(|(a, top)| (have.get(a) + 1..=top).map(move |seq| (a, seq))).chain(s.doc.vv.extras());
+        let (s, mut out, mut size, vv) = (&*self.s, Vec::new(), 0, self.version_vector());
+        let pairs = vv.iter().flat_map(|(a, top)| (have.get(a) + 1..=top).map(move |seq| (a, seq))).chain(vv.extras());
         if pairs.filter(|&(a, seq)| !have.contains(a, seq)).any(|(a, seq)| !s.journal.has(a.0, seq)) {
             return Err(Compacted);
         }
         for e in &s.journal.e {
-            if have.contains(ActorId(e.actor), e.seq) || !s.doc.vv.contains(ActorId(e.actor), e.seq) {
+            if have.contains(ActorId(e.actor), e.seq) || !vv.contains(ActorId(e.actor), e.seq) {
                 continue;
             }
             if !out.is_empty() && size + e.bytes.len() > max_bytes {
@@ -437,6 +461,7 @@ impl Replica for Rep<'_> {
         s.drain(self.host, if self.contact { CONTACT_BUDGET_MS } else { f64::INFINITY });
         r.queued = s.queue.len() as u32 + s.partial.is_some() as u32;
         r.applied = mark.1.saturating_sub(r.queued);
+        s.refresh_wire();
         for page in &s.changes.pages[mark.0..] {
             if !r.changed_pages.contains(page) {
                 r.changed_pages.push(*page);
@@ -456,6 +481,7 @@ impl Replica for Rep<'_> {
         let changes = s.doc.merge(&other);
         let pages = changes.pages.clone();
         s.note(Changes { applied: true, ..changes });
+        s.refresh_wire();
         ReceiveResult { applied: 1, duplicate: 0, queued: 0, changed_pages: pages }
     }
 
@@ -477,6 +503,7 @@ impl Replica for Rep<'_> {
 pub fn with_replica<R>(app: &mut App, host: &mut dyn Host, f: impl FnOnce(&mut dyn Replica) -> R) -> Option<R> {
     let mut s = app.st.doc_session.s.take()?;
     let contact = app.sched.is_busy();
+    s.refresh_wire();
     let r = f(&mut Rep { s: &mut s, host, contact });
     app.st.doc_session.s = Some(s);
     after(app, host);
@@ -512,14 +539,19 @@ pub fn set_sync_status(app: &mut App, host: &mut dyn Host, status: Option<SyncSt
 /// The status the save presentation uses: the engine's, or one derived from the persisted record.
 pub fn sync_status(app: &App) -> SyncStatus {
     let Some(s) = get(app) else { return SyncStatus::default() };
-    s.sync.clone().unwrap_or_else(|| SyncStatus {
+    let mut st = s.sync.clone().unwrap_or_else(|| SyncStatus {
         unsealed_local: s.unsealed_local(),
         not_created: !s.record.flags.created,
         export_pending: s.record.flags.export_pending,
         online: !shell::offline(app),
         auth_paused: auth::reconnecting(app),
         ..SyncStatus::default()
-    })
+    });
+    // The engine does not see own batches before their IDB commit; they are unsealed all the same.
+    if s.sync.is_some() {
+        st.unsealed_local += s.unstored.len() as u32;
+    }
+    st
 }
 
 fn after(app: &mut App, host: &mut dyn Host) {
@@ -584,6 +616,7 @@ pub fn edit(app: &mut App, host: &mut dyn Host, f: impl FnOnce(&mut Tx)) -> Opti
             t.kv_put(&s.account, &kv::ctr(actor), &Value::from(mark as f64));
         }
         s.uncommitted += 1;
+        s.unstored.push((actor, seq));
         let req = app.req(Mod::DocSession);
         app.st.doc_session.appends.push((req, vec![encoded], with_record));
         store::tx(app, host, req, t);
@@ -620,6 +653,7 @@ fn appended(app: &mut App, host: &mut dyn Host, (batches, with_record): (Vec<Enc
         s.failed = true;
     }
     let Some(s) = get_mut(app) else { return };
+    s.unstored.retain(|k| !batches.iter().any(|b| b.header().is_some_and(|(a, q, _)| (a.0, q) == *k)));
     s.outbox.extend(batches);
     shell::signal(app, host, sig::COMMITTED, "");
     shell::signal(app, host, sig::STATE, "");
@@ -1117,6 +1151,9 @@ mod tests {
         // Applied at once (the tool renders in the same frame), not yet durable, not yet for the network.
         assert_eq!(get(&app).unwrap().doc.order().len(), 1);
         assert!(local(&app).pending && drain_local(&mut app).is_empty());
+        // Peers and tabs neither see nor get it before the commit (SYNC §6 invariant 1).
+        let none = VersionVector::default();
+        assert_eq!(with_replica(&mut app, &mut host, |r| (r.version_vector().is_empty(), r.batches_since(&none, 1 << 20).map(|b| b.len()))), Some((true, Ok(0))));
         assert_eq!(save_state::phase(&app), Phase::Saving);
         assert_eq!(db.dbs.get(store::DB_NAME).map_or(0, |stores| stores[2].len()), 0, "nothing in `ops` before the transaction ran");
         db.pump(&mut app, &mut host);
@@ -1129,6 +1166,7 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].header().map(|h| (h.0 .0, h.1)), Some((actor, 1)));
         assert!(!local(&app).pending && local(&app).saved_at > 0.0);
+        assert_eq!(with_replica(&mut app, &mut host, |r| r.batches_since(&none, 1 << 20).map(|b| b.len())), Some(Ok(1)));
         // Not sealed in the relay yet: "waiting to upload", never "saved".
         assert_eq!(save_state::phase(&app), Phase::Paused);
         // Several edits keep their order in the outbox.

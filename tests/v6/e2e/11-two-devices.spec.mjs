@@ -157,9 +157,18 @@ test('(a) two devices over P2P: live ink, concurrent strokes and erases converge
   await B.page.click('#toolbar .tool-btn[data-tool="eraser"]').catch(() => {});
   await B.page.click('#toolbar .tool-btn[data-tool="eraser-stroke"], #toolbar .tool-btn[data-tool="eraser"]').catch(() => {});
   const live = (await session(B.page)).live;
-  await stroke(B.page, cdpB, [[160, 490], [160, 520], [160, 545]]);
+  // While B's eraser is down, A already shows the stroke erased (v5 remote live erase preview).
+  const atB = async p => { const bx = await B.page.locator('canvas.page-canvas[data-page="0"]').boundingBox(); return [bx.x + p[0] * bx.width / 794, bx.y + p[1] * bx.height / 1123]; };
+  const eraseSend = async (type, p, buttons) => { const [x, y] = await atB(p); await cdpB.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons, clickCount: 1, pointerType: 'pen', force: 0.5 }); };
+  await eraseSend('mousePressed', [160, 490], 1);
+  await eraseSend('mouseMoved', [160, 520], 1);
+  await expect.poll(async () => (await collab(A.page)).erasing, { timeout: 3_000, intervals: [10] }).toBe(1);
+  expect((await session(A.page)).live).toBe(live);
+  await eraseSend('mouseMoved', [160, 545], 1);
+  await eraseSend('mouseReleased', [160, 545], 0);
   await expect.poll(async () => (await session(B.page)).live, { timeout: 5_000 }).toBeLessThan(live);
   await same(A.page, B.page);
+  await expect.poll(async () => (await collab(A.page)).erasing).toBe(0);
 
   // Both relays sealed their batches.
   await expect.poll(async () => (await collab(A.page)).unsealed, { timeout: 20_000 }).toBe(0);

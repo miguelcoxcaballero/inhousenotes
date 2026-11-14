@@ -648,17 +648,12 @@ fn end(app: &mut App, host: &mut dyn Host) {
     let items = live_ids(app);
     let changed = doc(app).is_some_and(|d| tf.preview.iter().any(|(id, b)| d.live(*id).is_some_and(|i| i.body.v != *b)));
     if changed && write(app, host, page, 0, |tx| tx.transform(&items, m)) {
-        // The bitmap already shows the transform: only the previews are stale.
         pages::touch(app, page);
-        if let Some(r) = app.st.editor_pages.rows.iter_mut().find(|r| r.id == page) {
-            if r.active.as_ref().is_some_and(|a| a.drawn) {
-                r.needs_redraw = false;
-            }
-        }
         refresh_stamps(app);
-    } else {
-        repaint(app, host, page);
     }
+    // v5: the damage repaints of the move leave `page.needsRedraw` set, so the next visible-pages pass repaints the
+    // whole page (its antialiasing differs from the clipped repaints').
+    repaint(app, host, page);
     update_box(app, host);
 }
 
