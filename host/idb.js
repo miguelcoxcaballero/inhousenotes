@@ -182,6 +182,8 @@ export default function install(host) {
   };
   // The operations run strictly one after the other (each is issued when the previous one finished), so a
   // read-modify-write sees everything before it in the same transaction.
+  // Operations of FX 0x26 pieces waiting for their transaction record.
+  const parts = [];
   const transact = (req, db, flags, ops) => {
     let tx, failure = null;
     const results = new Array(ops.length);
@@ -274,10 +276,13 @@ export default function install(host) {
     },
     [FX | 0x21]: r => { const id = r.u32(); dbs.get(id)?.idb.close(); dbs.delete(id); },
     [FX | 0x22]: r => {
-      const req = r.u32(), db = dbs.get(r.u32()), flags = r.u8(), ops = [];
+      const req = r.u32(), db = dbs.get(r.u32()), flags = r.u8(), ops = flags & 4 ? parts.splice(0) : [];
       for (let n = r.u32(); n > 0; n--) ops.push(readOp(r));
       transact(req, db, flags, ops);
     },
+    // The first operations of the next transaction (flag 4): a large one arrives in pieces, so that wasm memory
+    // never holds it twice.
+    [FX | 0x26]: r => { for (let n = r.u32(); n > 0; n--) parts.push(readOp(r)); },
     [FX | 0x23]: r => {
       const req = r.u32(), name = r.str(), blockedMs = r.f64();
       let settled = false, blocked = 0;

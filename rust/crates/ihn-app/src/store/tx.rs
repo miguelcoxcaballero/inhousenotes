@@ -191,6 +191,8 @@ pub enum Put {
 pub struct Tx {
     pub(crate) buf: Vec<u8>,
     pub(crate) ops: u32,
+    /// Where each operation starts in `buf` (a large transaction leaves in pieces, `store::send`).
+    pub(crate) marks: Vec<u32>,
     pub(crate) write: bool,
     /// `{durability: 'strict'}` (fsync before the completion). The default is the browser's relaxed durability,
     /// which survives a tab or browser crash.
@@ -203,10 +205,13 @@ impl Tx {
     pub fn len(&self) -> u32 { self.ops }
     pub fn is_empty(&self) -> bool { self.ops == 0 }
     pub fn is_write(&self) -> bool { self.write }
+    /// Reserves exactly `n` more bytes (a transaction whose size is known: no doubling growth).
+    pub fn reserve(&mut self, n: usize) { self.buf.reserve_exact(n) }
 
     fn op(&mut self, op: u8, store: Store, write: bool) -> W<'_> {
         self.ops += 1;
         self.write |= write;
+        self.marks.push(self.buf.len() as u32);
         self.buf.extend_from_slice(&[op, store as u8]);
         W(&mut self.buf)
     }

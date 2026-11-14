@@ -22,15 +22,13 @@ use ihn_core::jsmath::round;
 use ihn_core::id::{migration_source, ActorId, Hash, Id};
 use ihn_core::op::{Background, Batch, Body, Op};
 use ihn_core::snapshot::{encode_batch, EncodedBatch};
-use ihn_core::v5::import::{self, Asset, PdfFacts, Source};
+use ihn_core::v5::import::{self, PdfFacts, Source};
 use ihn_core::v5::keywords::OverlayRef;
 use ihn_core::v5::{check_page_count, idb::iso_ms};
 
 /// Keywords longer than this are parsed in the export worker (their inflated JSON passes the 4 MiB of
 /// `v5::WORKER_PARSE_THRESHOLD` at the usual 4–16× ratio of base64 zlib stroke JSON).
 const WORKER_KEYWORDS: usize = 256 << 10;
-/// A worker whose memory grew beyond this is terminated after its job (ARCHITECTURE §12).
-const WORKER_MEMORY_MAX: f64 = 64.0 * 1024.0 * 1024.0;
 const CLEAN_ORIGINAL: &str = "IH_CLEAN_ORIGINAL.pdf";
 /// Worker ops of the import role: parse runs `from_pdf` in the worker's instance; strip is pdf-lib in
 /// `host/export-worker.js`.
@@ -186,10 +184,19 @@ fn facts_ready(app: &mut App, host: &mut dyn Host) {
         put_facts(&mut w, &j.facts);
         w.u64(actor.0);
         w.u64(time);
-        w.str(&j.f.opened.keywords);
         let id = j.f.file.id.clone();
         log(app, &id, "worker".into());
-        return post(app, host, 0, &w.buf);
+        start_worker(app, host);
+        // The Keywords (megabytes) go straight into the out-buffer: no message buffer of their size.
+        let (kw, out) = (&app.st.doc_v5open.job.as_ref().unwrap().f.opened.keywords, host.out());
+        let m = out.w.rec(fam::FX, fx::WORKER_POST);
+        out.w.u32(0);
+        out.room(w.buf.len() + kw.len() + 8);
+        out.w.u32((w.buf.len() + 4 + kw.len()) as u32);
+        out.w.raw(&w.buf);
+        out.w.str(kw);
+        out.w.end(m);
+        return;
     }
     import_here(app, host, actor, time);
 }
@@ -197,17 +204,21 @@ fn facts_ready(app: &mut App, host: &mut dyn Host) {
 /// Posts a message to the export worker, starting it once; shared with the export role (`export::pdf`, W5.4).
 pub fn worker_send(app: &mut App, host: &mut dyn Host, obj: u32, bytes: &[u8]) { post(app, host, obj, bytes) }
 
-fn post(app: &mut App, host: &mut dyn Host, obj: u32, bytes: &[u8]) {
-    let out = host.out();
+fn start_worker(app: &mut App, host: &mut dyn Host) {
     if !std::mem::replace(&mut app.st.doc_v5open.worker, true) {
-        out.fx0(fx::WORKER_START);
+        host.out().fx0(fx::WORKER_START);
     }
-    worker_post(out, obj, bytes);
+}
+
+fn post(app: &mut App, host: &mut dyn Host, obj: u32, bytes: &[u8]) {
+    start_worker(app, host);
+    worker_post(host.out(), obj, bytes);
 }
 
 fn worker_post(out: &mut OutBuf, obj: u32, bytes: &[u8]) {
     let m = out.w.rec(fam::FX, fx::WORKER_POST);
     out.w.u32(obj);
+    out.room(bytes.len() + 4);
     out.w.bytes(bytes);
     out.w.end(m);
 }
@@ -239,6 +250,9 @@ mod part {
     pub const BATCH: u8 = 1;
     pub const ASSET: u8 = 2;
     pub const END: u8 = 3;
+    /// An `ASSET` turned into a Blob by `host/export-worker.js` (`postAsset`): `[32 hash][str mime][f64 size]`,
+    /// the message's object is the Blob.
+    pub const ASSET_BLOB: u8 = 4;
 }
 
 fn part_header(req: u32, kind: u8) -> Writer {
@@ -324,10 +338,10 @@ fn add_batch(app: &mut App, b: &Batch, encoded: EncodedBatch) {
     }
 }
 
-fn add_asset(app: &mut App, host: &mut dyn Host, a: &Asset) {
+fn add_asset(app: &mut App, host: &mut dyn Host, hash: Hash, mime: &str, bytes: &[u8]) {
     let obj = sfx::new_obj(app);
-    sfx::blob_new(host.out(), obj, &a.mime, &a.bytes);
-    session::put_asset(app, host, a.hash, obj, &a.mime, a.bytes.len() as f64);
+    sfx::blob_new(host.out(), obj, mime, bytes);
+    session::put_asset(app, host, hash, obj, mime, bytes.len() as f64);
 }
 
 /// The import of the main instance (small Keywords, plain PDFs, a failed worker).
@@ -340,7 +354,7 @@ fn import_here(app: &mut App, host: &mut dyn Host, actor: ActorId, time: u64) {
                 let e = encode_batch(&b);
                 add_batch(app, &b, e);
             }
-            imp.assets.iter().for_each(|a| add_asset(app, host, a));
+            imp.assets.iter().for_each(|a| add_asset(app, host, a.hash, &a.mime, &a.bytes));
             imported(app, host, Ok((imp.source, imp.v5)));
         }
         Err(e) => imported(app, host, Err(e.message().into())),
@@ -442,6 +456,8 @@ fn source_blob(app: &mut App, host: &mut dyn Host, obj: u32, size: f64) {
 fn done(app: &mut App, host: &mut dyn Host) {
     if let Some(j) = app.st.doc_v5open.job.take() {
         close_with(host, &j.f, j.blob_kept);
+        // The Keywords (megabytes) go before the open goes on to its compaction and the editor's pages.
+        drop(j);
         mark(app);
         finish(app, host, true);
     }
@@ -494,8 +510,15 @@ fn worker_msg(app: &mut App, host: &mut dyn Host, obj: u32, data: &[u8]) {
             None => imported(app, host, Err("bad worker answer".into())),
         },
         (OP_PARSE, Some(part::ASSET)) => {
-            if let Some(a) = (|| Some(Asset { hash: r.take(32)?.try_into().ok()?, mime: r.str()?.into(), bytes: r.bytes()?.to_vec() }))() {
-                add_asset(app, host, &a);
+            // Written from the message into the new blob: no copy of its own (a 5.x version snapshot is megabytes).
+            if let Some((hash, mime, bytes)) = (|| Some((r.take(32)?.try_into().ok()?, r.str()?, r.bytes()?)))() {
+                add_asset(app, host, hash, mime, bytes);
+            }
+        }
+        (OP_PARSE, Some(part::ASSET_BLOB)) => {
+            match (|| Some((r.take(32)?.try_into().ok()?, r.str()?, r.f64()?)))() {
+                Some((hash, mime, size)) if obj != 0 => session::put_asset(app, host, hash, obj, mime, size),
+                _ => host.out().obj_release(obj),
             }
         }
         (OP_PARSE, Some(part::END)) => {
@@ -504,8 +527,11 @@ fn worker_msg(app: &mut App, host: &mut dyn Host, obj: u32, data: &[u8]) {
                 _ => None,
             };
             let v5 = r.u8() == Some(1);
-            // The worker's memory: terminated after a job that grew it beyond the budget.
-            if r.f64().unwrap_or(0.0) > WORKER_MEMORY_MAX {
+            // A parse grows the worker's memory to several times the Keywords and wasm memory never shrinks: the
+            // worker is terminated after it (ARCHITECTURE §9) unless an export is using it; the next job starts a
+            // fresh one.
+            let _worker_memory = r.f64();
+            if !crate::export::pdf::busy(app) {
                 stop_worker(app, host);
             }
             imported(app, host, Ok((source, v5)));
@@ -513,6 +539,9 @@ fn worker_msg(app: &mut App, host: &mut dyn Host, obj: u32, data: &[u8]) {
         (OP_PARSE, _) => imported(app, host, Err(r.str().unwrap_or("bad worker answer").to_string())),
         (OP_STRIP, ok) => {
             let size = r.f64().unwrap_or(0.0);
+            if !crate::export::pdf::busy(app) {
+                stop_worker(app, host);
+            }
             source_blob(app, host, if ok == Some(1) { obj } else { 0 }, size);
         }
         _ => {}

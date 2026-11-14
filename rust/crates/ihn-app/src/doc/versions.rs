@@ -7,8 +7,8 @@
 //!   (SYNC §14.6: ≤ 12 version assets per hour of writing). Pending edits are captured at once on Home / pagehide /
 //!   hidden, when the Timeline opens and before a restore.
 //! * Assets: a capture stores its snapshot as an asset (SHA-256 in Rust, `blob_new`, `session::put_asset`) and keeps
-//!   the bytes here. Other snapshots are read from their blobs on demand ([`load`]): at open the chains the next
-//!   capture needs, everything when the Timeline opens.
+//!   the bytes here. Other snapshots are read from their blobs on demand ([`load`]): the chains the next capture
+//!   needs once the tab may edit (Edit mode or a local commit), everything when the Timeline opens.
 //! * Restore (5.18.0 `restoreVersion`): `pre-restore` milestone, `plan_restore` in one batch, `restore` /
 //!   `revert-original` milestone.
 // v5: app-v5.js:captureVersionSnapshot / captureTimelineRecoveryPoint / restoreVersion / applyRestoredPages /
@@ -361,14 +361,21 @@ pub fn init(_app: &mut App, _host: &mut dyn Host) {}
 pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
     match event {
         Event::Msg(m) => match m.chan {
+            // The snapshots a capture reads are loaded when this tab may edit (Edit mode, or a local commit), not
+            // at open: a document opened to read keeps no version snapshot (megabytes for an imported 5.x
+            // timeline) in memory.
             session::sig::OPENED => {
                 *st(app) = State::default();
                 cover(app);
-                preload(app, host);
+                if !crate::editor::view::read_only(app) {
+                    preload(app, host);
+                }
             }
+            crate::editor::view::sig::MODE if m.data == b"edit" => preload(app, host),
             session::sig::COMMITTED => {
                 if own_seq(app) > st(app).covered {
                     st(app).dirty = true;
+                    preload(app, host);
                     schedule(app, host);
                 }
             }

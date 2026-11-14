@@ -15,6 +15,7 @@ pub mod drive;
 pub mod editor;
 pub mod export;
 pub mod home;
+pub mod memstat;
 pub mod host;
 pub mod migrate;
 pub mod panels;

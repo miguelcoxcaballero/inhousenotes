@@ -8,7 +8,7 @@
 'use strict';
 
 const encoder = new TextEncoder(), decoder = new TextDecoder();
-const ROLE_IMPORT = 0, OP_STRIP = 2, WORKER = 8;
+const ROLE_IMPORT = 0, OP_PARSE = 1, OP_STRIP = 2, PART_ASSET = 2, PART_ASSET_BLOB = 4, WORKER = 8;
 const ROLE_EXPORT = 1, OP_BLOB = 1, OP_ASSEMBLE = 3, OP_BUILT = 4, OP_REBUILD = 5, OP_REBUILT = 6;
 const jobs = new Map(); // export job → Map(key → Blob)
 let ex = null, memory = null, version = '', ready = null;
@@ -24,13 +24,31 @@ function flush() {
   while (p < end) {
     const size = v.getUint32(p + 2, true);
     if (v.getUint8(p) === 3 && v.getUint8(p + 1) === 0x71) {
-      const n = v.getUint32(p + 10, true), bytes = u8(p + 14, n).slice();
-      if (bytes[0] === ROLE_EXPORT && bytes[1] === OP_ASSEMBLE) queueMicrotask(() => assemble(bytes));
-      else self.postMessage({ bytes }, [bytes.buffer]);
+      const n = v.getUint32(p + 10, true);
+      if (v.getUint8(p + 14) === ROLE_IMPORT && v.getUint8(p + 15) === OP_PARSE && v.getUint8(p + 20) === PART_ASSET) postAsset(p + 14);
+      else {
+        const bytes = u8(p + 14, n).slice();
+        if (bytes[0] === ROLE_EXPORT && bytes[1] === OP_ASSEMBLE) queueMicrotask(() => assemble(bytes));
+        else self.postMessage({ bytes }, [bytes.buffer]);
+      }
     }
     p += 6 + size;
   }
   ex.ihn_out_reset();
+}
+
+// An imported asset ([0][1][u32 req][u8 PART_ASSET][32 hash][str mime][bytes data], a 5.x version snapshot or image
+// of megabytes) goes to the page as a Blob: `[0][1][u32 req][u8 PART_ASSET_BLOB][32 hash][str mime][f64 size]` with
+// obj = the Blob, so the page's wasm memory never holds its bytes.
+function postAsset(at) {
+  const v = view(), mimeLen = v.getUint32(at + 39, true), size = v.getUint32(at + 43 + mimeLen, true);
+  const head = u8(at, 43 + mimeLen), mime = decoder.decode(u8(at + 43, mimeLen));
+  const blob = new Blob([u8(at + 47 + mimeLen, size)], { type: mime });
+  const msg = new Uint8Array(head.length + 8);
+  msg.set(head);
+  msg[6] = PART_ASSET_BLOB;
+  new DataView(msg.buffer).setFloat64(head.length, size, true);
+  self.postMessage({ bytes: msg, obj: blob }, [msg.buffer]);
 }
 
 function call(fn, bytes) {

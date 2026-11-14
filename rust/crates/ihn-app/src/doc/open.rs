@@ -554,7 +554,7 @@ fn pdf_opened(app: &mut App, host: &mut dyn Host, io: &Io) {
         _ => {
             // Not a v6 container: the importer claims it or the open fails (5.x and plain PDFs are `doc::v5open`'s).
             let Some(meta) = j.meta.clone() else { return fail(app, host) };
-            j.foreign = Some(Foreign { file: j.file.clone(), kind, blob: std::mem::take(&mut j.blob), size: j.size, pdf: std::mem::take(&mut j.pdf), opened: j.opened.clone(), meta });
+            j.foreign = Some(Foreign { file: j.file.clone(), kind, blob: std::mem::take(&mut j.blob), size: j.size, pdf: std::mem::take(&mut j.pdf), opened: std::mem::take(&mut j.opened), meta });
             let claimed = shell::signal(app, host, sig::FOREIGN, if kind == Kind::V5 { "v5" } else { "plain" }) & ret::PREVENT_DEFAULT != 0;
             if !claimed {
                 if let Some(f) = job(app).and_then(|j| j.foreign.take()) {

@@ -207,6 +207,7 @@ impl OutBuf {
             Some(v) if v.len() >= LONG_STYLE => {
                 self.long_style.clear();
                 self.long_style.extend_from_slice(v.as_bytes());
+                self.room(v.len() + 4);
                 self.w.str(v);
             }
             _ => self.w.opt_str(value),

@@ -15,3 +15,5 @@ ihn-sync = { path = "../ihn-sync" }
 [features]
 # W6.2t: links the test API (`testapi::dispatch` and every `test_cmd`) for e2e and parity (`wasm/ihn-test.wasm`).
 testapi = []
+# W6.3p: allocator accounting by module (`memstat.rs`, `app.mem`); investigations only.
+memstat = []
