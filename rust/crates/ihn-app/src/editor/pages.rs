@@ -33,7 +33,9 @@ const PAGE_ACTIVATION_IDLE_TIMEOUT: f64 = 120.0;
 /// the canvas at once) until 5.18.0's 4 ms are used, as 5.18.0 checks `performance.now()` after every stroke.
 const STAGED_SLICE: usize = 40;
 const STAGED_SLICE_MS: f64 = 4.0;
-const PREVIEW_SLICE: usize = 160;
+/// 5.18.0 yields a scroll preview after more than 3 ms.
+const PREVIEW_SLICE_MS: f64 = 3.0;
+const PREVIEW_SLICE: usize = 40;
 
 const L_WRAPPER: u32 = tag(Mod::EditorPages, 1);
 const T_VISIBLE_RETRY: u32 = tag(Mod::EditorPages, 2);
@@ -1282,7 +1284,18 @@ fn preview_step(app: &mut App, host: &mut dyn Host) {
             with_view(app, id, |g, view| job.sp.background(&mut g.cmds, &mut g.tpl, &mut g.paths, view));
             job.background_done = true;
         }
-        let done = with_view(app, id, |g, view| job.sp.strokes(&mut g.cmds, &mut g.paths, view, PREVIEW_SLICE)).unwrap_or(true);
+        let started = host.now();
+        let done = loop {
+            let done = with_view(app, id, |g, view| job.sp.strokes(&mut g.cmds, &mut g.paths, view, PREVIEW_SLICE)).unwrap_or(true);
+            if done {
+                break true;
+            }
+            flush(app, host);
+            host.flush(); // drawn now, so the clock sees its cost (5.18.0 checks after every stroke)
+            if host.now() - started > PREVIEW_SLICE_MS {
+                break false;
+            }
+        };
         if done {
             let req = app.req(Mod::EditorPages);
             app.st.editor_pages.preview_reqs.push((req, id, job.gen));
