@@ -391,7 +391,7 @@ pub fn encode_header(doc: &Doc) -> Vec<u8> {
     doc.vv.encode_extras(&mut w);
     put_reg(&mut w, &doc.name, |w, v| put_str(w, v));
     let mut pages: Vec<(&Id, &Page)> = doc.pages.iter().collect();
-    pages.sort_unstable_by_key(|(id, _)| **id);
+    crate::sort::by_key(&mut pages, |(id, _)| **id);
     w.leb(pages.len() as u64);
     for (id, p) in pages {
         put_id(&mut w, *id);

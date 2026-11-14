@@ -125,7 +125,7 @@ fn apply(app: &mut App, host: &mut dyn Host, i: usize) {
     }
     let mut touched = e.changes.pages.clone();
     touched.extend(e.changes.page_props.iter().copied());
-    touched.sort_unstable();
+    ihn_core::sort::ord(&mut touched);
     touched.dedup();
     for id in touched {
         pages::touch(app, id);

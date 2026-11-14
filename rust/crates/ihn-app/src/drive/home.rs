@@ -423,7 +423,7 @@ fn crawl_io(app: &mut App, host: &mut dyn Host, io: &crate::Io) {
     }
     // Only a complete successful enumeration can mark an item removed.
     if let Some(mut crawl) = app.st.drive_home.crawl.take() {
-        crawl.found.sort_unstable();
+        ihn_core::sort::ord(&mut crawl.found);
         crate::home::crawled(app, host, Vec::new(), Some(crawl.found));
     }
 }

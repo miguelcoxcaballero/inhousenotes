@@ -482,7 +482,7 @@ mod tests {
         assert_eq!(with(|i| (i.status.export, i.status.unsealed_local) = (ExportPhase::Failed { code: "x".into(), detail: String::new() }, 1)).0, Phase::Paused);
         // Classes are 5.18.0's SAVE_STATES.
         let mut classes: Vec<&str> = Phase::ALL.iter().map(|p| p.class()).collect();
-        classes.sort_unstable();
+        ihn_core::sort::ord(&mut classes);
         assert_eq!(classes, ["building", "error", "paused", "saved", "saving", "syncing", "uploading"]);
     }
 

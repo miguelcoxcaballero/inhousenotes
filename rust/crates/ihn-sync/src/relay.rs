@@ -66,7 +66,7 @@ fn get_batches(r: &mut Reader) -> Option<Vec<EncodedBatch>> {
 /// `(actor, first, last)` runs of the given batches (sorted by actor, then seq).
 pub fn ranges_of(batches: &[EncodedBatch]) -> Vec<Range> {
     let mut keys: Vec<(ActorId, u32)> = batches.iter().filter_map(|b| b.header()).map(|(a, s, _)| (a, s)).collect();
-    keys.sort();
+    ihn_core::sort::ord(&mut keys);
     keys.dedup();
     let mut out: Vec<Range> = Vec::new();
     for (actor, seq) in keys {
@@ -238,7 +238,7 @@ pub fn perm_hash(ids: &[String]) -> u64 {
         return 0;
     }
     let mut ids: Vec<&str> = ids.iter().map(String::as_str).collect();
-    ids.sort_unstable();
+    ihn_core::sort::ord(&mut ids);
     fnv1a64(ids.join(",").as_bytes()) | 1
 }
 
@@ -422,7 +422,7 @@ impl Relay {
         }
         let mut out = r.batches_since(&have, usize::MAX).ok()?;
         out.retain(|b| b.header().is_some_and(|(a, _, _)| cx.relays(a)));
-        out.sort_by_key(|b| b.header().map(|(a, s, _)| (a, s)));
+        ihn_core::sort::by_key(&mut out, |b| b.header().map(|(a, s, _)| (a, s)));
         Some(out)
     }
 
@@ -1051,7 +1051,7 @@ impl Relay {
         let Some(file) = j.file else { return };
         let own = inst == cx.inst;
         let mut batches: Vec<EncodedBatch> = j.batches.into_iter().filter(|b| b.header().is_some_and(|(a, _, _)| relayed_by(a, inst, &cx.doc_id))).collect();
-        batches.sort_by_key(|b| b.header().map(|(a, s, _)| (a, s)));
+        ihn_core::sort::by_key(&mut batches, |b| b.header().map(|(a, s, _)| (a, s)));
         // A gap the archives could not fill: the export must be downloaded (§8.6 step 3, §8.8).
         let rv = r.version_vector().clone();
         let mut covered = rv.clone();

@@ -127,7 +127,7 @@ fn settings_loaded(app: &mut App, host: &mut dyn Host, io: &Io) {
     let pending = app.st.home.catalog.pending_count();
     let queue = if pending > 0 { format!("{pending} pending · {}", if shell::offline(app) { "Waiting for connection" } else { "Will sync automatically" }) } else { "Up to date".into() };
     let mut list: Vec<&Value> = recoveries.items().iter().collect();
-    list.sort_by(|a, b| b.get("createdAt").as_f64().unwrap_or(0.0).partial_cmp(&a.get("createdAt").as_f64().unwrap_or(0.0)).unwrap_or(std::cmp::Ordering::Equal));
+    ihn_core::sort::by(&mut list, |a, b| b.get("createdAt").as_f64().unwrap_or(0.0).partial_cmp(&a.get("createdAt").as_f64().unwrap_or(0.0)).unwrap_or(std::cmp::Ordering::Equal));
     let mut rows = String::new();
     let mut plan = Vec::new();
     for r in &list {

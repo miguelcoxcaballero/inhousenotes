@@ -460,7 +460,7 @@ pub fn supersede(doc: &Doc, rev: &[Batch], keep: &[ActorId]) -> Option<Batch> {
     if ops.is_empty() {
         return None;
     }
-    ops.sort_by_key(|(op, s)| (s.idx, matches!(op, Op::PageDel { .. })));
+    crate::sort::by_key(&mut ops, |(op, s)| (s.idx, matches!(op, Op::PageDel { .. })));
     let digest = ops.iter().fold(fnv1a64(b"supersede"), |h, (op, s)| {
         let id = match op {
             Op::ItemDel { item, .. } => item.0,
@@ -678,7 +678,7 @@ fn local_items(out: &mut Out, base: &Doc, page: Id, p: &V5Page, base_ms: f64) {
             .filter(|id| !present.contains(id))
             .filter(|id| base.items.get(id).is_some_and(|it| !matches!(it.body.v, Body::Stroke { tool: Tool::LegacyCover, .. }) && (it.body.at.clock as f64) <= base_ms))
             .collect();
-        gone.sort_unstable();
+        crate::sort::ord(&mut gone);
         for item in gone {
             let at = out.own();
             out.push(Op::ItemDel { item, deleted: true }, at);

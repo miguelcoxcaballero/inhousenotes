@@ -263,7 +263,7 @@ impl Host {
                 (name.clone(), format!("{{\"label\":\"{name}\",\"kind\":\"{}\",\"width\":{},\"height\":{},\"ops\":[", m.kind, m.w, m.h), ops.iter().map(named).collect())
             })
             .collect();
-        out.sort_by(|a, b| a.0.cmp(&b.0));
+        crate::sort::by(&mut out, |a, b| a.0.cmp(&b.0));
         out.into_iter().map(|(_, header, ops)| (header, ops)).collect()
     }
 }
