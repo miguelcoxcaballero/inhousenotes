@@ -67,3 +67,7 @@ Branch `v6-w5_6` (from `v6-w5_4`). Owns `rust/crates/ihn-app/src/migrate.rs` and
   and keys deleted, no errors; crash mid-migration resumes with no duplicates (exact live count); a 5.x window kept
   open blocks deletion and its later stroke is migrated after it closes; a held 5.x connection ⇒ `Blocked`, next
   boot deletes.
+- Other suites with this branch: 00, 09, 10, 12, 14b pass; 08 passes except `412 … keeps the foreign copy`, which
+  fails the same way on `v6-w5_4` (base build, same machine); `internal-store` fails on the known `401` console line
+  of the signed-out probe (NOTES-W3.1/W4.5). Quick parity `home-shell`: 12 of 14 equal; `home-shell/reconnect`
+  differs identically on `v6-w5_4`. The unit owns no parity state.
