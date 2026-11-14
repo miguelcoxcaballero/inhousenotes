@@ -48,6 +48,8 @@ pub struct State {
     /// Test: documents finished, in order.
     log: Vec<String>,
     report: Option<String>,
+    /// Test: runs started.
+    runs: u32,
 }
 
 fn headless(app: &App) -> bool { app.cfg.has(mode::HEADLESS) }
@@ -63,6 +65,7 @@ fn start(app: &mut App, host: &mut dyn Host) {
     }
     let st = &mut app.st.export_headless;
     (st.running, st.account, st.errors, st.pending) = (true, account, Vec::new(), 0);
+    st.runs += 1;
     let mut t = StoreTx::new();
     t.docs_scan();
     let req = app.req(Mod::ExportHeadless);
@@ -115,6 +118,9 @@ fn stop(app: &mut App, host: &mut dyn Host) {
     app.sched.clear(host.out(), T_POLL);
     if headless(app) {
         report(app, host);
+    } else if shell::view(app) == View::Home {
+        // The cards' badges follow the flags the runner cleared.
+        crate::home::refresh(app, host);
     }
 }
 
@@ -165,6 +171,7 @@ fn poll(app: &mut App, host: &mut dyn Host) {
             collab::kick(app, host);
         } else if forced && !force && settled {
             app.st.export_headless.log.push(doc);
+            super::lifecycle::note_home(app, host);
             session::close(app, host);
             return next(app, host);
         }
@@ -177,6 +184,13 @@ fn poll(app: &mut App, host: &mut dyn Host) {
         return next(app, host);
     }
     app.sched.timer(host.out(), T_POLL, POLL_MS);
+}
+
+/// The connection came back: documents left pending are finished from Home a little later.
+fn back_online(app: &mut App, host: &mut dyn Host) {
+    if !headless(app) && auth::token(app).is_some() && !app.st.export_headless.running {
+        app.sched.timer(host.out(), T_START, FOREGROUND_DELAY_MS);
+    }
 }
 
 /// Called once at boot, in `app::MODULES` order, after the `Ui` table is bound.
@@ -201,9 +215,8 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
             scanned(app, host, &io);
         }
         Event::Io(io) if app.st.export_headless.cur.as_ref().is_some_and(|c| c.load_req == io.req && !c.loaded) => loaded(app, host, io.status),
-        Event::Msg(m) if m.chan == shell::sig::NETWORK && m.data == b"1" && !headless(app) && auth::token(app).is_some() && !app.st.export_headless.running => {
-            app.sched.timer(host.out(), T_START, FOREGROUND_DELAY_MS);
-        }
+        Event::Msg(m) if m.chan == shell::sig::NETWORK && m.data == b"1" => back_online(app, host),
+        Event::Life(l) if l.code == crate::abi::life::ONLINE => back_online(app, host),
         _ => {}
     }
     0
@@ -216,7 +229,8 @@ pub fn test_cmd(app: &mut App, host: &mut dyn Host, name: &str, _args: &str) -> 
         "state" => {
             let st = &app.st.export_headless;
             let done: Vec<String> = st.log.iter().map(|d| json_str(d)).collect();
-            Some(format!("{{\"running\":{},\"queue\":{},\"done\":[{}],\"report\":{}}}", st.running, st.queue.len(), done.join(","), st.report.as_deref().unwrap_or("null")))
+            let errors: Vec<String> = st.errors.iter().map(|d| json_str(d)).collect();
+            Some(format!("{{\"running\":{},\"runs\":{},\"queue\":{},\"done\":[{}],\"errors\":[{}],\"report\":{}}}", st.running, st.runs, st.queue.len(), done.join(","), errors.join(","), st.report.as_deref().unwrap_or("null")))
         }
         "run" => {
             start(app, host);

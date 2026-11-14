@@ -10,6 +10,7 @@ use crate::abi::{ety, life, ret, Event};
 use ihn_core::doc::{ExportPhase, SyncEngine};
 use crate::app::Mod;
 use crate::doc::session;
+use crate::store::schema::Record;
 use crate::shell::Status;
 use crate::ui_ids::Ui;
 use crate::{abi, home, shell, store, tag, App, Host};
@@ -61,6 +62,12 @@ fn finish(app: &mut App, host: &mut dyn Host, waited: bool) {
     }
     let status = session::sync_status(app);
     let pending = status.unsealed_local > 0 || status.not_created;
+    // Home's badges read the persisted flags (ARCHITECTURE §6.6): own batches not sealed yet = `relay_pending` (the
+    // relay's seal clears it).
+    if status.unsealed_local > 0 && !session::get(app).is_some_and(|s| s.record.flags.relay_pending) {
+        session::persist(app, host, Record::Flags { relay_pending: Some(true), export_pending: None, created: None });
+    }
+    note_home(app, host);
     // Compaction folds the dirty pages before the document leaves the screen.
     session::compact(app, host, false);
     home::show(app, host);
@@ -69,6 +76,15 @@ fn finish(app: &mut App, host: &mut dyn Host, waited: bool) {
     app.st.export_lifecycle.log.push((waited, text.into()));
     home::refresh(app, host);
     shell::hide_loading(app, host);
+}
+
+/// Tells Home the open document's persisted state (its card badge, ARCHITECTURE §6.6).
+pub fn note_home(app: &mut App, host: &mut dyn Host) {
+    let Some(s) = session::get(app).filter(|s| s.persistent) else { return };
+    let f = s.record.flags;
+    let info = ihn_core::catalog::DocInfo { last_opened_at: s.record.last_opened_at, pinned: s.record.pinned, available: true, pending: f.relay_pending || !f.created };
+    let id = s.doc_id.clone();
+    home::doc_changed(app, host, &id, Some(info));
 }
 
 fn check(app: &mut App, host: &mut dyn Host) {
