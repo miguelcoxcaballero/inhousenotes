@@ -297,6 +297,10 @@ export class Driver {
     await this.page.evaluate(() => { const style = document.createElement('style'); style.id = '__ihn-raster'; style.textContent = '*, *::before, *::after { image-rendering: pixelated !important; }'; document.documentElement.appendChild(style); }).catch(() => {});
     await frames();
     await this.page.evaluate(() => { const style = document.getElementById('__ihn-raster'); if (style) style.remove(); }).catch(() => {});
+    // Icons whose stroke caps touch their own SVG box (share, new folder) rasterised that clip edge differently from
+    // one paint to the next, on either side (±7 levels on 2–3 px; `--runs` stability failures of 5.18.0 against
+    // itself). Unclipped inline SVGs in both apps remove the edge; the clip cut at most a quarter pixel of a cap.
+    await this.page.evaluate(() => { if (document.getElementById('__ihn-svg')) return; const style = document.createElement('style'); style.id = '__ihn-svg'; style.textContent = 'svg:not(:root) { overflow: visible !important; }'; document.documentElement.appendChild(style); }).catch(() => {});
     await frames();
     await this.settle();
   }
