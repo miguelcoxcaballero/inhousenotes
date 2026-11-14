@@ -168,7 +168,8 @@ test('412 with an unchanged head re-sends the same bytes; 412 with a new head me
   // is written before the next export.
   mock.drive.handle({ method: 'PATCH', url: `https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=media`, headers: { authorization: `Bearer ${mock.drive.accounts.get(ANA).token}`, 'content-type': 'application/pdf' }, body: blankPdf() });
   await openDoc(A.page, id);
-  expect((await cmd(A.page, 'doc.v5open.state')).recoveries.length).toBe(1);
+  // The cached copy shows first ("Restoring document..."); the Drive check that finds the foreign head follows.
+  await expect.poll(async () => (await cmd(A.page, 'doc.v5open.state')).recoveries.length, { timeout: 30_000 }).toBe(1);
   await writeAndLeave(A.page, mock, id, [line(320, 640)]);
   await expect.poll(() => [...mock.drive.files.values()].filter(f => f.name === 'inline-images (recovered Drive version).pdf').length, { timeout: 20_000 }).toBe(2);
   await expect.poll(async () => (await container(mock.drive.content(id))).keywords.startsWith('STROKES_Z:!;IHN6:'), { timeout: 30_000 }).toBe(true);

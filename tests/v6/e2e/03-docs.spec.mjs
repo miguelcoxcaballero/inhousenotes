@@ -63,8 +63,17 @@ test('create, rename, card menu, copy, bin, upload', async ({ page, context, moc
   await expect.poll(() => mock.drive.file(docId)?.parents, { timeout: 30_000 }).toEqual(['lib-folder-school']);
   expect(mock.drive.file(docId).name).toBe('Lecture.pdf');
 
-  // Rename (the export modal's name is the document's name): the export pushes it to Drive and it stays.
-  // (Typing in `#doc-title` does not commit yet: its focus listener never marks it editing — NOTES-W5.5.)
+  // Rename from the title: Enter commits and the title keeps the new name.
+  await page.click('#doc-title');
+  await expect(page.locator('#doc-title')).toHaveClass(/editing/);
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.type('Lecture one');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#doc-title')).not.toHaveClass(/editing/);
+  await expect(page.locator('#doc-title')).toHaveText('Lecture one');
+  // 5.18.0 PATCHes the Drive name at once. v6's `editor/view.rs` `finish_title` skips that PATCH for a document that
+  // is in Drive (its `created` test is inverted, NOTES-W6.1 — owned by the editor), so the name is pushed through the
+  // export modal's name here, which 5.18.0 also keeps.
   await cmd(page, 'export.user.export', { name: 'Lecture one' });
   await expect.poll(() => mock.drive.file(docId).name, { timeout: 40_000 }).toBe('Lecture one.pdf');
   await page.click('#btn-drive-home svg');
