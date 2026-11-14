@@ -188,6 +188,14 @@ fn begin(app: &mut App, host: &mut dyn Host) {
     viewport::align_top(app, host, super::layout::A4_WIDTH);
 }
 
+/// v5: `importPDFData`'s `renderAllPages({deferVisibleUpdate: true}); state.activePageIndex = 0`, a frame before
+/// the document is shown (`doc::open::finish_foreign`); [`opened`] then keeps these rows.
+pub fn render_opened(app: &mut App, host: &mut dyn Host) {
+    session::take_changes(app);
+    pages::render_opened(app, host);
+    pages::set_active_page(app, 0);
+}
+
 fn opened(app: &mut App, host: &mut dyn Host) {
     session::take_changes(app);
     pages::rebuild_opened(app, host);

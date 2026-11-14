@@ -157,6 +157,8 @@ pub struct State {
     /// Requests of preview data URLs: req → page.
     preview_reqs: Vec<(u32, Id, u32)>,
     new_pages: Vec<Id>,
+    /// The open's `renderAllPages` already ran ([`render_opened`]); `rebuild_opened` only arms its 80 ms pass.
+    open_rendered: bool,
     is_pc: Option<bool>,
     /// Backing-store resizes of page canvases (gesture budget test).
     pub resizes: u32,
@@ -340,6 +342,7 @@ pub fn clear(app: &mut App, host: &mut dyn Host) {
     st.pending.clear();
     st.previews.clear();
     st.new_pages.clear();
+    st.open_rendered = false;
     st.active_page = Id::NONE;
     let urls = with_gfx(app, |_, g| {
         g.paths.clear(&mut g.cmds);
@@ -381,10 +384,20 @@ fn cancel_jobs(app: &mut App, host: &mut dyn Host) {
 pub fn rebuild(app: &mut App, host: &mut dyn Host) { render_all(app, host, false) }
 
 /// v5: the open's `renderAllPages({deferVisibleUpdate: true})`: no forced visible pass now (the view's alignment
-/// asks for a normal one, which waits for quiet input), and a normal pass 80 ms later.
+/// asks for a normal one, which waits for quiet input), and a normal pass 80 ms after the document is shown
+/// (5.18.0: right after `hideLoading`). A 5.x import built the rows a frame earlier ([`render_opened`]).
 pub fn rebuild_opened(app: &mut App, host: &mut dyn Host) {
-    render_all(app, host, true);
+    if !std::mem::take(&mut app.st.editor_pages.open_rendered) {
+        render_all(app, host, true);
+    }
     app.sched.timer(host.out(), T_OPEN_VISIBLE, 80.0);
+}
+
+/// v5: the 5.x import's `renderAllPages({deferVisibleUpdate: true})`, one animation frame before the document is
+/// shown (`doc::open::finish_foreign`).
+pub fn render_opened(app: &mut App, host: &mut dyn Host) {
+    render_all(app, host, true);
+    app.st.editor_pages.open_rendered = true;
 }
 
 fn render_all(app: &mut App, host: &mut dyn Host, defer_visible: bool) {
@@ -443,6 +456,11 @@ pub fn changed(app: &mut App, host: &mut dyn Host, c: &ihn_core::doc::Changes) {
         // The pages of a document that was shown empty (its pages arrive right after the open's first render) are
         // still the open's render: no forced visible pass (5.18.0 renders them once, deferred, `rebuild_opened`).
         let first = app.st.editor_pages.rows.is_empty();
+        if first && crate::doc::open::busy(app) {
+            // An open still before its render (5.18.0 builds the rows in `importPDFData`, after its frame yields):
+            // the open renders them (`render_opened` / `rebuild_opened`).
+            return;
+        }
         render_all(app, host, first);
         viewport::update_transform(app, host);
         return;
