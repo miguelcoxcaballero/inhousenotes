@@ -307,7 +307,8 @@ test('offline: NETWORK signal, status line, probe backoff, `online` and recovery
   await expect(page.locator('#drive-home')).toBeVisible();
   await expect.poll(flag).toBe('0');
   expect((await cmd(page, 'shell.state')).offline).toBe(false);
-  await expect(page.locator('#drive-status')).toHaveText('Loading your PDFs...', { useInnerText: false });
+  // Connected: whatever Home's listing wrote there (this stub refuses the lists), never the offline line.
+  await expect(page.locator('#drive-status')).not.toHaveText('Offline · changes stay on this device', { useInnerText: false });
   await page.clock.runFor(10 * 60_000);
   expect(probes).toHaveLength(1);
   expect(await network()).toEqual([]);
