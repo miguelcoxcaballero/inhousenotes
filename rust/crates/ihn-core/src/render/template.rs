@@ -156,6 +156,9 @@ impl Templates {
 
     fn svg_index(kind: Template) -> usize { (kind == Template::Diary) as usize }
 
+    /// Whether `s` is still one of the cached template canvases (an export keeps its JPEG while it is).
+    pub fn holds(&self, s: Surf) -> bool { self.cache.iter().any(|e| e.3 == s) }
+
     /// The cached canvas of a template at a pixel size, if any (an export encodes it).
     pub fn cached(&self, kind: Template, w: u32, h: u32) -> Option<Surf> { self.cache.iter().find(|e| (e.0, e.1, e.2) == (kind, w, h)).map(|e| e.3) }
 
