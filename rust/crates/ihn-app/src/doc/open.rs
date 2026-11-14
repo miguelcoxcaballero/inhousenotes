@@ -223,6 +223,10 @@ struct Job {
     foreign: Option<Foreign>,
     /// The document is on screen (the loading overlay is gone); what follows is silent.
     shown: bool,
+    /// A signed-out public download handed over by `doc::public` ([`open_public`]).
+    public: bool,
+    /// [`open_public`] refreshing the open document: no overlay, a failure leaves it as it is.
+    quiet: bool,
 }
 
 /// This module's state, stored in `App::st`.
@@ -319,6 +323,30 @@ pub fn open_file(app: &mut App, host: &mut dyn Host, file: File, notify: u32) ->
     true
 }
 
+/// Opens a PDF that `doc::public` downloaded signed out (5.18.0 `openSharedFileWithoutSignIn`): read-only, memory
+/// only, no Drive calls. `blob` passes to the open. With `refresh` the open document is merged with a newer download
+/// silently (5.18.0's public poll re-import). `notify` completes with 0 (shown) or -1 (failed).
+pub fn open_public(app: &mut App, host: &mut dyn Host, file: File, blob: u32, size: f64, refresh: bool, notify: u32) -> bool {
+    if file.id.is_empty() || busy(app) {
+        return false;
+    }
+    abort(app, host);
+    let meta = Meta { can_edit: false, owned_by_me: false, resource_key: file.resource_key.clone(), ..Meta::default() };
+    let mut job = Job { file, notify, blob, size, meta: Some(meta), public: true, quiet: refresh, ..Job::default() };
+    let id = job.file.id.clone();
+    if refresh && session::doc_id(app) == id {
+        job.local = Some(false);
+        app.st.doc_open.job = Some(job);
+        start_pdf(app, host);
+    } else {
+        job.load_req = app.req(Mod::DocOpen);
+        let load_req = job.load_req;
+        app.st.doc_open.job = Some(job);
+        session::load(app, host, "", &id, load_req);
+    }
+    true
+}
+
 fn request_meta(app: &mut App, host: &mut dyn Host, file: &File, fields: &str) -> u32 {
     let mut url = format!("https://www.googleapis.com/drive/v3/files/{}?fields={}", file.id, fx::url_encode(fields));
     if !file.resource_key.is_empty() {
@@ -384,7 +412,10 @@ fn done(app: &mut App, host: &mut dyn Host) {
 fn fail(app: &mut App, host: &mut dyn Host) {
     let Some(job) = app.st.doc_open.job.take() else { return };
     release(host, &job);
-    if job.shown {
+    if job.shown || job.quiet {
+        if job.quiet && job.notify != 0 {
+            shell::deliver(app, host, job.notify, -1, 0, &[]);
+        }
         return;
     }
     session::close(app, host);
@@ -416,6 +447,10 @@ fn advance(app: &mut App, host: &mut dyn Host) {
     }
     let Some(meta) = j.meta.clone() else { return };
     if j.media_req != 0 || j.blob != 0 {
+        // A public download (`open_public`) goes to pdf.js once the session is loaded.
+        if j.public && j.pdf_req == 0 && j.pdf == 0 && j.inflate_req == 0 {
+            start_pdf(app, host);
+        }
         return;
     }
     let known = session::get(app).is_some_and(|s| !meta.head.is_empty() && (s.record.exports.iter().any(|e| e.0 == meta.head) || s.record.last_export.as_ref().is_some_and(|l| l.head == meta.head)));
@@ -483,7 +518,12 @@ fn checked(app: &mut App, host: &mut dyn Host, io: &Io) {
         }
         return download(app, host);
     }
-    if !j.shown {
+    start_pdf(app, host);
+}
+
+fn start_pdf(app: &mut App, host: &mut dyn Host) {
+    let Some(j) = job(app) else { return };
+    if !j.shown && !j.quiet {
         shell::loading(app, host, "Processing PDF...");
     }
     let req = app.req(Mod::DocOpen);
