@@ -56,7 +56,7 @@ export default function install(host) {
     | (event.metaKey ? 8 : 0) | (event.isComposing ? 16 : 0) | (event.repeat ? 32 : 0)
     | (event.target?.checked === true ? 64 : 0) | (event.isTrusted ? 128 : 0) | (event.isPrimary ? 256 : 0)
     | (found.length && nodes[found[0]] === event.target ? 512 : 0)
-    | (event.dataTransfer && Array.from(event.dataTransfer.types || []).includes('Files') ? 1024 : 0);
+    | (Array.from((event.dataTransfer || event.clipboardData)?.types || []).includes('Files') ? 1024 : 0);
   const sample = (w, e) => w.f64(e.clientX).f64(e.clientY).f64(e.timeStamp).f32(e.pressure).f32(e.tiltX).f32(e.tiltY).u32(e.buttons);
   const touches = (w, list) => {
     w.u32(list ? list.length : 0);
