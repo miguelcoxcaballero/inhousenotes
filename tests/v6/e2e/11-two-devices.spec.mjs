@@ -64,7 +64,8 @@ async function device(browser, mock, email = ANA, { block = false } = {}) {
   const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1280, height: 800 } });
   await mock.install(context);
   await seedSession(context, mock, email);
-  if (block) await context.addInitScript(() => { window.RTCPeerConnection = undefined; });
+  // P2P blocked: relay-only ICE without a TURN server gathers no candidate, so every connection fails.
+  if (block) await context.addInitScript(() => { const Native = window.RTCPeerConnection; window.RTCPeerConnection = class extends Native { constructor(c) { super({ ...c, iceTransportPolicy: 'relay' }); } }; });
   const page = await context.newPage();
   const problems = [], writes = [];
   page.on('pageerror', e => problems.push(`pageerror: ${e.message}`));
@@ -183,11 +184,18 @@ test('(b) relay only, and a viewer of another account that never writes or conne
   mock.latency = 100;
   const A = await device(browser, mock, ANA, { block: true }), B = await device(browser, mock, BEN, { block: true }), V = await device(browser, mock, CHO, { block: true });
   await openDoc(A.page);
+  const cdpA = await A.context.newCDPSession(A.page);
+  await stroke(A.page, cdpA, line(100, 200));
+  await expect.poll(async () => (await collab(A.page)).unsealed, { timeout: 20_000 }).toBe(0);
   await openDoc(B.page);
   await openDoc(V.page, { edit: false });
   expect((await session(V.page)).writable).toBe(false);
+  await expect(B.page.locator('#presence-avatars .presence-avatar-wrapper')).toHaveCount(1, { timeout: 10_000 });
   await expect(A.page.locator('#presence-avatars .presence-avatar-wrapper')).toHaveCount(1, { timeout: 30_000 });
-  const cdpA = await A.context.newCDPSession(A.page), cdpB = await B.context.newCDPSession(B.page);
+  // The viewer shows both editors and is shown by nobody.
+  await expect(V.page.locator('#presence-avatars .presence-avatar-wrapper')).toHaveCount(2, { timeout: 30_000 });
+  expect(['Company', 'RelayOnly']).toContain((await collab(A.page)).mode);
+  const cdpB = await B.context.newCDPSession(B.page);
   const base = (await session(A.page)).live;
   const samples = [];
   for (let i = 0; i < 4; i++) {

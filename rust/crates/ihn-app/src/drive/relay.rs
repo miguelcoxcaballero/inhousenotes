@@ -41,15 +41,31 @@ struct Pending {
 #[derive(Default)]
 pub struct State {
     pending: Vec<Pending>,
+    /// The account's sync folder, once a lookup answered.
+    folder: String,
+    /// A folder lookup is in flight: creates wait for it (a relay file must land in the link-shared folder).
+    lookup: bool,
+    waiting: Vec<(u32, u32, HttpReq)>,
 }
 
+/// Request id of a folder lookup the executor starts itself (no session waits for its answer).
+const INTERNAL: u32 = u32::MAX;
+
 /// Requests in flight for sync session `gen`.
-pub fn busy(app: &App, gen: u32) -> usize { app.st.drive_relay.pending.iter().filter(|p| p.gen == gen).count() }
+pub fn busy(app: &App, gen: u32) -> usize {
+    let st = &app.st.drive_relay;
+    st.pending.iter().filter(|p| p.gen == gen).count() + st.waiting.iter().filter(|w| w.0 == gen).count()
+}
 
 /// Aborts every request of session `gen` (no answer follows).
 pub fn abort(app: &mut App, host: &mut dyn Host, gen: u32) {
-    let (gone, keep) = std::mem::take(&mut app.st.drive_relay.pending).into_iter().partition::<Vec<_>, _>(|p| p.gen == gen);
-    app.st.drive_relay.pending = keep;
+    let st = &mut app.st.drive_relay;
+    let (gone, keep) = std::mem::take(&mut st.pending).into_iter().partition::<Vec<_>, _>(|p| p.gen == gen);
+    st.pending = keep;
+    st.waiting.retain(|w| w.0 != gen);
+    if gone.iter().any(|p| matches!(p.step, Step::FolderFind | Step::FolderCreate | Step::FolderShare(_))) {
+        st.lookup = false;
+    }
     for p in gone {
         client::abort(app, host, p.req);
     }
@@ -70,6 +86,21 @@ fn multipart(meta: &str, mime: &str, bytes: &[u8]) -> (String, Vec<u8>) {
 
 /// Starts `req` for session `gen` (its id `id`); `folder` = the account's sync folder (parents of `Create`).
 pub fn exec(app: &mut App, host: &mut dyn Host, gen: u32, id: u32, req: HttpReq, folder: &str) {
+    let st = &mut app.st.drive_relay;
+    let folder = if folder.is_empty() { st.folder.clone() } else { folder.to_string() };
+    if let HttpReq::Create { .. } = req {
+        if folder.is_empty() || st.lookup {
+            st.waiting.push((gen, id, req));
+            if !std::mem::replace(&mut st.lookup, true) {
+                exec(app, host, 0, INTERNAL, HttpReq::SyncFolder, "");
+            }
+            return;
+        }
+    }
+    if req == HttpReq::SyncFolder {
+        st.lookup = true;
+    }
+    let folder = &folder[..];
     let mut step = Step::Plain;
     let r = match req {
         HttpReq::Meta { file } => {
@@ -162,6 +193,26 @@ pub fn meta_of(json: &Json) -> DriveMeta {
     }
 }
 
+/// The folder lookup ended (`folder` empty: it failed): answer its session and start the creates that waited.
+fn folder_known(app: &mut App, host: &mut dyn Host, gen: u32, id: u32, folder: String, ev: SyncIo) {
+    let st = &mut app.st.drive_relay;
+    st.lookup = false;
+    if !folder.is_empty() {
+        st.folder = folder.lines().next().unwrap_or("").to_string();
+    }
+    let waiting = std::mem::take(&mut st.waiting);
+    if id != INTERNAL {
+        collab::http_answer(app, host, gen, ev);
+    }
+    for (g, i, req) in waiting {
+        if app.st.drive_relay.folder.is_empty() {
+            collab::http_answer(app, host, g, SyncIo::Http { id: i, status: 0, etag: String::new(), body: Vec::new() });
+        } else {
+            exec(app, host, g, i, req, "");
+        }
+    }
+}
+
 fn done(app: &mut App, host: &mut dyn Host, io: &crate::Io) {
     let st = &mut app.st.drive_relay;
     let Some(at) = st.pending.iter().position(|p| p.req == io.req) else { return };
@@ -191,7 +242,7 @@ fn done(app: &mut App, host: &mut dyn Host, io: &crate::Io) {
             let mut ids: Vec<String> = json().and_then(|j| j.get("files").map(|f| f.items().iter().map(|e| e.text("id").to_string()).filter(|s| !s.is_empty()).collect())).unwrap_or_default();
             ids.sort();
             if let Some(id) = ids.into_iter().next() {
-                return collab::http_answer(app, host, p.gen, SyncIo::Http { id: p.id, status, etag, body: id.into_bytes() });
+                return folder_known(app, host, p.gen, p.id, id.clone(), SyncIo::Http { id: p.id, status, etag, body: id.into_bytes() });
             }
             let body = format!("{{\"name\":{},\"mimeType\":\"application/vnd.google-apps.folder\",\"parents\":[\"root\"],\"appProperties\":{{\"ihn6Kind\":\"sync-folder\"}}}}", json_str(SYNC_FOLDER_NAME));
             let r = Req { method: "POST", url: format!("{API}?fields=id"), headers: "Content-Type: application/json\n".into(), body: Body::Bytes(body.into_bytes()), accept: ACCEPT, ..Req::default() };
@@ -206,11 +257,16 @@ fn done(app: &mut App, host: &mut dyn Host, io: &crate::Io) {
         // The folder exists; a refused link permission is flag `x` (SYNC §8.2).
         (Step::FolderShare(folder), _) if status != 0 => {
             let text = if ok { folder.clone() } else { format!("{folder}\n1") };
-            return collab::http_answer(app, host, p.gen, SyncIo::Http { id: p.id, status: 200, etag, body: text.into_bytes() });
+            return folder_known(app, host, p.gen, p.id, folder.clone(), SyncIo::Http { id: p.id, status: 200, etag, body: text.into_bytes() });
         }
         _ => body,
     };
-    collab::http_answer(app, host, p.gen, SyncIo::Http { id: p.id, status, etag, body });
+    let ev = SyncIo::Http { id: p.id, status, etag, body };
+    match p.step {
+        // A lookup that failed: the creates waiting for it fail too (sync retries them).
+        Step::FolderFind | Step::FolderCreate | Step::FolderShare(_) => folder_known(app, host, p.gen, p.id, String::new(), ev),
+        _ => collab::http_answer(app, host, p.gen, ev),
+    }
 }
 
 /// Called once at boot, in `app::MODULES` order, after the `Ui` table is bound.
@@ -218,8 +274,11 @@ pub fn init(_app: &mut App, _host: &mut dyn Host) {}
 
 /// Events addressed to this module (ids made with `abi::tag`) and broadcasts (`Life`, `Msg`). Returns `abi::ret` bits.
 pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
-    if let Event::Io(io) = event {
-        done(app, host, io);
+    match event {
+        Event::Io(io) => done(app, host, io),
+        // The folder belongs to the account.
+        Event::Msg(m) if m.chan == crate::shell::sig::SIGNED_OUT => app.st.drive_relay.folder.clear(),
+        _ => {}
     }
     0
 }
