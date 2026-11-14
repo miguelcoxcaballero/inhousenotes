@@ -181,6 +181,9 @@ fn facts_ready(app: &mut App, host: &mut dyn Host) {
     import_here(app, host, actor, time);
 }
 
+/// Posts a message to the export worker, starting it once; shared with the export role (`export::pdf`, W5.4).
+pub fn worker_send(app: &mut App, host: &mut dyn Host, obj: u32, bytes: &[u8]) { post(app, host, obj, bytes) }
+
 fn post(app: &mut App, host: &mut dyn Host, obj: u32, bytes: &[u8]) {
     let out = host.out();
     if !std::mem::replace(&mut app.st.doc_v5open.worker, true) {

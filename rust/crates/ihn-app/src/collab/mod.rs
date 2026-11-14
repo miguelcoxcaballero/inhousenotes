@@ -93,6 +93,11 @@ pub struct Run {
     phase_code: u8,
 }
 
+impl Run {
+    /// The engine is leaving its document (Home / close): it still flushes, says goodbye and may export.
+    pub fn leaving(&self) -> bool { self.leaving }
+}
+
 /// This module's state, stored in `App::st`.
 #[derive(Default)]
 pub struct State {
@@ -551,6 +556,11 @@ fn after(app: &mut App, host: &mut dyn Host) {
     let Some(run) = app.st.collab.run.as_ref() else { return };
     let closed = run.sync.phase() == Phase::Closed;
     if run.leaving {
+        // W5.4: a device leaving alone still exports (SYNC §14.1); the desk is answered while the engine leaves.
+        if !closed {
+            crate::export::upload::desk(app, host);
+        }
+        let Some(run) = app.st.collab.run.as_ref() else { return };
         if closed && relay::busy(app, run.gen) == 0 {
             let run = app.st.collab.run.take().unwrap();
             let m = host.out().w.rec(fam::FX, op::BC_CLOSE);
@@ -569,6 +579,8 @@ fn after(app: &mut App, host: &mut dyn Host) {
         stop(app, host);
         return;
     }
+    let mut status = status;
+    crate::export::upload::overlay(app, &mut status);
     session::set_sync_status(app, host, Some(status));
     save_state::set_catching_up(app, host, catching);
     if let Some(drive_name) = rename {
@@ -581,6 +593,7 @@ fn after(app: &mut App, host: &mut dyn Host) {
             session::edit(app, host, |tx| tx.set_name(&name));
         }
     }
+    crate::export::upload::desk(app, host);
     presence::update(app, host);
     if live_ver != app.st.collab.overlay_ver && !std::mem::replace(&mut app.st.collab.overlay_armed, true) {
         app.sched.frame(host.out(), Mod::Collab);
