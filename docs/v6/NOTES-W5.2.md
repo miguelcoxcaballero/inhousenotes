@@ -55,4 +55,12 @@ doc/public.rs}`, `tests/v6/e2e/07-share.spec.mjs`, `tests/v6/parity/states/share
   reader link opens read-only from `drive.usercontent.google.com` (no `/files` API call), an owner export is picked up
   by the poll within 2.5 s + download, never `key=`; the writer link's gate; the preview fallback with zoom and the
   failing poll still downloading.
-- Parity: see the report of this unit (quick matrix, `--states share`).
+- Parity `--quick --states share` (10 states × 2 cells): **`share/public-preview` equal on both cells** (preview
+  iframe, zoom controls, `Read only` toggle, title, hidden toolbar). The other states open a 5.x scene
+  (TESTING §3.1): v6 cannot import 5.x before W3.4, so the open fails — the signed-in states never get a share button
+  (script error on B) and `public-viewer` / `sign-in-gate` show the preview fallback instead of the document. They
+  are the gate for W3.2 + W3.4 + W5.2 together; the modal itself is covered by the e2e above.
+- Also run: 00-boot, 02-home, internal-doc green. `01-signin` "offline: NETWORK signal…" fails with `#drive-status` =
+  `Unable to load this folder.` (Home's folder listing, W2.5, overriding W1.3's expected text) — not touched here.
+- The parity owner check found and fixed: the public view sets the document title and hides the toolbar
+  (5.18.0 `updateDocTitle` / `updateViewerModeUI`), since no editor session exists in the preview.

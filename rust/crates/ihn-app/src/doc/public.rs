@@ -409,7 +409,8 @@ fn stop_polling(app: &mut App, host: &mut dyn Host) {
     if std::mem::take(&mut st.polling) {
         app.sched.clear(host.out(), T_POLL);
     }
-    st.in_flight = false;
+    // A merge still running is not shown any more (5.18.0 `assertPublicPollContext`).
+    (st.in_flight, st.refresh_req) = (false, 0);
     if st.dl.as_ref().is_some_and(|d| d.poll) {
         if let Some(dl) = st.dl.take() {
             if dl.blob != 0 {
@@ -425,7 +426,15 @@ fn stop_polling(app: &mut App, host: &mut dyn Host) {
 fn viewer_ui(app: &mut App, host: &mut dyn Host, writer: bool) {
     let anonymous = !writer && auth::token(app).is_none();
     let group = app.st.doc_public.mode_group;
+    // v5: updateDocTitle (`getBaseDocTitle` of the file name) and the hidden toolbar of a viewer.
+    let name = session::get(app).map(|s| s.record.name.clone()).filter(|n| !n.is_empty());
+    let name = name.or_else(|| app.st.doc_public.link.as_ref().map(|l| l.name.clone())).filter(|n| !n.trim().is_empty()).unwrap_or_else(|| "Shared document".into());
+    let trimmed = name.trim();
+    let cut = trimmed.len().saturating_sub(4);
+    let base = if trimmed.get(cut..).is_some_and(|e| e.eq_ignore_ascii_case(".pdf")) { &trimmed[..cut] } else { trimmed };
     let out = host.out();
+    out.text(Ui::DOC_TITLE, if base.is_empty() { "Untitled" } else { base });
+    out.style(Ui::TOOLBAR, "display", Some("none"));
     out.class(Ui::READONLY_BANNER, "hidden", anonymous);
     out.style(Ui::MODE_TOGGLE_BTN, "display", Some(if anonymous { "" } else { "none" }));
     out.prop(Ui::DOC_TITLE, "contentEditable", Prop::Str("false"));
@@ -445,6 +454,7 @@ fn viewer_ui(app: &mut App, host: &mut dyn Host, writer: bool) {
 fn viewer_ui_reset(app: &mut App, host: &mut dyn Host) {
     let group = app.st.doc_public.mode_group;
     let out = host.out();
+    out.style(Ui::TOOLBAR, "display", Some(""));
     out.class(group, "public-read-only-mode", false);
     out.attr(Ui::MODE_TOGGLE_BTN, "aria-disabled", None);
     out.attr(Ui::MODE_TOGGLE_BTN, "aria-pressed", Some("false"));
