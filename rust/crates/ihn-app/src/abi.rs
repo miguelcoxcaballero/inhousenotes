@@ -327,10 +327,18 @@ pub struct OutBuf {
     pub w: Writer,
     next_node: u32,
     free_nodes: Vec<u32>,
+    /// The last style value of at least [`LONG_STYLE`] bytes written (`dom::style`); an identical one is sent as
+    /// [`SAME_LONG_STYLE`] instead of its bytes.
+    pub(crate) long_style: Vec<u8>,
 }
 
+/// Style values this long (template backgrounds: ~350 KB JPEG data URLs, set on every page) are sent once.
+pub const LONG_STYLE: usize = 16 << 10;
+/// In place of a STYLE record's value length: "the last long value again" (`host/dom.js` keeps it).
+pub const SAME_LONG_STYLE: u32 = 0xffff_fffe;
+
 impl Default for OutBuf {
-    fn default() -> Self { OutBuf { w: Writer::default(), next_node: FIRST_DYNAMIC_NODE, free_nodes: Vec::new() } }
+    fn default() -> Self { OutBuf { w: Writer::default(), next_node: FIRST_DYNAMIC_NODE, free_nodes: Vec::new(), long_style: Vec::new() } }
 }
 
 impl OutBuf {
@@ -675,6 +683,7 @@ pub fn dump(bytes: &[u8]) -> String {
     use std::fmt::Write;
     let mut out = String::new();
     let mut r = Reader::new(bytes);
+    let mut long: Option<String> = None;
     while !r.is_empty() {
         let (family, op, payload) = (r.u8().unwrap(), r.u8().unwrap(), r.bytes().expect("record length"));
         let mut p = Reader::new(payload);
@@ -696,8 +705,17 @@ pub fn dump(bytes: &[u8]) -> String {
                 'b' => write!(out, "{}", p.u8().unwrap()).unwrap(),
                 'f' => write!(out, "{}", p.f64().unwrap()).unwrap(),
                 's' => write!(out, "{:?}", p.str().unwrap()).unwrap(),
+                'o' if p.clone().u32() == Some(SAME_LONG_STYLE) => {
+                    p.u32();
+                    write!(out, "{:?}", long.as_deref().expect("a long style before its repeat")).unwrap()
+                }
                 'o' => match p.opt_str().unwrap() {
-                    Some(s) => write!(out, "{s:?}").unwrap(),
+                    Some(s) => {
+                        if s.len() >= LONG_STYLE {
+                            long = Some(s.to_string());
+                        }
+                        write!(out, "{s:?}").unwrap()
+                    }
                     None => out.push_str("null"),
                 },
                 // prop value: tag + value

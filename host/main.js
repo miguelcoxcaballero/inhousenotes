@@ -59,6 +59,12 @@ class Writer {
     return this.u32(written).skip(written);
   }
   skip(n) { this.p += n; return this; }
+  // A scratch grown for one large payload (a downloaded PDF, a worker batch) goes back to wasm after the call.
+  shrink() {
+    if (this.cap <= 256 << 10) return;
+    this.host.ex.ihn_free(this.base, this.cap);
+    this.base = this.cap = 0;
+  }
   get length() { return this.p - this.base; }
 }
 
@@ -104,6 +110,7 @@ function createHost(config) {
       } finally {
         this.inCall = false;
         this.queue.length = 0;
+        this.writer.shrink();
       }
       return result;
     },

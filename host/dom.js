@@ -21,6 +21,7 @@ const DOM_TYPE = {
 export default function install(host) {
   // Handles are chosen by Rust: 1..4 fixed, 16.. the ids of index.html, 1024.. dynamic.
   const nodes = [null, document, window, document.documentElement, document.body];
+  let longStyle = null; // the last long STYLE value (see the STYLE op)
   // listener id → Map(event type → entry): one id may serve several event types of one node (the document title's
   // focus/blur/keydown/pointerdown/click); listening again with an id and type replaces that pair only.
   const listeners = new Map();
@@ -226,7 +227,14 @@ export default function install(host) {
     [DOM | 11]: r => { const node = nodes[r.u32()], text = r.str(); if (node) node.textContent = text; },
     [DOM | 12]: r => { const node = nodes[r.u32()], name = r.str(); node?.classList.toggle(name, r.u8() !== 0); },
     [DOM | 13]: r => { const node = nodes[r.u32()], value = r.str(); if (node) node.className = value; },
-    [DOM | 14]: r => style(nodes[r.u32()], r.str(), r.ostr()),
+    [DOM | 14]: r => {
+      const node = nodes[r.u32()], name = r.str(), len = r.host.view().getUint32(r.p, true);
+      // abi.rs SAME_LONG_STYLE: the last value of at least LONG_STYLE (16 KiB) bytes again.
+      if (len === 0xfffffffe) { r.p += 4; return style(node, name, longStyle); }
+      const value = r.ostr();
+      if (value !== null && len >= 16384) longStyle = value;
+      style(node, name, value);
+    },
     [DOM | 15]: r => listen(r.u32(), r.str(), r.u32(), r.u8()),
     [DOM | 16]: r => unlisten(r.u32()),
     [DOM | 17]: r => { const node = nodes[r.u32()], preventScroll = r.u8() !== 0; node?.focus?.({ preventScroll }); },

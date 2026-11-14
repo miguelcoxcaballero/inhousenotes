@@ -5,7 +5,7 @@
 //! Numbers that end up in DOM strings must be formatted with `ihn_core::jsfmt` by the caller, so `outerHTML`
 //! matches 5.18.0.
 
-use crate::abi::{dom_op as op, fam, Node, OutBuf};
+use crate::abi::{dom_op as op, fam, Node, OutBuf, LONG_STYLE, SAME_LONG_STYLE};
 
 /// A value for [`OutBuf::prop`].
 #[derive(Clone, Copy, Debug)]
@@ -192,7 +192,15 @@ impl OutBuf {
     pub fn style(&mut self, h: Node, prop: &str, value: Option<&str>) {
         let m = self.dom(op::STYLE, h);
         self.w.str(prop);
-        self.w.opt_str(value);
+        match value {
+            Some(v) if v.len() >= LONG_STYLE && self.long_style == v.as_bytes() => self.w.u32(SAME_LONG_STYLE),
+            Some(v) if v.len() >= LONG_STYLE => {
+                self.long_style.clear();
+                self.long_style.extend_from_slice(v.as_bytes());
+                self.w.str(v);
+            }
+            _ => self.w.opt_str(value),
+        }
         self.w.end(m);
     }
     /// `h.addEventListener(event, …, flags)`; events arrive as `Event::Dom` (or `Event::Pointer` for `pointer*`

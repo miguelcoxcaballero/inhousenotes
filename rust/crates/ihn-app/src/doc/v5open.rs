@@ -348,8 +348,7 @@ fn import_here(app: &mut App, host: &mut dyn Host, actor: ActorId, time: u64) {
     }
 }
 
-/// The import is complete: `supersede` against the document as it was, then the batches one by one (each freed
-/// once applied), then the source asset.
+/// The import is complete: `supersede` against the document as it was, then the batches, then the source asset.
 fn imported(app: &mut App, host: &mut dyn Host, r: Result<(Option<(Source, Hash)>, bool), String>) {
     let Some(mut j) = app.st.doc_v5open.job.take() else { return };
     let id = j.f.file.id.clone();
@@ -367,9 +366,12 @@ fn imported(app: &mut App, host: &mut dyn Host, r: Result<(Option<(Source, Hash)
     });
     let pages = j.skeletons.iter().flat_map(|b| &b.ops).filter(|o| matches!(o, Op::PageNew { .. })).count();
     j.skeletons = Vec::new();
-    for e in std::mem::take(&mut j.encoded).into_iter().chain(sup.as_ref().map(encode_batch)) {
-        session::with_replica(app, host, |r| r.receive(std::slice::from_ref(&e), PeerRef::Import));
-    }
+    // One `receive` for the whole import: the session announces the changes once, so the editor builds its pages
+    // once instead of once per batch (21 rebuilds of every page for a 20-page 5.x document).
+    let mut batches = std::mem::take(&mut j.encoded);
+    batches.extend(sup.as_ref().map(encode_batch));
+    session::with_replica(app, host, |r| r.receive(&batches, PeerRef::Import));
+    drop(batches);
     mark(app);
     log(app, &id, format!("{}:{pages}", if v5 { "v5" } else { "plain" }));
     app.st.doc_v5open.job = Some(Job { source, ..j });
