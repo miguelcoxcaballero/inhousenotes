@@ -173,6 +173,9 @@ fn doc(app: &App) -> Option<&Doc> { session::get(app).map(|s| &s.doc) }
 
 pub fn is_open(app: &App) -> bool { app.st.panels_pages_panel.open }
 
+/// v5 `pageStructureDragInProgress`.
+pub fn dragging(app: &App) -> bool { app.st.panels_pages_panel.drag.is_some() }
+
 /// v5 `openPagesPanel()`.
 pub fn open(app: &mut App, host: &mut dyn Host) {
     app.st.panels_pages_panel.open = true;
