@@ -41,6 +41,8 @@ test('tabs, folder zoom, breadcrumbs, back and Escape', async ({ page, context, 
   expect(await ids(page, '#drive-starred [data-drive-item-id]')).toEqual(['lib-doc-journal']);
   expect((await ids(page, '#drive-shared [data-drive-item-id]')).sort()).toEqual(['lib-doc-shared', 'lib-folder-shared']);
   expect(await page.locator('#drive-home').getAttribute('data-home-tab')).toBe('home');
+  // Thumbnails are fetched once, kept on this device and shown from a blob URL.
+  await expect(page.locator('#drive-recents .drive-card-preview.is-loaded img[src^="blob:"]')).toHaveCount(5);
 
   // Tabs.
   for (const tab of ['starred', 'shared', 'files', 'home']) {
@@ -208,6 +210,7 @@ test('offline: cached lists, the offline line and badges from the docs flags', a
   await expect(page.locator('#drive-folder-files .drive-card').first()).toBeVisible();
   expect(await ids(page, '#drive-folders [data-drive-item-id]')).toEqual(['lib-folder-school', 'lib-folder-travel']);
   expect((await names(page, '#drive-recents')).sort()).toEqual([...shown].sort());
-  await expect(page.locator('#drive-status')).toHaveText('Offline · changes stay on this device', { useInnerText: false });
+  await expect.poll(async () => (await cmd(page, 'shell.state')).offline).toBe(true);
+  await expect(page.locator('#drive-folder-files [data-drive-item-id="lib-doc-ideas"] .document-sync-status')).toHaveText('Saved offline');
   expect(problems).toEqual([]);
 });

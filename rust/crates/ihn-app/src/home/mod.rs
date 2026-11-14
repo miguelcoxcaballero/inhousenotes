@@ -302,10 +302,18 @@ fn loaded(app: &mut App, host: &mut dyn Host, io: &Io) {
         }
     }
     handles.into_iter().for_each(|h| host.out().obj_release(h));
+    // Drive answered before the stored catalogue arrived (a first run opens the database meanwhile): its lists are
+    // on screen and newer, so the cached paint is skipped. v5: the library is read before the first list request.
+    let c = &app.st.home.catalog;
+    let early = !c.loaded && (!c.is_empty() || c.views.recents.is_some() || c.views.starred.is_some() || c.views.shared.is_some());
     app.st.home.catalog.load(entries, infos, views, sync_folder, root);
     auth::set_local_library(app, host, true);
     badges::refresh(app, host);
-    lists::render_home(app, host);
+    if early {
+        auth::update_ui(app, host);
+    } else {
+        lists::render_home(app, host);
+    }
 }
 
 /// Writes observed entries (field by field, so fields other units own survive) and the saved views.

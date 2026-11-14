@@ -712,7 +712,7 @@ fn play(app: &mut App, host: &mut dyn Host, art: Node, entry: Crumb, what: Swap,
         anims.push(out.animate(previous, &motion::fade_frames(&frames), &timing(&m, "linear", 0.0)));
     }
     let st = &mut app.st.home;
-    st.next_dyn = (st.next_dyn + 1) & 0x0f_ffff;
+    st.next_dyn = (st.next_dyn + 2) & 0x0f_fffe;
     let zoom_listener = crate::tag(Mod::Home, super::L_DYNAMIC + st.next_dyn);
     out.listen(zoom, "finish", zoom_listener, 0);
     st.anim = Some(Box::new(Anim {

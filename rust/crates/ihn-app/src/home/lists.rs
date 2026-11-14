@@ -620,26 +620,29 @@ fn thumb_url(app: &mut App, host: &mut dyn Host, slot: Slot, id: &str, ticket: u
     }
     // Decode off screen; the displayed image is never removed while its replacement loads.
     let st = &mut app.st.home;
-    st.next_dyn = (st.next_dyn + 1) & 0x0f_ffff;
+    // Two ids: a listener id names one listener (`listener` for `load`, `listener + 1` for `error`).
+    st.next_dyn = (st.next_dyn + 2) & 0x0f_fffe;
     let listener = crate::tag(Mod::Home, super::L_DYNAMIC + st.next_dyn);
     let out = host.out();
     let img = out.create("img");
     out.prop(img, "decoding", Prop::Str("async"));
     out.listen(img, "load", listener, 0);
-    out.listen(img, "error", listener, 0);
+    out.listen(img, "error", listener + 1, 0);
     out.prop(img, "src", Prop::Str(&url));
     app.st.home.decodes.push(Decode { listener, img, slot, id: id.into(), ticket, url });
 }
 
 /// `load` / `error` of an off-screen thumbnail.
 pub(super) fn decode_event(app: &mut App, host: &mut dyn Host, e: &DomEvent) -> bool {
-    let Some(at) = app.st.home.decodes.iter().position(|d| d.listener == e.listener) else { return false };
+    let Some(at) = app.st.home.decodes.iter().position(|d| d.listener == e.listener & !1) else { return false };
     let d = app.st.home.decodes.remove(at);
     let (width, height) = if e.ty == ety::LOAD { (host.metric(d.img, Metric::NaturalWidth), host.metric(d.img, Metric::NaturalHeight)) } else { (0.0, 0.0) };
-    let out = host.out();
-    out.unlisten(d.listener);
-    out.release(d.img);
+    host.out().unlisten(d.listener);
+    host.out().unlisten(d.listener + 1);
+    host.out().release(d.img);
     let decoded = Decoded { slot: d.slot, id: d.id, ticket: d.ticket, url: d.url, width, height };
+    // v5: applyDrivePreviewTone samples the sheet and then never applies the result (it asks whether the preview
+    // contains the off-screen image, which it never does), so there is no label tone to port.
     if e.ty != ety::LOAD {
         thumb_failed(app, host, decoded.slot, &decoded.id, decoded.ticket, true);
     } else if app.st.home.anim.is_some() {
