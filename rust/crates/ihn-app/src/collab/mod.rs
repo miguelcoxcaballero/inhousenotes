@@ -122,6 +122,9 @@ pub fn kick(app: &mut App, host: &mut dyn Host) {
     drive(app, host, |s, r| s.tick(now, r));
 }
 
+/// W5.4: the Drive file of a document created on this device now exists (SYNC §16.1 `NotCreated` → polling).
+pub fn created(app: &mut App, host: &mut dyn Host) { io(app, host, SyncIo::Lifecycle(Lifecycle::Created)) }
+
 // ---- conversions --------------------------------------------------------------------------------------------------
 
 fn vv_bytes(vv: &VersionVector) -> Vec<u8> {
@@ -407,7 +410,9 @@ fn drive(app: &mut App, host: &mut dyn Host, f: impl FnOnce(&mut Sync, &mut dyn 
                     // The session is gone without a Leave (another document opened): leave with nothing to read.
                     run.leaving = true;
                     let mut d = Detached { doc_id: run.doc.clone(), vv: VersionVector::default(), batches: Vec::new() };
-                    let e = f.take().map_or(Vec::new(), |f| f(&mut run.sync, &mut d));
+                    let mut e = f.take().map_or(Vec::new(), |f| f(&mut run.sync, &mut d));
+                    let now = host.now();
+                    e.extend(run.sync.at(now).on_io(SyncIo::Lifecycle(Lifecycle::Leave), &mut d));
                     run.detached = Some(d);
                     e
                 }
