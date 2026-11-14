@@ -438,6 +438,11 @@ pub fn init(app: &mut App, host: &mut dyn Host) {
     nav::restore_tab(app, host);
     pull::init(app, host);
     scroll::init(app, host);
+    // boot.js may have drawn skeleton cards into these grids (signed-in first paint); the first render of each
+    // sweeps them, as 5.18.0's diffRenderDriveList removes children that are not cards.
+    for slot in [Slot::Recents, Slot::Starred, Slot::Shared, Slot::Folders, Slot::Files] {
+        app.st.home.slots[slot as usize].skeletons = true;
+    }
     // v5: InhouseOfflineLibrary.init — the library of the account remembered on this device.
     app.st.home.account = auth::known_account(host);
     load(app, host);
