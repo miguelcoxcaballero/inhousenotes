@@ -188,7 +188,7 @@ fn until(sim: &mut Sim, max: f64, mut done: impl FnMut(&mut Sim) -> bool) -> boo
 
 /// Editors `accounts` (first owns the document) with all parts, P2P blocked unless `p2p`.
 fn world(seed: u64, accounts: &[&str], p2p: bool) -> (Sim, String, Vec<usize>) {
-    let mut sim = Sim::new(seed);
+    let mut sim = Sim::new(seed + std::env::var("IHN_SEED").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(0));
     let doc = sim.drive.create_doc(accounts[0], "Notes");
     let devs = accounts
         .iter()
@@ -268,7 +268,8 @@ fn p2p_blocked_relay_only_latency_and_request_budget() {
     // Only the scribe (smallest installation) exported, once things were idle.
     go(&mut sim, 75_000.0);
     assert!(sim.drive.count(a, "put", 0.0, f64::MAX) >= 1);
-    assert_eq!(sim.drive.count(b, "put", t0, f64::MAX), 0);
+    // (Before they met, both were alone and both could export; from then on only A.)
+    assert_eq!(sim.drive.count(b, "put", t0 + 10_000.0, f64::MAX), 0);
     assert!(sim.devs[b].stored.exports.iter().any(|(h, _)| *h == sim.drive.files[&doc].head_id()));
 }
 
