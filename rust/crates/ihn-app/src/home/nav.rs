@@ -53,14 +53,8 @@ pub(super) fn nav_clicked(app: &mut App, host: &mut dyn Host, e: &DomEvent) {
     }
 }
 
-/// The card ⋮ menu and the colour popup belong to the card-menu unit; a folder navigation closes them as a
-/// click outside does.
-pub(super) fn close_card_menu(_app: &mut App, host: &mut dyn Host) {
-    let out = host.out();
-    let open = out.query(Node::DOCUMENT, ".drive-card-dropdown:not(.hidden)");
-    out.class(open, "hidden", true);
-    out.release(open);
-}
+/// A folder navigation closes the card ⋮ menu as a click outside does.
+pub(super) fn close_card_menu(app: &mut App, host: &mut dyn Host) { super::dialogs::menu::close_menu(app, host); }
 
 /// Escape leaves the open folder unless something is open above it.
 // v5: app-v5.js:setupEventListeners `document keydown`
