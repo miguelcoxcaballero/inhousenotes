@@ -96,4 +96,8 @@ would leave the boot path anyway.
 - `cargo test --workspace`: 165 + 135 + 49 passed.
 - e2e 00, 02, 04, 08, 11, 12: all pass except `08-save-reopen.spec.mjs:180` (export to the user), which fails the
   same way on `v6-int` without these changes (`inked` false at :198): pre-existing.
-- Quick parity: see the report summary in the unit result.
+- Quick parity (5.18.0 vs this build, which parity runs as `ihn-test.wasm`, i.e. the same Rust code as before
+  this unit): 227 ok, 21 fail, 49 expected. The fails are the known set of the W6.2 base run (`canvas/dense-page`,
+  `home/folder-zoom-open`, `open/loading*`, `open/loaded`, `open/failed`, `pages/photo-modal`, `share/people`,
+  `share/role-change`) plus single phone-360 states that differ from run to run: 7 of those appear here and not in
+  the base run, and 4 appear in the base run and not here. No reproducible difference comes from this unit.
