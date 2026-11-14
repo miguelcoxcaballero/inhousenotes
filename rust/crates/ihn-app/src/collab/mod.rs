@@ -28,7 +28,7 @@ use crate::{auth, App, Host};
 use ihn_core::codec::{Reader, Writer};
 use ihn_core::doc::{BlobHandle, Compacted, LivePreview, PeerRef, PresenceMode, PresenceState, ReceiveResult, Replica, SyncEngine};
 use ihn_core::id::{fnv1a64, ActorId, DocId, Hash, Id};
-use ihn_core::op::Color;
+use ihn_core::op::{Body, Color};
 use ihn_core::render::{overlay, StrokeRef};
 use ihn_core::snapshot::{EncodedBatch, EncodedSnapshot};
 use ihn_core::stamp::{Stamp, VersionVector};
@@ -112,6 +112,8 @@ pub struct State {
     overlay_ver: u64,
     overlay_pages: Vec<Id>,
     overlay_armed: bool,
+    /// Remote erase gestures shown: (gesture, page, hidden, fragment points).
+    erase_sig: Vec<(u64, Id, usize, usize)>,
     pub(crate) presence: presence::State,
 }
 
@@ -649,10 +651,43 @@ fn paint_overlays(app: &mut App, host: &mut dyn Host) {
             pages::overlay_ink(app, host, page, 2, ink);
         }
     }
+    repaint_erases(app, host);
     pages::flush(app, host);
 }
 
+/// v5 `getRemoteLiveErasePreviewStrokes(page)`: the page's strokes with the remote eraser gestures in progress
+/// applied (hidden strokes gone, the fragments in the place of the first stroke they replace).
+pub fn erase_view<'a>(app: &'a App, page: Id, strokes: &mut Vec<StrokeRef<'a>>) {
+    let Some(run) = app.st.collab.run.as_ref().filter(|r| !r.leaving) else { return };
+    for e in run.sync.core.live.erases.values().filter(|e| e.page == page) {
+        let hidden = |s: &StrokeRef| s.key.is_some_and(|(id, _)| e.hidden.contains(&id));
+        let at = strokes.iter().position(hidden).unwrap_or(strokes.len());
+        strokes.retain(|s| !hidden(s));
+        let fragments = e.fragments.iter().filter_map(|(_, b)| match b {
+            Body::Stroke { tool, color, width, xy, .. } if !xy.is_empty() => Some(StrokeRef::new(*tool, color, *width, xy)),
+            _ => None,
+        });
+        strokes.splice(at..at, fragments);
+    }
+}
+
+/// Repaints the pages whose remote erase preview changed (v5 `applyRemoteLiveErasePreview` → `scheduleEraserRedraw`,
+/// `clearRemoteLiveErasePreviews` → `redrawPage`).
+fn repaint_erases(app: &mut App, host: &mut dyn Host) {
+    let now: Vec<(u64, Id, usize, usize)> = app.st.collab.run.as_ref().filter(|r| !r.leaving).map_or(Vec::new(), |r| {
+        r.sync.core.live.erases.iter().map(|(&g, e)| (g, e.page, e.hidden.len(), e.fragments.iter().map(|(_, b)| if let Body::Stroke { xy, .. } = b { xy.len() } else { 0 }).sum())).collect()
+    });
+    let old = std::mem::replace(&mut app.st.collab.erase_sig, now);
+    let mut todo: Vec<Id> = old.iter().chain(&app.st.collab.erase_sig).filter(|e| !(old.contains(e) && app.st.collab.erase_sig.contains(e))).map(|e| e.1).collect();
+    todo.sort_unstable();
+    todo.dedup();
+    for page in todo {
+        pages::request_repaint(app, host, page);
+    }
+}
+
 fn clear_overlays(app: &mut App, host: &mut dyn Host) {
+    repaint_erases(app, host);
     for page in std::mem::take(&mut app.st.collab.overlay_pages) {
         let done = pages::with_gfx(app, |app, g| {
             let a = pages::active(app, page)?;
@@ -728,8 +763,16 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
                     leave(app, host);
                 }
             }
-            session::sig::COMMITTED if app.st.collab.run.as_ref().is_some_and(|r| !r.leaving) => {
+            session::sig::COMMITTED if app.st.collab.run.is_some() => {
                 let batches = session::drain_local(app);
+                // Committed after the Leave (the append was in flight): the leaving engine still uploads it.
+                if let Some(d) = app.st.collab.run.as_mut().and_then(|r| r.detached.as_mut()) {
+                    for (b, (a, q, _)) in batches.iter().filter_map(|b| Some((b, b.header()?))) {
+                        if d.vv.add(a, q) {
+                            d.batches.push(b.clone());
+                        }
+                    }
+                }
                 if !batches.is_empty() {
                     let now = host.now();
                     drive(app, host, |s, r| {
@@ -795,7 +838,7 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
 
 /// `__IHN_TEST_API__.cmd('collab.<name>', args)`:
 /// * `state` → `{active, doc, phase, leader, mode, peers:[{inst, name, link}], unsealed, peersConnected, live,
-///   overlayPages, avatars}`;
+///   overlayPages, erasing (remote eraser gestures shown), avatars}`;
 /// * `live` → the remote strokes in progress: `[{page, points}]`.
 pub fn test_cmd(app: &mut App, _host: &mut dyn Host, name: &str, _args: &str) -> Option<String> {
     let st = &app.st.collab;
@@ -811,7 +854,7 @@ pub fn test_cmd(app: &mut App, _host: &mut dyn Host, name: &str, _args: &str) ->
                 .collect();
             let status = run.sync.status();
             Some(format!(
-                "{{\"active\":true,\"doc\":{},\"inst\":\"{:016x}\",\"phase\":{},\"leader\":{},\"mode\":\"{:?}\",\"leaving\":{},\"peers\":[{}],\"unsealed\":{},\"peersConnected\":{},\"live\":{},\"overlayPages\":{},\"avatars\":{}}}",
+                "{{\"active\":true,\"doc\":{},\"inst\":\"{:016x}\",\"phase\":{},\"leader\":{},\"mode\":\"{:?}\",\"leaving\":{},\"peers\":[{}],\"unsealed\":{},\"peersConnected\":{},\"live\":{},\"overlayPages\":{},\"erasing\":{},\"avatars\":{}}}",
                 json_str(&run.doc),
                 c.inst,
                 json_str(&format!("{:?}", run.sync.phase())),
@@ -823,6 +866,7 @@ pub fn test_cmd(app: &mut App, _host: &mut dyn Host, name: &str, _args: &str) ->
                 status.peers_connected,
                 c.live.strokes.len(),
                 st.overlay_pages.len(),
+                st.erase_sig.len(),
                 st.presence.shown_count(),
             ))
         }

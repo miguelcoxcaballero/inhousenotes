@@ -4,6 +4,7 @@
 // kept byte-exact by both (≤ 4 MiB, no scaling). Scenes are 5.x fixtures (v6 needs W3.4); the box is W4.2's.
 import zlib from 'node:zlib';
 import { parity } from '../run.mjs';
+import { SAVE_DOT } from '../support/editor.mjs';
 import { ANA } from '../../mock/fixtures.mjs';
 
 const only = { viewports: ['desktop-1280', 'desktop-1920', 'tablet-800'] };
@@ -68,7 +69,7 @@ async function centre(t, selector) {
   return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
 }
 
-parity('images/pasted', { only }, async t => {
+parity('images/pasted', { only, ...SAVE_DOT }, async t => {
   await doc(t);
   await edit(t);
   const at = await mapper(t);
@@ -77,13 +78,13 @@ parity('images/pasted', { only }, async t => {
   await deliver(t, 'paste', 1);
 });
 
-parity('images/dropped-two', { only }, async t => {
+parity('images/dropped-two', { only, ...SAVE_DOT }, async t => {
   await doc(t);
   await edit(t);
   await deliver(t, 'drop', 2, (await mapper(t))(500, 700));
 });
 
-parity('images/rotated', { only }, async t => {
+parity('images/rotated', { only, ...SAVE_DOT }, async t => {
   await doc(t);
   await edit(t);
   await deliver(t, 'drop', 1, (await mapper(t))(400, 500));
