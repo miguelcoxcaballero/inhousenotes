@@ -664,6 +664,18 @@ pub fn persist(app: &mut App, host: &mut dyn Host, r: Record) {
     shell::signal(app, host, sig::STATE, "");
 }
 
+/// Writes the open document's record whole and folds its pages into chunks: a document the 5.x migration has just
+/// built (W5.6), which nobody else holds yet.
+pub fn write_record(app: &mut App, host: &mut dyn Host) {
+    let Some(s) = get_mut(app).filter(|s| s.persistent) else { return };
+    let mut t = StoreTx::new();
+    t.doc_put(&s.doc_id, &s.record);
+    s.record_stored = true;
+    let req = app.req(Mod::DocSession);
+    store::tx(app, host, req, t);
+    compact(app, host, true);
+}
+
 // ---- compaction ---------------------------------------------------------------------------------------------------
 
 /// Folds dirty pages into chunks and trims the journal. Only the `ihn6-net` holder compacts; `force` is for the

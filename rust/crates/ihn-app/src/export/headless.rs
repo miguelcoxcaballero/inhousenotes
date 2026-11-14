@@ -54,10 +54,17 @@ pub struct State {
 
 fn headless(app: &App) -> bool { app.cfg.has(mode::HEADLESS) }
 
+/// The runner is working on a document (it owns the session meanwhile).
+pub fn running(app: &App) -> bool { app.st.export_headless.running }
+
+/// Starts the foreground runner now (the 5.x migration, once its documents are written).
+pub fn run(app: &mut App, host: &mut dyn Host) { start(app, host) }
+
 /// Lists the documents that still need work and starts on them.
 fn start(app: &mut App, host: &mut dyn Host) {
     let account = auth::known_account(host);
-    if app.st.export_headless.running || account.is_empty() {
+    // The migration holds the session while it writes a document; it starts the runner when it is done.
+    if app.st.export_headless.running || account.is_empty() || crate::migrate::busy(app) {
         if headless(app) && account.is_empty() {
             report(app, host);
         }
