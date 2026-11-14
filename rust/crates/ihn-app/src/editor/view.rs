@@ -112,6 +112,7 @@ pub fn set_read_only(app: &mut App, host: &mut dyn Host, next: bool, force: bool
             let text = app.st.editor_view.title.clone();
             finish_title(app, host, false, &text);
         }
+        viewport::end_interaction(app, host);
         let v = &mut app.st.editor_viewport;
         v.pending_create = false;
         v.overscroll_y = 0.0;
