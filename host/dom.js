@@ -21,6 +21,8 @@ const DOM_TYPE = {
 export default function install(host) {
   // Handles are chosen by Rust: 1..4 fixed, 16.. the ids of index.html, 1024.. dynamic.
   const nodes = [null, document, window, document.documentElement, document.body];
+  // listener id → Map(event type → entry): one id may serve several event types of one node (the document title's
+  // focus/blur/keydown/pointerdown/click); listening again with an id and type replaces that pair only.
   const listeners = new Map();
   const observers = new Map();
   // node → its handle, or an array when Rust holds several handles to one node (a `Ui` id that is also queried).
@@ -115,7 +117,7 @@ export default function install(host) {
     if (bits & 2) options.passive = true;
     else if (bits & 8) options.passive = false;
     const fn = event => {
-      if (options.once) listeners.delete(id);
+      if (options.once) listeners.get(id)?.delete(type);
       const result = dispatch(id, h, kind, event);
       if (!result) return;
       if (result & 1) event.preventDefault();
@@ -123,14 +125,17 @@ export default function install(host) {
       if (result & 4) event.stopImmediatePropagation();
       if (result & 8 && event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
     };
-    unlisten(id);
-    listeners.set(id, { node, type, fn, capture: options.capture });
+    let byType = listeners.get(id);
+    if (!byType) listeners.set(id, byType = new Map());
+    const old = byType.get(type);
+    if (old) old.node.removeEventListener(type, old.fn, { capture: old.capture });
+    byType.set(type, { node, fn, capture: options.capture });
     node.addEventListener(type, fn, options);
   }
   function unlisten(id) {
-    const entry = listeners.get(id);
-    if (!entry) return;
-    entry.node.removeEventListener(entry.type, entry.fn, { capture: entry.capture });
+    const byType = listeners.get(id);
+    if (!byType) return;
+    for (const [type, entry] of byType) entry.node.removeEventListener(type, entry.fn, { capture: entry.capture });
     listeners.delete(id);
   }
   // One observer per listener id; further `observe` ops with that id add nodes to it. Each callback is one event.

@@ -133,6 +133,9 @@ pub fn start(app: &mut App, host: &mut dyn Host, purpose: Purpose) {
     begin(app, host, purpose);
 }
 
+/// Version-snapshot assets attached to an export at most (newest first).
+const VERSION_ASSETS: usize = 48;
+
 /// A key per distinct blob of the plan.
 #[derive(Default)]
 struct Keys {
@@ -211,6 +214,13 @@ fn begin(app: &mut App, host: &mut dyn Host, purpose: Purpose) {
             if !images.contains(&asset) {
                 images.push(asset);
             }
+        }
+    }
+    // Timeline snapshot assets travel with the export too (SYNC §14.6): the newest versions and their delta bases.
+    // Rust does not know blob sizes, so 5.18.0's 3.5 MB `IH_VERSIONS` budget is a count here (NOTES-W6.1).
+    for h in ihn_core::history::needed_assets(doc).into_iter().take(VERSION_ASSETS) {
+        if !images.contains(&h) {
+            images.push(h);
         }
     }
     let mut attach = Vec::new();

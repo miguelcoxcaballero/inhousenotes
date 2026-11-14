@@ -143,10 +143,12 @@ fn chain_tail(doc: &Doc, actor: ActorId) -> Option<Record> {
 }
 
 /// Snapshot assets still needed: those of listed versions and, transitively, the bases of their delta chains
-/// (a pruned version's asset stays while a later version of its chain needs it).
+/// (a pruned version's asset stays while a later version of its chain needs it). Newest version first, each followed
+/// by its chain, so a prefix is what the export attaches (SYNC §14.6).
 pub fn needed_assets(doc: &Doc) -> Vec<Hash> {
-    let records: Vec<(bool, Record)> =
+    let mut records: Vec<(bool, Record)> =
         doc.versions.values().filter_map(|v| Some((v.is_listed(), Record::decode(&v.data.v)?))).collect();
+    records.sort_by(|a, b| b.1.ts.total_cmp(&a.1.ts));
     let bases: HashMap<Hash, Hash> = records.iter().filter_map(|(_, r)| Some((r.snapshot, r.base?))).collect();
     let mut seen = HashSet::new();
     let mut need = Vec::new();

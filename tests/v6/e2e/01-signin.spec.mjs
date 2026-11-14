@@ -281,9 +281,12 @@ test('offline: NETWORK signal, status line, probe backoff, `online` and recovery
   await stubGoogle(page);
   let down = false;
   const probes = [];
-  // Registered after stubGoogle, so it is asked first.
-  await page.route('https://www.googleapis.com/drive/v3/about?fields=kind', route => {
-    probes.push({ method: route.request().method(), auth: route.request().headers().authorization || '', cache: route.request().headers()['cache-control'] || '' });
+  // Registered after stubGoogle, so it is asked first. While down, every Drive request fails: an authenticated
+  // answer (Home's listing after the reload) would prove Drive reachable, as in 5.18.0 (`networkAvailable`).
+  await page.route(/^https:\/\/www\.googleapis\.com\/(drive|upload)\//, route => {
+    if (route.request().url() === 'https://www.googleapis.com/drive/v3/about?fields=kind') {
+      probes.push({ method: route.request().method(), auth: route.request().headers().authorization || '', cache: route.request().headers()['cache-control'] || '' });
+    }
     return down ? route.abort('internetdisconnected') : route.fallback();
   });
   await page.addInitScript(scope => {
@@ -316,9 +319,8 @@ test('offline: NETWORK signal, status line, probe backoff, `online` and recovery
   expect(await network()).toEqual(['0']);
   expect(await flag()).toBe('1');
   expect(await page.evaluate(() => getComputedStyle(document.getElementById('drive-status')).display)).toBe('none');
-  // Without a local library the line keeps its text (5.18.0 only rewrites it from the library's reload) …
-  await expect(page.locator('#drive-status')).toHaveText('Loading your PDFs...', { useInnerText: false });
-  // … and with one (the offline library unit reports it) it is 5.18.0's offline line.
+  // The local library (Home's catalogue) is always there for a signed-in account, so the line is 5.18.0's offline
+  // line at once (`updateDriveAuthUI`: `localLibrary && driveIsOffline()`).
   await cmd(page, 'auth.local_library', { ready: true });
   await expect(page.locator('#drive-status')).toHaveText('Offline · changes stay on this device', { useInnerText: false });
   await expect(page.locator('#btn-drive-login')).toBeHidden();
