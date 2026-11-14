@@ -33,6 +33,9 @@ const L_DOWN: u32 = tag(Mod::EditorViewport, 1);
 const L_MOVE: u32 = tag(Mod::EditorViewport, 2);
 const L_UP: u32 = tag(Mod::EditorViewport, 3);
 const L_WHEEL: u32 = tag(Mod::EditorViewport, 4);
+/// `pointercancel` / `pointerleave`: `host/dom.js` keeps one listener per id, so each registration needs its own.
+const L_CANCEL: u32 = tag(Mod::EditorViewport, 5);
+const L_LEAVE: u32 = tag(Mod::EditorViewport, 6);
 const T_WHEEL: u32 = tag(Mod::EditorViewport, 10);
 const T_OVERSCROLL: u32 = tag(Mod::EditorViewport, 11);
 const T_SAVE: u32 = tag(Mod::EditorViewport, 12);
@@ -855,7 +858,7 @@ pub fn init(app: &mut App, host: &mut dyn Host) {
         return;
     }
     let out = host.out();
-    for (event, id) in [("pointerdown", L_DOWN), ("pointermove", L_MOVE), ("pointerup", L_UP), ("pointercancel", L_UP), ("pointerleave", L_UP)] {
+    for (event, id) in [("pointerdown", L_DOWN), ("pointermove", L_MOVE), ("pointerup", L_UP), ("pointercancel", L_CANCEL), ("pointerleave", L_LEAVE)] {
         out.listen(Ui::CANVAS_VIEWPORT, event, id, 0);
     }
     out.listen(Ui::CANVAS_VIEWPORT, "wheel", L_WHEEL, listen::ACTIVE);
@@ -876,7 +879,7 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
         Event::Pointer(p) => match p.listener {
             L_DOWN => down(app, host, &p),
             L_MOVE => move_(app, host, &p),
-            L_UP => up(app, host, &p),
+            L_UP | L_CANCEL | L_LEAVE => up(app, host, &p),
             _ => 0,
         },
         Event::Dom(e) if e.listener == L_WHEEL => wheel(app, host, &e),
