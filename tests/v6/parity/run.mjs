@@ -347,7 +347,10 @@ function judge(state, a, b, dpr) {
   const regions = b.regions || a.regions;
   if (state.tags?.length && regions && comparison.pixels.box) {
     // Expected difference: every differing pixel must lie inside the rule's rectangles (TESTING §3.5).
-    const box = comparison.pixels.box, inside = regions.some(r => box.x >= Math.floor(r.x * dpr) && box.y >= Math.floor(r.y * dpr) && box.x + box.width <= Math.ceil((r.x + r.width) * dpr) && box.y + box.height <= Math.ceil((r.y + r.height) * dpr));
+    // (Several rules may each allow their own rectangles, so pixels are tested one by one, not their bounding box.)
+    const rects = regions.map(r => [Math.floor(r.x * dpr), Math.floor(r.y * dpr), Math.ceil((r.x + r.width) * dpr), Math.ceil((r.y + r.height) * dpr)]);
+    const { width, marks } = comparison.pixels;
+    const inside = marks.every(i => { const p = i / 4, x = p % width, y = (p / width) | 0; return rects.some(([x0, y0, x1, y1]) => x >= x0 && y >= y0 && x < x1 && y < y1); });
     if (inside) return { status: 'expected', comparison };
   }
   return { status: 'fail', comparison };

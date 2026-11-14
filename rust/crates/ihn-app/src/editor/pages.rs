@@ -661,7 +661,8 @@ pub fn with_view<R>(app: &mut App, id: Id, f: impl FnOnce(&mut Gfx, &PageView) -
     let (w, h) = row(app, id).map(|r| (r.w, r.h))?;
     let mut gfx = app.st.editor_pages.gfx.take().unwrap_or_else(|| new_gfx(app));
     let r = doc(app).map(|d| {
-        let items = PageItems::collect(d, id, &|hash| images.iter().find(|e| e.0 == hash).map(|e| e.1));
+        let mut items = PageItems::collect(d, id, &|hash| images.iter().find(|e| e.0 == hash).map(|e| e.1));
+        crate::collab::erase_view(app, id, &mut items.strokes);
         f(&mut gfx, &PageView { w, h, bg, items: &items })
     });
     app.st.editor_pages.gfx = Some(gfx);
@@ -1093,7 +1094,10 @@ fn update_visible(app: &mut App, host: &mut dyn Host, force: bool) {
             continue;
         }
         let id = ids[i];
-        apply_preview_if_inactive(app, host, id);
+        // v5 `updateVisiblePages`: `applyPagePreview(index)` on every ordered page, also an active painted one (its
+        // wrapper shows the preview again under the canvas, e.g. at the antialiased edge of a photo page); only a
+        // repaint below clears it.
+        apply_preview(app, host, id);
         if active(app, id).is_some() {
             let needs = row(app, id).is_some_and(|r| r.needs_redraw || !r.active.as_ref().is_some_and(|a| a.drawn));
             if needs {
@@ -1113,14 +1117,6 @@ fn update_visible(app: &mut App, host: &mut dyn Host, force: bool) {
         release(app, host, id);
     }
     schedule_activation(app, host);
-}
-
-/// 5.18.0 applies the preview to every ordered page; on an active, painted page `clearPagePreview` already ran.
-fn apply_preview_if_inactive(app: &mut App, host: &mut dyn Host, id: Id) {
-    if active(app, id).is_some_and(|a| a.drawn) {
-        return;
-    }
-    apply_preview(app, host, id);
 }
 
 fn queue_activation(app: &mut App, id: Id, priority: usize) {

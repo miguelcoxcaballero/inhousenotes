@@ -3,6 +3,7 @@
 // repaints). The pen is a CDP stylus (`t.pen`), the same events in both apps. W4.x add their own state files.
 // Scenes are 5.x fixtures opened through the shared link, so v6 needs the 5.x import (W3.4) to show them.
 import { parity } from '../run.mjs';
+import { SAVE_DOT, rules } from '../support/editor.mjs';
 import { ANA } from '../../mock/fixtures.mjs';
 
 const doc = t => t.open({ account: ANA, scene: 'r0' });
@@ -35,14 +36,14 @@ for (const n of [1, 5, 20]) {
   });
 }
 
-parity('editor-tools/pen-lift', {}, async t => {
+parity('editor-tools/pen-lift', SAVE_DOT, async t => {
   await doc(t);
   await edit(t);
   await t.pen(await curve(t, 20));
   await t.advance(400);
 });
 
-parity('editor-tools/highlighter', {}, async t => {
+parity('editor-tools/highlighter', SAVE_DOT, async t => {
   await doc(t);
   await edit(t);
   await t.click('#toolbar .tool-btn[data-tool="highlighter"]', { force: true });
@@ -54,7 +55,7 @@ parity('editor-tools/highlighter', {}, async t => {
   await t.capture('committed');
 });
 
-parity('editor-tools/undo-redo', {}, async t => {
+parity('editor-tools/undo-redo', SAVE_DOT, async t => {
   await doc(t);
   await edit(t);
   await t.pen(await curve(t, 12));
@@ -70,13 +71,13 @@ parity('editor-tools/undo-redo', {}, async t => {
 
 // A tap: the dot is drawn live in both apps; after a repaint (zoom in and back, the 90 ms resync) 5.18.0 drops
 // it and v6 keeps it.
-parity('editor-tools/single-tap-dot', {
+parity('editor-tools/single-tap-dot', rules({
   tags: ['B-E3'],
   expected: async t => {
     const p = (await mapper(t))(300, 300);
     return [{ x: p.x - 6, y: p.y - 6, width: 12, height: 12 }];
   }
-}, async t => {
+}, SAVE_DOT), async t => {
   await doc(t);
   await edit(t);
   const at = await mapper(t);
