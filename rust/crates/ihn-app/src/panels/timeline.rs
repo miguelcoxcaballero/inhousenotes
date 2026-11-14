@@ -271,6 +271,7 @@ fn render_list(app: &mut App, host: &mut dyn Host) {
     }
     let mut html = String::new();
     let mut groups: Vec<(String, bool, Vec<Option<(String, bool)>>)> = Vec::new();
+    let mut original: Option<(usize, String)> = None;
     for (mi, m) in months.iter().enumerate() {
         let collapsed = app.st.panels_timeline.months_collapsed.contains(&m.key);
         html.push_str(&format!(
@@ -285,7 +286,8 @@ fn render_list(app: &mut App, host: &mut dyn Host) {
         let mut clusters = Vec::new();
         for (ci, c) in m.clusters.iter().enumerate() {
             if c.len() == 1 && c[0].id.is_none() {
-                html.push_str(&entry_html(host, &c[0], current.as_deref()));
+                // Appended once the list exists: inside a `div` the parser would close the month's `li` at this `li`.
+                original = Some((mi, entry_html(host, &c[0], current.as_deref())));
                 clusters.push(None);
                 continue;
             }
@@ -348,6 +350,9 @@ fn render_list(app: &mut App, host: &mut dyn Host) {
         let li = out.query(Ui::TIMELINE_LIST, &format!(":scope > li:nth-child({})", mi + 1));
         let body = out.query(li, ":scope > .timeline-cluster-group");
         mg.push(Group { header: out.query(li, ":scope > .timeline-group-header"), body, key: mkey, collapsed: mc });
+        if let Some((_, h)) = original.as_ref().filter(|o| o.0 == mi) {
+            out.append_html(body, h);
+        }
         for (ci, c) in clusters.into_iter().enumerate() {
             if let Some((ckey, collapsed)) = c {
                 let node = out.query(body, &format!(":scope > :nth-child({})", ci + 1));
