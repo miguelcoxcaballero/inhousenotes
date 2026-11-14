@@ -24,7 +24,7 @@ Method: a copy of the 5.18.0 tree with `console.log` probes in `app-v5.js` (scra
     zoom's `ready`; `join_motion` ports `joinMotion` exactly. A closing retarget now sets the zoom's keyframes
     (`zoom.effect.setKeyframes`) instead of cancelling and recreating it with a negative delay. `home/mod.rs` routes
     the zoom listener's `ready` to `join_motion`, its `finish` to `cleanup` as before.
-- **Result**: passes, `--runs 2` on both viewports (folder-zoom-open and -close, 48/48 comparisons).
+- **Result**: passes, `--runs 3` on both viewports (48 pass, 0 fail; folder-zoom-close also passes, `--runs 2`).
 
 ## 2. `pages/photo-modal@added` (desktop-1280, phone-360)
 
@@ -39,8 +39,8 @@ Method: a copy of the 5.18.0 tree with `console.log` probes in `app-v5.js` (scra
   inertia, a Pages-panel drag `pages_panel::dragging`, a selection transform `selection::transforming`);
   `panels/photo_page.rs` `Step::Acquire` + `T_ACQUIRE`: the insert waits as 5.18.0 does (32 ms polls, 12 s deadline →
   "Failed to add photo page").
-- **Result**: passes, `--runs 1` both viewports and in the quick matrix (only the existing N-1 save-dot tag remains,
-  the same box as `pages/drag-reorder` and `pages/delete-slider`).
+- **Result**: passes, `--runs 3` on both viewports (24 pass, 0 fail; `@added` is left with only the existing N-1
+  save-dot tag, the same box as `pages/drag-reorder@dropped` and `pages/delete-slider@deleted`).
 
 ## 3. `canvas/dense-page@repaint` (desktop-1280), intermittent on the v6 side
 
@@ -58,7 +58,16 @@ Method: a copy of the 5.18.0 tree with `console.log` probes in `app-v5.js` (scra
 
 ## Verification (after the last code change)
 
-See the report at the end of this file.
+- Quick parity matrix: `home` + `home-dialogs` 133 comparisons, 0 fail, 2 expected (as before);
+  `pages` + `canvas` + `editor-view` 64 comparisons, 0 fail, 5 expected (pages' 3 as before + the two
+  `photo-modal@added` save-dot N-1 tags that were hidden behind the corner failure). `tests/v6/parity/REPORT.md` was
+  not regenerated (only these five state files were re-run).
+- e2e (`--workers=1`): 00-boot (DOM self-test with the new op), 02, 03b, 05, 06, internal-canvas (canvas trace
+  goldens), internal-editor-view: 22/22 passed.
+- `cargo test --workspace`: 166 + 135 (1 ignored) + 49 passed.
+- `npm run build` (with the size gate): passes.
+- Hot paths: nothing added per pointer event or frame (one `ready` dispatch and one `currentTime` read per folder
+  zoom; one `smooth()` check per photo insert poll; the preview step does the same work in fewer tasks).
 
 ## Open
 
