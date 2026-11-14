@@ -340,9 +340,10 @@ fn opened(app: &mut App, host: &mut dyn Host, ok: bool) {
     clear_preview(app, host);
     start_polling(app, host, false);
     shell::show_view(app, host, View::Editor);
-    // The column was centred at `OPENED`, while the editor was still hidden (no size): centre it now that it shows
-    // (5.18.0 shows the editor before `centerViewOnTop`).
-    crate::editor::viewport::center_on_top(app, host);
+    // 5.18.0's public open never runs `centerViewOnTop`: the view keeps `openDriveFile`'s zoom 1 and pan 0. (The
+    // editor centred the column at `OPENED` while it was still hidden, i.e. against a zero-sized viewport.)
+    crate::editor::viewport::reset(app, host);
+    crate::editor::viewport::update_transform(app, host);
     viewer_ui(app, host, link.writer);
     if link.writer {
         show_gate(app, host);
