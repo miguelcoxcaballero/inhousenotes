@@ -116,8 +116,9 @@ test('captures coalesce within 5 minutes and start a new entry after them', asyn
 
 test('imported 5.x history: list, preview with highlights, restore with the slider', async ({ page, context, mock, problems }) => {
   await openScene(page, context, mock, 'versions-30');
+  // The imported history is listed once the open has finished its last frames (5.18.0's import yields).
+  await expect.poll(async () => (await versions(page)).entries.length).toBe(31);
   const imported = (await versions(page)).entries;
-  expect(imported).toHaveLength(31);
   expect(imported.filter(e => e.milestone)).toHaveLength(10);
   expect(imported.every(e => e.stored)).toBe(true);
   expect(imported.map(e => e.depth).slice(0, 10)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 0, 1]);
