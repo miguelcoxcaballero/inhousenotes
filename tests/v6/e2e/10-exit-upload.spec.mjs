@@ -19,6 +19,9 @@ async function open(page, id) {
 }
 
 async function stroke(page, points) {
+  // The page must be on screen and drawn before the pen lands (a contact on a page still loading is not ink).
+  await expect.poll(async () => (await cmd(page, 'editor.pages.state')).rows[0]?.drawn === true, { timeout: 15_000 }).toBe(true);
+  const live = (await session(page)).live;
   const cdp = await page.context().newCDPSession(page);
   const box = await page.locator('canvas.page-canvas[data-page="0"]').boundingBox();
   const at = p => [box.x + p[0] * box.width / 794, box.y + p[1] * box.height / 1123];
@@ -27,6 +30,7 @@ async function stroke(page, points) {
   for (const p of points.slice(1)) await send('mouseMoved', p, 1);
   await send('mouseReleased', points.at(-1), 0);
   await cdp.detach();
+  await expect.poll(async () => (await session(page)).live).toBe(live + 1);
 }
 const line = (x, y) => Array.from({ length: 8 }, (_, i) => [x + i * 14, y + (i % 2) * 7]);
 
