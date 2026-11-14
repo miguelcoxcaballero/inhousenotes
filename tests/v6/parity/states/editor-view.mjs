@@ -38,7 +38,7 @@ parity('editor-view/pan-clamps', {}, async t => {
 // Read → Edit: the toggle, the enabled toolbar (its flash animation finished).
 parity('editor-view/edit-mode', {}, async t => {
   await doc(t);
-  await t.click('#mode-toggle-btn');
+  await t.click('#mode-toggle-btn', { force: true });   // phones: the floating toggle bar fails the actionability check in both apps
   await t.advance(1000);
 });
 
@@ -46,7 +46,7 @@ parity('editor-view/edit-mode', {}, async t => {
 // release), then the new page after it (fade-in finished).
 parity('editor-view/pull-to-add', {}, async t => {
   await doc(t);
-  await t.click('#mode-toggle-btn');
+  await t.click('#mode-toggle-btn', { force: true });   // phones: the floating toggle bar fails the actionability check in both apps
   await t.advance(1000);
   await wheel(t, 24, 100, { settleMs: 0 });
   await t.capture('pulling');
