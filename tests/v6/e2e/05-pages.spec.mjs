@@ -190,7 +190,8 @@ test('photo page in both fit modes; Import PDF replaces the pages', async ({ pag
 
   // Import PDF: a plain PDF replaces every page (PDF backgrounds, source stored), undo cleared.
   await page.click('#panel-close');
-  await page.waitForTimeout(300);
+  // The overlay stays on top while it fades out (same CSS as 5.18.0): draw once the page is under the pointer.
+  await expect.poll(() => page.evaluate(() => document.elementFromPoint(560, 300)?.className)).toContain('page-canvas');
   await draw(page);
   await expect(page.locator('#btn-undo')).toBeEnabled();
   await page.setInputFiles('#pdf-input', path.join(V5, 'plain.pdf'));

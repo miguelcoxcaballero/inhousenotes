@@ -68,6 +68,7 @@ test('create menu, new folder, picker, download app', async ({ page, context, mo
   await expect.poll(() => [...mock.drive.files.values()].some(f => f.name === 'Projects' && f.mimeType === FOLDER)).toBe(true);
   await expect(page.locator('#drive-folders .drive-card-title', { hasText: 'Projects' })).toBeVisible();
   await page.click('#btn-drive-new-folder');
+  await expect(page.locator('#new-folder-name')).toBeFocused();   // focus comes a frame after the open, as in 5.18.0
   await page.keyboard.press('Escape');
   await expect(page.locator('#modal-new-folder')).not.toHaveClass(/visible/);
 
