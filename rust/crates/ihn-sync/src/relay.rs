@@ -506,7 +506,15 @@ impl Relay {
     /// §8.5 steps 1–5: plan a write and start deflating its tail.
     fn start(&mut self, cx: &mut Core, r: &mut dyn Replica, left: bool) {
         let keepalive = cx.flush == Flush::Keepalive || left;
-        let floor = archived(&cx.stored);
+        // The tail starts above the archives and above what is both sealed and in the newest export (readers below
+        // that take the export, §8.8), so a GC'd archive never grows back into the tail.
+        let mut floor = archived(&cx.stored);
+        if let Some(vv) = cx.stored.export_vv() {
+            for (&a, &s) in &cx.stored.sealed {
+                let e = floor.entry(a).or_insert(0);
+                *e = (*e).max(s.min(vv.get(a)));
+            }
+        }
         // Journal retention may have folded batches the newest export covers (§7.3): the tail then starts above the
         // export (a reader below it takes the export), and in the worst case above the seal.
         let raised = |by: Option<&VersionVector>, sealed: bool| {
@@ -1049,6 +1057,10 @@ impl Relay {
         let mut covered = rv.clone();
         batches.iter().filter_map(|b| b.header()).for_each(|(a, s, _)| { covered.add(a, s); });
         if file.ranges.iter().chain(file.archives.iter().flat_map(|a| &a.ranges)).any(|g| covered.get(g.actor) < g.last && !(g.first..=g.last).all(|s| covered.contains(g.actor, s))) {
+            cx.need_export = true;
+        }
+        // Batches below the tail that only the writer's newest export holds (§8.5: the tail starts above it).
+        if file.export.as_ref().is_some_and(|(_, vv)| vv.iter().any(|(a, s)| relayed_by(a, inst, &cx.doc_id) && covered.get(a) < s)) {
             cx.need_export = true;
         }
         if !batches.is_empty() {

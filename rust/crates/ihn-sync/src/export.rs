@@ -291,6 +291,11 @@ impl Export {
         if cx.now >= at {
             self.why = Why::Export;
             self.loops = 0;
+            // Never build over a revision nobody merged yet (a 5.x save, a foreign app): merge it first (§15.3).
+            if let Some(head) = head.filter(|h| Self::known(cx, h).is_none()) {
+                let modified = cx.meta.as_ref().map_or(0, |m| m.0.modified_ms);
+                return self.fetch(cx, head, modified);
+            }
             self.build(cx);
         } else {
             cx.wake(at);
@@ -368,14 +373,14 @@ impl Part for Export {
         }
     }
 
-    fn change(&mut self, cx: &mut Core, c: Change, _r: &mut dyn Replica) {
+    fn change(&mut self, cx: &mut Core, c: Change, r: &mut dyn Replica) {
         match c {
             // An accepted canvas contact aborts the job before its upload (§14.1); it stays due.
             Change::Contact if matches!(self.st, St::Build(_) | St::Check(_)) && self.why == Why::Export => self.idle(cx),
             Change::Leave | Change::Suspend => {
                 self.leaving = true;
             }
-            Change::PageHide if cx.mode == Mode::Alone && cx.can_edit => {
+            Change::PageHide if cx.mode == Mode::Alone && cx.can_edit && Self::needed(cx, r) => {
                 // `pagehide` never exports: the headless page or the next session does it (§14.5).
                 cx.persist(SyncRecord::Flags { relay_pending: None, export_pending: Some(true), created: None });
             }
