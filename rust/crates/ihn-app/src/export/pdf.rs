@@ -24,6 +24,7 @@ use crate::{App, Host};
 use ihn_core::codec::{b64_decode, Reader, Writer};
 use ihn_core::doc::Doc;
 use ihn_core::id::{Hash, Id};
+use ihn_core::jsmath;
 use ihn_core::op::{Background, Body, Template};
 use ihn_core::render::cmd::Img;
 use ihn_core::render::{pdfink, PageItems};
@@ -180,7 +181,7 @@ fn begin(app: &mut App, host: &mut dyn Host, purpose: Purpose) {
             },
             Background::Template => {
                 let kind = page.template.v;
-                let (tw, th) = (((w as f64) * scale).round().max(1.0) as u32, ((h as f64) * scale).round().max(1.0) as u32);
+                let (tw, th) = (jsmath::round(w as f64 * scale).max(1.0) as u32, jsmath::round(h as f64 * scale).max(1.0) as u32);
                 let key = match keys.templates.iter().find(|t| (t.0, t.1, t.2) == (kind, tw, th)) {
                     Some(t) => t.3,
                     None => {
