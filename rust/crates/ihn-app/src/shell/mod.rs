@@ -954,7 +954,7 @@ mod tests {
         let (_, mut host) = boot(mode::APP, |_| {});
         let text = out(&mut host);
         assert!(text.contains(&format!("remove {}\nremove {}\n", Ui::BTN_DRIVE_FULLSCREEN.0, Ui::BTN_FULLSCREEN.0)));
-        assert!(!text.contains("html ") && text.contains("updater_create"));
+        assert!(!text.contains("\nhtml ") && text.contains("updater_create"));
         let (_, mut host) = boot(mode::APP | mode::HEADLESS, |_| {});
         let text = out(&mut host);
         assert!(!text.contains("listen") && !text.contains("fetch") && !text.contains("updater_create"), "{text}");
@@ -1132,7 +1132,9 @@ mod tests {
         assert_eq!(out(&mut host), "raf_request\n");
         app.frame(&mut host, 16.0);
         let text = out(&mut host);
-        assert!(text.starts_with("query 1024 1 \"button:focus, .btn:focus") && text.ends_with("blur 1024\nrelease 1024\n"), "{text}");
+        // (The handle is the first free one: modules hold dynamic handles of their own since boot.)
+        let h: u32 = text.split(' ').nth(1).and_then(|n| n.parse().ok()).expect("handle");
+        assert!(text.starts_with(&format!("query {h} 1 \"button:focus, .btn:focus")) && text.ends_with(&format!("blur {h}\nrelease {h}\n")), "{text}");
     }
 
     use crate::host::FakeHost;
