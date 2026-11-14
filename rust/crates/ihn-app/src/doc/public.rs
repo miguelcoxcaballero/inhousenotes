@@ -340,6 +340,9 @@ fn opened(app: &mut App, host: &mut dyn Host, ok: bool) {
     clear_preview(app, host);
     start_polling(app, host, false);
     shell::show_view(app, host, View::Editor);
+    // The column was centred at `OPENED`, while the editor was still hidden (no size): centre it now that it shows
+    // (5.18.0 shows the editor before `centerViewOnTop`).
+    crate::editor::viewport::center_on_top(app, host);
     viewer_ui(app, host, link.writer);
     if link.writer {
         show_gate(app, host);

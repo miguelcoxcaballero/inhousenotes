@@ -5,6 +5,8 @@ import { parity } from '../run.mjs';
 import { ANA } from '../../mock/fixtures.mjs';
 
 const card = id => `[data-drive-item-id="${id}"]`;
+// The open profile menus show `v6.0.0` instead of `v5.18.0` (as open.mjs / profile-menu.mjs).
+const VERSION = { tags: ['VERSION-LABEL'], expected: t => t.page.evaluate(() => [...document.querySelectorAll('[data-app-version]')].map(n => n.getBoundingClientRect()).filter(r => r.width).map(r => ({ x: r.x, y: r.y, width: r.width, height: r.height }))) };
 
 // Open → Home (the document's card in Recents) → reopen from that card.
 parity('sweep/reopen', {}, async t => {
@@ -17,7 +19,7 @@ parity('sweep/reopen', {}, async t => {
 });
 
 // Night mode from the editor's profile menu; the menu is closed with Escape.
-parity('sweep/theme-editor', {}, async t => {
+parity('sweep/theme-editor', { ...VERSION }, async t => {
   await t.open({ account: ANA, scene: 'template' });
   await t.click('#btn-drive-profile-editor');
   await t.advance(300);
@@ -29,7 +31,7 @@ parity('sweep/theme-editor', {}, async t => {
 });
 
 // Home's profile menu open while the window changes between phone and desktop widths.
-parity('sweep/resize-menu', { only: { viewports: ['desktop-1280', 'phone-360'] } }, async t => {
+parity('sweep/resize-menu', { ...VERSION, only: { viewports: ['desktop-1280', 'phone-360'] } }, async t => {
   await t.open({ account: ANA });
   await t.click('#btn-drive-profile');
   await t.advance(300);

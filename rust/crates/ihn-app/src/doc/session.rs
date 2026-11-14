@@ -949,6 +949,11 @@ fn route_io(app: &mut App, host: &mut dyn Host, io: &crate::abi::Io) {
             if let Some(s) = st.s.as_mut() {
                 s.full_compact = true;
             }
+        } else if let Some(s) = st.s.as_mut() {
+            // A checkpoint of the document is a local save (5.18.0 `confirmLocalSave` after `saveToIndexedDb`, which
+            // also runs when a document opens): the save details then say `This device · Saved`.
+            s.saved_at = host.time();
+            shell::signal(app, host, sig::STATE, "");
         }
     } else if io.req == st.asset_req {
         st.asset_req = 0;

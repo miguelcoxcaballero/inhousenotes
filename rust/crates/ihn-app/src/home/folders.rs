@@ -454,7 +454,7 @@ pub(super) fn close_view(app: &mut App, host: &mut dyn Host, animate: bool) {
     let closing = st.stack.get(1).or(st.stack.last()).cloned().unwrap_or_else(Crumb::root);
     let origin_id = st.origin_id.take().unwrap_or_else(|| closing.id.clone());
     let animate = animate && st.view_open && !app.cfg.has(mode::REDUCED_MOTION);
-    st.stack = vec![Crumb::root()];
+    st.shown_stack = Some(std::mem::replace(&mut st.stack, vec![Crumb::root()]));
     st.current = "root".into();
     st.nav_id += 1;
     let focus_in_view = host.active().contains(&Ui::DRIVE_FOLDER_VIEW);
@@ -499,6 +499,7 @@ pub(super) fn navigate_to(app: &mut App, host: &mut dyn Host, index: usize) {
     finish_animation(app, host);
     let st = &mut app.st.home;
     let closing = st.stack[index + 1].clone();
+    st.shown_stack = Some(st.stack.clone());
     st.stack.truncate(index + 1);
     let entry = st.stack[index].clone();
     st.current = entry.id.clone();
@@ -508,6 +509,7 @@ pub(super) fn navigate_to(app: &mut App, host: &mut dyn Host, index: usize) {
 }
 
 fn swap(app: &mut App, host: &mut dyn Host, what: Swap) {
+    app.st.home.shown_stack = None;
     match what {
         Swap::Open(entry) => {
             reveal_view(app, host, &entry);
@@ -552,6 +554,7 @@ fn card_html(card: &Card, night: bool) -> String {
 /// on the visible rows while its scroll position stays exact. Returns the HTML and the view's `scrollTop`.
 // v5: app-v5.js:snapshotDriveFolderView
 fn snapshot(app: &mut App, host: &mut dyn Host) -> Option<(String, f64)> {
+    let shown = app.st.home.shown_stack.take();
     if !view_open(app) {
         return None;
     }
@@ -583,11 +586,12 @@ fn snapshot(app: &mut App, host: &mut dyn Host) -> Option<(String, f64)> {
         }
         html
     };
-    let last = st.stack.len() - 1;
-    let crumbs: String = st.stack.iter().enumerate().map(|(i, c)| {
+    let stack = shown.as_ref().unwrap_or(&st.stack);
+    let last = stack.len() - 1;
+    let crumbs: String = stack.iter().enumerate().map(|(i, c)| {
         format!("<button class=\"drive-breadcrumb{}\">{}</button>{}", if i == last { " active" } else { "" }, esc(&c.name), if i < last { "<span>/</span>" } else { "" })
     }).collect();
-    let name = st.stack.last().map_or("Folder", |c| if c.name.is_empty() { "Folder" } else { &c.name });
+    let name = stack.last().map_or("Folder", |c| if c.name.is_empty() { "Folder" } else { &c.name });
     let empty = st.slots[Slot::ViewFolders as usize].cards.is_empty() && st.slots[Slot::ViewFiles as usize].cards.is_empty() && !st.slots[Slot::ViewFiles as usize].skeletons;
     let style = format!("--drive-folder-view-top: {}; {}", px(st.view_top), cards::palette_style(&palette::view_palette(&st.view_color, night)));
     let html = format!(
