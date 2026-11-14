@@ -137,7 +137,7 @@ fn create_failed(app: &mut App, host: &mut dyn Host) {
     let st = &mut app.st.export_upload;
     st.create = None;
     st.fails += 1;
-    let delay = (2_000.0 * 2f64.powi(st.fails.min(8) as i32 - 1)).min(300_000.0);
+    let delay = (2_000.0 * (1u32 << st.fails.clamp(1, 8) - 1) as f64).min(300_000.0);
     st.retry_at = host.now() + delay;
     app.sched.timer(host.out(), T_RETRY, delay);
     collab::kick(app, host);

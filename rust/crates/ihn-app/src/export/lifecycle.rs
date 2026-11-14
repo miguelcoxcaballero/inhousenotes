@@ -16,6 +16,7 @@ use crate::{abi, home, shell, store, tag, App, Host};
 
 const L_HOME: u32 = tag(Mod::ExportLifecycle, 1);
 const T_CHECK: u32 = tag(Mod::ExportLifecycle, 2);
+const L_HOME_KEY: u32 = tag(Mod::ExportLifecycle, 3);
 /// How long Home waits for the local commit (or, in degraded storage, the seal) before giving up.
 const WAIT_LIMIT_MS: f64 = 15_000.0;
 
@@ -89,7 +90,7 @@ pub fn init(app: &mut App, host: &mut dyn Host) {
         return;
     }
     host.out().listen(Ui::BTN_DRIVE_HOME, "click", L_HOME, 0);
-    host.out().listen(Ui::BTN_DRIVE_HOME, "keydown", L_HOME, 0);
+    host.out().listen(Ui::BTN_DRIVE_HOME, "keydown", L_HOME_KEY, 0);
 }
 
 /// Events addressed to this module (ids made with `abi::tag`) and broadcasts (`Life`, `Msg`). Returns `abi::ret` bits.
@@ -97,7 +98,7 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
     match *event {
         // v5: `if (docTitleEl && docTitleEl.contains(e.target)) return;`
         Event::Dom(e) if e.listener == L_HOME && e.ty == ety::CLICK && !e.path.contains(Ui::DOC_TITLE) => go_home(app, host),
-        Event::Dom(e) if e.listener == L_HOME && e.ty == ety::KEYDOWN && !e.path.contains(Ui::DOC_TITLE) && (e.key == "Enter" || e.key == " ") => {
+        Event::Dom(e) if e.listener == L_HOME_KEY && e.ty == ety::KEYDOWN && !e.path.contains(Ui::DOC_TITLE) && (e.key == "Enter" || e.key == " ") => {
             go_home(app, host);
             return ret::PREVENT_DEFAULT;
         }

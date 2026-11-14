@@ -23,6 +23,7 @@ const L_OVERLAY: u32 = tag(Mod::ExportUser, 4);
 const L_INPUT: u32 = tag(Mod::ExportUser, 5);
 const T_NATIVE: u32 = tag(Mod::ExportUser, 6);
 const T_FORCE: u32 = tag(Mod::ExportUser, 7);
+const L_INPUT_KEY: u32 = tag(Mod::ExportUser, 8);
 /// `appendPdfExportChunk` size (5.18.0 `chunkSize`).
 const CHUNK_CHARS: u32 = 240_000;
 /// 5.18.0 waits 30 s for `handleInhousePdfExportResult`.
@@ -313,7 +314,7 @@ pub fn init(app: &mut App, host: &mut dyn Host) {
     out.listen(Ui::MODAL_EXPORT_CANCEL, "click", L_CANCEL, 0);
     out.listen(Ui::MODAL_EXPORT_CONFIRM, "click", L_CONFIRM, 0);
     out.listen(Ui::MODAL_EXPORT_PDF, "click", L_OVERLAY, 0);
-    out.listen(Ui::EXPORT_FILENAME, "keydown", L_INPUT, 0);
+    out.listen(Ui::EXPORT_FILENAME, "keydown", L_INPUT_KEY, 0);
     out.listen(Ui::EXPORT_FILENAME, "input", L_INPUT, 0);
 }
 
@@ -327,7 +328,7 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
             // v5: `if (e.target.id === 'modal-export-pdf') closeExportModal()`.
             L_OVERLAY if e.path.first() == Ui::MODAL_EXPORT_PDF => close_modal(host),
             L_INPUT if e.ty == ety::INPUT => app.st.export_user.value = e.value.to_string(),
-            L_INPUT if e.ty == ety::KEYDOWN => {
+            L_INPUT_KEY if e.ty == ety::KEYDOWN => {
                 app.st.export_user.value = e.value.to_string();
                 match e.key {
                     "Enter" => {
