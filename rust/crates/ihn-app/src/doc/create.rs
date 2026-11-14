@@ -60,6 +60,9 @@ pub fn normalize_title(value: &str) -> String {
     if out.is_empty() { "cuaderno".into() } else { out.into() }
 }
 
+/// The normalized name of the document being created (the editor's title while it is prepared).
+pub fn pending_name(app: &App) -> Option<&str> { app.st.doc_create.pending.as_ref().map(|p| &p.name[..]) }
+
 /// Creates a document in `folder` ("" = My Drive) and opens it in the editor. False when another creation runs
 /// or nobody is signed in.
 pub fn new_document(app: &mut App, host: &mut dyn Host, folder: &str, base_name: &str) -> bool {

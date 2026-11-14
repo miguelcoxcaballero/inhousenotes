@@ -47,7 +47,7 @@ pub(super) fn init(app: &mut App, host: &mut dyn Host) {
     }
     out.listen(thumb, "keydown", super::L_THUMB_KEY, 0);
     out.listen(main, "scroll", super::L_MAIN_SCROLL, listen::PASSIVE);
-    for node in [main, Ui::DRIVE_FOLDER_VIEW_SCROLL, Ui::DRIVE_RECENTS, inner] {
+    for node in [main, Ui::DRIVE_FOLDER_VIEW_SCROLL, Ui::DRIVE_RECENTS, inner, Ui::CANVAS_VIEWPORT, Ui::CANVAS_CONTAINER] {
         out.observe(node, super::L_SCROLL_RESIZE, observe::RESIZE, "");
     }
     for node in [Ui::DRIVE_HOME, Ui::EDITOR_VIEW, Ui::DRIVE_FOLDER_VIEW] {
@@ -70,6 +70,12 @@ pub fn schedule(app: &mut App, host: &mut dyn Host) {
 }
 
 fn measure(app: &mut App, host: &mut dyn Host) -> Option<Metrics> {
+    if shell::view(app) == shell::View::Editor {
+        // v5: the editor's target is `#canvas-viewport`, scrolled by the viewport transform (`editor::viewport`).
+        let (max, offset, rect) = crate::editor::viewport::scroll_metrics(app, host);
+        let inner_height = host.metric(Node::WINDOW, Metric::InnerHeight);
+        return Some(Metrics { target: Ui::CANVAS_VIEWPORT, max, top: rect.y.max(0.0) + 12.0, travel: (inner_height.min(rect.bottom()) - rect.y.max(0.0) - 72.0).max(1.0), offset });
+    }
     if shell::view(app) != shell::View::Home {
         return None;
     }
@@ -99,15 +105,20 @@ pub(super) fn render(app: &mut App, host: &mut dyn Host) -> Option<Metrics> {
     let out = host.out();
     out.style(thumb, "transform", Some(&format!("translateY({}px)", num(m.top + ratio * m.travel))));
     out.attr(thumb, "aria-valuenow", Some(&num(round(ratio * 100.0))));
-    if m.target != Ui::DRIVE_FOLDER_VIEW_SCROLL && !std::mem::replace(&mut app.st.home.scroll.main_named, true) {
+    if m.target != Ui::DRIVE_FOLDER_VIEW_SCROLL && m.target != Ui::CANVAS_VIEWPORT && !std::mem::replace(&mut app.st.home.scroll.main_named, true) {
         out.prop(m.target, "id", Prop::Str("drive-main-scroll"));
     }
-    out.attr(thumb, "aria-controls", Some(if m.target == Ui::DRIVE_FOLDER_VIEW_SCROLL { "drive-folder-view-scroll" } else { "drive-main-scroll" }));
+    out.attr(thumb, "aria-controls", Some(if m.target == Ui::DRIVE_FOLDER_VIEW_SCROLL { "drive-folder-view-scroll" } else if m.target == Ui::CANVAS_VIEWPORT { "canvas-viewport" } else { "drive-main-scroll" }));
     Some(m)
 }
 
 fn move_to(app: &mut App, host: &mut dyn Host, ratio: f64) {
     let Some(m) = measure(app, host) else { return };
+    if m.target == Ui::CANVAS_VIEWPORT {
+        crate::editor::viewport::scroll_to(app, host, ratio.clamp(0.0, 1.0) * m.max);
+        schedule(app, host);
+        return;
+    }
     host.out().prop(m.target, "scrollTop", Prop::Num(ratio.clamp(0.0, 1.0) * m.max));
     schedule(app, host);
 }
@@ -130,8 +141,13 @@ pub(super) fn pointer(app: &mut App, host: &mut dyn Host, p: &PointerBatch) -> u
         }
         ptr::MOVE => {
             let Some(drag) = app.st.home.scroll.drag.filter(|d| d.id == p.pointer_id) else { return 0 };
-            let target = if folders::view_open(app) { Ui::DRIVE_FOLDER_VIEW_SCROLL } else { app.st.home.main };
-            if shell::view(app) != shell::View::Home || target != drag.target {
+            let target = match shell::view(app) {
+                shell::View::Editor => Some(Ui::CANVAS_VIEWPORT),
+                shell::View::Home if folders::view_open(app) => Some(Ui::DRIVE_FOLDER_VIEW_SCROLL),
+                shell::View::Home => Some(app.st.home.main),
+                _ => None,
+            };
+            if target != Some(drag.target) {
                 app.st.home.scroll.drag = None;
             } else {
                 move_to(app, host, drag.ratio + (p.raw.y - drag.y) / drag.travel);

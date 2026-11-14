@@ -82,7 +82,8 @@ export default function install(host) {
     const found = path(event.target), related = path(event.relatedTarget);
     const target = event.target;
     const key = event.key || '', code = event.code || '';
-    const raw = target && typeof target.value === 'string' ? target.value : event.animationName || event.propertyName || '';
+    // A contenteditable target (the document title) reports its text: it has no `value`.
+    const raw = target && typeof target.value === 'string' ? target.value : target?.isContentEditable ? target.textContent : event.animationName || event.propertyName || '';
     const value = typeof raw === 'string' ? raw : '';
     const data = event.dataTransfer?.files?.length ? event.dataTransfer.files
       : event.clipboardData || (target?.files?.length ? target.files : null);
