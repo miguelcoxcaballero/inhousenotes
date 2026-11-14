@@ -538,6 +538,9 @@ fn clear_preview(app: &mut App, host: &mut dyn Host, id: Id) {
     }
 }
 
+/// Whether the editor holds a pdf.js raster for page `id` (`doc::backgrounds`).
+pub fn has_pdf_raster(app: &App, id: Id) -> bool { raster(app, id).is_some() }
+
 fn raster(app: &App, id: Id) -> Option<(String, Img, bool)> {
     app.st.editor_pages.gfx.as_ref()?.rasters.iter().find(|r| r.0 == id).map(|r| (r.1.clone(), r.2, r.4))
 }
@@ -586,7 +589,10 @@ fn apply_background(app: &mut App, host: &mut dyn Host, id: Id, canvas: Node) {
             picture(app, asset);
             (picture_url(app, &asset), "cover")
         }
-        Background::Pdf { .. } => (raster(app, id).map(|r| r.0), "100% 100%"),
+        Background::Pdf { .. } => {
+            crate::doc::backgrounds::apply(app, host, id);
+            (raster(app, id).map(|r| r.0), "100% 100%")
+        }
     };
     flush(app, host);
     let out = host.out();
