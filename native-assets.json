@@ -1052,8 +1052,8 @@
       "mime": "font/ttf"
     },
     "/wasm/ihn.wasm": {
-      "sha256": "89532cbbb0b10528d064e5b72ef929502436856b06702c54a8989ac5b21f9685",
-      "size": 1589269,
+      "sha256": "f5fe3316c2bcce96d1344ce5389ca8f42614e8a2f521ef56c67b2fb5ff366491",
+      "size": 1368628,
       "mime": "application/wasm"
     }
   }
