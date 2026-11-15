@@ -20,11 +20,12 @@ use std::collections::{HashMap, HashSet};
 
 use crate::codec::{Reader, Writer};
 use crate::doc::{Doc, Tx};
-use crate::id::{fnv1a64, ActorId, FastMap, FastSet, Hash, Id, IdMap, IdSet};
+use crate::id::{fnv1a64, ActorId, FastSet, Hash, Id, IdMap, IdSet};
 use crate::jsmath;
 use crate::op::{Background, Body, Op, PageProp, Template, Tool, VersionMeta, Z};
 use crate::pos::Pos;
 use crate::snapshot::{get_body, get_bytes, get_hash, get_id, get_op, get_str, get_z, put_body, put_bytes, put_hash, put_id, put_op, put_str, put_z};
+use crate::vecmap::VecMap;
 
 /// v5: app-v5.js `VERSION_HISTORY_MAX`.
 pub const MAX_ENTRIES: usize = 80;
@@ -150,7 +151,8 @@ pub fn needed_assets(doc: &Doc) -> Vec<Hash> {
     let mut records: Vec<(bool, Record)> =
         doc.versions.values().filter_map(|v| Some((v.is_listed(), Record::decode(&v.data.v)?))).collect();
     crate::sort::by(&mut records, |a, b| b.1.ts.total_cmp(&a.1.ts));
-    let bases: FastMap<Hash, Hash> = records.iter().filter_map(|(_, r)| Some((r.snapshot, r.base?))).collect();
+    // One entry per version record (bounded by the timeline): sorted vectors.
+    let bases: VecMap<Hash, Hash> = records.iter().filter_map(|(_, r)| Some((r.snapshot, r.base?))).collect();
     let mut seen = FastSet::default();
     let mut need = Vec::new();
     for (_, r) in records.iter().filter(|(listed, _)| *listed) {
@@ -436,8 +438,9 @@ impl Planned {
 /// non-milestones beyond 80 entries. (5.x branch-id regrouping does not apply: v6 ids never collide.)
 pub fn plan_prune(list: &[(Id, Record)]) -> Vec<Id> {
     let newer = |a: &(Id, Record), b: &(Id, Record)| a.1.ts.total_cmp(&b.1.ts).then(a.0.cmp(&b.0)).is_gt();
-    // Only `values()` is iterated, and `keep` is then sorted by (ts, unique id): the map's order is never observed.
-    let mut winners: FastMap<(&str, u64), usize> = FastMap::default();
+    // One entry per (author, content) of the timeline. Only `values()` is iterated, and `keep` is then sorted by
+    // (ts, unique id), so the order is never observed.
+    let mut winners: VecMap<(&str, u64), usize> = VecMap::new();
     for (i, e) in list.iter().enumerate().filter(|(_, e)| !e.1.milestone) {
         let who = if e.1.email.is_empty() { &e.1.name } else { &e.1.email };
         let w = winners.entry((who.as_str(), e.1.content)).or_insert(i);

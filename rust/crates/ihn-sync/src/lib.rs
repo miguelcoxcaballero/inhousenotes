@@ -439,8 +439,8 @@ pub struct Core {
     /// Mail addressed to us from verified relay files: `(sender, entry)` (pushed by `relay.rs`, drained by `peer.rs`).
     pub mail_in: Vec<(u64, Mail)>,
     /// Known VV of every open peer and tab (written by `entropy.rs`; feeds journal retention, §7.3).
-    /// Only looked up and folded with `min` (`covered`): its order is never observed.
-    pub peer_vv: ihn_core::id::FastMap<PeerRef, VersionVector>,
+    /// One entry per peer, tab or relay (W6.2y: sorted vector; only looked up and folded with `min` in `covered`).
+    pub peer_vv: VecMap<PeerRef, VersionVector>,
     /// The relay cannot fill a gap: the export must be downloaded (§8.6 step 3; set by `relay.rs`, cleared by `export.rs`).
     pub need_export: bool,
     /// Remote live ink / erase previews (written by `live.rs`, drawn by the remote-ink overlay).
