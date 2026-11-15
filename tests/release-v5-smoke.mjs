@@ -1079,8 +1079,8 @@ assert.ok(
 assert.match(remoteMergeCheckpointSource, /if \(!indexedDbSaved && !backupSaved\)/);
 
 // Publication metadata must remain tied to an actual APK; shell advances when CI publishes it.
-assert.equal(update.version, '1.0.28');
-assert.equal(update.versionCode, 29);
+assert.equal(update.version, '1.0.29');
+assert.equal(update.versionCode, 30);
 assert.ok(update.apkSizeBytes > 0);
 assert.equal(notes.split('\n')[0], `# v${/const APP_VERSION = '([^']+)'/.exec(indexHtml)[1]}`);
 assert.match(notes, /Android/i);
