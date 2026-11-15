@@ -51,12 +51,26 @@ jobs:
       - name: Run cargo tests
         run: npm run test:cargo
 
+      - name: Run shell CSS checks
+        run: npm run test:shell
+
       - name: Build
         run: npm run build
+
+      - name: Verify the committed generated files equal the build (main)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          # On main the generated files are committed (ARCHITECTURE §14.2/§14.3): the deployed site must be this build.
+          for file in wasm/ihn.wasm offline-assets.js native-assets.json index.html; do
+            git ls-files --error-unmatch "$file" >/dev/null
+            cmp "build/$file" "$file"
+          done
 
       - name: Verify the build is reproducible from another path
         run: |
           git worktree add --detach "$RUNNER_TEMP/ihn-second-path/checkout" HEAD
+          # The same pinned devDependencies (binaryen's wasm-opt): under CI the build fails without them.
+          ln -s "$GITHUB_WORKSPACE/node_modules" "$RUNNER_TEMP/ihn-second-path/checkout/node_modules"
           (cd "$RUNNER_TEMP/ihn-second-path/checkout" && npm run build)
           (cd build && find . -type f | sort | xargs sha256sum) > "$RUNNER_TEMP/first.sha256"
           (cd "$RUNNER_TEMP/ihn-second-path/checkout/build" && find . -type f | sort | xargs sha256sum) > "$RUNNER_TEMP/second.sha256"
@@ -72,10 +86,9 @@ jobs:
 
       - name: Run quick pixel parity against 5.18.0
         run: |
-          # The harness arrives with W1.2; IHN_V5_ROOT is the 5.18.0 tree it serves next to this one.
-          if [ ! -f tests/v6/parity/run.mjs ]; then echo "::warning::tests/v6/parity/run.mjs is missing; parity skipped"; exit 0; fi
+          # A = the 5.18.0 tree served next to this one (B = this checkout with build/ over it).
           git worktree add --detach "$RUNNER_TEMP/ihn-5.18.0" "$V5_COMMIT"
-          IHN_V5_ROOT="$RUNNER_TEMP/ihn-5.18.0" npm run test:parity -- --quick
+          npm run test:parity -- --quick --a-root "$RUNNER_TEMP/ihn-5.18.0"
 
       - name: Upload reports on failure
         if: failure()
@@ -85,7 +98,7 @@ jobs:
           path: |
             playwright-report
             test-results
-            tests/v6/parity/report
+            test-results/parity-report
           if-no-files-found: ignore
 
   full:
@@ -122,10 +135,14 @@ jobs:
       - name: Run the full parity matrix against 5.18.0
         run: |
           git worktree add --detach "$RUNNER_TEMP/ihn-5.18.0" "$V5_COMMIT"
-          IHN_V5_ROOT="$RUNNER_TEMP/ihn-5.18.0" npm run test:parity
+          npm run test:parity -- --a-root "$RUNNER_TEMP/ihn-5.18.0"
 
       - name: Run the performance check
-        run: IHN_V5_ROOT="$RUNNER_TEMP/ihn-5.18.0" npm run perf
+        run: |
+          # Same phases, document and Drive mock for both apps (TESTING §6); report only.
+          mkdir -p test-results/perf
+          npm run perf -- --app v5 --root "$RUNNER_TEMP/ihn-5.18.0" --short --out test-results/perf/v5.json
+          npm run perf -- --app v6 --overlay build --short --out test-results/perf/v6.json
 
       - name: Upload parity and performance reports
         if: always()
@@ -133,8 +150,8 @@ jobs:
         with:
           name: parity-and-performance
           path: |
-            tests/v6/parity/report
-            tests/v6/perf/REPORT.md
+            test-results/parity-report
+            test-results/perf
           if-no-files-found: ignore
 
   release:

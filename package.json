@@ -6,9 +6,10 @@
     "build": "node scripts/build-wasm.mjs",
     "gen:ui": "node scripts/gen-ui-ids.mjs",
     "test:cargo": "cargo test --manifest-path rust/Cargo.toml --locked --workspace",
+    "test:shell": "node --test \"tests/v6/shell/*.test.mjs\"",
     "test:e2e": "playwright test",
     "test:parity": "node tests/v6/parity/run.mjs",
-    "test": "npm run test:cargo && npm run test:e2e && npm run test:parity",
+    "test": "npm run test:cargo && npm run test:shell && npm run build && npm run test:e2e && npm run test:parity -- --quick",
     "perf": "node tests/v6/perf/profile.mjs",
     "serve": "node scripts/serve.mjs --root . --overlay build"
   },
