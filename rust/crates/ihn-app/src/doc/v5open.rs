@@ -314,6 +314,7 @@ pub fn worker(host: &mut dyn Host, msg: &[u8]) {
     w.u8(imp.v5 as u8);
     w.f64(memory());
     w.u32(imp.open_yields);
+    w.u8(imp.size_refinement as u8);
     send(w);
 }
 
@@ -356,17 +357,17 @@ fn import_here(app: &mut App, host: &mut dyn Host, actor: ActorId, time: u64) {
                 add_batch(app, &b, e);
             }
             imp.assets.iter().for_each(|a| add_asset(app, host, a.hash, &a.mime, &a.bytes));
-            imported(app, host, Ok((imp.source, imp.v5, imp.open_yields)));
+            imported(app, host, Ok((imp.source, imp.v5, imp.open_yields, imp.size_refinement)));
         }
         Err(e) => imported(app, host, Err(e.message().into())),
     }
 }
 
 /// The import is complete: `supersede` against the document as it was, then the batches, then the source asset.
-fn imported(app: &mut App, host: &mut dyn Host, r: Result<(Option<(Source, Hash)>, bool, u32), String>) {
+fn imported(app: &mut App, host: &mut dyn Host, r: Result<(Option<(Source, Hash)>, bool, u32, bool), String>) {
     let Some(mut j) = app.st.doc_v5open.job.take() else { return };
     let id = j.f.file.id.clone();
-    let (source, v5, yields) = match r {
+    let (source, v5, yields, refinement) = match r {
         Ok(r) => r,
         Err(e) => {
             log(app, &id, format!("error:{e}"));
@@ -389,6 +390,9 @@ fn imported(app: &mut App, host: &mut dyn Host, r: Result<(Option<(Source, Hash)
     log(app, &id, format!("{}:{pages}", if v5 { "v5" } else { "plain" }));
     if app.st.doc_v5open.notify == 0 {
         open::set_import_yields(app, yields);
+        if refinement {
+            open::set_size_refinement(app);
+        }
     }
     app.st.doc_v5open.job = Some(Job { source, ..j });
     store_source(app, host);
@@ -539,10 +543,11 @@ fn worker_msg(app: &mut App, host: &mut dyn Host, obj: u32, data: &[u8]) {
             // fresh one.
             let _worker_memory = r.f64();
             let yields = r.u32().unwrap_or(0);
+            let refinement = r.u8() == Some(1);
             if !crate::export::pdf::busy(app) {
                 stop_worker(app, host);
             }
-            imported(app, host, Ok((source, v5, yields)));
+            imported(app, host, Ok((source, v5, yields, refinement)));
         }
         (OP_PARSE, _) => imported(app, host, Err(r.str().unwrap_or("bad worker answer").to_string())),
         (OP_STRIP, ok) => {

@@ -95,6 +95,9 @@ pub struct Row {
     /// Bumped whenever the page's items or background change (v5 `pageDirtyGeneration`).
     gen: u32,
     preview_failed_at: f64,
+    /// 5.18.0 holds this page unloaded (`page.unloaded`): every page but the first after the open's import
+    /// (`initialPages: 1`), until its first activation loads it.
+    unloaded: bool,
 }
 
 /// A decoded asset image (and its blob URL for CSS backgrounds).
@@ -160,6 +163,8 @@ pub struct State {
     new_pages: Vec<Id>,
     /// The open's `renderAllPages` already ran ([`render_opened`]); `rebuild_opened` only arms its 80 ms pass.
     open_rendered: bool,
+    /// The armed deferred PDF maintenance swaps to the clean source ([`arm_clean_swap`]): every page is redrawn.
+    clean_swap_redraw: bool,
     is_pc: Option<bool>,
     /// Backing-store resizes of page canvases (gesture budget test).
     pub resizes: u32,
@@ -319,7 +324,7 @@ fn make_row(app: &mut App, host: &mut dyn Host, id: Id, i: usize, animate: bool)
         out.class(wrapper, "new-page", true);
     }
     out.listen(wrapper, "pointerdown", L_WRAPPER, 0);
-    Row { id, row, wrapper, w, h, active: None, needs_redraw: true, preview: None, preview_dirty: false, wrapper_bg: None, gen: 0, preview_failed_at: f64::NEG_INFINITY }
+    Row { id, row, wrapper, w, h, active: None, needs_redraw: true, preview: None, preview_dirty: false, wrapper_bg: None, gen: 0, preview_failed_at: f64::NEG_INFINITY, unloaded: false }
 }
 
 fn drop_row(app: &mut App, host: &mut dyn Host, mut r: Row) {
@@ -399,15 +404,28 @@ pub fn rebuild_opened(app: &mut App, host: &mut dyn Host) {
 /// shown (`doc::open::finish_foreign`).
 pub fn render_opened(app: &mut App, host: &mut dyn Host) {
     render_all(app, host, true);
+    for r in app.st.editor_pages.rows.iter_mut().skip(1) {
+        r.unloaded = true;
+    }
     app.st.editor_pages.open_rendered = true;
 }
 
 /// v5: `importPDFData`'s deferred PDF maintenance (`scheduleDeferredPdfMaintenance`, 1.8 s after `hideLoading`,
 /// postponed by 0.7 s while a smooth interaction runs or within 1.8 s of user input), for an import whose clean
 /// source PDF exists (`doc::v5open`: stripped or attachment). 5.18.0 then swaps the displayed pdf.js document to
-/// it (`swapDisplayDocToCleanOriginal`): every page needs a redraw and a forced visible pass runs, which puts the
-/// previews of the drawn pages back under their canvases. v6 stored that source at the import; the pass remains.
-pub fn arm_clean_swap(app: &mut App, host: &mut dyn Host) { app.sched.timer(host.out(), T_CLEAN_SWAP, 1800.0); }
+/// it (`swapDisplayDocToCleanOriginal`): the PDF rasters are dropped and rendered again, every page needs a redraw
+/// and a forced visible pass runs, which puts the previews of the drawn pages back under their canvases until their
+/// new rasters are painted. v6 stored that source at the import; the raster round and the pass remain.
+/// The same maintenance reads the sizes of the pages after the first that have a PDF background and no stored size
+/// (`pageSizeRefinement`: every page after the first of a plain PDF) and then runs the same forced pass (`refine`;
+/// v6 knows those sizes at the import, so only the pass remains).
+pub fn arm_clean_swap(app: &mut App, host: &mut dyn Host, clean: bool, refine: bool) {
+    if !clean && !refine {
+        return;
+    }
+    app.st.editor_pages.clean_swap_redraw = clean;
+    app.sched.timer(host.out(), T_CLEAN_SWAP, 1800.0);
+}
 
 fn clean_swap(app: &mut App, host: &mut dyn Host) {
     if app.st.editor_pages.rows.is_empty() {
@@ -418,8 +436,11 @@ fn clean_swap(app: &mut App, host: &mut dyn Host) {
         app.sched.timer(host.out(), T_CLEAN_SWAP, 700.0);
         return;
     }
-    for r in app.st.editor_pages.rows.iter_mut() {
-        r.needs_redraw = true;
+    if app.st.editor_pages.clean_swap_redraw {
+        crate::doc::backgrounds::invalidate(app, host);
+        for r in app.st.editor_pages.rows.iter_mut() {
+            r.needs_redraw = true;
+        }
     }
     schedule_visible(app, host, true);
 }
@@ -806,6 +827,7 @@ fn attach(app: &mut App, host: &mut dyn Host, id: Id) {
     if app.st.editor_pages.rows[i].active.is_some() {
         return;
     }
+    app.st.editor_pages.rows[i].unloaded = false;
     let (w, h, wrapper) = {
         let r = &app.st.editor_pages.rows[i];
         (r.w, r.h, r.wrapper)
@@ -1288,7 +1310,7 @@ pub fn queue_scroll_previews(app: &mut App, host: &mut dyn Host, all: bool) {
         let k = i as usize;
         let r = &app.st.editor_pages.rows[k];
         let id = r.id;
-        let skip = (r.preview.is_some() && !r.preview_dirty) || now - r.preview_failed_at < 3000.0 || matches!(page_bg(app, id), Background::Pdf { .. }) && raster(app, id).is_none();
+        let skip = (r.preview.is_some() && !r.preview_dirty) || now - r.preview_failed_at < 3000.0;
         if !skip {
             let pri = if range.is_some_and(|(s, e)| i >= s && i <= e) { 0 } else { 1000 + k };
             let q = &mut app.st.editor_pages.previews;
@@ -1326,6 +1348,18 @@ fn preview_step(app: &mut App, host: &mut dyn Host) {
         let (id, _) = st.previews.remove(at);
         let Some(r) = row(app, id) else { return schedule_previews(app, host, 16.0) };
         if r.preview.is_some() && !r.preview_dirty {
+            return schedule_previews(app, host, 16.0);
+        }
+        // 5.18.0 first loads an unloaded page from IndexedDB; the activation already queued for it loads it
+        // meanwhile and replaces the page object, which discards the preview (`state.pages[i] !== page`).
+        if r.unloaded && app.st.editor_pages.pending.iter().any(|p| p.0 == id) {
+            return schedule_previews(app, host, 16.0);
+        }
+        // 5.18.0 queues PDF pages too and renders one without its raster through pdf.js; that render is discarded
+        // when the page loads meanwhile (`state.pages[i] !== page`: the first activation of every page but the
+        // first after an import). v6 draws a preview from the raster only: without one, the page is dropped until
+        // the next queue (a visible pass), as that discarded render is.
+        if matches!(page_bg(app, id), Background::Pdf { .. }) && !raster(app, id).is_some_and(|r| r.2) {
             return schedule_previews(app, host, 16.0);
         }
         let (w, h, gen) = (r.w, r.h, r.gen);
@@ -1465,6 +1499,7 @@ fn io(app: &mut App, host: &mut dyn Host, io: &abi::Io) -> u32 {
     }
     // Decoded asset images and their blob URLs.
     let mut repaint_all = false;
+    let mut raster_page: Option<Id> = None;
     let mut url_for: Option<Hash> = None;
     let mut blob_url: Option<(u32, u32)> = None;
     with_gfx(app, |_, g| {
@@ -1481,9 +1516,18 @@ fn io(app: &mut App, host: &mut dyn Host, io: &abi::Io) -> u32 {
             }
         } else if let Some(r) = g.rasters.iter_mut().find(|r| r.3 == io.req) {
             r.4 = ok;
-            repaint_all = ok;
+            raster_page = ok.then_some(r.0);
         }
     });
+    // v5 `renderPdfPageToBackground`: `redrawPage(i)` of that page only (another page's repaint would clear the
+    // preview a forced visible pass just put back under its canvas).
+    if let Some(id) = raster_page {
+        if active(app, id).is_some() {
+            touch(app, id);
+            request_repaint(app, host, id);
+        }
+        schedule_previews(app, host, 16.0);
+    }
     if let Some((req, _)) = blob_url {
         let blob = with_gfx(app, |_, g| g.pictures.iter().find(|p| p.url_req == req).map(|p| p.hash)).and_then(|h| session::get(app).and_then(|s| s.asset_blob(&h)));
         if let Some(blob) = blob {

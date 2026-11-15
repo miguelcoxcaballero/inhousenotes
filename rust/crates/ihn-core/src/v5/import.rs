@@ -95,6 +95,10 @@ pub struct Import {
     /// page loop (every second PDF page). The open then waits one more frame before `renderAllPages` and another
     /// before `hideLoading` (see `doc::open::finish_foreign`).
     pub open_yields: u32,
+    /// 5.18.0 `importPDFData`'s `pageSizeRefinement` is not empty: a page after the first with a PDF background and
+    /// no stored size (every page after the first of a plain PDF). Its deferred PDF maintenance then reads their
+    /// sizes and runs a forced visible pass (`scheduleVisiblePageUpdate(true)`).
+    pub size_refinement: bool,
 }
 
 /// [`Import::open_yields`] for `pages` PDF pages and the `STROKES_*` entries (`None`: no 5.x ink).
@@ -359,6 +363,7 @@ pub fn from_pdf(kw: &str, facts: &PdfFacts, import_actor: ActorId, rev_time_ms: 
         out.imp.source = Some((source, asset));
     }
 
+    out.imp.size_refinement = (1..facts.page_sizes.len()).any(|i| entries.get(i).and_then(Option::as_ref).is_none_or(|p| needs_pdf(p) && !(p.page_width.is_some_and(|w| w > 0.0) && p.page_height.is_some_and(|h| h > 0.0))));
     let mut ids = Vec::with_capacity(facts.page_sizes.len());
     for (i, &pdf_size) in facts.page_sizes.iter().enumerate() {
         let n = i as u32 + 1;
