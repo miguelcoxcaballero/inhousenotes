@@ -15,11 +15,12 @@
 //! previous version, and every
 //! [`CHECKPOINT_EVERY`]th version of an actor (or one whose base cannot be read) is self-contained.
 
+#[cfg(test)]
 use std::collections::{HashMap, HashSet};
 
 use crate::codec::{Reader, Writer};
 use crate::doc::{Doc, Tx};
-use crate::id::{fnv1a64, ActorId, Hash, Id, IdMap};
+use crate::id::{fnv1a64, ActorId, FastMap, FastSet, Hash, Id, IdMap, IdSet};
 use crate::jsmath;
 use crate::op::{Background, Body, Op, PageProp, Template, Tool, VersionMeta, Z};
 use crate::pos::Pos;
@@ -149,8 +150,8 @@ pub fn needed_assets(doc: &Doc) -> Vec<Hash> {
     let mut records: Vec<(bool, Record)> =
         doc.versions.values().filter_map(|v| Some((v.is_listed(), Record::decode(&v.data.v)?))).collect();
     crate::sort::by(&mut records, |a, b| b.1.ts.total_cmp(&a.1.ts));
-    let bases: HashMap<Hash, Hash> = records.iter().filter_map(|(_, r)| Some((r.snapshot, r.base?))).collect();
-    let mut seen = HashSet::new();
+    let bases: FastMap<Hash, Hash> = records.iter().filter_map(|(_, r)| Some((r.snapshot, r.base?))).collect();
+    let mut seen = FastSet::default();
     let mut need = Vec::new();
     for (_, r) in records.iter().filter(|(listed, _)| *listed) {
         let mut h = Some(r.snapshot);
@@ -435,7 +436,8 @@ impl Planned {
 /// non-milestones beyond 80 entries. (5.x branch-id regrouping does not apply: v6 ids never collide.)
 pub fn plan_prune(list: &[(Id, Record)]) -> Vec<Id> {
     let newer = |a: &(Id, Record), b: &(Id, Record)| a.1.ts.total_cmp(&b.1.ts).then(a.0.cmp(&b.0)).is_gt();
-    let mut winners: HashMap<(&str, u64), usize> = HashMap::new();
+    // Only `values()` is iterated, and `keep` is then sorted by (ts, unique id): the map's order is never observed.
+    let mut winners: FastMap<(&str, u64), usize> = FastMap::default();
     for (i, e) in list.iter().enumerate().filter(|(_, e)| !e.1.milestone) {
         let who = if e.1.email.is_empty() { &e.1.name } else { &e.1.email };
         let w = winners.entry((who.as_str(), e.1.content)).or_insert(i);
@@ -447,7 +449,7 @@ pub fn plan_prune(list: &[(Id, Record)]) -> Vec<Id> {
     crate::sort::by(&mut keep, |a, b| a.1.ts.total_cmp(&b.1.ts).then(a.0.cmp(&b.0)));
     let milestones: Vec<Id> = keep.iter().filter(|e| e.1.milestone).map(|e| e.0).collect();
     if milestones.len() > MAX_MILESTONES {
-        let mut protect: HashSet<Id> = milestones[milestones.len() - MAX_MILESTONES..].iter().copied().collect();
+        let mut protect: IdSet = milestones[milestones.len() - MAX_MILESTONES..].iter().copied().collect();
         protect.extend(keep.iter().find(|e| e.1.milestone && e.1.kind == "baseline").map(|e| e.0));
         keep.retain(|e| !e.1.milestone || protect.contains(&e.0));
     }
@@ -455,7 +457,7 @@ pub fn plan_prune(list: &[(Id, Record)]) -> Vec<Id> {
         let at = keep.iter().position(|e| !e.1.milestone).unwrap_or(0);
         keep.remove(at);
     }
-    let kept: HashSet<Id> = keep.iter().map(|e| e.0).collect();
+    let kept: IdSet = keep.iter().map(|e| e.0).collect();
     list.iter().map(|e| e.0).filter(|id| !kept.contains(id)).collect()
 }
 
@@ -468,9 +470,9 @@ pub fn plan_prune(list: &[(Id, Record)]) -> Vec<Id> {
 /// has one (5.18.0 `if (entry.exportName)`). Push the ops into one `Tx`: the restore is a new causal write.
 pub fn plan_restore(doc: &Doc, target: &Snapshot) -> Vec<Op> {
     let mut ops = Vec::new();
-    let wanted: HashSet<Id> = target.pages.iter().map(|p| p.id).collect();
+    let wanted: IdSet = target.pages.iter().map(|p| p.id).collect();
     // Items move between pages: one erased from its current page must not be in the target anywhere.
-    let keep: HashSet<Id> = target.pages.iter().flat_map(|p| &p.items).map(|i| i.id).collect();
+    let keep: IdSet = target.pages.iter().flat_map(|p| &p.items).map(|i| i.id).collect();
     for &page in doc.order() {
         if !wanted.contains(&page) && doc.pages.get(&page).is_some_and(|p| !p.deleted.v) {
             ops.push(Op::PageDel { page, deleted: true });

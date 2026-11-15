@@ -19,11 +19,10 @@ use super::timeline::{self, V5Version};
 use super::{legacy_item_id, legacy_page_id, V5Error};
 use crate::codec::b64_decode;
 use crate::doc::Doc;
-use crate::id::{fnv1a64, ActorId, Hash, Id};
+use crate::id::{fnv1a64, ActorId, FastSet, Hash, Id, IdSet};
 use crate::op::{Background, Batch, Body, Color, Op, PageProp, Template, Tool, Z};
 use crate::pos::Pos;
 use crate::stamp::Stamp;
-use std::collections::HashSet;
 
 /// Which bytes a `Background::Pdf` asset of an import holds (ARCHITECTURE §4.5: `SHA-256("ihn6-src" ‖
 /// SHA-256(revision bytes) ‖ u32 variant)`, variant little-endian).
@@ -125,13 +124,13 @@ struct Out {
     ops: Vec<Op>,
     stamps: Vec<Stamp>,
     imp: Import,
-    asset_seen: HashSet<Hash>,
+    asset_seen: FastSet<Hash>,
     /// 5.x item ids already used by an earlier page of this document.
-    item_ids: HashSet<String>,
+    item_ids: FastSet<String>,
 }
 
 impl Out {
-    fn new(actor: ActorId, clock: u64) -> Out { Out { actor, clock, seq: 0, idx: 0, ops: Vec::new(), stamps: Vec::new(), imp: Import::default(), asset_seen: HashSet::new(), item_ids: HashSet::new() } }
+    fn new(actor: ActorId, clock: u64) -> Out { Out { actor, clock, seq: 0, idx: 0, ops: Vec::new(), stamps: Vec::new(), imp: Import::default(), asset_seen: FastSet::default(), item_ids: FastSet::default() } }
     fn own(&mut self) -> Stamp {
         self.idx += 1;
         Stamp::new(self.clock, self.actor, self.idx)
@@ -214,7 +213,7 @@ fn image_body(out: &mut Out, i: &V5Image) -> Option<Body> {
 fn normalise_ids(page: &mut V5Page, doc_key: &str, normalized: bool) -> bool {
     let mut repaired = false;
     if !normalized && page.strokes.len() > 1 {
-        let mut seen = HashSet::new();
+        let mut seen = FastSet::default();
         for (i, s) in page.strokes.iter_mut().enumerate() {
             if !s.id.is_empty() && !seen.insert(s.id.clone()) {
                 s.id = format!("{}~{}~{i}", s.id, page.page_id);
@@ -244,7 +243,7 @@ fn normalise_ids(page: &mut V5Page, doc_key: &str, normalized: bool) -> bool {
 
 /// Item ops of one page: strokes (and their covers), images, tombstones.
 fn page_items(out: &mut Out, page: Id, p: &V5Page, covers: bool, migration: bool) {
-    let mut live = HashSet::new();
+    let mut live = FastSet::default();
     let mut k = 0u32;
     let mut z_of = |out: &mut Out, at: Stamp| {
         k += 1;
@@ -448,7 +447,7 @@ pub fn supersede(doc: &Doc, rev: &[Batch], keep: &[ActorId]) -> Option<Batch> {
     let first = rev.first()?;
     let me = Stamp::new(first.clock, first.actor, 0);
     let from_v5 = |s: Stamp| s.actor.is_import() && !keep.contains(&s.actor) && s.clock != 0;
-    let (mut items, mut pages) = (HashSet::new(), HashSet::new());
+    let (mut items, mut pages) = (IdSet::default(), IdSet::default());
     for op in rev.iter().flat_map(|b| &b.ops) {
         match op {
             Op::ItemPut { item, .. } => drop(items.insert(*item)),
@@ -675,7 +674,7 @@ fn local_items(out: &mut Out, base: &Doc, page: Id, p: &V5Page, base_ms: f64) {
     std::mem::swap(&mut sub.asset_seen, &mut out.asset_seen);
     out.imp.assets.append(&mut sub.imp.assets);
 
-    let mut present = HashSet::new();
+    let mut present = IdSet::default();
     for (op, at) in sub.ops.into_iter().zip(sub.stamps) {
         match op {
             Op::ItemPut { item, page, z, body } => {

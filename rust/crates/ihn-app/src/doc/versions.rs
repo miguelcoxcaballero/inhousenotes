@@ -245,7 +245,7 @@ fn stroke_body(tool: &str, color: &str, width: f64, xy: &[f64]) -> Option<Body> 
 /// from the import follows the item before it); `bgs`: backgrounds of the imported pages in order.
 fn v5_snapshot(v: &V5Version, z: &IdMap<Z>, bgs: &[Background], assets: &mut Vec<Asset>) -> Snapshot {
     let pdf = bgs.iter().find_map(|b| matches!(b, Background::Pdf { .. }).then_some(*b));
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = ihn_core::id::FastSet::default();
     let pages = v
         .pages
         .iter()
