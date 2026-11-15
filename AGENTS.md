@@ -62,3 +62,11 @@ Every AI/developer working in this app must read this section even without openi
 - See the central `AGENTS.md`, `docs/PROTOCOL.md` and `tools/catalog.py` before changing publication logic.
 
 This section supersedes older instructions that mandate blocking update gates, independently copied updaters, unconditional latest/stable publication, disjoint A/B catalogs, or publication in A before an explicitly requested B release. Existing signature and integrity requirements remain in force.
+
+## Shared Google OAuth
+
+The login implementation lives in `miguelcoxcaballero/inhouse-services-updater/auth`.
+Do not fork it here. Change and test the canonical source, commit, then run its
+`tools/sync.py --auth-only` for Notes, Read and Paellas. Keep `inhouse-oauth.lock.json`
+and generated files together; only app identity and UI wiring belong here.
+See `vendor/inhouse-services-updater/auth/README.md` for signing trust and logout semantics.
