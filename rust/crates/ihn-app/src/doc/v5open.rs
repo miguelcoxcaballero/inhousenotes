@@ -418,14 +418,22 @@ fn store_source(app: &mut App, host: &mut dyn Host) {
     j.wait = req;
     match variant {
         Source::Stripped => {
-            let refs = import::overlay_refs(&j.f.opened.keywords);
+            // v5 `stripOverlaysFromPdfBytes` keys its refs by page: one entry per page (at its first place, the
+            // last ref), `(u32 page 0-based, u8 0 + u32 object number | u8 1 + str XObject name)`.
+            let mut refs: Vec<(u32, OverlayRef)> = Vec::new();
+            for (page, r) in import::overlay_refs(&j.f.opened.keywords) {
+                match refs.iter_mut().find(|e| e.0 == page as u32) {
+                    Some(e) => e.1 = r,
+                    None => refs.push((page as u32, r)),
+                }
+            }
             let mut w = Writer::default();
             w.u8(worker_role::IMPORT);
             w.u8(OP_STRIP);
             w.u32(req);
             w.u32(refs.len() as u32);
             for (page, r) in refs {
-                w.u32(page as u32);
+                w.u32(page);
                 match r {
                     OverlayRef::Object(n) => {
                         w.u8(0);

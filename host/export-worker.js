@@ -70,25 +70,16 @@ async function init(module) {
 }
 
 // v5: app-v5.js:stripOverlaysFromPdfBytes — removes each page's overlay XObject (by name, else by object number).
-// Request: [0][2][u32 req][u32 n][n × (u32 page, u8 kind, u32 number | str name)]; answer: [0][2][u32 req][u8 ok]
-// [f64 size] with obj = the stripped Blob.
+// Request: [0][2][u32 req][u32 n][n × (u32 page, u8 kind, u32 number | str name)], one per page; answer: [0][2]
+// [u32 req][u8 ok][f64 size] with obj = the stripped Blob.
 function pdfLib() {
   if (!self.PDFLib) importScripts(new URL(`../vendor/pdf-lib/pdf-lib.min.js?v=${version}`, self.location.href).href);
   return self.PDFLib;
 }
 
 async function strip(bytes, blob) {
-  const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const req = v.getUint32(2, true), refs = new Map();
-  let p = 10;
-  for (let i = v.getUint32(6, true); i > 0; i--) {
-    const page = v.getUint32(p, true), kind = v.getUint8(p + 4);
-    if (kind === 0) { refs.set(page, { refNum: v.getUint32(p + 5, true) }); p += 9; } else {
-      const n = v.getUint32(p + 5, true);
-      refs.set(page, { name: decoder.decode(bytes.subarray(p + 9, p + 9 + n)) });
-      p += 9 + n;
-    }
-  }
+  const r = reader(bytes, 2), req = r.u32(), refs = [];
+  for (let n = r.u32(); n > 0; n--) refs.push([r.u32(), r.u8() ? { name: r.str() } : { refNum: r.u32() }]);
   let out = null;
   try {
     const { PDFDocument, PDFName } = pdfLib();
