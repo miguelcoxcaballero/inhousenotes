@@ -75,10 +75,16 @@ Branch `v6-w4_5`. Owns `rust/crates/ihn-app/src/collab/{mod.rs,presence.rs}`, `r
 3. **Erase previews are not drawn** (the `erases` table is kept by sync; drawing hidden items needs a page render with
    an exclusion set from `editor::pages`, not available). Strokes in progress are drawn; erases show when the batch
    lands (P2P: one RTT later).
-4. **Popup location** is always `Ubicación desconocida` (5.18.0 shows `region · timezone` for the own device: the
-   boot config has no time zone and `IntlOp` cannot read `resolvedOptions().timeZone`). Remote last activity =
-   now (a present device). The own device's name falls back as 5.18.0 (`name || email || You`).
-5. **Device label** comes from the user agent (5.18.0 reads `navigator.platform` for Windows/Mac/Linux).
+4. **Popup location and last activity** — closed in W6.1f (NOTES-W6.1f). The own row shows 5.18.0's
+   `detectPresenceLocationLabel()` (`REGION · tz`, tz, region or `Unknown`; the host passes the time zone and
+   `Intl.Locale(navigator.language).region` at boot); other devices read `Ubicación desconocida`, as in 5.18.0
+   (its packed presence has no location). Last activity: the own device now; another device when this device last
+   heard from it on its own clock (B-Y5: now while a channel is open, else when its record last changed), where
+   5.18.0 shows that device's last heartbeat on that device's clock. Rows and accounts are ordered newest first as
+   5.18.0 `groupPresenceByAccount`. The own device's name falls back as 5.18.0 (`name || email || You`).
+5. **Device label** — closed in W6.1f: 5.18.0 `detectDeviceLabel()` (iPhone / iPad / Android from the user agent,
+   then `userAgentData.platform || navigator.platform` → Windows PC / Mac / Linux PC / the raw platform, else the
+   device type); other devices receive it clamped to 16 characters without `|`, as 5.18.0's packed identity.
 6. **The physical `ihn6-net` lock is not released on suspension** (hidden 60 s): the session holds it until it closes.
    The engine stops all network work logically; another tab of the same browser takes over only when this one closes.
 7. **One engine at a time:** opening another document drops a leaving engine (its persisted `relay_pending` is
@@ -91,8 +97,8 @@ Branch `v6-w4_5`. Owns `rust/crates/ihn-app/src/collab/{mod.rs,presence.rs}`, `r
    Quick run (`--quick --states presence`, 8 comparisons): 0 unexplained, 8 expected. The avatar DOM is identical to
    5.18.0's in `connecting` / `save-ring`; the remaining pixels are the phase of the `p2p-connecting` glow and ring
    animations, which start when the avatar is first drawn (B-Y5: presence derived on the receiver's clock). The
-   popup differs in the own location line (deviation 4), the `Main device` (B-Y6: the scribe) and the other device's
-   last-activity time (B-Y5). `relay-only` is B-Y5 (no P2P class on a present relay-only device).
+   popup differs in the `Main device` (B-Y6: the scribe) and the other device's last-activity time (B-Y5); the own
+   location line matches since W6.1f. `relay-only` is B-Y5 (no P2P class on a present relay-only device).
 10. **e2e outside this unit:** with this branch, `01-signin` (offline status line on Home) and `internal-store`
     (a `401` console line from the signed-out connectivity probe) fail; neither opens a document, so no collab code
     runs in them (not investigated further). `04-ink`, `04b-erase`, `04c-select`, `06-images`,

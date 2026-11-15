@@ -394,7 +394,8 @@ impl OutBuf {
     }
 }
 
-/// `ihn_init` payload: `str version, str url, str ua, str lang, u32 flags, f64 vw, f64 vh, f64 dpr, u32 touch`.
+/// `ihn_init` payload: `str version, str url, str ua, str lang, u32 flags, f64 vw, f64 vh, f64 dpr, u32 touch`, then
+/// optionally `str platform, str time_zone, str region` (absent in the export worker: empty).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Config {
     /// `APP_VERSION` from the inert block of `index.html`.
@@ -407,6 +408,12 @@ pub struct Config {
     pub viewport: (f64, f64),
     pub dpr: f64,
     pub max_touch_points: u32,
+    /// 5.18.0 `detectDeviceLabel`'s platform: `navigator.userAgentData.platform || navigator.platform || ''`.
+    pub platform: String,
+    /// `Intl.DateTimeFormat().resolvedOptions().timeZone || ''`.
+    pub time_zone: String,
+    /// `new Intl.Locale(navigator.language || '').region || ''` (`''` when it throws).
+    pub region: String,
 }
 
 impl Config {
@@ -421,6 +428,9 @@ impl Config {
             viewport: (r.f64()?, r.f64()?),
             dpr: r.f64()?,
             max_touch_points: r.u32()?,
+            platform: r.str().unwrap_or_default().into(),
+            time_zone: r.str().unwrap_or_default().into(),
+            region: r.str().unwrap_or_default().into(),
         })
     }
     pub fn has(&self, flag: u32) -> bool { self.flags & flag != 0 }
@@ -817,6 +827,12 @@ mod tests {
         assert_eq!((c.version.as_str(), c.viewport, c.dpr, c.max_touch_points), ("6.0.0", (1280.0, 800.0), 2.0, 5));
         assert!(c.has(mode::E2E) && !c.has(mode::APP));
         assert_eq!(Config::decode(&w.buf[..w.buf.len() - 1]), None);
+        assert_eq!((c.platform.as_str(), c.time_zone.as_str(), c.region.as_str()), ("", "", ""));
+        for s in ["Win32", "Europe/Madrid", "ES"] {
+            w.str(s);
+        }
+        let c = Config::decode(&w.buf).unwrap();
+        assert_eq!((c.platform.as_str(), c.time_zone.as_str(), c.region.as_str()), ("Win32", "Europe/Madrid", "ES"));
         let id = tag(Mod::Shell, 0x0123_4567);
         assert_eq!((tag_mod(id), tag_local(id)), (Mod::Shell as usize, 0x23_4567));
     }
