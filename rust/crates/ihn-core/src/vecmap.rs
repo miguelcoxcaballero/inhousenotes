@@ -9,7 +9,7 @@
 //! repeated key wins), and equality, ordering and hashing compare the sorted entries like the std types do.
 use std::borrow::Borrow;
 use std::fmt;
-use std::ops::Index;
+use std::ops::{Bound, Index, RangeBounds};
 
 /// A map kept as a vector of `(key, value)` sorted by key.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -101,6 +101,21 @@ impl<K: Ord, V> VecMap<K, V> {
     pub fn entry(&mut self, key: K) -> Entry<'_, K, V> {
         let at = self.find(&key);
         Entry { map: self, key, at }
+    }
+    /// Like `BTreeMap::range`: the entries whose key lies in `range`, ascending (double-ended). Unlike the B-tree it
+    /// returns nothing instead of panicking for a range whose start is after its end.
+    pub fn range<R: RangeBounds<K>>(&self, range: R) -> Iter<'_, K, V> {
+        let lo = match range.start_bound() {
+            Bound::Included(k) => self.v.partition_point(|e| e.0 < *k),
+            Bound::Excluded(k) => self.v.partition_point(|e| e.0 <= *k),
+            Bound::Unbounded => 0,
+        };
+        let hi = match range.end_bound() {
+            Bound::Included(k) => self.v.partition_point(|e| e.0 <= *k),
+            Bound::Excluded(k) => self.v.partition_point(|e| e.0 < *k),
+            Bound::Unbounded => self.v.len(),
+        };
+        Iter(self.v[lo..hi.max(lo)].iter())
     }
 }
 
@@ -355,7 +370,12 @@ mod tests {
                     a.retain(|key, v| (key + *v) % 5 != m);
                     b.retain(|key, v| (key + *v) % 5 != m);
                 }
-                5 => assert_eq!(a.get(&k), b.get(&k)),
+                5 => {
+                    assert_eq!(a.get(&k), b.get(&k));
+                    let hi = k + next() % 8;
+                    assert!(a.range(k..=hi).eq(b.range(k..=hi)) && a.range(k..hi).rev().eq(b.range(k..hi).rev()));
+                    assert!(a.range(..k).eq(b.range(..k)) && a.range(k..).eq(b.range(k..)));
+                }
                 _ => assert_eq!((sa.insert(k), sa.remove(&(k / 2))), (sb.insert(k), sb.remove(&(k / 2)))),
             }
             assert!(a.iter().eq(b.iter()) && sa.iter().eq(sb.iter()));
