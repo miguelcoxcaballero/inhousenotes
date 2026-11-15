@@ -9,16 +9,23 @@ import {fakeInkDrive} from '../helpers/fake-ink-drive.mjs';
 // first frame that follows a quiet spell.
 const DOC='wake-doc';
 async function setup(page,api){
+ // Keep background Drive requests inside the same fake account as the presence transport.
+ await page.route('https://www.googleapis.com/**',async route=>{
+  const request=route.request();const response=await api.request(request.url(),{method:request.method(),headers:request.headers(),body:request.postData()});
+  await route.fulfill({status:response.status,contentType:'application/json',body:JSON.stringify(response.body)});
+ });
  api.files.set(DOC,{id:DOC,properties:{},appProperties:{}});
  await page.exposeFunction('wakeRequest',(url,options)=>api.request(url,options));
  await page.goto('/?e2e=1');await page.evaluate(()=>__IHN_TEST_API__.ready());
  await page.evaluate(async doc=>{
+  // Authentication is part of this test's fake Drive transport.
+  ensureDriveToken=async()=> 'wake-token';
   await InhouseOfflineLibrary.useAccount('wake-writer@example.test');
   await __IHN_TEST_API__.resetLocalDocument(1,'Wake');
   stopCollabPolling();beginDocumentSession();InhouseDriveInk.stop();
   state.driveFileId=doc;state.driveCanEdit=true;state.driveAutosave=false;state.pages[0].pageId='page-one';
   state.collabStructure=null;state.collabFields=null;driveDirty=false;resetDriveContentSyncVersion();
-  driveAccessToken='wake-token';driveUserProfile={email:'wake-writer@example.test',name:'Writer',photo:''};
+  driveAccessToken='wake-token';driveTokenExpiry=Date.now()+3600000;driveUserProfile={email:'wake-writer@example.test',name:'Writer',photo:''};
   latestPresenceUsers=[];liveCollabUpdatePeers=()=>{};ihnConsumeSignalMailboxesFromProperties=async()=>{};
   startLiveCollaboration=()=>{};
   window.wakeLog=[];

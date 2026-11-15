@@ -1,0 +1,31 @@
+{
+  "repository": "miguelcoxcaballero/inhouse-services-updater",
+  "revision": "4d8c2554cbeb527c65e0f8df2665d52928f7918d",
+  "appId": "notes",
+  "files": {
+    "vendor/inhouse-services-updater/auth/GoogleSessionBridge.java": {
+      "source": "auth/GoogleSessionBridge.java",
+      "sha256": "4bdc54404151d17a7c15da4e103f6de0350c81db3c1b7f73c142320a36dc14e1"
+    },
+    "vendor/inhouse-services-updater/auth/GoogleSessionProvider.java": {
+      "source": "auth/GoogleSessionProvider.java",
+      "sha256": "0cac3b1108e8a48efb9926a192151db641ff594d5dcdcef65056026bef6beeea"
+    },
+    "vendor/inhouse-services-updater/auth/README.md": {
+      "source": "auth/README.md",
+      "sha256": "9532b421cb1d718821418af56d3123f10f48cfc5cfb6a95c026f22cdd7eae2e2"
+    },
+    "vendor/inhouse-services-updater/auth/google-oauth.js": {
+      "source": "auth/google-oauth.js",
+      "sha256": "2f250daaa3437abe7a1ac907570ab929a62168cf1ed7b9f10081936bc4aff4f8"
+    },
+    "vendor/inhouse-services-updater/auth/register_android.py": {
+      "source": "auth/register_android.py",
+      "sha256": "ee6cd188733a3c49ff0673d4373754d12ef602610b6939b7c3abe6f0758916d5"
+    },
+    "vendor/inhouse-services-updater/auth/verify.py": {
+      "source": "auth/verify.py",
+      "sha256": "e03a498549fff753e0bee8e39aaad3b8572ed45ad1f61889d6b4704555357357"
+    }
+  }
+}
