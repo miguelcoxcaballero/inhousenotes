@@ -51,7 +51,12 @@ const linked = join(root, 'rust/target/wasm32-unknown-unknown/release/ihn.wasm')
 // indices that refer to them change; exports, imports and the table keep their meaning. The names come from the
 // linker's name section, kept for this step (`CARGO_PROFILE_RELEASE_STRIP=debuginfo` below) and removed with the
 // producers and target-features sections afterwards, so the output has exactly the sections it had before.
-const WASM_OPT = ['-Os', '--low-memory-unused', '--merge-similar-functions', '-Os', '--reorder-functions-by-name', '--strip-debug', '--strip-producers', '--strip-target-features'];
+// W6.2y: `-ocimfs 20` (`--one-caller-inline-max-function-size`, an option of the inlining passes inside both `-Os`
+// rounds): binaryen inlines a function that has a single caller only up to 20 instructions instead of at any size.
+// LLVM already inlined what it found worth it; the large single-caller bodies binaryen inlined on top grew the code
+// and moved it away from its own module's functions (measured on the name-ordered output: -6.0 KB raw, -5.4 KB
+// gzip; 10-30 all give the same, 50 and above lose most of it). Tiny bodies are still inlined.
+const WASM_OPT = ['-ocimfs', '20', '-Os', '--low-memory-unused', '--merge-similar-functions', '-Os', '--reorder-functions-by-name', '--strip-debug', '--strip-producers', '--strip-target-features'];
 const WASM_FEATURES = ['bulk-memory', 'bulk-memory-opt', 'call-indirect-overlong', 'multivalue', 'mutable-globals', 'nontrapping-float-to-int', 'reference-types', 'sign-ext'];
 const wasmOpt = join(root, 'node_modules/binaryen/bin/wasm-opt');
 const optimised = existsSync(wasmOpt);
