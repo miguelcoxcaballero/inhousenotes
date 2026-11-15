@@ -21,7 +21,7 @@ use crate::editor::pages;
 use crate::shell::fx::{self as sfx, deflate_flag, Src};
 use crate::store::sv::hex;
 use crate::{App, Host};
-use ihn_core::codec::{b64_decode, Reader, Writer};
+use ihn_core::codec::{b64_decode, b64_encode, Reader, Writer};
 use ihn_core::doc::Doc;
 use ihn_core::id::{Hash, Id};
 use ihn_core::jsmath;
@@ -37,7 +37,7 @@ mod op {
     pub const BLOB: u8 = 1;
     /// main → worker: `[u32 job]` + request plan + snapshot (→ [`super::worker`]).
     pub const BUILD: u8 = 2;
-    /// worker Rust → worker JS (`fx::WORKER_LOCAL`): `[u32 job]` + assembly plan (never leaves the worker).
+    /// worker Rust → worker JS (`fx::WORKER_LOCAL`): `[u32 job]` + assembly plan ([`super::assemble_plan`]).
     pub const ASSEMBLE: u8 = 3;
     /// worker → main: `[u32 job][u8 ok]` + the PDF bytes, or an error text.
     pub const BUILT: u8 = 4;
@@ -45,7 +45,22 @@ mod op {
     pub const REBUILD: u8 = 5;
     /// worker → main: `[u32 job][u8 ok]`, obj = the rebuilt source Blob.
     pub const REBUILT: u8 = 6;
+    /// worker JS → worker Rust: `[u32 job][u8 1][zlib(snapshot)]` → `fx::WORKER_LOCAL` `[str title][str subject]
+    /// [str creator][str keywords]`, set in this order.
+    pub const META: u8 = 7;
 }
+
+/// 5.18.0 `buildPdfBlobWithPdfLib`: a page of `w × h` px is a PDF page of `0.75 w × 0.75 h` pt.
+const PT_PER_PX: f64 = 0.75;
+/// The content stream appended to every inked page (the rebuild removes it again).
+const INK_CALL: &str = "q /IHN6Ink Do Q";
+/// 5.18.0 `buildPdfBlobWithPdfLib` metadata: title, subject, creator.
+const META: [&str; 3] = ["Cuaderno Digital", "Notas con S-Pen", "Cuaderno Digital App"];
+/// `/Keywords` = this + base64(zlib(snapshot)) (`doc::open::classify` reads it back).
+const KEYWORDS: &str = "STROKES_Z:!;IHN6:";
+/// Plan bits of a page drawn by the worker: a white rectangle over the page, then its background image if any.
+const DRAW_WHITE: u8 = 1;
+const DRAW_IMAGE: u8 = 2;
 
 /// Page background kinds of the plan.
 const BG_TEMPLATE: u8 = 0;
@@ -390,6 +405,13 @@ pub fn worker(host: &mut dyn Host, msg: &[u8]) {
                 (fx::WORKER_POST, w.buf)
             }
         },
+        op::META => {
+            r.u8();
+            let mut w = Writer::default();
+            META.iter().for_each(|s| w.str(s));
+            w.str(&(KEYWORDS.to_string() + &b64_encode(r.buf, false)));
+            (fx::WORKER_LOCAL, w.buf)
+        }
         _ => return,
     };
     let m = out.w.rec(fam::FX, code);
@@ -402,7 +424,12 @@ pub fn worker(host: &mut dyn Host, msg: &[u8]) {
     out.w.end(m);
 }
 
-/// Request plan (+ snapshot) → assembly plan (+ snapshot): the ink of every page as a PDF content stream.
+/// Request plan (+ snapshot) → assembly plan for `host/export-worker.js` (+ the snapshot it deflates for
+/// [`op::META`]): `[str ink call][u32 n × (str name, f64 alpha, str blend)]` (the `/ExtGState`s of every ink form),
+/// `[u32 n × (u32 key, u32 m × (u32 plan page, u32 source page 0-based))]` (the source PDFs in the order of their
+/// first page; the worker copies the pages its source has), `[u32 n × (f64 w pt, f64 h pt, u8 draw bits, u32 key,
+/// f64 w px, f64 h px, str ink, u32 k × u32 image key))]` (a page not copied is a new `w × h` pt page drawn as the
+/// bits say; the ink form's `/BBox` is `[0 0 w h]` px), `[u32 n × (str name, u32 key)]` (attachments).
 fn assemble_plan(job: u32, bytes: &[u8]) -> Option<Vec<u8>> {
     let mut r = Reader::new(bytes);
     struct P {
@@ -433,14 +460,38 @@ fn assemble_plan(job: u32, bytes: &[u8]) -> Option<Vec<u8>> {
     let doc: Doc = snapshot::decode(snap).ok()?;
     let mut w = Writer::default();
     header(&mut w, op::ASSEMBLE, job);
+    w.str(INK_CALL);
+    w.u32(pdfink::GS.len() as u32);
+    for (name, alpha, blend) in pdfink::GS {
+        w.str(name);
+        w.f64(alpha);
+        w.str(blend);
+    }
+    let mut sources: Vec<u32> = Vec::new();
+    for p in &plan {
+        if p.bg == BG_PDF && !sources.contains(&p.key) {
+            sources.push(p.key);
+        }
+    }
+    w.u32(sources.len() as u32);
+    for key in sources {
+        let uses = |p: &&P| p.bg == BG_PDF && p.key == key && p.src >= 1;
+        w.u32(key);
+        w.u32(plan.iter().filter(uses).count() as u32);
+        for (i, p) in plan.iter().enumerate().filter(|e| uses(&e.1)) {
+            w.u32(i as u32);
+            w.u32(p.src - 1);
+        }
+    }
     w.u32(plan.len() as u32);
     let key_of = |h: Hash| assets.iter().find(|a| a.0 == h).map(|a| Img(a.1));
     for p in &plan {
+        w.f64(p.w * PT_PER_PX);
+        w.f64(p.h * PT_PER_PX);
+        w.u8(if p.bg == BG_TEMPLATE || p.bg == BG_IMAGE { DRAW_WHITE | DRAW_IMAGE } else { DRAW_WHITE });
+        w.u32(p.key);
         w.f64(p.w);
         w.f64(p.h);
-        w.u8(p.bg);
-        w.u32(p.key);
-        w.u32(p.src);
         let mut items = PageItems::collect(&doc, p.id, &key_of);
         items.images.retain(|i| i.img.is_some());
         match pdfink::content_stream(p.h, &items) {
@@ -661,11 +712,15 @@ mod tests {
         plan.raw(&snap);
         let out = assemble_plan(9, &plan.buf).unwrap();
         let mut r = Reader::new(&out);
-        assert_eq!((r.u8(), r.u8(), r.u32(), r.u32()), (Some(worker_role::EXPORT), Some(op::ASSEMBLE), Some(9), Some(order.len() as u32)));
+        assert_eq!((r.u8(), r.u8(), r.u32()), (Some(worker_role::EXPORT), Some(op::ASSEMBLE), Some(9)));
+        assert_eq!((r.str(), r.u32()), (Some("q /IHN6Ink Do Q"), Some(4)));
+        let gs: Vec<_> = (0..4).map(|_| (r.str().unwrap(), r.f64().unwrap(), r.str().unwrap())).collect();
+        assert_eq!(gs, [("GSn", 1.0, "Normal"), ("GSh1", 0.22, "Multiply"), ("GSh2", 0.1, "Multiply"), ("GSh3", 0.24, "Multiply")]);
+        assert_eq!((r.u32(), r.u32()), (Some(0), Some(order.len() as u32)));
         let mut inked = 0;
         for _ in 0..order.len() {
-            let (_, _, bg, key, _) = (r.f64(), r.f64(), r.u8(), r.u32(), r.u32());
-            assert_eq!((bg, key), (Some(BG_TEMPLATE), Some(7)));
+            let (w, h, draw, key, bw, bh) = (r.f64(), r.f64(), r.u8(), r.u32(), r.f64(), r.f64());
+            assert_eq!((w, h, draw, key, bw, bh), (Some(595.5), Some(842.25), Some(DRAW_WHITE | DRAW_IMAGE), Some(7), Some(794.0), Some(1123.0)));
             let content = r.str().unwrap().to_string();
             let n = r.u32().unwrap();
             for _ in 0..n {
@@ -681,6 +736,70 @@ mod tests {
         assert_eq!(r.buf, &snap[..]);
         assert!(assemble_plan(1, &[1, 2, 3]).is_none());
         let _ = Color::Hex(0);
+    }
+
+    /// 5.18.0's page plan: sources by first use, each copying the pages it is asked for (1-based in the request);
+    /// pages that are not copied are drawn white, templates and photos with their image.
+    #[test]
+    fn plan_groups_source_pages_and_says_what_to_draw() {
+        let doc = session::fixture();
+        let order = doc.order().to_vec();
+        let pages = [(BG_PDF, 4, 2), (BG_IMAGE, 5, 0), (BG_PDF, 6, 1), (BG_PDF, 4, 0), (BG_WHITE, 0, 0), (BG_PDF, 4, 1)];
+        let mut plan = Writer::default();
+        plan.u32(pages.len() as u32);
+        for (i, (bg, key, src)) in pages.iter().enumerate() {
+            plan.raw(&order[i % order.len()].0.to_le_bytes());
+            plan.f64(100.0);
+            plan.f64(200.0);
+            plan.u8(*bg);
+            plan.u32(*key);
+            plan.u32(*src);
+        }
+        plan.u32(0);
+        plan.u32(0);
+        plan.raw(&snapshot::encode(&doc).0);
+        let out = assemble_plan(1, &plan.buf).unwrap();
+        let mut r = Reader::new(&out);
+        r.take(6);
+        r.str();
+        for _ in 0..r.u32().unwrap() {
+            (r.str(), r.f64(), r.str());
+        }
+        let mut sources = Vec::new();
+        for _ in 0..r.u32().unwrap() {
+            let key = r.u32().unwrap();
+            let uses: Vec<(u32, u32)> = (0..r.u32().unwrap()).map(|_| (r.u32().unwrap(), r.u32().unwrap())).collect();
+            sources.push((key, uses));
+        }
+        assert_eq!(sources, [(4, vec![(0, 1), (5, 0)]), (6, vec![(2, 0)])]);
+        assert_eq!(r.u32(), Some(6));
+        let mut draws = Vec::new();
+        for _ in 0..6 {
+            let (w, h, draw, key) = (r.f64().unwrap(), r.f64().unwrap(), r.u8().unwrap(), r.u32().unwrap());
+            assert_eq!((w, h, r.f64(), r.f64()), (75.0, 150.0, Some(100.0), Some(200.0)));
+            r.str();
+            for _ in 0..r.u32().unwrap() {
+                r.u32();
+            }
+            draws.push((draw, key));
+        }
+        assert_eq!(draws, [(1, 4), (3, 5), (1, 6), (1, 4), (1, 0), (1, 4)]);
+    }
+
+    #[test]
+    fn worker_answers_plans_locally_and_metadata_with_the_keywords() {
+        let mut host = crate::host::FakeHost::default();
+        worker(&mut host, &[op::META, 3, 0, 0, 0, 1, 0xf0, 0x0f]);
+        let buf = host.out().w.buf.clone();
+        assert_eq!((buf[0], buf[1]), (fam::FX, fx::WORKER_LOCAL));
+        let mut r = Reader::new(&buf[6..]);
+        let meta: Vec<_> = (0..4).map(|_| r.str().unwrap()).collect();
+        assert_eq!(meta, ["Cuaderno Digital", "Notas con S-Pen", "Cuaderno Digital App", "STROKES_Z:!;IHN6:8A8="]);
+        assert_eq!(open::classify(meta[3]), (Kind::V6, "8A8="));
+        let mut host = crate::host::FakeHost::default();
+        worker(&mut host, &[op::BUILD, 3, 0, 0, 0, 9]);
+        let buf = host.out().w.buf.clone();
+        assert_eq!((buf[0], buf[1], buf[15], buf[20]), (fam::FX, fx::WORKER_POST, op::BUILT, 0));
     }
 
     #[test]
