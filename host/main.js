@@ -398,9 +398,8 @@ async function loadWasm(url, env) {
 }
 
 function readConfig() {
-  // v5: app-v5.js § 4.2 — the inert version block is the single source of truth.
-  const source = document.getElementById('inhouse-app-version')?.textContent || '';
-  const version = source.match(/APP_VERSION\s*=\s*['"](\d+\.\d+\.\d+)['"]/)?.[1];
+  // v5: app-v5.js § 4.2 — the inert version block is the single source of truth (read by boot.js).
+  const version = window.InhouseAppVersion;
   if (!version) throw new Error('The public app version is missing from index.html');
   const params = new URLSearchParams(location.search);
   const local = ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);

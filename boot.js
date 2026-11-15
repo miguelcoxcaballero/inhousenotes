@@ -91,6 +91,7 @@
         const source = documentRef.getElementById('inhouse-app-version')?.textContent || '';
         return source.match(/APP_VERSION\s*=\s*['"](\d+\.\d+\.\d+)['"]/)?.[1] || '';
     }
+    root.InhouseAppVersion = readAppVersion();
 
     function compareVersions(a, b) {
         const x = a.split('.').map(Number);
