@@ -14,11 +14,12 @@ const root = fileURLToPath(new URL('../', import.meta.url)).replace(/[\\/]$/, ''
 const out = join(root, 'build');
 const IMPORTS = ['host_flush', 'host_rect', 'host_metric', 'host_now', 'host_time', 'host_random', 'host_ls', 'host_intl', 'host_log'];
 const EXPORTS = ['memory', 'ihn_abi', 'ihn_alloc', 'ihn_free', 'ihn_init', 'ihn_event', 'ihn_frame', 'ihn_out_ptr', 'ihn_out_len', 'ihn_out_reset', 'ihn_worker'];
-// W6.2s/W6.2t/W6.2z (docs/v6/NOTES-W6.2s.md, NOTES-W6.2t.md, NOTES-W6.2z.md): the design budget (480 KB / 160 KB
-// gzip / 100 KB JS) is not reachable without dropping features or splitting the module; these are the measured
-// production sizes after W6.2z (1,368,628 / 626,840 bytes) plus 5 %, rounded up to KiB. JS keeps the W6.2t limit
-// (121,245 + 5 %; it is 124,718 now). Any growth beyond that fails the build. ihn-test.wasm is not budgeted.
-const LIMITS = { wasm: 1404 * 1024, wasmGzip: 643 * 1024, js: 125 * 1024 };
+// W6.2s/W6.2t/W6.2z/W6.2y (docs/v6/NOTES-W6.2s.md, NOTES-W6.2t.md, NOTES-W6.2z.md, NOTES-W6.2y.md): the design
+// budget (480 KB / 160 KB gzip / 100 KB JS) is not reachable without dropping features or splitting the module;
+// these are the measured production sizes after W6.2y (1,337,634 / 596,635 bytes) plus 5 %, rounded up to KiB. JS
+// keeps the W6.2t limit (121,245 + 5 %; it is 124,718 now). Any growth beyond that fails the build. ihn-test.wasm
+// is not budgeted.
+const LIMITS = { wasm: 1372 * 1024, wasmGzip: 612 * 1024, js: 125 * 1024 };
 
 function run(command, args, env = {}) {
   const result = spawnSync(command, args, { cwd: root, stdio: 'inherit', env: { ...process.env, ...env } });
