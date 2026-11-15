@@ -1,109 +1,20 @@
 # Document persistence and transport
 
+Since 6.0.0 this is described in full by the v6 design documents; this page only points to them.
+
 ## Ownership
 
-- `runtime-core-v5.js`: cancellable network retries, coalescing job lanes and a
-  bounded, serial worker RPC client. These mechanisms do not know editor state.
-- `app-v5.js`: editor adapters. Local checkpoints and Drive saves have separate
-  lanes, keyed by document session. Local page bodies and operation logs commit
-  before checkpoint metadata. Cloud saves still reconcile the latest remote
-  revision and use conditional uploads.
-- `offline-library-v5.js`: durable offline snapshots. Concurrent requests share
-  the next checkpoint, with account/document/session checks before persistence.
-- `offline-sync-v5.js`: the shared foreground/background outbox runner, protected
-  by a lease and conditional writes. A failed upload does not acknowledge edits.
-- `document-processing-v5.js`: PDF handles scoped to a worker generation and
-  explicit disposal. A worker restart invalidates every old handle.
-- `document-processing-worker-v5.js`: PDF and image operations; object ownership
-  checked before mutation. Loading another source no longer deletes open PDFs.
-- `peer-transport-v5.js`: compatible v1 framing, backpressure, bounded fragment
-  reception, expiry and cleanup. It does not decide whether changes are merged.
-- `live-collaboration-v5.js`: discovery, peer lifecycle, acknowledgements and the
-  editor merge adapter. Receipt is separate from successful merge acknowledgement.
+- Document model and edit operations: `rust/crates/ihn-core` (`doc.rs`, `op.rs`), `docs/v6/ARCHITECTURE.md` §4.
+  Every edit is an order-independent operation; the session journals it to IndexedDB (`inhouse-notes-v6`, §7.1)
+  before anything leaves the device.
+- Sync: `rust/crates/ihn-sync` and `ihn-app/src/collab`, `docs/v6/SYNC.md`. Operations travel over P2P
+  (`host/peer.js`) and through editor-sealed relay files in Drive; the save indicator's `saved` means "every own edit
+  is sealed in the relay" (`docs/v6/BEHAVIOUR-CHANGES.md` N-1, N-2).
+- PDF in Drive: rebuilt by one device (the scribe) after 10 s idle, when a device leaves alone and on Export
+  (`ihn-app/src/export`, `host/export-worker.js` with pdf-lib, `docs/v6/ARCHITECTURE.md` §8). Ink is a vector layer
+  over the unchanged source page.
+- 5.x documents and local data: read by `ihn-core::v5` (§9) and migrated once by `ihn-app/src/migrate.rs` (§10).
+- PDF parsing and rendering: pdf.js through `host/pdf.js`, with 5.18.0's size, type and page-count limits.
 
-## Invariants
-
-1. A request made while a save is running waits for a subsequent checkpoint.
-   Requests in that next batch coalesce; a forced save cannot be weakened.
-2. A completed operation from another document cannot mark the current one saved.
-3. A processor executes one RPC at a time. The execution deadline starts when
-   work begins; queued requests do not time out just because an earlier job runs.
-4. A crash, active cancellation or timeout terminates the worker, rejects accepted
-   pending work, and invalidates its generation. Queued cancellation affects only
-   that request. The next request can create a fresh worker.
-5. The processor accepts at most 64 queued jobs and 32 open PDF documents. PDF
-   callers must dispose completed documents in `finally`; the source cache owns
-   its retained source. Active exports pin that source until completion, so cache
-   replacement or document reset cannot dispose a source still in use.
-6. P2P flow control applies before the start frame and every chunk. The editor
-   caps each peer's send queue at four deliveries. Oversaturation triggers the
-   existing retry/full-state reconciliation path.
-7. Incoming transfers reserve at most 50 million UTF-16 code units in aggregate,
-   at most 16 transfers globally and four per peer. Invalid lengths, inconsistent
-   duplicates and overruns are rejected. Partial transfers expire after 60 seconds
-   and are released on peer/session closure. A single wire frame is capped at 2 MiB
-   of code units before parsing; control messages retain the existing schema.
-
-## Compatibility and removals
-
-Wire v1, PDF metadata, IndexedDB records, merge stamps and deletion tombstones
-remain readable. Old document migration is data compatibility, not dead code.
-The duplicated Drive force/keepalive flags, recursive local-save draining,
-recursive offline-capture draining, ad-hoc worker pending map/timers, inline P2P
-fragment assembler and implicit deletion of all prior source PDFs were replaced.
-
-## Validation
-
-Unit tests inject storage failures, overlapping saves, worker crashes, stale
-responses, cancellation, timeouts, queue saturation and malformed fragments.
-Browser tests cover two simultaneous source PDFs, foreign/stale handles, exact
-rendered pixels, metadata, cached exports, offline conditional uploads and merging
-in the Android headless worker. Speed measurements from a desktop test runner are
-not Android-device latency guarantees.
-
-## Leaving the editor
-
-Home requires local durability for actual changes, including the account-scoped
-per-document snapshot used by the outbox. It does not wait for Drive authentication,
-network uploads or peer acknowledgements. Storage failure keeps the editor open.
-Exit jobs recheck their document session after waiting so they cannot save the next
-document. An unchanged cached document can leave immediately; cache materialization
-and an expired Drive token alone do not indicate unsaved content.
-
-## Background outbox
-
-There is no polling. The library starts the hidden document processor (a full
-app instance in an iframe) only when an operation can make progress: a new
-checkpoint, regained connectivity, returning to the app, sign-in, an explicit
-retry, a released sync lease or the backoff deadline of an unfinished operation
-(15 s, doubling up to 15 min; a new checkpoint is due at once; a launch,
-reconnection or retry ignores the backoff). It never starts while offline,
-signed out, busy with input, while another upload holds the sync lease, or when
-the only pending document is the one open in the editor (its autosave owns it).
-One processor is reused between runs and released when the outbox is empty or
-after 90 s idle. The editor lease is written only when the open document or its
-visibility changes. Android's headless job and Background Sync are requested
-only while the app is hidden with operations pending, never while it is visible.
-A dead owner's sync lease is recognised through its Web Lock, so a restarted app
-does not wait for the lease to expire.
-
-## Preparing a Drive save
-
-Idle warmup and foreground saving share a single PDF build. Consumers recheck the
-owner, document session and content version after every wait; an invalidated
-build cannot start several competing successor exports. A cancelled consumer
-leaves immediately, while a valid shared owner can continue. Structure-lock
-waits also observe cancellation before starting an export.
-
-Warmup starts after a 180 ms pause and repeated requests for the same version do
-not reset its timer. The complete prepared blob is reusable only for that exact
-session and content version. Export caches retain unchanged template encodings,
-compact strokes and overlay bounds; normal page-generation invalidation still
-applies. Native metadata compression overlaps the worker's canonical sync hash.
-The worker encodes its private, parsed timeline snapshots directly to JSON, without
-additional page clones. The default archive API still returns detached snapshots;
-archive bytes and integrity hashes remain compatible with previous releases.
-
-“Preparing” describes local PDF work. “Checking Drive” describes final revision
-verification and merging before upload. The latter still depends on the network
-and is never skipped just to shorten the displayed preparation phase.
+The 5.x pipeline (`runtime-core-v5.js`, `offline-library-v5.js`, `offline-sync-v5.js`, `document-processing*-v5.js`,
+`peer-transport-v5.js`) is no longer used; its files stay deployed only for still-open 5.18.0 tabs until 6.0.1.

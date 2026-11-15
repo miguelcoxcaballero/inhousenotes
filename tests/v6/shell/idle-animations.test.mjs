@@ -2,6 +2,8 @@
 // producing frames while nothing on screen needs them. An infinite animation
 // keeps running for as long as its element is rendered, even at opacity 0, so
 // the rules below are about what may loop forever and when.
+// Moved from tests/ in 6.0.0 (W6.2r): v6 ships 5.18.0's shell CSS (index.html <style> and offline-v5.css)
+// unchanged, so the guard still applies. `npm run test:shell`, run from the repository root.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

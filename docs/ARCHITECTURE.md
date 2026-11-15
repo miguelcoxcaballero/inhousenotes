@@ -1,26 +1,35 @@
 # Inhouse Notes web architecture
 
-The root web application is served as static files and does not require an application server.
+Since 6.0.0 the app is a Rust/WebAssembly program behind a thin JavaScript host. The full design is
+[`docs/v6/ARCHITECTURE.md`](v6/ARCHITECTURE.md); sync is [`docs/v6/SYNC.md`](v6/SYNC.md). The site is still served as
+static files from GitHub Pages and the Android APK loads it.
 
 ## Runtime boundaries
 
 | File | Responsibility |
 | --- | --- |
-| `index.html` | Markup, styles and versioned dependency loading |
-| `boot-v5.js` | Theme, OAuth callback and first-paint destination |
-| `app-v5.js` | Editor orchestration, Drive/auth, persistence, PDF export and UI wiring |
-| `runtime-core-v5.js` | Bounded requests, timeouts and retries |
-| `security-core-v5.js` | Untrusted HTML sanitization and safe PDF loading policy |
-| `timeline-core-v5.js` | Versioned checkpoints, deltas, validation and legacy Timeline decoding |
-| `collaboration-core-v5.js` | Deterministic document/structure merge primitives |
-| `live-collaboration-v5.js` | Browser, local-network, WebRTC and Drive rendezvous transports |
+| `index.html`, `offline-v5.css` | 5.18.0's markup and styles (byte-identical UI); version block, native asset map, script tags |
+| `boot.js` | Theme, skeleton reveal, release watcher, `InhouseAssetUrl`, `InhouseBackground` |
+| `host/main.js` | Wasm loader, ABI, out-buffer dispatcher, events, frames and timers |
+| `host/dom.js`, `host/canvas.js` | DOM operations and canvas command replay |
+| `host/idb.js`, `host/fetch.js` | IndexedDB transactions, Web Locks; fetch with deadlines, uploads, digests, compression |
+| `host/pdf.js`, `host/export-worker.js` | pdf.js adapter; export worker (pdf-lib + its own core instance), large 5.x imports |
+| `host/peer.js`, `host/platform.js` | WebRTC/BroadcastChannel transports; Google sign-in, Android bridges, updater, files, clipboard |
+| `service-worker.js` | Shell cache `inhouse-shell-6.0.0`; keeps `inhouse-shell-5.18.0` for open 5.18.0 tabs until 6.0.1 |
+| `rust/crates/ihn-core` | Document model, codecs, render geometry, exact maths, 5.x readers (no I/O) |
+| `rust/crates/ihn-sync` | Sync protocol state machines (P2P and Drive relay) |
+| `rust/crates/ihn-app` | UI state machines, input, scheduler, storage, Drive, auth, export, migration of 5.x data |
+| `rust/crates/ihn-wasm` | The `extern "C"` boundary to `host/main.js` |
 
-The pure core modules have no dependency on editor state. The orchestrator keeps the existing global editor API for compatibility while new domain logic should be added to the relevant core rather than returned to `index.html`.
+The 5.18.0 runtime files (`*-v5.js`, `rust-core-v5.js`, `wasm/inhouse_notes_core.wasm`, `boot-v5.js`,
+`bullet-template.js`, `ink-palette.js`, `vendor/jspdf/`) stay deployed but unreferenced in 6.0.0, for 5.18.0 tabs that
+are still open (`docs/v6/ARCHITECTURE.md` §10.4). They are deleted in 6.0.1.
 
-## Timeline storage
+## Build and release verification
 
-Timeline schema v3 stores full snapshots at milestones and every eighth entry. Other entries contain changed page bodies, explicit removals, optional order changes and changed document fields. Each entry identifies its base and resulting snapshot hashes. A broken chain is rejected; legacy schema v2 arrays remain readable.
-
-## Release verification
-
-`npm run test:unit` runs deterministic merge, live transport, Timeline, timeout and static release checks. `npm run test:e2e` runs Chromium startup, persistence, security and multi-client chaos scenarios. Both suites are required by `.github/workflows/production-checks.yml` before a production change is considered healthy.
+`npm run build` compiles `rust/` to `build/wasm/ihn.wasm` (and the e2e-only `ihn-test.wasm`), checks the ABI, the
+import allowlist, the exact-maths gate and the size budgets, and writes `build/offline-assets.js`,
+`build/native-assets.json` and `build/index.html`. A release commit copies those four files over the tree.
+`npm run test:cargo`, `npm run test:shell`, `npm run test:e2e` (Playwright, `tests/v6/e2e`) and
+`npm run test:parity` (pixel parity against 5.18.0) are required by `.github/workflows/production-checks.yml`
+(`docs/v6/ARCHITECTURE.md` §14.2, `docs/v6/TESTING.md`).
