@@ -9,7 +9,7 @@
 
 const encoder = new TextEncoder(), decoder = new TextDecoder();
 const ROLE_IMPORT = 0, OP_STRIP = 2, WORKER = 8;
-const ROLE_EXPORT = 1, OP_BLOB = 1, OP_BUILT = 4, OP_REBUILD = 5, OP_REBUILT = 6;
+const ROLE_EXPORT = 1, OP_BLOB = 1, OP_BUILT = 4, OP_REBUILD = 5, OP_REBUILT = 6, OP_META = 7;
 const jobs = new Map(); // export job → Map(key → Blob)
 let ex = null, memory = null, version = '', ready = null, local = null;
 
@@ -139,41 +139,34 @@ function answer(op, job, ok, tail) {
 
 const isPng = b => b.length > 4 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47;
 
-function base64(bytes) {
-  let s = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-  return btoa(s);
-}
-
-const INK_CALL = 'q /IHN6Ink Do Q';
-// `render::pdfink::GS`: name, opacity, blend mode.
-const GS = [['GSn', 1, 'Normal'], ['GSh1', 0.22, 'Multiply'], ['GSh2', 0.1, 'Multiply'], ['GSh3', 0.24, 'Multiply']];
-
-// The assembly plan of `export::pdf::worker` → the PDF (ARCHITECTURE §8.2).
+// The assembly plan of `export::pdf::worker` (`assemble_plan`) → the PDF (ARCHITECTURE §8.2).
 async function assemble(bytes) {
   const r = reader(bytes, 2), job = r.u32(), blobs = jobs.get(job) || new Map();
   jobs.delete(job);
   try {
     const { PDFDocument, PDFName, rgb } = pdfLib();
     const out = await PDFDocument.create();
-    const pages = [];
+    const ink = r.str(), gs = {}, sources = [], pages = [], attachments = [];
+    for (let n = r.u32(); n > 0; n--) { const name = r.str(), alpha = r.f64(); gs[name] = { Type: 'ExtGState', CA: alpha, ca: alpha, BM: r.str() }; }
     for (let n = r.u32(); n > 0; n--) {
-      const page = { w: r.f64(), h: r.f64(), bg: r.u8(), key: r.u32(), src: r.u32(), content: r.str(), images: [] };
+      const key = r.u32(), uses = [];
+      for (let m = r.u32(); m > 0; m--) uses.push([r.u32(), r.u32()]);
+      sources.push([key, uses]);
+    }
+    for (let n = r.u32(); n > 0; n--) {
+      const page = { w: r.f64(), h: r.f64(), draw: r.u8(), key: r.u32(), bw: r.f64(), bh: r.f64(), content: r.str(), images: [] };
       for (let k = r.u32(); k > 0; k--) page.images.push(r.u32());
       pages.push(page);
     }
-    const attachments = [];
     for (let n = r.u32(); n > 0; n--) attachments.push([r.str(), r.u32()]);
     const snapshot = r.rest();
     const bytesOf = async key => new Uint8Array(await blobs.get(key).arrayBuffer());
     // Source pages: copied with their content objects unchanged (one copy per use).
-    const copied = new Map();
-    for (const key of new Set(pages.filter(p => p.bg === 1).map(p => p.key))) {
+    for (const [key, uses] of sources) {
       const src = await PDFDocument.load(await bytesOf(key), { ignoreEncryption: true, updateMetadata: false });
-      const uses = pages.filter(p => p.bg === 1 && p.key === key);
-      const valid = uses.filter(p => p.src >= 1 && p.src <= src.getPageCount());
-      const list = await out.copyPages(src, valid.map(p => p.src - 1));
-      valid.forEach((p, i) => { p.copied = list[i]; });
+      const valid = uses.filter(use => use[1] < src.getPageCount());
+      const list = await out.copyPages(src, valid.map(use => use[1]));
+      valid.forEach((use, i) => { pages[use[0]].copied = list[i]; });
     }
     const images = new Map();
     const image = async key => {
@@ -183,25 +176,22 @@ async function assemble(bytes) {
       }
       return images.get(key);
     };
-    const gs = {};
-    for (const [name, alpha, blend] of GS) gs[name] = { Type: 'ExtGState', CA: alpha, ca: alpha, BM: blend };
     for (const p of pages) {
       let page;
       if (p.copied) {
         page = out.addPage(p.copied);
       } else {
-        // v5: buildPdfBlobWithPdfLib — white page, then the template JPEG or the photo over the whole page.
-        page = out.addPage([p.w * 0.75, p.h * 0.75]);
+        page = out.addPage([p.w, p.h]);
         const { width, height } = page.getSize();
-        page.drawRectangle({ x: 0, y: 0, width, height, color: rgb(1, 1, 1) });
-        if ((p.bg === 0 || p.bg === 2) && blobs.has(p.key)) page.drawImage(await image(p.key), { x: 0, y: 0, width, height });
+        if (p.draw & 1) page.drawRectangle({ x: 0, y: 0, width, height, color: rgb(1, 1, 1) });
+        if (p.draw & 2 && blobs.has(p.key)) page.drawImage(await image(p.key), { x: 0, y: 0, width, height });
       }
       if (!p.content) continue;
       const { width, height } = page.getSize(), box = page.getMediaBox();
       const xobjects = {};
       for (let k = 0; k < p.images.length; k++) xobjects[`Im${k}`] = (await image(p.images[k])).ref;
       const form = out.context.flateStream(p.content, {
-        Type: 'XObject', Subtype: 'Form', BBox: [0, 0, p.w, p.h], Matrix: [width / p.w, 0, 0, height / p.h, box.x, box.y],
+        Type: 'XObject', Subtype: 'Form', BBox: [0, 0, p.bw, p.bh], Matrix: [width / p.bw, 0, 0, height / p.bh, box.x, box.y],
         Resources: { ExtGState: gs, XObject: xobjects }
       });
       const node = page.node;
@@ -209,7 +199,7 @@ async function assemble(bytes) {
       node.setXObject(PDFName.of('IHN6Ink'), out.context.register(form));
       // The page's own content runs inside q … Q, so its graphics state cannot reach the ink.
       node.wrapContentStreams(out.context.register(out.context.stream('q')), out.context.register(out.context.stream('Q')));
-      node.addContentStream(out.context.register(out.context.stream(INK_CALL)));
+      node.addContentStream(out.context.register(out.context.stream(ink)));
     }
     for (const [name, key] of attachments) {
       if (!blobs.has(key)) continue;
@@ -217,10 +207,13 @@ async function assemble(bytes) {
       await out.attach(b, name, { mimeType: isPng(b) ? 'image/png' : 'image/jpeg' });
     }
     const zlib = new Uint8Array(await new Response(new Blob([snapshot]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
-    out.setTitle('Cuaderno Digital');
-    out.setSubject('Notas con S-Pen');
-    out.setCreator('Cuaderno Digital App');
-    out.setKeywords([`STROKES_Z:!;IHN6:${base64(zlib)}`]);
+    call(ex.ihn_worker, answer(OP_META, job, true, zlib));
+    const meta = reader(local, 0);
+    local = null;
+    out.setTitle(meta.str());
+    out.setSubject(meta.str());
+    out.setCreator(meta.str());
+    out.setKeywords([meta.str()]);
     const pdf = await out.save({ useObjectStreams: true, addDefaultPage: false });
     const msg = answer(OP_BUILT, job, true, pdf);
     self.postMessage({ bytes: msg }, [msg.buffer]);
@@ -230,6 +223,8 @@ async function assemble(bytes) {
     self.postMessage({ bytes: msg }, [msg.buffer]);
   }
 }
+
+const INK_CALL = 'q /IHN6Ink Do Q';
 
 // ARCHITECTURE §4.5: the export's pages that carry a source, with the ink stream and `/IHN6Ink` removed; page n of
 // the result is page n of the source (other numbers are blank pages that nothing shows).
