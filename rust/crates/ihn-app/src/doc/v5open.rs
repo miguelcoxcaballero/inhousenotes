@@ -248,10 +248,9 @@ fn get_facts(r: &mut Reader) -> Option<PdfFacts> {
 mod part {
     pub const ERROR: u8 = 0;
     pub const BATCH: u8 = 1;
-    pub const ASSET: u8 = 2;
     pub const END: u8 = 3;
-    /// An `ASSET` turned into a Blob by `host/export-worker.js` (`postAsset`): `[32 hash][str mime][f64 size]`,
-    /// the message's object is the Blob.
+    /// One asset: `[32 hash][str mime][f64 size]`, the message's object is a Blob of its bytes (kind 2, the bytes
+    /// themselves in the message, is retired).
     pub const ASSET_BLOB: u8 = 4;
 }
 
@@ -273,7 +272,7 @@ pub fn worker(host: &mut dyn Host, msg: &[u8]) {
     }
     let Some(req) = r.u32() else { return };
     let parsed = (|| Some((get_facts(&mut r)?, ActorId(r.u64()?), r.u64()?, r.str()?)))();
-    let mut send = |w: Writer| {
+    let send = |host: &mut dyn Host, w: Writer| {
         worker_post(host.out(), 0, &w.buf);
         host.flush();
     };
@@ -288,20 +287,29 @@ pub fn worker(host: &mut dyn Host, msg: &[u8]) {
                 Some(Err(e)) => e.message(),
                 _ => "bad request",
             });
-            return send(w);
+            return send(host, w);
         }
     };
     for b in &imp.batches {
         let mut w = part_header(req, part::BATCH);
         w.bytes(&encode_batch(b).0);
-        send(w);
+        send(host, w);
     }
+    // Each asset (a 5.x version snapshot or image of megabytes) reaches the page as a Blob made by the worker's JS
+    // (`fx::WORKER_BLOB`), so the page's wasm memory never holds its bytes.
     for a in &imp.assets {
-        let mut w = part_header(req, part::ASSET);
+        let mut w = part_header(req, part::ASSET_BLOB);
         w.raw(&a.hash);
         w.str(&a.mime);
-        w.bytes(&a.bytes);
-        send(w);
+        w.f64(a.bytes.len() as f64);
+        let out = host.out();
+        let m = out.w.rec(fam::FX, fx::WORKER_BLOB);
+        out.w.str(&a.mime);
+        out.room(a.bytes.len() + w.buf.len() + 8);
+        out.w.bytes(&a.bytes);
+        out.w.bytes(&w.buf);
+        out.w.end(m);
+        host.flush();
     }
     let mut w = part_header(req, part::END);
     match imp.source {
@@ -315,7 +323,7 @@ pub fn worker(host: &mut dyn Host, msg: &[u8]) {
     w.f64(memory());
     w.u32(imp.open_yields);
     w.u8(imp.size_refinement as u8);
-    send(w);
+    send(host, w);
 }
 
 /// The ids `supersede` needs of a batch: its header, its pages and items, without bodies.
@@ -520,12 +528,6 @@ fn worker_msg(app: &mut App, host: &mut dyn Host, obj: u32, data: &[u8]) {
             },
             None => imported(app, host, Err("bad worker answer".into())),
         },
-        (OP_PARSE, Some(part::ASSET)) => {
-            // Written from the message into the new blob: no copy of its own (a 5.x version snapshot is megabytes).
-            if let Some((hash, mime, bytes)) = (|| Some((r.take(32)?.try_into().ok()?, r.str()?, r.bytes()?)))() {
-                add_asset(app, host, hash, mime, bytes);
-            }
-        }
         (OP_PARSE, Some(part::ASSET_BLOB)) => {
             match (|| Some((r.take(32)?.try_into().ok()?, r.str()?, r.f64()?)))() {
                 Some((hash, mime, size)) if obj != 0 => session::put_asset(app, host, hash, obj, mime, size),

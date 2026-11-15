@@ -171,6 +171,11 @@ pub mod fx {
     pub const WORKER_POST: u8 = 0x71;
     /// `worker_stop()`: terminate the worker.
     pub const WORKER_STOP: u8 = 0x72;
+    /// Worker instance only (`host/export-worker.js`): `worker_blob(str type, bytes data, bytes msg)` posts
+    /// `{bytes: msg, obj: new Blob([data], {type})}` to the page, so the page's memory never holds the data.
+    pub const WORKER_BLOB: u8 = 0x75;
+    /// Worker instance only: `worker_local(bytes msg)`, the answer for the worker's own JS (assembly plan, metadata).
+    pub const WORKER_LOCAL: u8 = 0x76;
 }
 
 /// `ihn_event` kinds.
