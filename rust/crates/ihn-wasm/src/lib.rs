@@ -130,7 +130,11 @@ pub unsafe extern "C" fn ihn_init(ptr: *const u8, len: usize) {
     if cfg.has(mode::WORKER) {
         return;
     }
-    let app = (*addr_of_mut!(APP)).insert(App::new(cfg));
+    // host/main.js calls this once per instance. Writing the slot instead of `Option::insert` leaks a previous
+    // `App` (there is none) rather than dropping it, so the `App` drop glue is not linked (W6.2z size work).
+    let slot = &mut *addr_of_mut!(APP);
+    std::ptr::write(slot, Some(App::new(cfg)));
+    let Some(app) = slot.as_mut() else { return };
     app.init(&mut Wasm);
 }
 
