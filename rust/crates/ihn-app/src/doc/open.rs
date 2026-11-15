@@ -44,9 +44,21 @@ pub mod pdf {
     }
     /// Loads pdf.js ahead of the first open.
     pub fn load(out: &mut OutBuf, req: u32) { out.fx_id(LOAD, req); }
-    /// Opens `blob` with the security-core parameters → `Io::obj` = the document, data read with [`Opened::parse`].
+    /// security-core-v5.js `assertSafePdfBlob` (size 1..=64 MiB, the type when there is one) and
+    /// `hardenPdfDocumentParams` / `loadPdfDocument` (pdf.js `maxImageSize`, 1..=2000 pages), with the refusals.
+    const TYPES: &str = r"^(application/pdf|application/octet-stream)(?:\s*;.*)?$";
+    const MAX_IMAGE_PIXELS: f64 = 40e6;
+    /// Opens `blob` with the security-core parameters → `Io::obj` = the document, data read with [`Opened::parse`]:
+    /// `f64 max bytes, str type pattern (case-insensitive), f64 max image pixels, u32 max pages, str refusal of the
+    /// blob, str refusal of the page count`.
     pub fn open(out: &mut OutBuf, req: u32, blob: u32) {
         let m = rec(out, OPEN, req, blob);
+        out.w.f64(ihn_core::v5::MAX_PDF_BYTES as f64);
+        out.w.str(TYPES);
+        out.w.f64(MAX_IMAGE_PIXELS);
+        out.w.u32(ihn_core::v5::MAX_PDF_PAGES);
+        out.w.str(ihn_core::v5::V5Error::PdfTooLarge.message());
+        out.w.str(ihn_core::v5::V5Error::PageCount.message());
         out.w.end(m);
     }
     /// Sizes of `count` pages from `first` (1-based) at scale 1 → `count × (f64 w, f64 h)`.
@@ -62,11 +74,15 @@ pub mod pdf {
         out.w.str(name);
         out.w.end(m);
     }
-    /// Page `page` (1-based) at `scale` on white as JPEG 0.92 → `Io::obj` = the Blob, data = `str url, f64 w, f64 h`.
+    /// Page `page` (1-based) at `scale` on white as JPEG 0.92 (5.18.0 `renderPdfPageToBackground`) → `Io::obj` =
+    /// the Blob, data = `str url, f64 w, f64 h`. Record: `u32 page, f64 scale, str fill, str type, f64 quality`.
     pub fn render(out: &mut OutBuf, req: u32, doc: u32, page: u32, scale: f64) {
         let m = rec(out, RENDER, req, doc);
         out.w.u32(page);
         out.w.f64(scale);
+        out.w.str("white");
+        out.w.str("image/jpeg");
+        out.w.f64(0.92);
         out.w.end(m);
     }
     /// Destroys the document and frees its handle.
