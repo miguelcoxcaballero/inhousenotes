@@ -223,9 +223,9 @@ noted. Families are applied in stream order, so a DOM insert is visible to a can
 
 | Family | Owner (Rust → JS) | Ops (complete list frozen in `abi.rs` doc comments; ranges reserved per family) |
 |---|---|---|
-| 1 DOM | `dom.rs` → `host/dom.js` | `bind(id)→h`, `query(h, selector)→h`, `create(tag)→h`, `insert_html(parent, before, html)→h`, `child(h, path)→h`, `insert(parent, before, h)`, `remove(h)`, `release(h)`, `attr(h,name,val|null)`, `prop(h,name,val)` (value, checked, disabled, hidden), `text(h,s)`, `class(h,name,on)`, `class_set(h,s)`, `style(h,prop,val|null)`, `listen(h,type,listener_id,flags{capture,passive,once})`, `unlisten`, `focus(h)`, `blur(h)`, `scroll_to(h,x,y,behavior)`, `animate(h, keyframes_json, options_json)→anim`, `anim_cancel/finish`, `anim_set(anim, keep|play|pause, keyframes_json|null, start_time_from_anim)` (listen type `ready` on an animation = its `ready` promise, once; metric `AnimCurrentTime`), `pointer_capture(h,id,on)`, `dialog(h, show|showModal|close)`, `click(h)` (file inputs) |
+| 1 DOM | `dom.rs` → `host/dom.js` | `bind(id)→h`, `query(h, selector)→h`, `create(tag)→h`, `insert_html(parent, before, html)→h`, `child(h, path)→h`, `insert(parent, before, h)`, `remove(h)`, `release(h)`, `attr(h,name,val|null)`, `prop(h,name,val)` (value, checked, disabled, hidden), `text(h,s)`, `class(h,name,on)`, `class_set(h,s)`, `style(h,prop,val|null)`, `listen(h,type,listener_id,flags{capture,passive,once},code)` (code = the `abi::ety` code, or `128 | ptr` kind, the host reports for that type; W6.2x), `unlisten`, `focus(h)`, `blur(h)`, `scroll_to(h,x,y,behavior)`, `animate(h, keyframes_json, options_json)→anim`, `anim_cancel/finish`, `anim_set(anim, keep|play|pause, keyframes_json|null, start_time_from_anim)` (listen type `ready` on an animation = its `ready` promise, once; metric `AnimCurrentTime`), `pointer_capture(h,id,on)`, `dialog(h, show|showModal|close)`, `click(h)` (file inputs) |
 | 2 Canvas | `render/cmd.rs` → `host/canvas.js` | `ctx(canvas_h, settings)→c`, `offscreen(w,h)→c`, `size(c,w,h)`, `transform/set_transform`, `save/restore`, `fill_style/stroke_style(str)`, `line_width/cap/join`, `global_alpha`, `composite(str)`, `begin/move/line/bezier/quad/arc/round_rect/close`, `stroke/fill`, `path_new(p)/path_* /stroke_path(c,p)/path_drop(p)`, `clear_rect/fill_rect`, `draw_image(c, img_h, 4|8 args)`, `radial_gradient…` (bullet dots), `get_image_data`→event, `to_data_url/to_blob(c, type, q)`→event |
-| 3 Effects | various → host modules | async I/O with a u32 request id; completion arrives as an event (§3.5). Sub-families and the unit that implements the executor **completely** before anyone depends on it: 3.1 timers/rAF/idle (`host/main.js`, W1.1); 3.2 IndexedDB (`host/idb.js`, W2.4); 3.3 fetch/blob incl. resumable and keepalive uploads (`host/fetch.js`, W1.3); 3.4 pdf (`host/pdf.js`, W3.1); 3.5 peer + BroadcastChannel (`host/peer.js`, W2.8 executor, used by W4.5); 3.6 platform: GIS, Android bridges incl. export bridge v2, file chooser, clipboard, share, download, fullscreen, history (`host/platform.js`, W1.3); 3.7 worker messages (`host/main.js`, W1.1; worker side W3.4/W5.4); 3.8 crypto: `digest('SHA-256')` only (`host/fetch.js`, W1.3; used by PKCE, assets, relay digests); 3.9 Web Locks: request (exclusive, `ifAvailable`), release, query (`host/idb.js`, W2.4); 3.10 deflate/inflate (raw and zlib) via Compression/DecompressionStream (`host/fetch.js`, W1.3) |
+| 3 Effects | various → host modules | async I/O with a u32 request id; completion arrives as an event (§3.5). Sub-families and the unit that implements the executor **completely** before anyone depends on it: 3.1 timers/rAF/idle (`host/main.js`, W1.1); 3.2 IndexedDB (`host/idb.js`, W2.4); 3.3 fetch/blob incl. resumable and keepalive uploads (`host/fetch.js`, W1.3); 3.4 pdf (`host/pdf.js`, W3.1); 3.5 peer + BroadcastChannel (`host/peer.js`, W2.8 executor, used by W4.5); 3.6 platform: GIS, Android bridges incl. export bridge v2, file chooser, clipboard, share, download, fullscreen, history (`host/platform.js`, W1.3); 3.7 worker messages (`host/main.js`, W1.1; worker side W3.4/W5.4; in the worker instance `0x75 worker_blob(type, data, msg)` posts a message with a Blob it makes and `0x76 worker_local(msg)` answers the worker's own JS, W6.2x); 3.8 crypto: `digest('SHA-256')` only (`host/fetch.js`, W1.3; used by PKCE, assets, relay digests); 3.9 Web Locks: request (exclusive, `ifAvailable`), release, query (`host/idb.js`, W2.4); 3.10 deflate/inflate (raw and zlib) via Compression/DecompressionStream (`host/fetch.js`, W1.3) |
 
 Numbers that end up in DOM strings (inline styles, attributes, `aria-valuenow`) are formatted in Rust with `jsfmt`
 (ES `Number::toString`), so `outerHTML` matches 5.18.0. Colours and composite modes are passed as the exact strings
@@ -571,8 +571,9 @@ kept.
   `drawImage` resampling is identical); not-yet-decoded images trigger the `{assetsReady}` redraw.
 - PDF backgrounds: `doc/backgrounds.rs` decides *which* page and *what* scale (5.18.0 `getPdfBackgroundScale`, LRU 6
   non-active, interaction deferral 240 ms, one page per frame); `host/pdf.js` opens the source asset with pdf.js
-  3.11.174 (hardened params from `security-core-v5.js` ported to the adapter), renders with intent `display` on
-  white, encodes JPEG 0.92 to a blob URL, and returns the handle; Rust sets the CSS background exactly as 5.18.0.
+  3.11.174 (the hardened params and limits of `security-core-v5.js`, sent by Rust with every open), renders with
+  intent `display` on white, encodes JPEG 0.92 (fill, type and quality sent with the render) to a blob URL, and
+  returns the handle; Rust sets the CSS background exactly as 5.18.0.
 - Thumbnails: page previews (`renderPagePreview` 0.18 scale, JPEG 0.6), scroll previews (≤320×440, JPEG 0.65, ≤3 ms
   stroke slices), pages-panel thumbnails and timeline previews are command streams to CPU canvases
   (`willReadFrequently`) followed by `to_data_url`, as 5.18.0.
@@ -722,7 +723,11 @@ appProperties: { ihn6: "1", ihn6_vv: <compact vv hash> }
   image XObjects). Stripping that stream and the resource name restores the clean source page (§4.5). The snapshot
   records, for each exported page, the `(source hash, source page)` it carries.
 - Assembly runs in `host/export-worker.js`: the core instance in the worker produces content streams and the page
-  plan; pdf-lib copies pages, embeds images, attaches assets, sets Keywords, saves with object streams. Exports of
+  plan; pdf-lib copies pages, embeds images, attaches assets, sets Keywords, saves with object streams. Since W6.2x
+  the plan carries every decision (`export::pdf::assemble_plan`: the sources in order of first use and the pages
+  each copies, page size in points, white page and background image, the `/ExtGState`s and the ink call); after
+  deflating the snapshot the worker asks its instance for title, subject, creator and Keywords (op 7). The source
+  rebuild (§4.5) gets the same kind of plan (`rebuild_plan`). Exports of
   annotated PDFs are therefore about the size of the source plus ink (no second copy of the source).
 
 ### 8.3 Upload
@@ -749,7 +754,8 @@ Export modal (name prefill, `sanitizeFilename`, stores the name as a `DocName` o
 **forced export** (SYNC §14.1) and then download that head revision byte for byte, with 5.18.0's loading texts
 (`'Guardando últimos cambios en Drive...'`, `'Descargando PDF de Drive...'`, `'Generando PDF...'`); viewers download
 the current head; a document not yet created in Drive is built locally with the high-quality profile. Delivery
-through the Android bridge v2 (`beginPdfExport`/`appendPdfExportChunk` ≤ 240,000 chars/`finishPdfExport`, await
+through the Android bridge v2 (`beginPdfExport`/`appendPdfExportChunk` ≤ 240,000 chars, read with `blob_read` and
+encoded by Rust one chunk at a time since W6.2x/`finishPdfExport`, await
 `handleInhousePdfExportResult` ≤ 30 s, legacy `savePdf`) / `navigator.share` / `<a download>` exactly as 5.18.0.
 
 ---

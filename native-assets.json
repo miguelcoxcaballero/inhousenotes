@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "assets": {
     "/boot.js": {
-      "sha256": "2dcad160fca0a1b1e5bc40b3418452216db15ff293a65251dc8311792c38a2ee",
-      "size": 8937,
+      "sha256": "47b650ac4f3b27df1bf534ed7410e0e353a4dff78702787e1ee5ffe94d917c8e",
+      "size": 8984,
       "mime": "application/javascript"
     },
     "/host/canvas.js": {
@@ -12,13 +12,13 @@
       "mime": "application/javascript"
     },
     "/host/dom.js": {
-      "sha256": "74010dd1bf15232e6eaae2a621342c39d43fa643288ae46b1bf448582e630402",
-      "size": 14399,
+      "sha256": "4fb4d67be1827fdd6279f6e19fd80517d85ff47066ea3eda27bc02c6b014803e",
+      "size": 13597,
       "mime": "application/javascript"
     },
     "/host/export-worker.js": {
-      "sha256": "9796159985a52c823887dcd59400821723b6ce6025b60a946cd64088df40c288",
-      "size": 14854,
+      "sha256": "d4b8953f1bd95057a9a74ee69337336e7475010a38fd6baf2a4b8c200ad35c20",
+      "size": 13181,
       "mime": "application/javascript"
     },
     "/host/fetch.js": {
@@ -32,13 +32,13 @@
       "mime": "application/javascript"
     },
     "/host/main.js": {
-      "sha256": "9df02df55a6ade884a51c30709e314b8bd3e821bdd206072b1f63f69bff7386d",
-      "size": 21495,
+      "sha256": "0564cf7b2046e1b8f243bc0beccd210638079cad43b4949ab93ddce8a0cf3f08",
+      "size": 21391,
       "mime": "application/javascript"
     },
     "/host/pdf.js": {
-      "sha256": "b88b08f29342674cccbc572e09993acab1d188d4b4daf5836317e00d49b922f6",
-      "size": 7073,
+      "sha256": "50465756de03a4bdc602ccdfd9697975b2e74771691d69da8d0df43dc8f8e6eb",
+      "size": 7213,
       "mime": "application/javascript"
     },
     "/host/peer.js": {
@@ -47,8 +47,8 @@
       "mime": "application/javascript"
     },
     "/host/platform.js": {
-      "sha256": "871df9f362318e5b96adbd8753ab7db161c88e378d4b62c7338c2e69135bec72",
-      "size": 11003,
+      "sha256": "b9011bb880edc4160474416ea1f0e38be46f990b75b4b94d944e7c0ad48aa2cd",
+      "size": 9993,
       "mime": "application/javascript"
     },
     "/host/test-api.js": {
@@ -1052,8 +1052,8 @@
       "mime": "font/ttf"
     },
     "/wasm/ihn.wasm": {
-      "sha256": "08e5a19ff3bc7ce7a5cfe541c90722188da865de09a7252487d9ee49ad8287df",
-      "size": 1337634,
+      "sha256": "84db22ef8589103fda897e294b969d4e92c37c1567ba4ebbbb84759e5d56452e",
+      "size": 1340739,
       "mime": "application/wasm"
     }
   }
