@@ -93,6 +93,11 @@ pub type IdBuild = std::hash::BuildHasherDefault<IdHasher>;
 /// `HashMap` keyed by `Id` (or a tuple starting with one).
 pub type IdMap<V> = std::collections::HashMap<Id, V, IdBuild>;
 pub type IdSet = std::collections::HashSet<Id, IdBuild>;
+/// W6.2y: the same hasher for every other std hash map/set of the workspace (strings, content hashes, tuples), so
+/// the binary carries one hasher instead of SipHash next to it. Only for maps whose iteration order is never observed
+/// (membership, lookups, commutative folds, or entries sorted by a total order on unique keys afterwards).
+pub type FastMap<K, V> = std::collections::HashMap<K, V, IdBuild>;
+pub type FastSet<K> = std::collections::HashSet<K, IdBuild>;
 
 /// Id generator of one actor. The counter is shared by every document the tab edits.
 ///

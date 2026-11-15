@@ -12,7 +12,7 @@ use crate::pos::Pos;
 use crate::snapshot::{EncodedBatch, EncodedSnapshot};
 use crate::stamp::{Clock, Reg, Stamp, VersionVector};
 use crate::vecmap::VecSet;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 // ------------------------------------------------------------------------------------------------ state
 
@@ -586,7 +586,7 @@ impl Doc {
     /// batch (new stamps); the redo ops are the inverse of that undo batch, computed the same way.
     pub fn inverse(&self, b: &Batch) -> Vec<Op> {
         let mut groups: Vec<Vec<Op>> = Vec::new();
-        let mut seen: HashSet<(u8, Id)> = HashSet::new();
+        let mut seen: crate::id::FastSet<(u8, Id)> = Default::default();
         let mut name_seen = false;
         for op in &b.ops {
             let group = match op {

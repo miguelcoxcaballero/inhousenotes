@@ -177,7 +177,8 @@ pub fn stroke(v: &Value) -> Option<V5Stroke> { strokes(&Value::Arr(vec![v.clone(
 
 /// `ihnNormalizeDeletionStamps(stamps, legacyDeletedIds)`.
 pub fn deletion_stamps(stamps: &Value, legacy_ids: &Value) -> Vec<(String, V5Stamp)> {
-    let mut found: std::collections::HashMap<String, V5Stamp> = std::collections::HashMap::new();
+    // Collected and sorted by key below: the map's order is never observed.
+    let mut found: crate::id::FastMap<String, V5Stamp> = Default::default();
     let mut record = |id: String, raw: &Value| {
         if id.is_empty() {
             return;

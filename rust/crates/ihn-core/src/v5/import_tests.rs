@@ -6,7 +6,7 @@ use crate::v5::fixtures::{self, Dump};
 use crate::v5::idb;
 use crate::v5::json::Value;
 use crate::v5::sha256::hex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 const T0: u64 = 1_793_354_000_000;
 
