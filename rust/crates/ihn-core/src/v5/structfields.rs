@@ -3,7 +3,9 @@
 
 use super::json::{cmp_utf16, Value};
 use super::pages::V5Stamp;
-use std::collections::BTreeMap;
+// W6.2y: sorted vectors instead of B-trees (same ascending key order and API): one entry per 5.x page or field,
+// read once by the importer and the migration.
+use crate::vecmap::VecMap;
 
 pub const RANK_STEP: f64 = 1024.0;
 
@@ -17,8 +19,8 @@ pub struct StructEntry {
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct Structure {
     pub clock: u64,
-    pub entries: BTreeMap<String, StructEntry>,
-    pub tombstones: BTreeMap<String, V5Stamp>,
+    pub entries: VecMap<String, StructEntry>,
+    pub tombstones: VecMap<String, V5Stamp>,
 }
 
 fn sorted_keys(v: &Value) -> Vec<(&str, &Value)> {
@@ -77,7 +79,7 @@ impl Structure {
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct Fields {
     pub clock: u64,
-    pub fields: BTreeMap<String, (Value, V5Stamp)>,
+    pub fields: VecMap<String, (Value, V5Stamp)>,
 }
 
 pub const DOC_NAME_KEY: &str = "doc:exportName";
