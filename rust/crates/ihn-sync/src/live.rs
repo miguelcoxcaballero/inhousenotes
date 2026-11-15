@@ -103,14 +103,15 @@ impl Previews {
         if !self.strokes.values().any(|s| s.item.is_some()) {
             return;
         }
-        let items: std::collections::BTreeSet<Id> = batches
+        let mut items: Vec<Id> = batches
             .iter()
             .filter_map(|b| b.decode().ok())
             .flat_map(|b| b.ops)
             .filter_map(|op| if let Op::ItemPut { item, .. } = op { Some(item) } else { None })
             .collect();
+        items.sort_unstable();
         let n = self.strokes.len();
-        self.strokes.retain(|_, s| !s.item.is_some_and(|i| items.contains(&i)));
+        self.strokes.retain(|_, s| !s.item.is_some_and(|i| items.binary_search(&i).is_ok()));
         self.version += (n != self.strokes.len()) as u64;
     }
 }
