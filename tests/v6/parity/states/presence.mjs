@@ -88,7 +88,9 @@ parity('presence/save-ring', { drive: remote({ phase: 3, v5phase: 'u' }), ...ava
 parity('presence/popup', {
   drive: remote(),
   tags: ['B-Y5', 'B-Y6'],
-  expected: around(['#presence-avatars', '#presence-popup'])
+  // 52 px: the popup's shadow (`--shadow-medium`: 4 px down, 30 px blur = a Gaussian of sigma 15, visible to about
+  // three sigma in the dark theme) around a popup whose height differs (a `Main device` line that wraps).
+  expected: around(['#presence-avatars', '#presence-popup'], 52)
 }, async t => {
   await openWithRemote(t);
   await t.click('#presence-avatars');
