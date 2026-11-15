@@ -586,16 +586,17 @@ impl Doc {
     /// batch (new stamps); the redo ops are the inverse of that undo batch, computed the same way.
     pub fn inverse(&self, b: &Batch) -> Vec<Op> {
         let mut groups: Vec<Vec<Op>> = Vec::new();
-        let mut seen: crate::id::FastSet<(u8, Id)> = Default::default();
+        // One id set per kind of register (W6.2y: instead of a set of `(kind, id)` pairs, same answers).
+        let mut seen: [IdSet; 6] = Default::default();
         let mut name_seen = false;
         for op in &b.ops {
             let group = match op {
-                Op::ItemPut { item, .. } if seen.insert((0, *item)) => match self.items.get(item) {
+                Op::ItemPut { item, .. } if seen[0].insert(*item) => match self.items.get(item) {
                     None => vec![Op::ItemDel { item: *item, deleted: true }],
                     Some(old) if old.body.v.is_dropped() => vec![],
                     Some(old) => vec![Op::ItemPut { item: *item, page: old.page.v, z: old.z.v, body: old.body.v.clone() }],
                 },
-                Op::ItemDel { item, deleted } if seen.insert((1, *item)) => match self.items.get(item) {
+                Op::ItemDel { item, deleted } if seen[1].insert(*item) => match self.items.get(item) {
                     Some(old) if *deleted && old.is_live() => {
                         // The body travels, so a replica that dropped it can revive it.
                         vec![Op::ItemPut { item: *item, page: old.page.v, z: old.z.v, body: old.body.v.clone() }, Op::ItemDel { item: *item, deleted: false }]
@@ -610,7 +611,7 @@ impl Doc {
                         PageProp::Background(_) => 4,
                         PageProp::SidePanel(_) => 5,
                     };
-                    match self.pages.get(page).filter(|p| p.is_born() && seen.insert((kind, *page))) {
+                    match self.pages.get(page).filter(|p| p.is_born() && seen[kind].insert(*page)) {
                         Some(p) => {
                             let prop = match prop {
                                 PageProp::Template(_) => PageProp::Template(p.template.v),
