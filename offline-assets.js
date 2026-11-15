@@ -34,6 +34,7 @@ self.INHOUSE_OFFLINE_ASSETS=[
   "/vendor/fonts/ui-5.ttf",
   "/vendor/fonts/ui-6.ttf",
   "/vendor/fonts/ui.css",
+  "/vendor/inhouse-services-updater/auth/google-oauth.js",
   "/vendor/jspdf/jspdf.umd.min.js",
   "/vendor/pdf-lib/pdf-lib.min.js",
   "/vendor/pdfjs/cmaps/78-EUC-H.bcmap",

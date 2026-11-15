@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "assets": {
     "/app-v5.js": {
-      "sha256": "9ed3e50dede6e0712413d972e6361dfd0282fbd982e730a46b7b6eba85b2f7a9",
-      "size": 1715623,
+      "sha256": "ffea9d1c26e69b521cbb3346fd62d55e32001a5706cf1aaeecf2c6ceabb888a5",
+      "size": 1704621,
       "mime": "application/javascript"
     },
     "/boot-v5.js": {
@@ -165,6 +165,11 @@
       "sha256": "554f2ddd74404b0d5a27068f2c696aa95fbf73cbe472d1179533fdb96fc50856",
       "size": 1534,
       "mime": "text/css"
+    },
+    "/vendor/inhouse-services-updater/auth/google-oauth.js": {
+      "sha256": "2f250daaa3437abe7a1ac907570ab929a62168cf1ed7b9f10081936bc4aff4f8",
+      "size": 12637,
+      "mime": "application/javascript"
     },
     "/vendor/jspdf/jspdf.umd.min.js": {
       "sha256": "98ccf17aa10c20bb1301762618fcc9b6ab3a4e7f26b6071d64d0b41154df3875",

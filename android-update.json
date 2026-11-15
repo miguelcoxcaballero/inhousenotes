@@ -1,10 +1,10 @@
 {
-  "version": "1.0.28",
-  "versionCode": 29,
+  "version": "1.0.29",
+  "versionCode": 30,
   "required": true,
-  "apkSizeBytes": 6815752,
-  "apkSha256": "ac3e141b753b8eb17ed56627bfdbb0c577d626158c9817a60b251f833b89cec7",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.28/inhouse-notes-release-v1.0.28.apk",
-  "publishedAppVersion": "5.16.29",
-  "releaseNotes": "Test the in-app updater."
+  "apkSizeBytes": 6593065,
+  "apkSha256": "11263a277e03941cb884cea8a1e079b42a4d94a3fc98cbe11de3c25bad30efcc",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.29/inhouse-notes-release-v1.0.29.apk",
+  "publishedAppVersion": "5.19.0",
+  "releaseNotes": "Shared Google login across apps."
 }
