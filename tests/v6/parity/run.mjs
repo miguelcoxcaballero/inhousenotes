@@ -306,11 +306,34 @@ export class Driver {
     await this.settle();
   }
 
+  /**
+   * Hides (or shows again) the text caret in every frame with the harness' own style. The screenshots must not do it:
+   * Playwright's `caret: 'hide'` inserts its caret style just before each screenshot and removes it after, so the
+   * screenshot's own frame is the one that recalculates style, repaints and rasterises. Pixels rasterised in that frame
+   * are not reproducible: the globe icon of the Share dialog (an SVG at a half device pixel, phone-360) came out in one
+   * of two renderings at random, up to Δ 58 on its upper third, in 5.18.0 and v6 alike (`--runs` stability failures).
+   * A capture of a page with no pending style change gave one rendering in 30 of 30 shots, the same insertion with
+   * real frames before the screenshot also 30 of 30, the same insertion without them both renderings
+   * (docs/v6/NOTES-W6.1e.md). So the caret is hidden before #freshRaster's frames and the screenshots change nothing.
+   */
+  async #caret(hidden) {
+    await Promise.all(this.page.frames().map(frame => frame.evaluate(on => {
+      const old = document.getElementById('__ihn-caret');
+      if (!on) { if (old) old.remove(); return; }
+      if (old) return;
+      const style = document.createElement('style'); style.id = '__ihn-caret';
+      style.textContent = '* { caret-color: transparent !important; }';
+      document.documentElement.appendChild(style);
+    }, hidden).catch(() => {})));
+  }
+
   /** Takes a capture now: screenshot (the gate), normalized DOM and canvas trace (diagnostics). */
   async capture(label = '') {
     await this.settle();
+    await this.#caret(true);
     await this.#freshRaster();
-    const shoot = () => this.page.screenshot({ type: 'png', caret: 'hide', animations: 'allow', scale: 'device' });
+    // `caret: 'initial'`: the caret is already hidden (see #caret); nothing may change the page during the screenshot.
+    const shoot = () => this.page.screenshot({ type: 'png', caret: 'initial', animations: 'allow', scale: 'device' });
     let png = await shoot();
     for (let tries = 0; tries < 5; tries++) {   // and it must hold still: two captures in a row are identical
       await sleep(30);
@@ -318,6 +341,7 @@ export class Driver {
       if (again.equals(png)) break;
       png = again;
     }
+    await this.#caret(false);
     const dom = await this.page.evaluate(normalizeDom);
     const trace = this.traceEnabled ? normalizeTrace(await this.page.evaluate(() => self.__ihnTrace ? self.__ihnTrace.take() : null)) : { surfaces: [] };
     let regions = null;
