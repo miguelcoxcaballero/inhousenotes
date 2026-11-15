@@ -82,11 +82,14 @@ pub mod observe {
 
 macro_rules! event_types {
     ($($name:ident $js:literal $code:literal;)*) => {
-        /// [`DomEvent::ty`]: the `event.type` code (`DOM_TYPE` in `host/dom.js`; a cargo test compares the two
-        /// tables). A type that is not listed arrives as [`ety::OTHER`]; `pointer*` types have [`ptr`] codes.
+        /// [`DomEvent::ty`]: the `event.type` code, sent with each listen (`OutBuf::listen`) and reported back
+        /// by `host/dom.js`. A type that is not listed arrives as [`ety::OTHER`]; `pointer*` types have [`ptr`]
+        /// codes.
         pub mod ety {
             pub const OTHER: u8 = 0;
             $(pub const $name: u8 = $code;)*
+            /// The listed types in code order, each followed by a space: code = position + 1 (a test checks it).
+            pub const LISTED: &str = concat!($($js, " "),*);
             /// A `ResizeObserver` callback ([`crate::abi::OutBuf::observe`]).
             pub const RESIZE_OBSERVED: u8 = 64;
             /// A `MutationObserver` callback.
@@ -734,6 +737,11 @@ pub fn dump(bytes: &[u8]) -> String {
         };
         out.push_str(name);
         for c in layout.chars() {
+            // `_`: a u8 the dump leaves out (the event code of a listen or observe).
+            if c == '_' {
+                p.u8();
+                continue;
+            }
             out.push(' ');
             match c {
                 'h' | 'u' => write!(out, "{}", p.u32().unwrap()).unwrap(),
@@ -891,28 +899,24 @@ mod tests {
         }
     }
 
-    /// `host/dom.js` mirrors the event type codes; a drifted table would silently misroute events.
+    /// `OutBuf::listen` finds a type's code by its position in `ety::LISTED` / `dom::POINTER_TYPES`.
     #[test]
-    fn event_type_codes_match_the_host() {
-        let js = include_str!("../../../../host/dom.js");
-        let table = js.split("const DOM_TYPE = {").nth(1).and_then(|s| s.split("};").next()).expect("DOM_TYPE in host/dom.js");
-        let mut host: Vec<(String, u8)> = table
-            .split(',')
-            .map(|entry| {
-                let (name, code) = entry.trim().split_once(':').expect("name: code");
-                (name.trim().trim_matches('\'').to_string(), code.trim().parse().expect("code"))
-            })
-            .collect();
-        let mut rust: Vec<(String, u8)> = ety::NAMES.iter().map(|&(n, c)| (n.to_string(), c)).collect();
-        rust.push(("ihn-resize".into(), ety::RESIZE_OBSERVED));
-        rust.push(("ihn-mutation".into(), ety::MUTATION_OBSERVED));
-        host.sort();
-        rust.sort();
-        assert_eq!(host, rust);
-        let mut codes: Vec<u8> = rust.iter().map(|e| e.1).collect();
-        codes.dedup();
-        assert_eq!(codes.len(), rust.len(), "duplicate event type code");
-        assert!(!codes.contains(&ety::OTHER));
+    fn event_type_codes_follow_the_listed_order() {
+        for (i, (name, code)) in ety::NAMES.iter().enumerate() {
+            assert_eq!((ety::LISTED.split(' ').nth(i), *code as usize), (Some(*name), i + 1));
+        }
+        assert_eq!(ety::LISTED.split(' ').count(), ety::NAMES.len() + 1);
+        let mut out = OutBuf::default();
+        for ty in ["click", "ready", "pointerdown", "gotpointercapture", "pointerrawupdate", "message", ""] {
+            out.listen(Node(7), ty, 1, 0);
+        }
+        let mut r = Reader::new(&out.w.buf);
+        let mut codes = Vec::new();
+        while !r.is_empty() {
+            let payload = (r.u8(), r.u8(), r.bytes().unwrap()).2;
+            codes.push(*payload.last().unwrap());
+        }
+        assert_eq!(codes, [ety::CLICK, ety::READY, 128 | ptr::DOWN, 128 | ptr::GOT_CAPTURE, 128 | ptr::RAW_UPDATE, ety::OTHER, ety::OTHER]);
     }
 
     #[test]

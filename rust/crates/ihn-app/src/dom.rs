@@ -44,7 +44,7 @@ pub enum Dialog {
 }
 
 /// Record layouts for `abi::dump` (h/u = u32, i = i32, b = u8, f = f64, s = str, o = nullable str, v = prop value,
-/// x = bytes).
+/// x = bytes, _ = a u8 left out).
 #[cfg(test)]
 pub const LAYOUT: &[(u8, &str, &str)] = &[
     (op::BIND, "bind", "hs"),
@@ -61,7 +61,7 @@ pub const LAYOUT: &[(u8, &str, &str)] = &[
     (op::CLASS, "class", "hsb"),
     (op::CLASS_SET, "class_set", "hs"),
     (op::STYLE, "style", "hso"),
-    (op::LISTEN, "listen", "hsub"),
+    (op::LISTEN, "listen", "hsub_"),
     (op::UNLISTEN, "unlisten", "u"),
     (op::FOCUS, "focus", "hb"),
     (op::BLUR, "blur", "h"),
@@ -74,10 +74,13 @@ pub const LAYOUT: &[(u8, &str, &str)] = &[
     (op::CLICK, "click", "h"),
     (op::HTML, "html", "hs"),
     (op::SELECT, "select", "h"),
-    (op::OBSERVE, "observe", "hubs"),
+    (op::OBSERVE, "observe", "hubs_"),
     (op::UNOBSERVE, "unobserve", "u"),
     (op::ANIM_SET, "anim_set", "hboh"),
 ];
+
+/// The `pointer*` event types in `abi::ptr` code order (code = position + 1), each followed by a space.
+const POINTER_TYPES: &str = "pointerdown pointermove pointerup pointercancel pointerleave pointerenter pointerover pointerout pointerrawupdate lostpointercapture gotpointercapture ";
 
 impl OutBuf {
     fn dom(&mut self, o: u8, h: Node) -> usize {
@@ -216,11 +219,15 @@ impl OutBuf {
     }
     /// `h.addEventListener(event, …, flags)`; events arrive as `Event::Dom` (or `Event::Pointer` for `pointer*`
     /// types) carrying `listener`, which must be made with `abi::tag(module, n)` and be unique while attached.
+    /// The record ends with the code `host/dom.js` reports: `128 | ptr` kind for the pointer types (encoded as
+    /// pointer batches), else the `ety` code.
     pub fn listen(&mut self, h: Node, event: &str, listener: u32, flags: u8) {
         let m = self.dom(op::LISTEN, h);
         self.w.str(event);
         self.w.u32(listener);
         self.w.u8(flags);
+        let code = |list: &str| list.split(' ').position(|t| t == event && !t.is_empty()).map(|i| i as u8 + 1);
+        self.w.u8(code(POINTER_TYPES).map(|k| 128 | k).or_else(|| code(crate::abi::ety::LISTED)).unwrap_or(crate::abi::ety::OTHER));
         self.w.end(m);
     }
     /// Removes the listener registered under `listener`.
@@ -294,6 +301,7 @@ impl OutBuf {
         self.w.u32(listener);
         self.w.u8(what);
         self.w.str(attribute_filter);
+        self.w.u8(if what == crate::abi::observe::RESIZE { crate::abi::ety::RESIZE_OBSERVED } else { crate::abi::ety::MUTATION_OBSERVED });
         self.w.end(m);
     }
     /// Disconnects the observer registered under `listener`.
