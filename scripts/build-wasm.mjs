@@ -45,7 +45,13 @@ const linked = join(root, 'rust/target/wasm32-unknown-unknown/release/ihn.wasm')
 // are only touched by a stack within 1 KiB of overflowing (measured: -37 KB raw, -9 KB gzip). Then
 // `--merge-similar-functions` (functions that differ only in constants share one body) and a second `-Os` round
 // over the result (-7 KB raw, -3 KB gzip; `--converge` would give -0.1 KB more for 40 s per variant).
-const WASM_OPT = ['-Os', '--low-memory-unused', '--merge-similar-functions', '-Os'];
+// W6.2y: `--reorder-functions-by-name` then sorts the function bodies by their (mangled) symbol name, which puts the
+// functions of one module next to each other, so gzip finds their repeated instruction sequences inside its 32 KiB
+// window (measured: +6.6 KB raw from longer call indices, -12.3 KB gzip). Only the order of the bodies and the
+// indices that refer to them change; exports, imports and the table keep their meaning. The names come from the
+// linker's name section, kept for this step (`CARGO_PROFILE_RELEASE_STRIP=debuginfo` below) and removed with the
+// producers and target-features sections afterwards, so the output has exactly the sections it had before.
+const WASM_OPT = ['-Os', '--low-memory-unused', '--merge-similar-functions', '-Os', '--reorder-functions-by-name', '--strip-debug', '--strip-producers', '--strip-target-features'];
 const WASM_FEATURES = ['bulk-memory', 'bulk-memory-opt', 'call-indirect-overlong', 'multivalue', 'mutable-globals', 'nontrapping-float-to-int', 'reference-types', 'sign-ext'];
 const wasmOpt = join(root, 'node_modules/binaryen/bin/wasm-opt');
 const optimised = existsSync(wasmOpt);
@@ -59,7 +65,8 @@ if (!optimised) console.warn('node_modules/binaryen is missing: wasm-opt skipped
 async function build(features) {
   run(process.env.CARGO || 'cargo', ['build', '--manifest-path', 'rust/Cargo.toml', '-p', 'ihn-wasm', '--release',
     '--target', 'wasm32-unknown-unknown', '--locked', ...features, ...(process.env.IHN_CARGO_JOBS ? ['-j', process.env.IHN_CARGO_JOBS] : [])],
-    { RUSTFLAGS: `--remap-path-prefix=${cargoHome}=/cargo --remap-path-prefix=${root}=.` });
+    // W6.2y: the symbol names stay in the linked binary for wasm-opt's `--reorder-functions-by-name` (see WASM_OPT).
+    { RUSTFLAGS: `--remap-path-prefix=${cargoHome}=/cargo --remap-path-prefix=${root}=.`, CARGO_PROFILE_RELEASE_STRIP: optimised ? 'debuginfo' : 'true' });
   if (optimised) run(process.execPath, [wasmOpt, ...WASM_OPT, ...WASM_FEATURES.map(f => `--enable-${f}`), linked, '-o', `${linked}.opt`]);
   const wasm = await readFile(optimised ? `${linked}.opt` : linked);
 
