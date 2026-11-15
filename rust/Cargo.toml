@@ -10,7 +10,10 @@ rust-version = "1.90"
 publish = false
 
 [profile.release]
-opt-level = "s"
+# W6.2z: "z" here is the level of `ihn-wasm`, of the fat-LTO pipeline and of the precompiled std code it pulls in
+# (fmt, float parsing/printing, dlmalloc, mem*, unicode); the per-package levels below still apply to their own
+# functions. Measured: -9 KB raw, -4 KB gzip, no change in tests/v6/perf/bench.mjs nor in a sync-simulator run.
+opt-level = "z"
 lto = true
 codegen-units = 1
 panic = "abort"
@@ -21,3 +24,11 @@ strip = true
 # fat LTO the per-package level is carried by each function's attributes (measured: -140 KB raw, -48 KB gzip).
 [profile.release.package.ihn-app]
 opt-level = "z"
+
+# W6.2z: the hot crates (ihn-core: document, render, maths; ihn-sync: wire, apply) stay at "s". Measured: "z" for
+# them would save another ~45 KB gzip but makes opening dense-20 ~4 % slower (docs/v6/NOTES-W6.2z.md).
+[profile.release.package.ihn-core]
+opt-level = "s"
+
+[profile.release.package.ihn-sync]
+opt-level = "s"
