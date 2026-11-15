@@ -148,7 +148,7 @@ fn chain_tail(doc: &Doc, actor: ActorId) -> Option<Record> {
 pub fn needed_assets(doc: &Doc) -> Vec<Hash> {
     let mut records: Vec<(bool, Record)> =
         doc.versions.values().filter_map(|v| Some((v.is_listed(), Record::decode(&v.data.v)?))).collect();
-    records.sort_by(|a, b| b.1.ts.total_cmp(&a.1.ts));
+    crate::sort::by(&mut records, |a, b| b.1.ts.total_cmp(&a.1.ts));
     let bases: HashMap<Hash, Hash> = records.iter().filter_map(|(_, r)| Some((r.snapshot, r.base?))).collect();
     let mut seen = HashSet::new();
     let mut need = Vec::new();
