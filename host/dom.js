@@ -3,20 +3,7 @@
 
 const DOM = 1 << 8;
 const KIND_DOM = 1, KIND_POINTER = 2;
-const POINTER_KIND = {
-  pointerdown: 1, pointermove: 2, pointerup: 3, pointercancel: 4, pointerleave: 5, pointerenter: 6, pointerover: 7,
-  pointerout: 8, pointerrawupdate: 9, lostpointercapture: 10, gotpointercapture: 11
-};
 const POINTER_TYPE = { mouse: 1, pen: 2, touch: 3 };
-// `abi::ety`; a cargo test compares this table with the Rust one.
-const DOM_TYPE = {
-  click: 1, dblclick: 2, keydown: 3, keyup: 4, input: 5, change: 6, submit: 7, focus: 8, blur: 9, focusin: 10,
-  focusout: 11, scroll: 12, wheel: 13, touchstart: 14, touchmove: 15, touchend: 16, touchcancel: 17, dragenter: 18,
-  dragover: 19, dragleave: 20, drop: 21, paste: 22, copy: 23, cut: 24, animationend: 25, transitionend: 26, load: 27,
-  error: 28, abort: 29, finish: 30, cancel: 31, close: 32, contextmenu: 33, mousedown: 34, mouseup: 35,
-  mousemove: 36, mouseenter: 37, mouseleave: 38, resize: 39, scrollend: 40, toggle: 41, selectionchange: 42,
-  beforeinput: 43, compositionend: 44, ready: 45, 'ihn-resize': 64, 'ihn-mutation': 65
-};
 
 export default function install(host) {
   // Handles are chosen by Rust: 1..4 fixed, 16.. the ids of index.html, 1024.. dynamic.
@@ -81,7 +68,8 @@ export default function install(host) {
     return w;
   }
 
-  function encodeDom(id, h, event) {
+  // `ty` = the `abi::ety` code Rust sent with the listen (or observe) for this event type.
+  function encodeDom(id, h, event, ty) {
     const found = path(event.target), related = path(event.relatedTarget);
     const target = event.target;
     const key = event.key || '', code = event.code || '';
@@ -92,7 +80,7 @@ export default function install(host) {
       : event.clipboardData || (target?.files?.length ? target.files : null);
     const count = (event.touches?.length || 0) + (event.changedTouches?.length || 0);
     const w = host.writer.begin(112 + (key.length + code.length + value.length) * 3 + (found.length + related.length) * 4 + count * 20);
-    w.u32(id).u32(h).u8(DOM_TYPE[event.type] || 0).u32(flags(event, found)).f64(event.timeStamp ?? performance.now())
+    w.u32(id).u32(h).u8(ty).u32(flags(event, found)).f64(event.timeStamp ?? performance.now())
       .i32(event.button ?? 0).u32(event.buttons || 0)
       .f64(event.clientX || 0).f64(event.clientY || 0).f64(event.deltaX || 0).f64(event.deltaY || 0)
       .u32(event.deltaMode || 0).i32(event.detail | 0).u8(POINTER_TYPE[event.pointerType] || 0).u32(host.hold(data))
@@ -105,21 +93,22 @@ export default function install(host) {
     return w;
   }
 
-  const dispatch = (id, h, kind, event) => host.enter(() => {
-    const w = kind ? encodePointer(id, h, kind, event) : encodeDom(id, h, event);
+  const dispatch = (id, h, kind, event, code) => host.enter(() => {
+    const w = kind ? encodePointer(id, h, kind, event) : encodeDom(id, h, event, code);
     return host.ex.ihn_event(kind ? KIND_POINTER : KIND_DOM, w.base, w.length);
   });
 
-  function listen(h, type, id, bits) {
+  // `code` > 128: a pointer type (`abi::ptr` kind + 128), encoded as a pointer batch.
+  function listen(h, type, id, bits, code) {
     const node = nodes[h];
     if (!node) return;
-    const kind = POINTER_KIND[type];
+    const kind = code > 128 ? code - 128 : 0;
     const options = { capture: !!(bits & 1), once: !!(bits & 4) };
     if (bits & 2) options.passive = true;
     else if (bits & 8) options.passive = false;
     const fn = event => {
       if (options.once) listeners.get(id)?.delete(type);
-      const result = dispatch(id, h, kind, event);
+      const result = dispatch(id, h, kind, event, code);
       if (!result) return;
       if (result & 1) event.preventDefault();
       if (result & 2) event.stopPropagation();
@@ -135,7 +124,7 @@ export default function install(host) {
       node.ready?.then(() => {
         if (listeners.get(id)?.get(type) !== entry) return;
         listeners.get(id).delete(type);
-        dispatch(id, h, 0, { type, timeStamp: performance.now() });
+        dispatch(id, h, 0, { timeStamp: performance.now() }, code);
       }, () => {});
       return;
     }
@@ -151,15 +140,14 @@ export default function install(host) {
     listeners.delete(id);
   }
   // One observer per listener id; further `observe` ops with that id add nodes to it. Each callback is one event.
-  function observe(h, id, what, filter) {
+  function observe(h, id, what, filter, code) {
     const node = nodes[h];
     if (!node) return;
     let observer = observers.get(id);
     if (!observer) {
       const Observer = what ? window.MutationObserver : window.ResizeObserver;
       if (!Observer) return; // v5: `typeof ResizeObserver !== 'undefined'`
-      const type = what ? 'ihn-mutation' : 'ihn-resize';
-      observer = new Observer(entries => dispatch(id, h, 0, { type, target: entries[0]?.target }));
+      observer = new Observer(entries => dispatch(id, h, 0, { target: entries[0]?.target }, code));
       observers.set(id, observer);
     }
     if (!what) return observer.observe(node);
@@ -246,7 +234,7 @@ export default function install(host) {
       if (value !== null && len >= 16384) longStyle = value;
       style(node, name, value);
     },
-    [DOM | 15]: r => listen(r.u32(), r.str(), r.u32(), r.u8()),
+    [DOM | 15]: r => listen(r.u32(), r.str(), r.u32(), r.u8(), r.u8()),
     [DOM | 16]: r => unlisten(r.u32()),
     [DOM | 17]: r => { const node = nodes[r.u32()], preventScroll = r.u8() !== 0; node?.focus?.({ preventScroll }); },
     [DOM | 18]: r => nodes[r.u32()]?.blur?.(),
@@ -268,7 +256,7 @@ export default function install(host) {
     [DOM | 25]: r => nodes[r.u32()]?.click?.(),
     [DOM | 26]: r => { const node = nodes[r.u32()], html = r.str(); if (node) node.innerHTML = html; },
     [DOM | 27]: r => nodes[r.u32()]?.select?.(),
-    [DOM | 28]: r => observe(r.u32(), r.u32(), r.u8(), r.str()),
+    [DOM | 28]: r => observe(r.u32(), r.u32(), r.u8(), r.str(), r.u8()),
     [DOM | 29]: r => unobserve(r.u32()),
     [DOM | 30]: r => {
       const animation = nodes[r.u32()], play = r.u8(), keyframes = r.ostr(), sync = nodes[r.u32()];
