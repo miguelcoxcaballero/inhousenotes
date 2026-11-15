@@ -32,7 +32,6 @@ pub mod op {
     pub const GIS_REQUEST: u8 = 0xa1;
     pub const GIS_REVOKE: u8 = 0xa2;
     pub const NATIVE_CALL: u8 = 0xa4;
-    pub const NATIVE_BLOB: u8 = 0xa5;
     pub const UPDATER_CREATE: u8 = 0xa8;
     pub const UPDATER_SETTINGS: u8 = 0xa9;
     pub const BOOT_SIGNED_IN: u8 = 0xaa;
@@ -302,15 +301,6 @@ pub fn native_call(out: &mut OutBuf, req: u32, method: &str, args: &[&str]) {
     out.w.str(method);
     out.w.u32(args.len() as u32);
     args.iter().for_each(|a| out.w.str(a));
-    out.w.end(m);
-}
-/// A blob as base64 through `InhouseNative[method](chunk)`, `chunk_chars` characters per call (a multiple of 4;
-/// 5.18.0's export bridge uses 240000 with `appendPdfExportChunk`).
-pub fn native_blob(out: &mut OutBuf, req: u32, blob: u32, method: &str, chunk_chars: u32) {
-    let m = rec(out, op::NATIVE_BLOB, req);
-    out.w.u32(blob);
-    out.w.str(method);
-    out.w.u32(chunk_chars);
     out.w.end(m);
 }
 /// `InhouseServicesUpdater.create(…)`, `window.InhouseUpdater`, `start()` → 0, or -1 without the updater script.

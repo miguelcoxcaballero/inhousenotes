@@ -526,13 +526,16 @@ test('executors: GIS, native bridges, files, clipboard, share, download, history
   await fx(page, 0xa2, ['s', 'gis-token-1']);
   expect(await page.evaluate(() => window.__gis.revoked)).toEqual(['gis-token-1']);
 
-  // Native bridge: a call with its result, a missing method, a throwing one; a blob as base64 chunks.
+  // Native bridge: a call with its result, a missing method, a throwing one; base64 chunks of a PDF (cut and
+  // encoded by Rust, export/user.rs; here by the test) through `appendPdfExportChunk`.
   expect(await result(page, (await fx(page, 0xa4, ['r'], ['s', 'getPdfExportApiVersion'], ['u', 0])).req)).toMatchObject({ status: 0, text: '2' });
   expect((await result(page, (await fx(page, 0xa4, ['r'], ['s', 'savePdf'], ['u', 2], ['s', 'a.pdf'], ['s', 'AAAA'])).req)).status).toBe(-1);
   expect(await result(page, (await fx(page, 0xa4, ['r'], ['s', 'explode'], ['u', 0])).req)).toMatchObject({ status: -2, text: 'native boom' });
   await fx(page, 0xa4, ['r'], ['s', 'beginPdfExport'], ['u', 1], ['s', 'a.pdf']);
   const pdf = (await fx(page, 0x38, ['o'], ['s', 'application/pdf'], ['x', '%PDF-1.7 0123456789'])).obj;
-  expect((await result(page, (await fx(page, 0xa5, ['r'], ['u', pdf], ['s', 'appendPdfExportChunk'], ['u', 8])).req)).status).toBe(0);
+  for (const chunk of Buffer.from('%PDF-1.7 0123456789').toString('base64').match(/.{1,8}/g)) {
+    expect((await result(page, (await fx(page, 0xa4, ['r'], ['s', 'appendPdfExportChunk'], ['u', 1], ['s', chunk])).req)).status).toBe(0);
+  }
   await fx(page, 0xa4, ['r'], ['s', 'finishPdfExport'], ['u', 0]);
   const native = await page.evaluate(() => window.__native);
   expect(native[0]).toEqual(['begin', 'a.pdf']);
