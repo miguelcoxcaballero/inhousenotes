@@ -936,7 +936,7 @@ enum Fragment {
 // ------------------------------------------------------------------------------------------------ §4.4
 
 /// Where batches, snapshots and assets came from (persistence and forwarding decisions).
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum PeerRef {
     /// A direct P2P peer (installation id).
     Peer(u64),
