@@ -2,7 +2,8 @@
 
 use crate::codec::{Reader, Writer};
 use crate::id::ActorId;
-use std::collections::{BTreeMap, BTreeSet};
+use crate::vecmap::VecMap;
+use std::collections::BTreeSet;
 
 /// A received clock further than this ahead of the wall clock is applied but never observed (SYNC §3.4).
 pub const CLOCK_HORIZON_MS: u64 = 24 * 60 * 60 * 1000;
@@ -67,8 +68,8 @@ impl Clock {
 /// Applied batches per actor: the highest contiguous seq, plus the seqs applied above a gap ("extras").
 #[derive(Clone, PartialEq, Eq, Default, Debug)]
 pub struct VersionVector {
-    seq: BTreeMap<ActorId, u32>,
-    extras: BTreeMap<ActorId, BTreeSet<u32>>,
+    seq: VecMap<ActorId, u32>,
+    extras: VecMap<ActorId, BTreeSet<u32>>,
 }
 
 impl VersionVector {
