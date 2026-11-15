@@ -59,14 +59,10 @@ async function init(module) {
   const instance = await WebAssembly.instantiate(module, { env });
   ex = instance.exports;
   memory = ex.memory;
-  // Config: version, url, user agent, language, flags = WORKER, viewport, dpr, touch points.
-  const strings = [version, String(self.location.href), '', ''].map(s => encoder.encode(s));
-  const out = new Uint8Array(strings.reduce((n, s) => n + 4 + s.length, 0) + 32);
-  const dv = new DataView(out.buffer);
-  let p = 0;
-  for (const s of strings) { dv.setUint32(p, s.length, true); out.set(s, p + 4); p += 4 + s.length; }
-  dv.setUint32(p, WORKER, true);
-  call(ex.ihn_init, out);
+  // Config (abi.rs `Config`): four empty strings, flags = WORKER (Rust creates no `App` then), zeros.
+  const config = new Uint8Array(48);
+  config[16] = WORKER;
+  call(ex.ihn_init, config);
 }
 
 // v5: app-v5.js:stripOverlaysFromPdfBytes — removes each page's overlay XObject (by name, else by object number).
