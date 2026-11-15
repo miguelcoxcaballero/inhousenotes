@@ -224,31 +224,28 @@ async function assemble(bytes) {
   }
 }
 
-const INK_CALL = 'q /IHN6Ink Do Q';
-
-// ARCHITECTURE §4.5: the export's pages that carry a source, with the ink stream and `/IHN6Ink` removed; page n of
-// the result is page n of the source (other numbers are blank pages that nothing shows).
+// ARCHITECTURE §4.5, the plan of `export::pdf::rebuild_plan`: the export's pages that carry a source, with the ink
+// stream and `/IHN6Ink` removed, as page numbers 1..max (blank pages where nothing is copied).
 async function rebuild(bytes, blob) {
-  const r = reader(bytes, 2), job = r.u32(), carried = new Map();
-  for (let n = r.u32(); n > 0; n--) { const at = r.u32(); carried.set(r.u32(), at); }
+  const r = reader(bytes, 2), job = r.u32(), max = r.u32(), blank = [r.f64(), r.f64()], ink = r.str(), pairs = [];
+  for (let n = r.u32(); n > 0; n--) pairs.push([r.u32(), r.u32()]);
   let result = null;
   try {
     const { PDFDocument, PDFName } = pdfLib();
     const exported = await PDFDocument.load(await blob.arrayBuffer(), { ignoreEncryption: true, updateMetadata: false });
     const out = await PDFDocument.create();
-    const max = Math.max(...carried.keys());
-    const numbers = [...carried.keys()].filter(n => carried.get(n) < exported.getPageCount());
-    const list = await out.copyPages(exported, numbers.map(n => carried.get(n)));
-    const copies = new Map(numbers.map((n, i) => [n, list[i]]));
+    const valid = pairs.filter(pair => pair[1] < exported.getPageCount());
+    const list = await out.copyPages(exported, valid.map(pair => pair[1]));
+    const copies = new Map(valid.map((pair, i) => [pair[0], list[i]]));
     for (let n = 1; n <= max; n++) {
       const copy = copies.get(n);
-      if (!copy) { out.addPage([595.28, 841.89]); continue; }
+      if (!copy) { out.addPage(blank); continue; }
       const page = out.addPage(copy), node = page.node;
       node.normalize();
       const contents = node.Contents();
       const last = contents?.size?.() ? out.context.lookup(contents.get(contents.size() - 1)) : null;
       const raw = last?.getContents?.() || last?.contents;
-      if (raw && decoder.decode(raw).trim() === INK_CALL) contents.remove(contents.size() - 1);
+      if (raw && decoder.decode(raw).trim() === ink) contents.remove(contents.size() - 1);
       node.Resources()?.lookup(PDFName.of('XObject'))?.delete?.(PDFName.of('IHN6Ink'));
     }
     result = new Blob([await out.save({ useObjectStreams: true, addDefaultPage: false })], { type: 'application/pdf' });
