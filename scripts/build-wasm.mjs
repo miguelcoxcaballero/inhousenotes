@@ -41,8 +41,10 @@ const linked = join(root, 'rust/target/wasm32-unknown-unknown/release/ihn.wasm')
 // W6.2z: `--low-memory-unused` lets wasm-opt fold small constant address offsets into the load/store `offset`
 // immediates. Its assumption (nothing reads or writes the first 1 KiB of memory) holds for rustc's wasm32 layout: the
 // stack comes first and grows down from 1 MiB, statics start at 1 MiB, the heap after them, so addresses below 1024
-// are only touched by a stack within 1 KiB of overflowing (measured: -37 KB raw, -9 KB gzip).
-const WASM_OPT = ['-Os', '--low-memory-unused'];
+// are only touched by a stack within 1 KiB of overflowing (measured: -37 KB raw, -9 KB gzip). Then
+// `--merge-similar-functions` (functions that differ only in constants share one body) and a second `-Os` round
+// over the result (-7 KB raw, -3 KB gzip; `--converge` would give -0.1 KB more for 40 s per variant).
+const WASM_OPT = ['-Os', '--low-memory-unused', '--merge-similar-functions', '-Os'];
 const WASM_FEATURES = ['bulk-memory', 'bulk-memory-opt', 'call-indirect-overlong', 'multivalue', 'mutable-globals', 'nontrapping-float-to-int', 'reference-types', 'sign-ext'];
 const wasmOpt = join(root, 'node_modules/binaryen/bin/wasm-opt');
 const optimised = existsSync(wasmOpt);
