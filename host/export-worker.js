@@ -1,54 +1,39 @@
 // Export worker (ARCHITECTURE §12): a second instance of ihn.wasm with its own memory, created by host/main.js
-// (effect family 3.7). Every message is `{bytes, obj}` with bytes = `[u8 role][payload]`; the instance answers with
-// WORKER_POST records, posted back as `{bytes, obj}`. Role 0 (import, W3.4): op 1 runs the 5.x parse in Rust;
-// op 2 is the pdf-lib overlay strip of 5.18.0 `stripOverlaysFromPdfBytes`, done here because it needs pdf-lib.
-// Role 1 (export, W5.4, ARCHITECTURE §8.2): op 1 hands over a Blob of a job, op 2 is the plan + snapshot (Rust turns
-// it into the ink content streams and posts op 3, which stays here: pdf-lib assembles the file → op 4 with the
-// bytes); op 5 rebuilds a source PDF from an export (§4.5) → op 6 with the Blob. Classic script: `new Worker(url)`.
+// (effect family 3.7). Every message is `{bytes, obj}` with bytes = `[u8 role][payload]`. Rust decides everything
+// (rust/crates/ihn-app/src/doc/v5open.rs import role 0, export/pdf.rs export role 1); this file runs pdf-lib on its
+// plans. Role 0: op 1 runs the 5.x parse in Rust; op 2 is the pdf-lib overlay strip of 5.18.0
+// `stripOverlaysFromPdfBytes`. Role 1 (W5.4, ARCHITECTURE §8.2): op 1 hands over a Blob of a job, op 2 is the plan +
+// snapshot (Rust answers the assembly plan, op 3, which pdf-lib turns into the file → op 4 with the bytes); op 5
+// rebuilds a source PDF from an export (§4.5) → op 6 with the Blob. Classic script: `new Worker(url)`.
 'use strict';
 
 const encoder = new TextEncoder(), decoder = new TextDecoder();
-const ROLE_IMPORT = 0, OP_PARSE = 1, OP_STRIP = 2, PART_ASSET = 2, PART_ASSET_BLOB = 4, WORKER = 8;
-const ROLE_EXPORT = 1, OP_BLOB = 1, OP_ASSEMBLE = 3, OP_BUILT = 4, OP_REBUILD = 5, OP_REBUILT = 6;
+const ROLE_IMPORT = 0, OP_STRIP = 2, WORKER = 8;
+const ROLE_EXPORT = 1, OP_BLOB = 1, OP_BUILT = 4, OP_REBUILD = 5, OP_REBUILT = 6;
 const jobs = new Map(); // export job → Map(key → Blob)
-let ex = null, memory = null, version = '', ready = null;
+let ex = null, memory = null, version = '', ready = null, local = null;
 
 const u8 = (ptr, len) => new Uint8Array(memory.buffer, ptr, len);
 const view = () => new DataView(memory.buffer);
 
-// The out-buffer of the worker instance: only WORKER_POST (FX 0x71: u32 obj, bytes) means something here.
+// The out-buffer of the worker instance (abi.rs `fx`): 0x71 `u32 obj, bytes` → post `{bytes}`; 0x75 `str type,
+// bytes data, bytes msg` → post `{bytes: msg, obj: Blob}`; 0x76 = an answer for this file (`local`).
 function flush() {
-  const len = ex.ihn_out_len();
-  let p = ex.ihn_out_ptr();
-  const end = p + len, v = view();
-  while (p < end) {
-    const size = v.getUint32(p + 2, true);
-    if (v.getUint8(p) === 3 && v.getUint8(p + 1) === 0x71) {
-      const n = v.getUint32(p + 10, true);
-      if (v.getUint8(p + 14) === ROLE_IMPORT && v.getUint8(p + 15) === OP_PARSE && v.getUint8(p + 20) === PART_ASSET) postAsset(p + 14);
-      else {
-        const bytes = u8(p + 14, n).slice();
-        if (bytes[0] === ROLE_EXPORT && bytes[1] === OP_ASSEMBLE) queueMicrotask(() => assemble(bytes));
-        else self.postMessage({ bytes }, [bytes.buffer]);
-      }
+  const v = view(), end = ex.ihn_out_ptr() + ex.ihn_out_len();
+  for (let p = ex.ihn_out_ptr(); p < end; p += 6 + v.getUint32(p + 2, true)) {
+    const op = v.getUint8(p + 1), r = reader(u8(p + 6, v.getUint32(p + 2, true)), 0);
+    if (v.getUint8(p) !== 3) continue;
+    if (op === 0x76) local = r.rest().slice();
+    else if (op === 0x75) {
+      const type = r.str(), obj = new Blob([r.bin()], { type }), bytes = r.bin().slice();
+      self.postMessage({ bytes, obj }, [bytes.buffer]);
+    } else if (op === 0x71) {
+      r.u32();
+      const bytes = r.bin().slice();
+      self.postMessage({ bytes }, [bytes.buffer]);
     }
-    p += 6 + size;
   }
   ex.ihn_out_reset();
-}
-
-// An imported asset ([0][1][u32 req][u8 PART_ASSET][32 hash][str mime][bytes data], a 5.x version snapshot or image
-// of megabytes) goes to the page as a Blob: `[0][1][u32 req][u8 PART_ASSET_BLOB][32 hash][str mime][f64 size]` with
-// obj = the Blob, so the page's wasm memory never holds its bytes.
-function postAsset(at) {
-  const v = view(), mimeLen = v.getUint32(at + 39, true), size = v.getUint32(at + 43 + mimeLen, true);
-  const head = u8(at, 43 + mimeLen), mime = decoder.decode(u8(at + 43, mimeLen));
-  const blob = new Blob([u8(at + 47 + mimeLen, size)], { type: mime });
-  const msg = new Uint8Array(head.length + 8);
-  msg.set(head);
-  msg[6] = PART_ASSET_BLOB;
-  new DataView(msg.buffer).setFloat64(head.length, size, true);
-  self.postMessage({ bytes: msg, obj: blob }, [msg.buffer]);
 }
 
 function call(fn, bytes) {
@@ -134,13 +119,15 @@ async function strip(bytes, blob) {
 function reader(bytes, at) {
   const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let p = at;
-  return {
+  const r = {
     u8: () => v.getUint8(p++),
     u32: () => { const x = v.getUint32(p, true); p += 4; return x; },
     f64: () => { const x = v.getFloat64(p, true); p += 8; return x; },
-    str: () => { const n = v.getUint32(p, true); const s = decoder.decode(bytes.subarray(p + 4, p + 4 + n)); p += 4 + n; return s; },
+    bin: () => { const n = v.getUint32(p, true); p += 4 + n; return bytes.subarray(p - n, p); },
+    str: () => decoder.decode(r.bin()),
     rest: () => bytes.subarray(p)
   };
+  return r;
 }
 
 function answer(op, job, ok, tail) {
@@ -295,6 +282,7 @@ self.onmessage = event => {
     }
     if (bytes[0] === ROLE_EXPORT && bytes[1] === OP_REBUILD) return rebuild(bytes, data.obj);
     call(ex.ihn_worker, bytes);
+    if (local) { const plan = local; local = null; assemble(plan); }
     // An uncaught error reaches the page as the worker's `error` event (CHAN.WORKER_ERROR).
   }).catch(error => setTimeout(() => { throw error; }));
 };

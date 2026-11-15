@@ -37,7 +37,7 @@ mod op {
     pub const BLOB: u8 = 1;
     /// main → worker: `[u32 job]` + request plan + snapshot (→ [`super::worker`]).
     pub const BUILD: u8 = 2;
-    /// worker Rust → worker JS: `[u32 job]` + assembly plan (never leaves the worker).
+    /// worker Rust → worker JS (`fx::WORKER_LOCAL`): `[u32 job]` + assembly plan (never leaves the worker).
     pub const ASSEMBLE: u8 = 3;
     /// worker → main: `[u32 job][u8 ok]` + the PDF bytes, or an error text.
     pub const BUILT: u8 = 4;
@@ -377,19 +377,29 @@ fn worker_failed(app: &mut App, host: &mut dyn Host) {
 /// worker's own instance of the module. `BUILD` → `ASSEMBLE` for `host/export-worker.js`.
 pub fn worker(host: &mut dyn Host, msg: &[u8]) {
     let mut r = Reader::new(msg);
-    let (Some(op::BUILD), Some(job)) = (r.u8(), r.u32()) else { return };
-    let out = assemble_plan(job, r.buf).unwrap_or_else(|| {
-        let mut w = Writer::default();
-        header(&mut w, op::BUILT, job);
-        w.u8(0);
-        w.raw(b"bad export plan");
-        w.buf
-    });
-    let o: &mut OutBuf = host.out();
-    let m = o.w.rec(fam::FX, fx::WORKER_POST);
-    o.w.u32(0);
-    o.w.bytes(&out);
-    o.w.end(m);
+    let (Some(o), Some(job)) = (r.u8(), r.u32()) else { return };
+    let out: &mut OutBuf = host.out();
+    let (code, bytes) = match o {
+        op::BUILD => match assemble_plan(job, r.buf) {
+            Some(plan) => (fx::WORKER_LOCAL, plan),
+            None => {
+                let mut w = Writer::default();
+                header(&mut w, op::BUILT, job);
+                w.u8(0);
+                w.raw(b"bad export plan");
+                (fx::WORKER_POST, w.buf)
+            }
+        },
+        _ => return,
+    };
+    let m = out.w.rec(fam::FX, code);
+    if code == fx::WORKER_POST {
+        out.w.u32(0);
+        out.w.bytes(&bytes);
+    } else {
+        out.w.raw(&bytes);
+    }
+    out.w.end(m);
 }
 
 /// Request plan (+ snapshot) → assembly plan (+ snapshot): the ink of every page as a PDF content stream.
