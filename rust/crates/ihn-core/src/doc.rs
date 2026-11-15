@@ -11,7 +11,8 @@ use crate::op::{Background, Batch, Body, Color, ImageRect, Op, PageProp, Templat
 use crate::pos::Pos;
 use crate::snapshot::{EncodedBatch, EncodedSnapshot};
 use crate::stamp::{Clock, Reg, Stamp, VersionVector};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use crate::vecmap::VecSet;
+use std::collections::{BTreeMap, HashSet};
 
 // ------------------------------------------------------------------------------------------------ state
 
@@ -121,7 +122,7 @@ impl Changes {
 struct Track {
     /// item → (was live on page, page register before (None = unknown item), a register was written)
     items: IdMap<(Option<Id>, Option<Id>, bool)>,
-    page_props: BTreeSet<Id>,
+    page_props: VecSet<Id>,
     order: bool,
     name: bool,
     versions: bool,
@@ -142,7 +143,7 @@ pub struct Doc {
     order: Vec<Id>,
     index: IdMap<PageIndex>,
     members: IdMap<IdSet>,
-    dirty: BTreeSet<Id>,
+    dirty: VecSet<Id>,
     header_dirty: bool,
 }
 
@@ -366,7 +367,7 @@ impl Doc {
         }
         // page → (ids to drop from its draw list, entries to add)
         let mut edits: IdMap<(IdSet, Vec<(usize, DrawRef)>)> = IdMap::default();
-        let mut pages = BTreeSet::new();
+        let mut pages = VecSet::new();
         let mut items = Vec::new();
         for (id, (was_live_on, old_page, wrote)) in t.items {
             if !wrote {
@@ -2096,7 +2097,7 @@ mod tests {
         let (mut whole, mut sliced, mut owned) = (rep.doc.clone(), rep.doc.clone(), rep.doc.clone());
         whole.apply(&big);
         let mut hollow = big.clone();
-        let mut touched = BTreeSet::new();
+        let mut touched = std::collections::BTreeSet::new();
         for start in (0..300).step_by(64) {
             assert!(!sliced.vv.contains(big.actor, 1));
             let ch = sliced.apply_part(&mut hollow, start..start + 64);
