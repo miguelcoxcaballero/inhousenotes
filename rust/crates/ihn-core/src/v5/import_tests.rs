@@ -276,6 +276,16 @@ fn plain_pdf_pages_are_backgrounds_of_the_downloaded_file() {
     assert_eq!(imp.source.unwrap().0, Source::Stripped);
 }
 
+#[test]
+fn page_size_refinement_follows_import_pdf_data() {
+    // Every page after the first of a plain PDF (5.18.0 `pageSizeRefinement`); none for a single page.
+    assert!(import_fixture("plain", 0).0.size_refinement);
+    let one = PdfFacts { page_sizes: vec![(595, 842)], ..PdfFacts::default() };
+    assert!(!from_pdf("", &one, ActorId::import("x"), T0).unwrap().size_refinement);
+    // 5.x entries carry their sizes (or template backgrounds): nothing to refine.
+    assert!(!import_fixture("r0", 0).0.size_refinement);
+}
+
 // ------------------------------------------------------------------------------------- migration (storage dumps)
 
 fn working(dump: &Dump, db: &str, doc_id: &str) -> Option<V5LocalDoc> {

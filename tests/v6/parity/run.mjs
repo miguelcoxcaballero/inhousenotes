@@ -350,7 +350,8 @@ export async function runState({ baseUrl, state, cell, side }) {
 function judge(state, a, b, dpr) {
   const comparison = compareCaptures(a, b);
   if (comparison.pixelsEqual) return { status: comparison.dom || comparison.trace ? 'warn' : 'pass', comparison };
-  const regions = b.regions || a.regions;
+  // The rule's rectangles in both apps: the same element can be larger in 5.18.0 than in v6 (a line that wraps).
+  const regions = a.regions || b.regions ? [...(a.regions || []), ...(b.regions || [])] : null;
   if (state.tags?.length && regions && comparison.pixels.box) {
     // Expected difference: every differing pixel must lie inside the rule's rectangles (TESTING §3.5).
     // (Several rules may each allow their own rectangles, so pixels are tested one by one, not their bounding box.)

@@ -254,6 +254,14 @@ fn rendered(app: &mut App, host: &mut dyn Host, r: Render, io: &Io) {
     app.sched.frame(host.out(), Mod::DocBackgrounds);
 }
 
+/// v5 `swapDisplayDocToCleanOriginal`: `pdfBackgroundCache.clear()` and every PDF page's `backgroundImage = null`;
+/// the active pages queue their rasters again (v6 already shows the clean source, so they come out the same).
+pub fn invalidate(app: &mut App, host: &mut dyn Host) {
+    while let Some(at) = st(app).cache.len().checked_sub(1) {
+        drop_entry(app, host, at);
+    }
+}
+
 /// Drops every raster and source (a document closed or another one opened).
 fn reset(app: &mut App, host: &mut dyn Host) {
     let s = std::mem::take(st(app));
