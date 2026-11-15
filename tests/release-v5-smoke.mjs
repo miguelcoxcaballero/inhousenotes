@@ -20,7 +20,7 @@ const html = [indexHtml, app, boot, runtimeCore, securityCore, timelineCore].joi
 const live = readText('../live-collaboration-v5.js');
 const collaborationCore = readText('../collaboration-core-v5.js');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = readText('../RELEASE_NOTES_v5.18.0.md');
+const notes = readText('../RELEASE_NOTES_v5.19.0.md');
 const oauthCallback = readText('../oauth-callback/index.html');
 const androidLoader = readText('../.github/android/app-loader.html');
 const androidBuilder = readText('../android app/html_to_apk_builder.py');
@@ -30,7 +30,7 @@ const androidManifestPublisher = readText('../.github/scripts/update_services_ma
 const androidWorkflow = readText('../.github/workflows/build-android.yml');
 const pagesWorkflow = readText('../.github/workflows/deploy-pages.yml');
 
-assert.match(indexHtml, /const APP_VERSION = '5.18.0';/);
+assert.match(indexHtml, /const APP_VERSION = '5.19.0';/);
 assert.match(app, /initialPages: 1/);
 assert.match(app, /renderAllPages\(\{ deferVisibleUpdate: true \}\)/);
 assert.match(app, /cleanOriginalRecoveryPromise/);
@@ -54,10 +54,10 @@ assert.doesNotMatch(
 );
 assert.match(app, /const APP_VERSION = appVersionMatch\[1\];/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.18.0/);
-assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.18.0/);
-assert.match(indexHtml, /app-v5\.js\?v=5.18.0/);
-assert.match(indexHtml, /timeline-core-v5\.js\?v=5.18.0/);
+assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.19.0/);
+assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.19.0/);
+assert.match(indexHtml, /app-v5\.js\?v=5.19.0/);
+assert.match(indexHtml, /timeline-core-v5\.js\?v=5.19.0/);
 assert.match(indexHtml, /Content-Security-Policy/);
 assert.match(indexHtml, /script-src-attr 'none'/);
 assert.match(indexHtml, /frame-src 'self'/);
@@ -139,15 +139,15 @@ assert.doesNotMatch(
   /"url": "https:\/\/inhousenotes\.com/,
   'Android must paint its bundled launch shell before navigating to the web app'
 );
-assert.match(androidBuildScript, /ANDROID_VERSION_NAME = "1\.0\.28"/);
-assert.match(androidBuildScript, /ANDROID_VERSION_CODE = 29/);
-assert.match(androidApkVerifier, /package: name='com\.local\.inhousenotes' versionCode='29' versionName='1\.0\.28'/);
+assert.match(androidBuildScript, /ANDROID_VERSION_NAME = "1\.0\.29"/);
+assert.match(androidBuildScript, /ANDROID_VERSION_CODE = 30/);
+assert.match(androidApkVerifier, /package: name='com\.local\.inhousenotes' versionCode='30' versionName='1\.0\.29'/);
 assert.match(androidApkVerifier, /certificate\(apk\) == certificate\(previous\)/);
-assert.match(androidManifestPublisher, /'version':'1\.0\.28','versionCode':29/);
-assert.match(androidManifestPublisher, /Test the in-app updater\./);
+assert.match(androidManifestPublisher, /'version':'1\.0\.29','versionCode':30/);
+assert.match(androidManifestPublisher, /Shared Google login across apps\./);
 assert.match(androidWorkflow, /gh release download android-v1\.0\.27 --pattern inhouse-notes-release-v1\.0\.27\.apk/);
-assert.match(androidWorkflow, /verify_release_apk\.py inhouse-notes-release-v1\.0\.28\.apk/);
-assert.match(androidWorkflow, /cmp inhouse-notes-release-v1\.0\.28\.apk/);
+assert.match(androidWorkflow, /verify_release_apk\.py inhouse-notes-release-v1\.0\.29\.apk/);
+assert.match(androidWorkflow, /cmp inhouse-notes-release-v1\.0\.29\.apk/);
 const verifySignedApkStep = androidWorkflow.indexOf('- name: Verify signed APK and signing continuity');
 const publishApkStep = androidWorkflow.indexOf('- name: Publish versioned APK download');
 assert.ok(androidWorkflow.indexOf('- name: Require passing shared Android installation tests') < publishApkStep);
@@ -1013,9 +1013,9 @@ const driveTokenRequestSource = html.slice(
 );
 assert.match(driveTokenRequestSource, /if \(driveTokenRequestPromise\)/);
 assert.match(driveTokenRequestSource, /request\.then\(clearRequest, clearRequest\)/);
-assert.match(driveTokenRequestSource, /requestGeneration !== driveTokenRequestGeneration/);
+assert.match(driveTokenRequestSource, /sharedDriveAuth.request\(interactive\)/);
 assert.match(html, /async function fetchWithDeadline\(/);
-assert.match(html, /fetchWithDeadline\(\s*'https:\/\/oauth2\.googleapis\.com\/token'/);
+assert.match(html, /InhouseGoogleOAuth.create\(/);
 assert.match(html, /const INDEXED_DB_BLOCKED_TIMEOUT_MS = 1500;/);
 assert.match(html, /const INDEXED_DB_OPEN_TIMEOUT_MS = 5000;/);
 assert.match(html, /const EMBEDDED_METADATA_WORKER_TIMEOUT_MS = 30000;/);
@@ -1142,7 +1142,7 @@ assert.match(app, /card\.style\.setProperty\('--sheet-ratio', ratio\)/);
 assert.match(indexHtml, /--sheet-inset-block: max\(0%, \(141\.42% - 100% \/ var\(--sheet-ratio\)\) \/ 2\);/);
 assert.match(indexHtml, /width: min\(100%, 141\.42% \* var\(--sheet-ratio\)\);/);
 assert.match(indexHtml, /\.drive-folder-art \{\n\s+position: relative;\n\s+width: 100%;\n\s+aspect-ratio: 210 \/ 297;/);
-assert.match(indexHtml, /document-processing-v5\.js\?v=5.18.0/);
+assert.match(indexHtml, /document-processing-v5\.js\?v=5.19.0/);
 const interactionPause = app.slice(app.indexOf('function pauseSavesDuringInteraction'), app.indexOf('function clearPausedSaveWatchdog'));
 assert.doesNotMatch(interactionPause, /controller\.abort\(|activeDriveSaveController\.abort\(/);
 assert.match(app, /schedulePreparedDrivePdf\(delay = 40\)/);
@@ -1152,7 +1152,7 @@ assert.match(oauthCallback, /ihr-oauth-exchange/);
 assert.match(oauthCallback, /event\.source !== window\.opener/);
 assert.match(oauthCallback, /code_verifier: data\.verifier/);
 
-console.log('v5.18.0 smoke checks passed.');
+console.log('v5.19.0 smoke checks passed.');
 
 
 
