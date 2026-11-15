@@ -81,23 +81,6 @@ export default function install(host) {
       if (typeof native?.[method] !== 'function') return done(req, -1);
       try { done(req, 0, native[method](...args)); } catch (error) { failed(req, error); }
     },
-    // native_blob(u32 req, u32 blob, str method, u32 chunk_chars): the blob as base64, `chunk_chars` (a multiple of
-    // 4) per call of InhouseNative[method], yielding between calls. v5: app-v5.js:deliverExportedPdf
-    [FX | 0xa5]: r => {
-      const req = r.u32(), blob = host.obj(r.u32()), method = r.str(), step = r.u32() / 4 * 3, native = window.InhouseNative;
-      if (!blob || typeof native?.[method] !== 'function') return done(req, -1);
-      (async () => {
-        const data = new Uint8Array(await blob.arrayBuffer());
-        for (let at = 0; at < data.length; at += step) {
-          let binary = '';
-          for (let p = at; p < Math.min(at + step, data.length); p += 0x8000) {
-            binary += String.fromCharCode.apply(null, data.subarray(p, Math.min(p + 0x8000, at + step, data.length)));
-          }
-          native[method](btoa(binary));
-          await new Promise(resolve => setTimeout(resolve));
-        }
-      })().then(() => done(req), error => failed(req, error));
-    },
     // updater_create(u32 req) → 0, or -1 when the shared updater script is missing. Verbatim from 5.18.0.
     // v5: app-v5.js § 4.1 "Inhouse services updater"
     [FX | 0xa8]: r => {

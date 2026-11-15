@@ -11,6 +11,7 @@ use crate::doc::session;
 use crate::drive::revisions;
 use crate::editor::view;
 use crate::shell::fx::{self, Response};
+use ihn_core::codec::b64_encode;
 use crate::shell::json::Json;
 use crate::shell::{Status, StatusOpts};
 use crate::ui_ids::Ui;
@@ -24,8 +25,8 @@ const L_INPUT: u32 = tag(Mod::ExportUser, 5);
 const T_NATIVE: u32 = tag(Mod::ExportUser, 6);
 const T_FORCE: u32 = tag(Mod::ExportUser, 7);
 const L_INPUT_KEY: u32 = tag(Mod::ExportUser, 8);
-/// `appendPdfExportChunk` size (5.18.0 `chunkSize`).
-const CHUNK_CHARS: u32 = 240_000;
+/// `appendPdfExportChunk` size (5.18.0 `chunkSize`, characters of base64): the bytes read per call.
+const CHUNK_BYTES: f64 = 240_000.0 / 4.0 * 3.0;
 /// 5.18.0 waits 30 s for `handleInhousePdfExportResult`.
 const NATIVE_WAIT_MS: f64 = 30_000.0;
 /// The forced export must finish within this time (the loop retries meanwhile).
@@ -37,9 +38,11 @@ enum Stage {
     Forcing,
     Downloading(u32),
     Building,
-    /// `beginPdfExport` → chunks → `finishPdfExport` → the result.
+    /// `beginPdfExport` → chunks → `finishPdfExport` → the result. A chunk is read from the blob (`NativeRead`,
+    /// at its offset), then handed to `appendPdfExportChunk` as base64 (`NativeChunk`, with the next offset).
     NativeBegin(u32),
-    NativeChunks(u32),
+    NativeRead(u32, f64),
+    NativeChunk(u32, f64),
     NativeFinish(u32),
     NativeWait,
     Sharing(u32),
@@ -210,6 +213,14 @@ fn deliver(app: &mut App, host: &mut dyn Host, blob: u32) {
     web_download(app, host);
 }
 
+/// v5 `deliverExportedPdf`: the blob in `CHUNK_BYTES` pieces; an empty read means all were delivered.
+fn read_chunk(app: &mut App, host: &mut dyn Host, at: f64) {
+    let Some(blob) = app.st.export_user.run.as_ref().map(|r| r.blob) else { return };
+    let req = app.req(Mod::ExportUser);
+    fx::blob_read(host.out(), req, blob, at, at + CHUNK_BYTES);
+    set(app, Stage::NativeRead(req, at));
+}
+
 fn set(app: &mut App, stage: Stage) {
     if let Some(run) = app.st.export_user.run.as_mut() {
         run.stage = stage;
@@ -251,20 +262,27 @@ fn io(app: &mut App, host: &mut dyn Host, io: &Io) {
             if io.status < 0 {
                 return share(app, host);
             }
-            let Some(run) = app.st.export_user.run.as_ref() else { return };
-            let blob = run.blob;
-            let req = app.req(Mod::ExportUser);
-            fx::native_blob(host.out(), req, blob, "appendPdfExportChunk", CHUNK_CHARS);
-            set(app, Stage::NativeChunks(req));
+            read_chunk(app, host, 0.0);
         }
-        Stage::NativeChunks(req) if req == io.req => {
+        Stage::NativeRead(req, at) if req == io.req => {
             if io.status < 0 {
                 return fail(app, host, "Android could not save the PDF");
+            }
+            if !io.data.is_empty() {
+                let req = app.req(Mod::ExportUser);
+                fx::native_call(host.out(), req, "appendPdfExportChunk", &[&b64_encode(io.data, false)]);
+                return set(app, Stage::NativeChunk(req, at + io.data.len() as f64));
             }
             app.sched.timer(host.out(), T_NATIVE, NATIVE_WAIT_MS);
             let req = app.req(Mod::ExportUser);
             fx::native_call(host.out(), req, "finishPdfExport", &[]);
             set(app, Stage::NativeFinish(req));
+        }
+        Stage::NativeChunk(req, at) if req == io.req => {
+            if io.status < 0 {
+                return fail(app, host, "Android could not save the PDF");
+            }
+            read_chunk(app, host, at);
         }
         Stage::NativeFinish(req) if req == io.req => {
             if io.status < 0 {
