@@ -38,6 +38,11 @@ const linked = join(root, 'rust/target/wasm32-unknown-unknown/release/ihn.wasm')
 // binary is used and the sizes are only reported; CI (`npm ci`) always has it.
 // Exactly the features rustc 1.90 enables for wasm32-unknown-unknown (its `target_features` section, which `strip`
 // removes), so wasm-opt validates the input and never emits anything newer.
+// W6.2z: `--low-memory-unused` lets wasm-opt fold small constant address offsets into the load/store `offset`
+// immediates. Its assumption (nothing reads or writes the first 1 KiB of memory) holds for rustc's wasm32 layout: the
+// stack comes first and grows down from 1 MiB, statics start at 1 MiB, the heap after them, so addresses below 1024
+// are only touched by a stack within 1 KiB of overflowing (measured: -37 KB raw, -9 KB gzip).
+const WASM_OPT = ['-Os', '--low-memory-unused'];
 const WASM_FEATURES = ['bulk-memory', 'bulk-memory-opt', 'call-indirect-overlong', 'multivalue', 'mutable-globals', 'nontrapping-float-to-int', 'reference-types', 'sign-ext'];
 const wasmOpt = join(root, 'node_modules/binaryen/bin/wasm-opt');
 const optimised = existsSync(wasmOpt);
@@ -52,7 +57,7 @@ async function build(features) {
   run(process.env.CARGO || 'cargo', ['build', '--manifest-path', 'rust/Cargo.toml', '-p', 'ihn-wasm', '--release',
     '--target', 'wasm32-unknown-unknown', '--locked', ...features, ...(process.env.IHN_CARGO_JOBS ? ['-j', process.env.IHN_CARGO_JOBS] : [])],
     { RUSTFLAGS: `--remap-path-prefix=${cargoHome}=/cargo --remap-path-prefix=${root}=.` });
-  if (optimised) run(process.execPath, [wasmOpt, '-Os', ...WASM_FEATURES.map(f => `--enable-${f}`), linked, '-o', `${linked}.opt`]);
+  if (optimised) run(process.execPath, [wasmOpt, ...WASM_OPT, ...WASM_FEATURES.map(f => `--enable-${f}`), linked, '-o', `${linked}.opt`]);
   const wasm = await readFile(optimised ? `${linked}.opt` : linked);
 
   const module = await WebAssembly.compile(wasm);
