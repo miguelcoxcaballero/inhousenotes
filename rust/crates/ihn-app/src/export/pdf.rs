@@ -41,7 +41,7 @@ mod op {
     pub const ASSEMBLE: u8 = 3;
     /// worker → main: `[u32 job][u8 ok]` + the PDF bytes, or an error text.
     pub const BUILT: u8 = 4;
-    /// main → worker: `[u32 job][u32 n][n × (u32 export page 0-based, u32 source page 1-based)]`, obj = the export.
+    /// main → worker JS: `[u32 job]` + rebuild plan ([`super::rebuild_plan`]), obj = the export.
     pub const REBUILD: u8 = 5;
     /// worker → main: `[u32 job][u8 ok]`, obj = the rebuilt source Blob.
     pub const REBUILT: u8 = 6;
@@ -58,6 +58,8 @@ const INK_CALL: &str = "q /IHN6Ink Do Q";
 const META: [&str; 3] = ["Cuaderno Digital", "Notas con S-Pen", "Cuaderno Digital App"];
 /// `/Keywords` = this + base64(zlib(snapshot)) (`doc::open::classify` reads it back).
 const KEYWORDS: &str = "STROKES_Z:!;IHN6:";
+/// A page number of a rebuilt source that no exported page carries: a blank A4 page (nothing shows it).
+const BLANK_PT: (f64, f64) = (595.28, 841.89);
 /// Plan bits of a page drawn by the worker: a white rectangle over the page, then its background image if any.
 const DRAW_WHITE: u8 = 1;
 const DRAW_IMAGE: u8 = 2;
@@ -594,11 +596,7 @@ fn rebuild_io(app: &mut App, host: &mut dyn Host, io: &Io) -> bool {
                 let job = app.st.export_pdf.next;
                 let mut w = Writer::default();
                 header(&mut w, op::REBUILD, job);
-                w.u32(pages.len() as u32);
-                for (at, src) in pages {
-                    w.u32(at);
-                    w.u32(src);
-                }
+                rebuild_plan(&mut w, &pages);
                 post(app, host, rb.blob, &w.buf);
                 rb.posted.push((h, job));
             }
@@ -612,6 +610,29 @@ fn rebuild_io(app: &mut App, host: &mut dyn Host, io: &Io) -> bool {
         return false;
     }
     true
+}
+
+/// `[u32 max][f64 w][f64 h][str ink call][u32 n × (u32 source page, u32 export page 0-based)]`: the worker copies
+/// the listed export pages it has (in this order: each source page once, at its first appearance, carried by the
+/// last export page that holds it) with the ink call and `/IHN6Ink` removed, as page numbers `1..=max`; a number
+/// without a copy is a blank `w × h` pt page.
+fn rebuild_plan(w: &mut Writer, carried: &[(u32, u32)]) {
+    let mut pairs: Vec<(u32, u32)> = Vec::new();
+    for &(at, src) in carried {
+        match pairs.iter_mut().find(|p| p.0 == src) {
+            Some(p) => p.1 = at,
+            None => pairs.push((src, at)),
+        }
+    }
+    w.u32(pairs.iter().map(|p| p.0).max().unwrap_or(0));
+    w.f64(BLANK_PT.0);
+    w.f64(BLANK_PT.1);
+    w.str(INK_CALL);
+    w.u32(pairs.len() as u32);
+    for (src, at) in pairs {
+        w.u32(src);
+        w.u32(at);
+    }
 }
 
 /// `(position in the export, source page)` of the exported pages that carry source `h`.
@@ -800,6 +821,17 @@ mod tests {
         worker(&mut host, &[op::BUILD, 3, 0, 0, 0, 9]);
         let buf = host.out().w.buf.clone();
         assert_eq!((buf[0], buf[1], buf[15], buf[20]), (fam::FX, fx::WORKER_POST, op::BUILT, 0));
+    }
+
+    #[test]
+    fn rebuild_plan_keeps_the_first_position_and_the_last_page_of_each_source_page() {
+        let mut w = Writer::default();
+        rebuild_plan(&mut w, &[(0, 3), (1, 1), (4, 3), (6, 2)]);
+        let mut r = Reader::new(&w.buf);
+        assert_eq!((r.u32(), r.f64(), r.f64(), r.str(), r.u32()), (Some(3), Some(595.28), Some(841.89), Some(INK_CALL), Some(3)));
+        let pairs: Vec<_> = (0..3).map(|_| (r.u32().unwrap(), r.u32().unwrap())).collect();
+        assert_eq!(pairs, [(3, 4), (1, 1), (2, 6)]);
+        assert!(r.buf.is_empty());
     }
 
     #[test]
