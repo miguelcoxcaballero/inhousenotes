@@ -18,6 +18,7 @@ pub fn config(flags: u32, url: &str) -> Config {
         viewport: (1280.0, 800.0),
         dpr: 1.0,
         max_touch_points: 0,
+        ..Default::default()
     }
 }
 

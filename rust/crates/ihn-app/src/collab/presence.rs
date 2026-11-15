@@ -229,6 +229,37 @@ fn last_activity(age_ms: f64) -> String {
     format!("hace {} d", (hour / 24.0).floor())
 }
 
+/// v5 `groupPresenceByAccount` for online devices: accounts by e-mail (else name + index), devices and accounts by
+/// last activity, newest first (stable, as `Array.prototype.sort`).
+fn group(users: &[User], at: impl Fn(&User) -> f64) -> Vec<Vec<(&User, f64)>> {
+    let mut groups: Vec<(String, f64, Vec<(&User, f64)>)> = Vec::new();
+    for (i, u) in users.iter().enumerate() {
+        let key = if u.email.is_empty() { format!("n:{}:{i}", u.name.to_lowercase()) } else { format!("e:{}", u.email.to_lowercase()) };
+        let t = at(u);
+        match groups.iter_mut().find(|g| g.0 == key) {
+            Some(g) => {
+                g.1 = g.1.max(t);
+                g.2.push((u, t));
+            }
+            None => groups.push((key, t, vec![(u, t)])),
+        }
+    }
+    // A handful of devices: a stable insertion sort (no generic sort in the wasm).
+    let mut out: Vec<Vec<(&User, f64)>> = Vec::new();
+    let mut keys: Vec<f64> = Vec::new();
+    for (_, t, devices) in groups {
+        let mut sorted: Vec<(&User, f64)> = Vec::new();
+        for d in devices {
+            let i = sorted.iter().position(|e| e.1 < d.1).unwrap_or(sorted.len());
+            sorted.insert(i, d);
+        }
+        let i = keys.iter().position(|&k| k < t).unwrap_or(keys.len());
+        keys.insert(i, t);
+        out.insert(i, sorted);
+    }
+    out
+}
+
 /// v5 `renderPresencePopup(users)` (own device first; accounts grouped by e-mail, then name).
 fn render_popup(app: &mut App, host: &mut dyn Host) {
     let now = host.now();
@@ -241,28 +272,30 @@ fn render_popup(app: &mut App, host: &mut dyn Host) {
         let own_inst = run.map_or(0, |r| r.sync.core.inst);
         let main = run.is_some_and(|r| r.sync.core.presence.scribe(own_inst, r.sync.core.now) == own_inst);
         let name = if !p.name.is_empty() { p.name.clone() } else if !p.email.is_empty() { p.email.clone() } else { "You".into() };
-        users.insert(0, User { inst: 0, name, email: p.email, photo: p.photo, dtype: dtype(super::device_type(app)), label: super::device_label(app).into(), link: PeerLink::Relay, ring, own: true, main });
+        users.insert(0, User { inst: 0, name, email: p.email, photo: p.photo, dtype: dtype(super::device_type(app)), label: super::device_label(app), link: PeerLink::Relay, ring, own: true, main });
     }
     let leader = app.st.collab.run.as_ref().is_some_and(|r| r.sync.core.leader);
-    // Group by account (all shown devices are online; order of appearance, own first).
-    let mut groups: Vec<(String, Vec<&User>)> = Vec::new();
-    for (i, u) in users.iter().enumerate() {
-        let key = if u.email.is_empty() { format!("n:{}:{i}", u.name.to_lowercase()) } else { format!("e:{}", u.email.to_lowercase()) };
-        match groups.iter_mut().find(|g| g.0 == key) {
-            Some(g) => g.1.push(u),
-            None => groups.push((key, vec![u])),
-        }
-    }
+    // Last activity (`Date.now()` ms): the own device now (5.18.0 `t: Date.now()`); a remote device when this device
+    // last heard from it, on this device's clock (B-Y5): now for an open channel, else when its record last changed.
+    let remotes = app.st.collab.run.as_ref().map(|r| &r.sync.core.presence.remotes);
+    let heard = |u: &User| -> f64 {
+        let at = match remotes.and_then(|r| r.get(&u.inst)) {
+            Some(r) if !u.own && u.link != PeerLink::Connected => r.seen_at.min(now),
+            _ => now,
+        };
+        (time - (now - at)).floor()
+    };
+    let location = super::location_label(app);
+    let groups = group(&users, heard);
     let mut html = String::new();
     if groups.is_empty() {
         html += "<div class=\"presence-popup-empty\">No hay actividad reciente.</div>";
     }
-    let absolute = host.intl(crate::host::IntlOp::Date, &format!("{}\0string\0\0", jsfmt::num(time.floor())));
-    for (_, devices) in &groups {
-        let first = devices[0];
-        let name = devices.iter().map(|u| u.name.as_str()).find(|n| !n.is_empty()).unwrap_or("");
-        let email = devices.iter().map(|u| u.email.as_str()).find(|n| !n.is_empty()).unwrap_or("");
-        let photo = devices.iter().map(|u| u.photo.as_str()).find(|n| !n.is_empty()).unwrap_or(AVATAR_FALLBACK);
+    for devices in &groups {
+        let first = devices[0].0;
+        let name = devices.iter().map(|u| u.0.name.as_str()).find(|n| !n.is_empty()).unwrap_or("");
+        let email = devices.iter().map(|u| u.0.email.as_str()).find(|n| !n.is_empty()).unwrap_or("");
+        let photo = devices.iter().map(|u| u.0.photo.as_str()).find(|n| !n.is_empty()).unwrap_or(AVATAR_FALLBACK);
         let shown_name = if !name.is_empty() { name } else if !email.is_empty() { email } else { "Unknown" };
         html += &format!(
             "<div class=\"presence-account\"><div class=\"presence-account-head\"><img class=\"presence-account-photo\" src=\"{}\" alt=\"{}\"><div><div class=\"presence-account-name\">{}</div><div class=\"presence-account-email\">{}</div></div></div><div class=\"presence-device-list\">",
@@ -271,7 +304,8 @@ fn render_popup(app: &mut App, host: &mut dyn Host) {
             esc(shown_name),
             esc(if email.is_empty() { "No email" } else { email })
         );
-        for u in devices {
+        for &(u, at) in devices {
+            let absolute = host.intl(crate::host::IntlOp::Date, &format!("{}\0string\0\0", jsfmt::num(at)));
             let device = if !u.label.is_empty() {
                 u.label.clone()
             } else {
@@ -298,11 +332,13 @@ fn render_popup(app: &mut App, host: &mut dyn Host) {
                 _ => "idle",
             };
             html += &format!(
-                "<div class=\"presence-device-row\"><div class=\"presence-device-icon\">{}</div><div><div class=\"presence-device-main\">{}{}</div><div class=\"presence-device-meta\">Ubicación desconocida · Última actividad {} ({})</div><div class=\"presence-device-connection{}\">{transport} · {phase}{}</div></div></div>",
+                "<div class=\"presence-device-row\"><div class=\"presence-device-icon\">{}</div><div><div class=\"presence-device-main\">{}{}</div><div class=\"presence-device-meta\">{} · Última actividad {} ({})</div><div class=\"presence-device-connection{}\">{transport} · {phase}{}</div></div></div>",
                 device_svg(u.dtype),
                 esc(&device),
                 if u.own { " · This device" } else { "" },
-                last_activity(0.0),
+                // 5.18.0 packed presence carries no location: other devices read `Ubicación desconocida`.
+                esc(if u.own { &location } else { "Ubicación desconocida" }),
+                last_activity(time - at),
                 esc(&absolute),
                 if u.main { " main" } else { "" },
                 if u.main { " · Main device" } else { "" }
@@ -406,6 +442,29 @@ mod tests {
         assert!(relay.contains("<div class=\"presence-avatar-wrapper\" style=\"--presence-z: 1;\" title=\"Cho (pc)\">"));
         let many: Vec<User> = ["A", "B", "C", "D", "E"].iter().map(|n| user(n, PeerLink::Relay, "")).collect();
         assert!(avatars_html(&many, 0.0).starts_with("<div class=\"presence-overflow\" title=\"D, E\" style=\"z-index: 0;\">+2</div>"));
+    }
+
+    #[test]
+    fn popup_groups_by_account_newest_first() {
+        let mut own = user("Ana", PeerLink::Relay, "");
+        own.own = true;
+        let mut ana2 = user("Ana", PeerLink::Relay, "");
+        ana2.inst = 2;
+        let mut ben = user("Ben", PeerLink::Relay, "");
+        ben.inst = 3;
+        let mut cho = user("Cho", PeerLink::Relay, "");
+        cho.inst = 4;
+        let users = vec![own, ben, ana2, cho];
+        let at = |u: &User| match u.inst { 1 => 100.0, 2 => 90.0, 3 => 50.0, _ => 80.0 };
+        let g = group(&users, at);
+        let order: Vec<Vec<u64>> = g.iter().map(|d| d.iter().map(|(u, _)| u.inst).collect()).collect();
+        assert_eq!(order, vec![vec![1, 2], vec![4], vec![3]]);
+        // Equal activity keeps the order of appearance.
+        let g = group(&users, |_| 7.0);
+        let order: Vec<Vec<u64>> = g.iter().map(|d| d.iter().map(|(u, _)| u.inst).collect()).collect();
+        assert_eq!(order, vec![vec![1, 2], vec![3], vec![4]]);
+        assert_eq!(last_activity(61_000.0), "hace 1 min");
+        assert_eq!(last_activity(-5.0), "hace menos de 1 min");
     }
 
     #[test]

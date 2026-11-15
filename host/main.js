@@ -442,9 +442,14 @@ async function boot() {
   lifecycle(host);
   host.enter(() => {
     const strings = [config.version, location.href, navigator.userAgent || '', navigator.language || ''];
-    const w = host.writer.begin(strSize(...strings) + 32);
+    // Presence popup (5.18.0 detectDeviceLabel / detectPresenceLocationLabel): platform, time zone, region.
+    let region = '';
+    try { region = new Intl.Locale(navigator.language || '').region || ''; } catch (e) { }
+    const extra = [(navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '', Intl.DateTimeFormat().resolvedOptions().timeZone || '', region];
+    const w = host.writer.begin(strSize(...strings, ...extra) + 32);
     for (const s of strings) w.str(s);
     w.u32(config.flags).f64(innerWidth).f64(innerHeight).f64(devicePixelRatio || 1).u32(navigator.maxTouchPoints || 0);
+    for (const s of extra) w.str(s);
     host.ex.ihn_init(w.base, w.length);
   });
   performance.mark('ihn-ready');

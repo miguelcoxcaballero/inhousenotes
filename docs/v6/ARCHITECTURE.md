@@ -192,7 +192,7 @@ Exports (`ihn-wasm`):
 |---|---|
 | `ihn_abi() -> u32` | returns 6; loader refuses other values |
 | `ihn_alloc(len) -> ptr`, `ihn_free(ptr,len)` | scratch buffers for event payloads |
-| `ihn_init(ptr,len)` | config: APP_VERSION, URL, UA, mode flags (app / web / headless / e2e), viewport, DPR, `touchDrawEnabled`… |
+| `ihn_init(ptr,len)` | config: APP_VERSION, URL, UA, mode flags (app / web / headless / e2e), viewport, DPR, `touchDrawEnabled`…, then the platform, time zone and locale region of the presence popup (optional) |
 | `ihn_event(kind:u32, ptr, len) -> u32` | one event (§3.5); return bit 0 = `preventDefault`, bit 1 = `stopPropagation` |
 | `ihn_frame(t:f64)` | rAF callback (only requested when Rust asked for a frame) |
 | `ihn_out_ptr() -> ptr`, `ihn_out_len() -> u32` | the out-buffer produced by the last call (§3.3); JS applies it, then calls `ihn_out_reset()` |

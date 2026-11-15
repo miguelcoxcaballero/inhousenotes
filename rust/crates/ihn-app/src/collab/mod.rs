@@ -244,22 +244,52 @@ pub fn device_type(app: &App) -> u8 {
     }
 }
 
-/// 5.18.0 `detectDeviceLabel()` (from the user agent: the platform string is not in the boot config).
-pub fn device_label(app: &App) -> &'static str {
-    let ua = &app.cfg.user_agent;
-    let has = |s: &str| ua.to_ascii_lowercase().contains(s);
-    match () {
-        _ if has("iphone") => "iPhone",
-        _ if has("ipad") => "iPad",
-        _ if has("android") => "Android",
-        _ if has("windows") => "Windows PC",
-        _ if has("mac") => "Mac",
-        _ if has("linux") => "Linux PC",
-        _ => match device_type(app) {
+/// 5.18.0 `detectDeviceLabel()`: iPhone / iPad / Android from the user agent, then Windows PC / Mac / Linux PC / the
+/// raw string from the platform (`userAgentData.platform || navigator.platform`), else the device type.
+pub fn device_label(app: &App) -> String { label_of(&app.cfg.user_agent, &app.cfg.platform, device_type(app)) }
+
+fn label_of(ua: &str, platform: &str, dtype: u8) -> String {
+    let (ua, pl) = (ua.to_ascii_lowercase(), platform.to_ascii_lowercase());
+    let label = match () {
+        _ if ua.contains("iphone") => "iPhone",
+        _ if ua.contains("ipad") => "iPad",
+        _ if ua.contains("android") => "Android",
+        _ if pl.contains("windows") => "Windows PC",
+        _ if pl.contains("mac") => "Mac",
+        _ if pl.contains("linux") => "Linux PC",
+        _ if !platform.is_empty() => platform,
+        _ => match dtype {
             b'm' => "Mobile",
             b't' => "Tablet",
             _ => "PC",
         },
+    };
+    label.into()
+}
+
+/// The label other devices show: 5.18.0 `clampPresenceValue(detectDeviceLabel(), 16).replace(/\|/g, '')` of the
+/// packed presence identity.
+fn wire_label(label: &str) -> String {
+    let t = label.trim();
+    let mut out = String::new();
+    let mut units = 0;
+    for c in t.chars() {
+        units += c.len_utf16();
+        if units > 16 {
+            break;
+        }
+        out.push(c);
+    }
+    out.replace('|', "")
+}
+
+/// 5.18.0 `detectPresenceLocationLabel()`: `REGION · tz`, the time zone, the region, or `Unknown`.
+pub fn location_label(app: &App) -> String {
+    match (app.cfg.region.as_str(), app.cfg.time_zone.as_str()) {
+        ("", "") => "Unknown".into(),
+        (r, "") => r.into(),
+        ("", tz) => tz.into(),
+        (r, tz) => format!("{r} · {tz}"),
     }
 }
 
@@ -310,7 +340,7 @@ fn start(app: &mut App, host: &mut dyn Host, io: &crate::abi::Io) {
         name: profile.map_or(String::new(), |p| p.name.clone()),
         photo_url: profile.map_or(String::new(), |p| p.photo.clone()),
         device_type: device_type(app),
-        label: device_label(app).into(),
+        label: wire_label(&device_label(app)),
         save_phase: save_state::phase(app).code(),
     };
     let mut seed = [0u8; 8];
@@ -895,6 +925,34 @@ pub fn test_cmd(app: &mut App, _host: &mut dyn Host, name: &str, _args: &str) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn device_label_and_location_follow_5_18() {
+        const LINUX: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
+        const ANDROID: &str = "Mozilla/5.0 (Linux; Android 14; SM-S911B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36";
+        const IPHONE: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148";
+        // The user agent decides only iPhone / iPad / Android; the platform decides the rest.
+        assert_eq!(label_of(IPHONE, "MacIntel", b'm'), "iPhone");
+        assert_eq!(label_of(ANDROID, "Linux armv81", b'm'), "Android");
+        // `/Windows/i` does not match `navigator.platform` "Win32" (Firefox, Safari): 5.18.0 shows it raw.
+        assert_eq!(label_of(LINUX, "Win32", b'p'), "Win32");
+        assert_eq!(label_of(LINUX, "Windows", b'p'), "Windows PC");
+        assert_eq!(label_of(LINUX, "macOS", b'p'), "Mac");
+        assert_eq!(label_of(LINUX, "Linux x86_64", b'p'), "Linux PC");
+        assert_eq!(label_of(LINUX, "FreeBSD amd64", b'p'), "FreeBSD amd64");
+        assert_eq!(label_of(LINUX, "", b'p'), "PC");
+        assert_eq!(label_of("x", "", b't'), "Tablet");
+        assert_eq!(wire_label("  A very long platform|name  "), "A very long plat");
+        assert_eq!(wire_label("Open|BSD"), "OpenBSD");
+        let mut app = App::new(crate::shell::testkit::config(0, "http://127.0.0.1/?e2e=1"));
+        assert_eq!(location_label(&app), "Unknown");
+        app.cfg.time_zone = "UTC".into();
+        assert_eq!(location_label(&app), "UTC");
+        app.cfg.region = "US".into();
+        assert_eq!(location_label(&app), "US · UTC");
+        app.cfg.time_zone.clear();
+        assert_eq!(location_label(&app), "US");
+    }
 
     #[test]
     fn record_roundtrip_through_stored() {
