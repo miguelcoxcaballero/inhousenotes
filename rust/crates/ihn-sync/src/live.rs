@@ -13,7 +13,7 @@ use crate::{Change, Core, Dest, Part};
 use ihn_core::doc::{LivePreview, PeerRef, PresenceState, Replica};
 use ihn_core::id::Id;
 use ihn_core::op::{Body, Color, Op, Tool};
-use std::collections::{BTreeMap, BTreeSet};
+use ihn_core::vecmap::VecMap;
 
 pub const PREVIEW_TTL_MS: f64 = 15_000.0;
 pub const ERASE_EVERY_MS: f64 = 50.0;
@@ -46,9 +46,9 @@ pub struct Erasing {
 #[derive(Default, Debug)]
 pub struct Previews {
     /// By `live` id.
-    pub strokes: BTreeMap<u64, Stroke>,
+    pub strokes: VecMap<u64, Stroke>,
     /// By gesture id.
-    pub erases: BTreeMap<u64, Erasing>,
+    pub erases: VecMap<u64, Erasing>,
     /// Bumped on every change.
     pub version: u64,
 }
@@ -103,7 +103,7 @@ impl Previews {
         if !self.strokes.values().any(|s| s.item.is_some()) {
             return;
         }
-        let items: BTreeSet<Id> = batches
+        let items: std::collections::BTreeSet<Id> = batches
             .iter()
             .filter_map(|b| b.decode().ok())
             .flat_map(|b| b.ops)

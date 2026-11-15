@@ -22,7 +22,8 @@ use ihn_core::id::{migration_source, ActorId, DocId, Hash};
 use ihn_core::snapshot::{get_str, put_str, EncodedBatch};
 use ihn_core::stamp::{Stamp, VersionVector};
 use mode::{Cadence, Mode, Presence, HIDDEN_SUSPEND_MS};
-use std::collections::{BTreeMap, HashMap};
+use ihn_core::vecmap::VecMap;
+use std::collections::HashMap;
 use wire::{Assembled, Frame, Mail, Profile, Reassembly, PART_DATA};
 
 pub use ihn_core::doc::PeerRef;
@@ -279,15 +280,15 @@ pub enum SyncRecord {
 /// opened with it and keeps it current, so a part reads its resume state here.
 #[derive(Clone, PartialEq, Default, Debug)]
 pub struct Stored {
-    pub seq: BTreeMap<ActorId, u32>,
+    pub seq: VecMap<ActorId, u32>,
     pub relay_file: String,
     pub relay_epoch_day: u32,
     pub relay_gen: u64,
-    pub sealed: BTreeMap<ActorId, u32>,
+    pub sealed: VecMap<ActorId, u32>,
     pub archives: Vec<ArchiveRef>,
     pub assets: Vec<AssetRef>,
     pub perm: u64,
-    pub applied: BTreeMap<u64, (u64, String)>,
+    pub applied: VecMap<u64, (u64, String)>,
     /// 8 newest known exports, oldest first.
     pub exports: Vec<(String, VersionVector)>,
     pub last_export: Option<(String, VersionVector, String, u64)>,
@@ -450,12 +451,12 @@ pub struct Core {
     // -- private
     effects: Vec<SyncEffect>,
     owner: u8,
-    owners: BTreeMap<u32, u8>,
+    owners: VecMap<u32, u8>,
     next_id: u32,
     msg_id: u32,
     wake: f64,
     rng: u64,
-    assemblies: BTreeMap<u64, Reassembly>,
+    assemblies: VecMap<u64, Reassembly>,
     closed: bool,
     leaving_since: Option<f64>,
     suspended: bool,
@@ -679,12 +680,12 @@ impl Sync {
             export: export::Desk::default(),
             effects: Vec::new(),
             owner: SELF,
-            owners: BTreeMap::new(),
+            owners: VecMap::new(),
             next_id: 0,
             msg_id: 0,
             wake: f64::INFINITY,
             rng: cfg.seed | 1,
-            assemblies: BTreeMap::new(),
+            assemblies: VecMap::new(),
             closed: false,
             leaving_since: None,
             suspended: false,

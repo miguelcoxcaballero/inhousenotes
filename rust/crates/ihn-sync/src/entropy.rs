@@ -12,7 +12,7 @@ use crate::wire::Frame;
 use crate::{Core, Dest, Part};
 use ihn_core::doc::{PeerRef, Replica};
 use ihn_core::stamp::VersionVector;
-use std::collections::BTreeMap;
+use ihn_core::vecmap::VecMap;
 
 pub const HAVE_DEBOUNCE_MS: f64 = 200.0;
 pub const RESEND_MS: f64 = 5_000.0;
@@ -35,7 +35,7 @@ struct Dst {
 
 #[derive(Default)]
 pub struct Entropy {
-    peers: BTreeMap<u64, Dst>,
+    peers: VecMap<u64, Dst>,
     /// What the tabs were sent (or sent us).
     tabs: VersionVector,
     hello_sent: bool,

@@ -12,7 +12,7 @@ use crate::{Change, Channel, Core, Dest, Part, Phase, RtcEvent, RtcReq, SdpKind}
 use ihn_core::doc::{PeerRef, PresenceMode, PresenceState, Replica};
 use ihn_core::id::Id;
 use ihn_core::op::Color;
-use std::collections::BTreeMap;
+use ihn_core::vecmap::VecMap;
 
 /// The four Google STUN servers of 5.x (`live-collaboration-v5.js`).
 pub const ICE: [&str; 4] = ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302", "stun:stun2.l.google.com:19302", "stun:stun3.l.google.com:19302"];
@@ -70,14 +70,14 @@ pub struct Conn {
 
 #[derive(Default)]
 pub struct Peers {
-    pub conns: BTreeMap<u64, Conn>,
+    pub conns: VecMap<u64, Conn>,
     /// `(from, sid, kind)` → (first local sighting, processed).
-    seen: BTreeMap<(u64, u64, u8), (f64, bool)>,
+    seen: VecMap<(u64, u64, u8), (f64, bool)>,
     /// Own mail entries `(to, sid, kind)` → local time posted.
-    posted: BTreeMap<(u64, u64, u8), f64>,
+    posted: VecMap<(u64, u64, u8), f64>,
     /// Last local time each installation was vouched (bridges the moments between a new record generation and
     /// the digest check of its file).
-    vouched_at: BTreeMap<u64, f64>,
+    vouched_at: VecMap<u64, f64>,
     sids: u64,
 }
 

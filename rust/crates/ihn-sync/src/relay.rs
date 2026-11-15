@@ -11,7 +11,7 @@ use ihn_core::codec::b64_encode;
 use ihn_core::id::{fnv1a64, inst13};
 use ihn_core::snapshot::{get_bytes, get_hash, put_bytes, put_hash};
 use mode::WRITE_CAP_MS;
-use std::collections::BTreeSet;
+use ihn_core::vecmap::VecSet;
 
 /// Deflated tail cap (§8.1, §8.5 step 3).
 pub const TAIL_MAX: usize = 48 << 10;
@@ -356,15 +356,15 @@ pub struct Relay {
     force_rotate: bool,
     legacy_done: bool,
     /// Records whose relay file names another document (a Drive copy, §8.4): nulled by the next write.
-    foreign: BTreeSet<u64>,
+    foreign: VecSet<u64>,
     /// Records chosen by record GC (§8.4).
     gc: Vec<u64>,
     gc_done: bool,
-    reads: BTreeMap<u64, Read>,
+    reads: VecMap<u64, Read>,
     /// Record values given up on (digest never matched, file gone, foreign).
-    stale: BTreeMap<u64, String>,
+    stale: VecMap<u64, String>,
     /// Per remote installation: `written_at` and ranges of its last applied file (record GC).
-    seen: BTreeMap<u64, (u64, Vec<Range>)>,
+    seen: VecMap<u64, (u64, Vec<Range>)>,
 }
 
 impl Default for Relay {
@@ -384,19 +384,19 @@ impl Default for Relay {
             demoted: false,
             force_rotate: false,
             legacy_done: false,
-            foreign: BTreeSet::new(),
+            foreign: VecSet::new(),
             gc: Vec::new(),
             gc_done: false,
-            reads: BTreeMap::new(),
-            stale: BTreeMap::new(),
-            seen: BTreeMap::new(),
+            reads: VecMap::new(),
+            stale: VecMap::new(),
+            seen: VecMap::new(),
         }
     }
 }
 
 /// Highest archived seq per actor.
-fn archived(stored: &Stored) -> BTreeMap<ActorId, u32> {
-    let mut out = BTreeMap::new();
+fn archived(stored: &Stored) -> VecMap<ActorId, u32> {
+    let mut out = VecMap::new();
     for r in stored.archives.iter().flat_map(|a| &a.ranges) {
         let e = out.entry(r.actor).or_insert(0);
         *e = (*e).max(r.last);
@@ -409,7 +409,7 @@ fn rate_limited(status: u16, body: &[u8]) -> bool { status == 429 || (status == 
 
 impl Relay {
     /// Own (relayed) batches the replica holds above `floor` (per actor; other actors excluded).
-    fn own_batches(cx: &Core, r: &dyn Replica, floor: &BTreeMap<ActorId, u32>) -> Option<Vec<EncodedBatch>> {
+    fn own_batches(cx: &Core, r: &dyn Replica, floor: &VecMap<ActorId, u32>) -> Option<Vec<EncodedBatch>> {
         let rv = r.version_vector();
         let mut have = VersionVector::default();
         for (a, s) in rv.iter() {
@@ -645,7 +645,7 @@ impl Relay {
         // The gen is in the payload: build again with it (sizes do not change by more than a few bytes).
         let payload = self.file_of(cx).payload();
         let w = self.w.as_mut().expect("write");
-        let mut sealed: BTreeMap<ActorId, u32> = BTreeMap::new();
+        let mut sealed: VecMap<ActorId, u32> = VecMap::new();
         for g in w.archives.iter().flat_map(|a| &a.ranges).chain(&ranges_of(&w.tail)) {
             let e = sealed.entry(g.actor).or_insert(0);
             *e = (*e).max(g.last);
@@ -703,7 +703,7 @@ impl Relay {
                 nulls.extend(p.into_iter().map(|k| (k, None)));
                 app_nulls.extend(a.into_iter().map(|k| (k, None)));
             }
-            let present: BTreeSet<&str> = meta.props.iter().map(|(k, _)| k.as_str()).collect();
+            let present: VecSet<&str> = meta.props.iter().map(|(k, _)| k.as_str()).collect();
             for inst in self.foreign.iter().chain(&self.gc) {
                 let key = record_key(*inst);
                 if present.contains(key.as_str()) && *inst != cx.inst {
@@ -1066,7 +1066,7 @@ impl Relay {
         if !batches.is_empty() {
             r.receive(&batches, PeerRef::Relay(inst));
         }
-        let mut sealed: BTreeMap<ActorId, u32> = BTreeMap::new();
+        let mut sealed: VecMap<ActorId, u32> = VecMap::new();
         for g in file.ranges.iter().chain(file.archives.iter().flat_map(|a| &a.ranges)) {
             let e = sealed.entry(g.actor).or_insert(0);
             *e = (*e).max(g.last);

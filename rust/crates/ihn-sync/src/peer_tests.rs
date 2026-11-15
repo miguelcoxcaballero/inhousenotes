@@ -9,6 +9,7 @@ use ihn_core::codec::{Reader, Writer};
 use ihn_core::doc::{LivePreview, PeerRef};
 use ihn_core::id::Id;
 use ihn_core::op::{Color, Tool};
+use std::collections::BTreeMap;
 
 const ANN: &str = "ann@example.org";
 const BOB: &str = "bob@example.org";

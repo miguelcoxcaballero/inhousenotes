@@ -6,6 +6,7 @@ use super::*;
 use crate::export::{classify, push_name, Class};
 use crate::sim::{sha256, Sim, SimReplica, PROP_BYTES, PROP_KEYS, T0};
 use ihn_core::doc::{ReceiveResult, Tx};
+use std::collections::BTreeMap;
 use ihn_core::snapshot::{encode_batch, EncodedSnapshot};
 use ihn_core::stamp::Stamp;
 use ihn_core::testutil::Rng;
