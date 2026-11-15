@@ -25,7 +25,7 @@ use ihn_core::id::{inst13, IdGen};
 use ihn_core::op::{Background, Body, Color, Template, Tool};
 use ihn_core::snapshot::{self, EncodedSnapshot};
 use ihn_core::testutil::Rng;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Test command hook kept for the module table.
 pub fn test_cmd(_name: &str, _args: &str) -> Option<String> { None }

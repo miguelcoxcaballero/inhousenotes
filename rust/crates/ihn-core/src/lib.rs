@@ -23,6 +23,7 @@ pub mod stamp;
 #[doc(hidden)]
 pub mod testutil;
 pub mod v5;
+pub mod vecmap;
 
 /// Routes `core.<module>.<name>` test commands to `<module>::test_cmd` (called by `ihn-app::testapi`).
 pub fn test_cmd(module: &str, name: &str, args: &str) -> Option<String> {

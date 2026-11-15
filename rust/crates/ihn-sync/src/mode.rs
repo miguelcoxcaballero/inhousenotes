@@ -5,7 +5,7 @@
 
 use crate::wire::Profile;
 use ihn_core::doc::{PeerLink, PeerView, PresenceState};
-use std::collections::BTreeMap;
+use ihn_core::vecmap::VecMap;
 
 pub const PRESENCE_MS: f64 = 120_000.0;
 pub const VOUCH_MS: f64 = 600_000.0;
@@ -83,7 +83,7 @@ pub struct Remote {
 
 #[derive(Default)]
 pub struct Presence {
-    pub remotes: BTreeMap<u64, Remote>,
+    pub remotes: VecMap<u64, Remote>,
 }
 
 impl Presence {
