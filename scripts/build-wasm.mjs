@@ -56,7 +56,10 @@ const linked = join(root, 'rust/target/wasm32-unknown-unknown/release/ihn.wasm')
 // LLVM already inlined what it found worth it; the large single-caller bodies binaryen inlined on top grew the code
 // and moved it away from its own module's functions (measured on the name-ordered output: -6.0 KB raw, -5.4 KB
 // gzip; 10-30 all give the same, 50 and above lose most of it). Tiny bodies are still inlined.
-const WASM_OPT = ['-ocimfs', '20', '-Os', '--low-memory-unused', '--merge-similar-functions', '-Os', '--reorder-functions-by-name', '--strip-debug', '--strip-producers', '--strip-target-features'];
+// `-aimfs 4` (`--always-inline-max-function-size`, default 2): bodies of up to 4 instructions (field getters, small
+// wrappers) are inlined at every call site; the call sequence they replace is about as long (measured: -0.4 KB raw,
+// -0.4 KB gzip; 5 and above grow the code).
+const WASM_OPT = ['-ocimfs', '20', '-aimfs', '4', '-Os', '--low-memory-unused', '--merge-similar-functions', '-Os', '--reorder-functions-by-name', '--strip-debug', '--strip-producers', '--strip-target-features'];
 const WASM_FEATURES = ['bulk-memory', 'bulk-memory-opt', 'call-indirect-overlong', 'multivalue', 'mutable-globals', 'nontrapping-float-to-int', 'reference-types', 'sign-ext'];
 const wasmOpt = join(root, 'node_modules/binaryen/bin/wasm-opt');
 const optimised = existsSync(wasmOpt);
