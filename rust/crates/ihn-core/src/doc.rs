@@ -11,8 +11,7 @@ use crate::op::{Background, Batch, Body, Color, ImageRect, Op, PageProp, Templat
 use crate::pos::Pos;
 use crate::snapshot::{EncodedBatch, EncodedSnapshot};
 use crate::stamp::{Clock, Reg, Stamp, VersionVector};
-use crate::vecmap::VecSet;
-use std::collections::BTreeMap;
+use crate::vecmap::{VecMap, VecSet};
 
 // ------------------------------------------------------------------------------------------------ state
 
@@ -136,8 +135,9 @@ pub struct Doc {
     pub pages: IdMap<Page>,
     /// Strokes and images of all pages, including deleted ones.
     pub items: IdMap<Item>,
-    /// Timeline (grow-only; prune = tombstone register).
-    pub versions: BTreeMap<Id, Version>,
+    /// Timeline (grow-only; prune = tombstone register). W6.2y: a sorted vector (same ascending order and `range`):
+    /// versions arrive a few per hour of writing and bulk loads come sorted.
+    pub versions: VecMap<Id, Version>,
     pub vv: VersionVector,
     // Derived, not serialized.
     order: Vec<Id>,
