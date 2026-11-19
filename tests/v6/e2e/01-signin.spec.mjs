@@ -560,7 +560,7 @@ test('executors: GIS, native bridges, files, clipboard, share, download, history
   });
   await open(page);
 
-  // GIS: init, request (answer as JSON), revoke.
+  // GIS readiness, validated session and local sign-out.
   expect((await result(page, (await fx(page, 0xa0, ['r'])).req)).status).toBe(0);
   let got = await result(page, (await fx(page, 0xa1, ['r'], ['b', 0])).req);
   expect(JSON.parse(got.text)).toMatchObject({ access_token: 'gis-token-1', expires_in: 3600 });
@@ -585,12 +585,12 @@ test('executors: GIS, native bridges, files, clipboard, share, download, history
   expect(chunks.every(chunk => chunk.length <= 8)).toBe(true);
   expect(Buffer.from(chunks.join(''), 'base64').toString()).toBe('%PDF-1.7 0123456789');
   expect(chunks.join('')).toBe(Buffer.from('%PDF-1.7 0123456789').toString('base64'));
-  // The export result and the OAuth redirect arrive as messages (channels 2 and 1).
+  // Export results reach Rust. OAuth callbacks without a matching transaction are ignored.
   await page.evaluate(() => window.handleInhouseNativeOAuth('#error=access_denied'));
   await expect.poll(async () => (await cmd(page, 'shell.fx_results')).messages.length, { timeout: 3000 }).toBeGreaterThan(0);
   await page.evaluate(() => { window.handleInhousePdfExportResult({ ok: false, message: 'disk full' }); window.handleInhouseNativeOAuth('?error=x'); });
   // The mock bridge reports its own finished export (`ok:true`) at a time of its choosing: it is not part of this check.
-  expect((await cmd(page, 'shell.fx_results')).messages.filter(m => !m.data.includes('"ok":true'))).toEqual([{ chan: 2, data: '{"ok":false,"message":"disk full"}' }, { chan: 1, data: 'error=x' }]);
+  expect((await cmd(page, 'shell.fx_results')).messages.filter(m => !m.data.includes('"ok":true'))).toEqual([{ chan: 2, data: '{"ok":false,"message":"disk full"}' }]);
 
   // Background bridge and the boot flag.
   for (const what of [0, 1, 2]) expect((await result(page, (await fx(page, 0xab, ['r'], ['b', what], ['s', '{"busy":false,"pending":0,"errors":[]}'])).req)).status).toBe(0);

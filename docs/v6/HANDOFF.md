@@ -9,27 +9,15 @@ with short, plain updates.
 
 **Where the work is**
 - All of the 6.0.0 work is on branch `v6-int` (head after this handoff: see `git log -1 origin/v6-int`). `main` and
-  https://inhousenotes.com/ still serve 5.18.0. Nothing has been published.
+  https://inhousenotes.com/ serve 5.19.0. The v6 candidate is unpublished.
 - Read first: `AGENTS.md`, `CLAUDE.md`, `docs/v6/CHANGELOG.md` (current state, sizes, pending decisions),
   `docs/v6/ARCHITECTURE.md`, `docs/v6/BEHAVIOUR-CHANGES.md`, `docs/v6/NOTES-W6.2r.md` (publish steps),
   `docs/v6/TESTING.md`.
 - Ignore the old `claude/trusting-pasteur-qsmedx` branch content (an abandoned 5.x-era port from October,
   superseded by `v6-int`). The `v6-w*` branches are already merged into `v6-int`.
 
-**First task: integrate 5.19.0.** `main` published 5.19.0 on 2026-11-15 (`35d0f22`, merge of
-`codex/shared-google-oauth`): shared Google OAuth in `vendor/inhouse-services-updater/auth/` (canonical source:
-`miguelcoxcaballero/inhouse-services-updater/auth`, locked by `inhouse-oauth.lock.json`), a new `AGENTS.md` section
-"Shared Google OAuth", changes in `app-v5.js`/`index.html`/`service-worker.js`, and Android APK 1.0.29 / versionCode 30
-published in channel A. `v6-int` is based on 5.18.0 (`1d6e8a0`) and has none of it.
-1. Read `git diff 1d6e8a0 origin/main` and `vendor/inhouse-services-updater/auth/README.md` (on `main`).
-2. Merge `origin/main` into `v6-int` (merge, not rebase). Keep `APP_VERSION = '6.0.0'`. Do not hand-edit the vendored
-   auth or updater files: they come from `tools/sync.py` in the canonical repository.
-3. v6 has its own sign-in port in Rust/host (`rust/crates/ihn-app` + `host/`). AGENTS.md now says not to fork the
-   login: make v6 use `vendor/inhouse-services-updater/auth/google-oauth.js` (JS host executes it; Rust keeps the UI
-   and state), including the Android `GoogleSessionBridge` path and the local sign-out opt-out semantics. Keep every
-   5.19.0 behaviour; if v6 must differ, add an entry to `BEHAVIOUR-CHANGES.md` as "proposed".
-4. Rebase the parity reference on 5.19.0 (`git worktree add ../r519 origin/main`), rerun e2e and the full parity
-   matrix, update `RELEASE_NOTES_v6.0.0.md` (Android is 1.0.29 / 30, no longer 1.0.28 / 29) and `docs/v6/CHANGELOG.md`.
+**5.19.0 integration**: merged into `v6-int` at `657f3d0`. The host uses the shared OAuth client and
+the parity baseline is `35d0f22`. Check `CHANGELOG.md` for verification results and open release gates.
 
 **Rules that must not be broken**
 - `vendor/inhouse-services-updater/` contains a FROZEN Android installer. Do not edit, move, reformat or delete
@@ -54,17 +42,16 @@ export NODE_OPTIONS=--max-old-space-size=6000
 cargo test --manifest-path rust/Cargo.toml --workspace --locked   # 173 + 138 (1 ignored) + 49
 npm run build                                                     # budgets enforced in scripts/build-wasm.mjs
 npm run test:shell                                                # 6/6
-npx playwright test --workers=1 --trace off --reporter=line       # 98/98, about 9 min
+npx playwright test --workers=1 --trace off --reporter=line       # includes the shared Android grant regression
 ```
-- Parity needs a reference tree: 5.18.0 is `git worktree add ../r518 1d6e8a0`; after step 4 above use 5.19.0
-  (`../r519`). One state file per run:
+- Parity needs the reference tree: `git worktree add --detach ../r519 35d0f22`. One state file per run:
   `node tests/v6/parity/run.mjs --quick --a-root ../r519 --states tests/v6/parity/states/<file>.mjs --port-a 4680 --port-b 4681 --out /tmp/par-<file>`.
   Full matrix: drop `--quick`; merge with `node tests/v6/parity/report.mjs --summary <dirs…> --out tests/v6/parity/REPORT.md`.
 - Perf: `tests/v6/perf/bench.mjs` (see `NOTES-W6.2z.md` for the method: alternating base/final rounds).
 - The machine has 4 CPUs: run one heavy job at a time.
 
 **What is open** (details in `docs/v6/CHANGELOG.md`)
-1. Waiting on the owner (after 5.19.0 is integrated): approval of BEHAVIOUR-CHANGES; whether to split the wasm (598 KB gzip vs 456 KB in 5.18.0);
+1. Waiting on the owner (before publication): approval of BEHAVIOUR-CHANGES; whether to split the wasm (598 KB gzip vs 456 KB in 5.18.0);
    confirm no APK for 6.0.0; keep or delete `stencil.html`; real Google test accounts.
 2. Work that can be done without the owner:
    - Run the GitHub Actions workflows' steps end to end where possible (`production-checks.yml`,
