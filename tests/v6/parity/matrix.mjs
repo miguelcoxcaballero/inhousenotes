@@ -40,8 +40,8 @@ export const VIEWPORTS = {
 };
 export const THEMES = ['light', 'dark', 'system-dark'];
 export const MODES = ['web', 'app'];
-export const APP_VERSION_NAME = '1.0.28';
-export const APP_VERSION_CODE = 29;
+export const APP_VERSION_NAME = '1.0.29';
+export const APP_VERSION_CODE = 30;
 
 /** Playwright context options for one matrix cell. */
 export function contextOptions(cell) {

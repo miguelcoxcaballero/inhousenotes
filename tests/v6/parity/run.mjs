@@ -1,10 +1,10 @@
 // Pixel-parity harness (TESTING §3) — the release gate.
 //
 //   node tests/v6/parity/run.mjs [--quick] [--states welcome,home-shell] [--filter text] [--runs 2] [--self]
-//        [--a-root <5.18.0 tree>] [--b-root .] [--b-overlay build] [--port-a N] [--port-b N] (default: free ports)
+//        [--a-root <5.19.0 tree>] [--b-root .] [--b-overlay build] [--port-a N] [--port-b N] (default: free ports)
 //        [--out test-results/parity-report] [--workers 1] [--save-all] [--viewports phone-360,desktop-1280]
 //
-// A is 5.18.0 (default: `git archive 1d6e8a0` extracted to test-results/v5-ref), B is v6 (this tree + build/ overlay).
+// A is 5.19.0 (default: `git archive 35d0f22` extracted to test-results/v5-ref), B is v6 (this tree + build/ overlay).
 // Nothing the harness writes goes into build/: that directory holds only `npm run build` output (ARCHITECTURE §14.2).
 // `--self` serves the A tree on both sides (the harness proving itself); `--runs N` repeats every state and also
 // compares each side with its own previous run. Exit code 1 when any screenshot differs outside a
@@ -33,7 +33,7 @@ import { writeReport } from './report.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const REPO = path.resolve(HERE, '..', '..', '..');
-export const V5_COMMIT = '1d6e8a0';
+export const V5_COMMIT = '35d0f22';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // The real clock of this process, taken before anything can replace it; and the queue in which drivers take turns to
 // install their page clock (see Driver.start: that step shows Playwright one fixed wall time).
@@ -56,8 +56,8 @@ export function parity(name, options, script) {
   registry.set(name, { name, ...options, script, file: parity.currentFile || '' });
 }
 
-/** The 5.18.0 reference tree, extracted once from git. */
-export function ensureV5Ref(target = path.join(REPO, 'test-results', 'v5-ref')) {
+/** The 5.19.0 reference tree, extracted once from git. */
+export function ensureV5Ref(target = path.join(REPO, 'test-results', `v5-ref-${V5_COMMIT}`)) {
   if (!fs.existsSync(path.join(target, 'app-v5.js'))) {
     // Extracted next to the target and renamed, so a second process never serves a half-written tree.
     const partial = `${target}.${process.pid}.partial`;
@@ -298,7 +298,7 @@ export class Driver {
     await frames();
     await this.page.evaluate(() => { const style = document.getElementById('__ihn-raster'); if (style) style.remove(); }).catch(() => {});
     // Icons whose stroke caps touch their own SVG box (share, new folder) rasterised that clip edge differently from
-    // one paint to the next, on either side (±7 levels on 2–3 px; `--runs` stability failures of 5.18.0 against
+    // one paint to the next, on either side (±7 levels on 2–3 px; `--runs` stability failures of 5.19.0 against
     // itself). Unclipped square-button icons in both apps remove the edge (the clip cut at most a quarter pixel of a cap);
     // other SVGs (the folder art) keep their clip.
     await this.page.evaluate(() => { if (document.getElementById('__ihn-svg')) return; const style = document.createElement('style'); style.id = '__ihn-svg'; style.textContent = '.btn-icon-square > svg { overflow: visible !important; }'; document.documentElement.appendChild(style); }).catch(() => {});
@@ -311,7 +311,7 @@ export class Driver {
    * Playwright's `caret: 'hide'` inserts its caret style just before each screenshot and removes it after, so the
    * screenshot's own frame is the one that recalculates style, repaints and rasterises. Pixels rasterised in that frame
    * are not reproducible: the globe icon of the Share dialog (an SVG at a half device pixel, phone-360) came out in one
-   * of two renderings at random, up to Δ 58 on its upper third, in 5.18.0 and v6 alike (`--runs` stability failures).
+   * of two renderings at random, up to Δ 58 on its upper third, in 5.19.0 and v6 alike (`--runs` stability failures).
    * A capture of a page with no pending style change gave one rendering in 30 of 30 shots, the same insertion with
    * real frames before the screenshot also 30 of 30, the same insertion without them both renderings
    * (docs/v6/NOTES-W6.1e.md). So the caret is hidden before #freshRaster's frames and the screenshots change nothing.
@@ -374,7 +374,7 @@ export async function runState({ baseUrl, state, cell, side }) {
 function judge(state, a, b, dpr) {
   const comparison = compareCaptures(a, b);
   if (comparison.pixelsEqual) return { status: comparison.dom || comparison.trace ? 'warn' : 'pass', comparison };
-  // The rule's rectangles in both apps: the same element can be larger in 5.18.0 than in v6 (a line that wraps).
+  // The rule's rectangles in both apps: the same element can be larger in 5.19.0 than in v6 (a line that wraps).
   const regions = a.regions || b.regions ? [...(a.regions || []), ...(b.regions || [])] : null;
   if (state.tags?.length && regions && comparison.pixels.box) {
     // Expected difference: every differing pixel must lie inside the rule's rectangles (TESTING §3.5).
@@ -455,7 +455,7 @@ async function main() {
   await Promise.all(Array.from({ length: Math.min(workers, jobs.length) }, async () => { while (next < jobs.length) await runJob(jobs[next++]); }));
 
   await serverA.close(); await serverB.close();
-  const summary = writeReport(outDir, results, { title: self ? '5.18.0 against itself' : '5.18.0 vs v6', a: `5.18.0 (${path.relative(REPO, aRoot) || '.'})`, b: self ? `5.18.0 (${path.relative(REPO, bRoot) || '.'}, second origin)` : `v6 (${path.relative(REPO, bRoot) || '.'}${bOverlay ? ' + ' + path.relative(REPO, bOverlay) : ''})`, quick, runs, saveAll, startedAt: new Date(started).toISOString(), durationMs: Date.now() - started });
+  const summary = writeReport(outDir, results, { title: self ? '5.19.0 against itself' : '5.19.0 vs v6', a: `5.19.0 (${path.relative(REPO, aRoot) || '.'})`, b: self ? `5.19.0 (${path.relative(REPO, bRoot) || '.'}, second origin)` : `v6 (${path.relative(REPO, bRoot) || '.'}${bOverlay ? ' + ' + path.relative(REPO, bOverlay) : ''})`, quick, runs, saveAll, startedAt: new Date(started).toISOString(), durationMs: Date.now() - started });
   console.log(`\n${summary.failed ? 'FAIL' : 'PASS'}: ${summary.passed} pass, ${summary.failed} fail/error, ${summary.expected} expected, ${summary.warned} warnings — ${path.relative(process.cwd(), summary.file)}`);
   process.exit(summary.failed ? 1 : 0);
 }

@@ -7,6 +7,7 @@ const out=process.argv.includes('--out')?process.argv[process.argv.indexOf('--ou
 const roots=['host','vendor/pdfjs','vendor/pdf-lib','vendor/fonts'];
 const files=['index.html','boot.js','wasm/ihn.wasm','offline-v5.css','shared/inhouse-services-updater/updater.css',
     'shared/inhouse-services-updater/updater.js','icons/welcome-pages.svg',
+    'vendor/inhouse-services-updater/auth/google-oauth.js',
     // Template SVGs join the shell when W2.3 adds them.
     ...['icons/agenda.svg','icons/diary.svg'].filter(path=>existsSync(path))];
 async function walk(path){for(const entry of (await readdir(path,{withFileTypes:true})).sort((a,b)=>a.name<b.name?-1:1)){

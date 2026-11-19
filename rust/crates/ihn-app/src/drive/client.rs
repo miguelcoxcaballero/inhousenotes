@@ -191,7 +191,7 @@ fn completed(app: &mut App, host: &mut dyn Host, io: &crate::Io) {
             return fail(app, host, key, -401, "Drive API error 401: signed out");
         }
         // Token expired server-side — force a refresh and retry once.
-        auth::drop_token(app);
+        auth::drop_token(app, host);
         let fresh = app.req(Mod::DriveClient);
         let now = host.now();
         if let Some(p) = app.st.drive_client.pending.iter_mut().find(|p| p.key == key) {
@@ -372,10 +372,10 @@ mod flow_tests {
         });
         let text = out(&mut host);
         io(&mut app, &mut host, req_of(&text, "gis_init"), 0, b"");
-        let silent = req_of(&out(&mut host), "gis_request");
+        let silent = req_of(&out(&mut host), "oauth_request");
         request(&mut app, &mut host, Mod::Shell, Req { url: "https://www.googleapis.com/drive/v3/files".into(), timeout_ms: 5000.0, ..Default::default() });
         let text = out(&mut host);
-        assert!(!text.contains("fetch") && !text.contains("gis_request"), "it joins the running token request: {text}");
+        assert!(!text.contains("fetch") && !text.contains("oauth_request"), "it joins the running token request: {text}");
         let key = req_of(&text, "timer_set");
         timer(&mut app, &mut host, key);
         assert_eq!(std::mem::take(&mut app.st.shell.probe.results)[0].1, err::TIMEOUT);
@@ -383,9 +383,9 @@ mod flow_tests {
         io(&mut app, &mut host, silent, 0, TOKEN_JSON.as_bytes());
         assert!(!out(&mut host).contains("drive/v3/files\""));
         // With time already spent on the token, the fetch gets what is left of the deadline.
-        auth::drop_token(&mut app);
+        auth::drop_token(&mut app, &mut host);
         request(&mut app, &mut host, Mod::Shell, Req { url: "https://www.googleapis.com/drive/v3/files".into(), timeout_ms: 5000.0, ..Default::default() });
-        let silent = req_of(&out(&mut host), "gis_request");
+        let silent = req_of(&out(&mut host), "oauth_request");
         host.advance(2000.0);
         io(&mut app, &mut host, silent, 0, TOKEN_JSON.as_bytes());
         assert!(line_of(&out(&mut host), "fetch").ends_with("\"Authorization: Bearer tok-1\\n\" 0 3000 0 -"));

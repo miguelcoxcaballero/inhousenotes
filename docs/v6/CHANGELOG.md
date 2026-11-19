@@ -1,15 +1,12 @@
 # Inhouse Notes v6 — changelog of the Rust rewrite (work in progress)
 
-State on 2026-11-19: branch `v6-int` holds release candidate **6.0.0**. **Nothing has been published.** `main` and
-`https://inhousenotes.com/` still serve 5.18.0. Publishing waits for the owner's approval of
-`docs/v6/BEHAVIOUR-CHANGES.md` (every entry there is still "proposed").
+6.0.0 is an unpublished candidate on `v6-int`. The integration branch now includes the
+5.19.0 mainline (`35d0f22`), including the Android 1.0.29 / versionCode 30 channel A metadata.
 
-**`main` has moved on:** on 2026-11-15 `main` published **5.19.0** (`35d0f22`): shared Google OAuth from
-`inhouse-services-updater/auth` (`vendor/inhouse-services-updater/auth/`, `inhouse-oauth.lock.json`, new `AGENTS.md`
-section "Shared Google OAuth"), changes in `app-v5.js`/`index.html`, and Android APK **1.0.29 / versionCode 30** in
-channel A. `v6-int` is based on 5.18.0 (`1d6e8a0`) and does not contain any of this. Before 6.0.0 can be published,
-`main` must be merged into `v6-int` and 6.0.0 must use the shared OAuth module instead of its own sign-in port
-(AGENTS.md: "Do not fork it here"); parity must then be rebased on 5.19.0.
+Rust retains the Notes UI, profile, refresh scheduling and Drive request waiters. The host
+delegates GIS, Android grant discovery, PKCE, callback validation, invalidation and local
+logout to the canonical OAuth module. Visual parity and upgrade checks now target 5.19.0.
+Historical measurements below retain their original baseline.
 
 User-facing release notes: `RELEASE_NOTES_v6.0.0.md`. Per-unit details: `docs/v6/NOTES-W*.md`.
 
@@ -64,7 +61,6 @@ User-facing release notes: `RELEASE_NOTES_v6.0.0.md`. Per-unit details: `docs/v6
 
 ### Decisions pending from the owner
 1. Approve `docs/v6/BEHAVIOUR-CHANGES.md` (required before any push to `main`).
-   Before that, 5.19.0 must be integrated (see the top of this file).
 2. Authorise splitting the wasm into two modules (or accept about 598 KB gzip).
 3. Confirm no new APK for 6.0.0 (the APK loads the live site; Android is now 1.0.29 / 30 from 5.19.0).
 4. Keep or delete `stencil.html`.

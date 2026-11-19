@@ -23,7 +23,7 @@ async function stubGoogle(page, { gis = 'grant', about = true } = {}) {
         initTokenClient: config => {
           const client = { callback: config.callback, requestAccessToken: options => {
             log.requests.push(options);
-            const ok = log.mode === 'grant' || (log.mode === 'silent-fail' && options.prompt === 'consent');
+            const ok = log.mode === 'grant' || (log.mode === 'silent-fail' && options.prompt === '');
             setTimeout(() => client.callback(ok
               ? { access_token: 'gis-token-' + (++log.count), expires_in: 3600, scope: config.scope, token_type: 'Bearer' }
               : { error: options.prompt === 'none' ? 'interaction_required' : 'access_denied' }), 20);
@@ -88,7 +88,7 @@ test('web: Welcome → Google → Home, reload keeps the session, sign out remov
   await expect(page.locator('#btn-drive-login')).toBeHidden();
   await expect(page.locator('#drive-profile')).toBeVisible();
   await expect(page.locator('#drive-search')).toBeEnabled();
-  expect(await page.evaluate(() => window.__gis.requests)).toEqual([{ scope: DRIVE_SCOPE, include_granted_scopes: true, prompt: 'consent' }]);
+  expect(await page.evaluate(() => window.__gis.requests)).toEqual([{ prompt: '' }]);
   expect(await page.evaluate(() => window.__gis.client)).toBe('435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com');
 
   // The profile comes from Drive with the new token and fills the menu.
@@ -122,12 +122,13 @@ test('web: Welcome → Google → Home, reload keeps the session, sign out remov
   expect(await cmd(page, 'auth.state')).toMatchObject({ signedIn: true, reconnecting: false });
   expect(await page.evaluate(() => window.__gis.requests)).toEqual([]);
 
-  // Sign out: token revoked, keys removed, Welcome; a reload stays on Welcome.
+  // Local sign-out persists the opt-out and leaves the Google grant valid for other apps.
   await page.click('#btn-drive-profile');
   await page.click('#btn-drive-menu-logout');
   await expect(page.locator('#welcome-view')).toBeVisible();
   await expect(page.locator('#drive-home')).toBeHidden();
-  expect(await page.evaluate(() => window.__gis.revoked)).toEqual(['gis-token-1']);
+  expect(await page.evaluate(() => window.__gis.revoked)).toEqual([]);
+  expect(await page.evaluate(() => localStorage.getItem('inhouse-notes-oauth-v1:signed-out'))).toBe('1');
   expect(Object.values(await stored(page))).toEqual(KEYS.map(() => null));
   expect(await page.evaluate(() => window.__INHOUSE_BOOT_SIGNED_IN__)).toBe(false);
   await expect(page.locator('#drive-status')).toHaveText('Sign in to browse your Drive.');
@@ -157,7 +158,7 @@ test('web: a refused consent says so; an expired session asks to reconnect', asy
   await expect(page.locator('#btn-drive-login')).toHaveText('Reconnect');
   await expect(page.locator('#btn-drive-login')).toBeVisible();
   await expect(page.locator('#drive-status')).toHaveText('Drive connection paused. Sign in again to continue syncing.');
-  expect(await page.evaluate(() => window.__gis.requests)).toEqual([{ scope: DRIVE_SCOPE, include_granted_scopes: true, prompt: 'none', login_hint: 'ana@example.com' }]);
+  expect(await page.evaluate(() => window.__gis.requests)).toEqual([{ prompt: 'none', login_hint: 'ana@example.com' }]);
   expect(await cmd(page, 'auth.state')).toMatchObject({ signedIn: false, reconnecting: true });
   // Reconnect signs in interactively.
   await page.evaluate(() => { window.__gis.mode = 'grant'; });
@@ -192,15 +193,15 @@ test('app mode: PKCE through InhouseNative.openAuthUrl and handleInhouseNativeOA
   await page.click('#btn-welcome-start');
   await page.click('#btn-welcome-login');
   await expect.poll(() => page.evaluate(() => window.__authUrls?.length || 0)).toBe(1);
-  await expect(page.locator('#drive-status')).toHaveText('Complete sign-in in the Google window.', { useInnerText: false });
   const auth = new URL(await page.evaluate(() => window.__authUrls[0]));
-  const verifier = await page.evaluate(() => localStorage.getItem('drive-pkce-verifier-v1'));
+  const { verifier, state } = await page.evaluate(() => JSON.parse(localStorage.getItem('inhouse-notes-oauth-v1:transaction')));
+  expect(state).toMatch(/^[A-Za-z0-9_-]{43}$/);
   expect(auth.origin + auth.pathname).toBe('https://accounts.google.com/o/oauth2/v2/auth');
   expect(Object.fromEntries(auth.searchParams)).toEqual({
     client_id: '435784295430-9ta7t92s33r25bamvrnbmgt65iihqpfo.apps.googleusercontent.com',
     redirect_uri: 'com.local.inhousenotes:/oauth2redirect', response_type: 'code', scope: DRIVE_SCOPE, access_type: 'offline',
     include_granted_scopes: 'true', code_challenge: auth.searchParams.get('code_challenge'), code_challenge_method: 'S256',
-    state: 'inhouse_notes_pkce', prompt: 'consent'
+    state, prompt: 'consent'
   });
   // The challenge is base64url(SHA-256(verifier)).
   expect(verifier).toMatch(/^[A-Za-z0-9_-]{43}$/);
@@ -210,7 +211,9 @@ test('app mode: PKCE through InhouseNative.openAuthUrl and handleInhouseNativeOA
   }, verifier)).toBe(auth.searchParams.get('code_challenge'));
 
   // Android evaluates the callback with the redirect's query.
-  expect(await page.evaluate(() => window.handleInhouseNativeOAuth('?code=4%2Fcode-1&state=inhouse_notes_pkce'))).toBe(true);
+  await page.evaluate(() => window.handleInhouseNativeOAuth('?code=wrong&state=wrong'));
+  expect(calls.token).toHaveLength(0);
+  expect(await page.evaluate(state => window.handleInhouseNativeOAuth('?code=4%2Fcode-1&state=' + state), state)).toBe(true);
   await expect(page.locator('#drive-home')).toBeVisible();
   await expect(page.locator('#drive-profile-name')).toHaveText('Ana Test', { useInnerText: false });
   expect(calls.token).toEqual([{ client_id: '435784295430-9ta7t92s33r25bamvrnbmgt65iihqpfo.apps.googleusercontent.com', code: '4/code-1', code_verifier: verifier, grant_type: 'authorization_code', redirect_uri: 'com.local.inhousenotes:/oauth2redirect' }]);
@@ -218,7 +221,13 @@ test('app mode: PKCE through InhouseNative.openAuthUrl and handleInhouseNativeOA
   expect(calls.drive.find(call => call.path.startsWith('/drive/v3/about?fields=user'))).toMatchObject({ auth: 'Bearer pkce-token-1' });
 
   // A later launch with only the refresh token renews silently; an OAuth error is shown.
-  await page.evaluate(() => localStorage.removeItem('drive-token-v1'));
+  await page.evaluate(() => {
+    localStorage.removeItem('drive-token-v1');
+    const key = 'inhouse-notes-oauth-v1';
+    const session = JSON.parse(localStorage.getItem(key));
+    session.expiresAt = Date.now() - 1;
+    localStorage.setItem(key, JSON.stringify(session));
+  });
   await page.reload();
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   await expect.poll(() => calls.token.length).toBe(2);
@@ -227,8 +236,8 @@ test('app mode: PKCE through InhouseNative.openAuthUrl and handleInhouseNativeOA
   // Home's folder listing has answered (this stub refuses it: 5.18.0's `Unable to load this folder.` replaces the
   // status line), so the OAuth error is the line's last word.
   await expect(page.locator('#drive-status')).toHaveText(/^(Recents: |Unable to load this folder)/, { useInnerText: false });
-  expect(await page.evaluate(() => window.handleInhouseNativeOAuth('#error=access_denied'))).toBe(false);
-  await expect(page.locator('#drive-status')).toHaveText('Sign-in failed: access_denied', { useInnerText: false });
+  expect(await page.evaluate(() => window.handleInhouseNativeOAuth('#error=access_denied'))).toBe(true);
+  expect(calls.token).toHaveLength(2);
 });
 
 test('theme, profile menu, fullscreen and the loading overlay follow 5.18.0', async ({ page }) => {
@@ -519,12 +528,12 @@ test('executors: GIS, native bridges, files, clipboard, share, download, history
   await open(page);
 
   // GIS: init, request (answer as JSON), revoke.
-  expect((await result(page, (await fx(page, 0xa0, ['r'], ['s', 'client-x'], ['s', 'scope-x'])).req)).status).toBe(0);
-  let got = await result(page, (await fx(page, 0xa1, ['r'], ['b', 0], ['s', 'scope-x'], ['s', 'ana@example.com'])).req);
+  expect((await result(page, (await fx(page, 0xa0, ['r'])).req)).status).toBe(0);
+  let got = await result(page, (await fx(page, 0xa1, ['r'], ['b', 0])).req);
   expect(JSON.parse(got.text)).toMatchObject({ access_token: 'gis-token-1', expires_in: 3600 });
-  expect(await page.evaluate(() => window.__gis.requests.at(-1))).toEqual({ scope: 'scope-x', include_granted_scopes: true, prompt: 'none', login_hint: 'ana@example.com' });
-  await fx(page, 0xa2, ['s', 'gis-token-1']);
-  expect(await page.evaluate(() => window.__gis.revoked)).toEqual(['gis-token-1']);
+  expect(await page.evaluate(() => window.__gis.requests.at(-1))).toEqual({ prompt: 'none' });
+  await fx(page, 0xa2);
+  expect(await page.evaluate(() => window.__gis.revoked)).toEqual([]);
 
   // Native bridge: a call with its result, a missing method, a throwing one; base64 chunks of a PDF (cut and
   // encoded by Rust, export/user.rs; here by the test) through `appendPdfExportChunk`.

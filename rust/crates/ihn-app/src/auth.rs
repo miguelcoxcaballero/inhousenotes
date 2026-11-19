@@ -1,6 +1,4 @@
-//! Auth (ARCHITECTURE §2.3, §3.7): the Google token lifecycle of 5.18.0 — web sign-in through Google Identity
-//! Services, the Android PKCE flow with refresh tokens, scheduled refresh, the reconnect state, sign-out and the
-//! Drive profile. Storage keys and formats are 5.18.0's, so a signed-in 5.18.0 user stays signed in.
+//! Drive session state and UI. The shared Google OAuth host owns grants, requests and callbacks.
 //!
 //! [`ensure_token`] is 5.18.0's `ensureDriveToken`: it answers at once when it can, otherwise the waiter's module
 //! receives `Event::Io { req: waiter, status: 0, data: token }` or `status: -1, data: error message`.
@@ -12,14 +10,7 @@ use crate::shell::json::Json;
 use crate::shell::{self, fx, sig, Status, View};
 use crate::testapi::json_str;
 use crate::{App, Host, LsOp, Mod, Ui};
-use ihn_core::codec::b64_encode;
-
-// v5: app-v5.js § 4.2 constants
-pub const GOOGLE_CLIENT_ID: &str = "435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com";
-pub const ANDROID_OAUTH_CLIENT_ID: &str = "435784295430-9ta7t92s33r25bamvrnbmgt65iihqpfo.apps.googleusercontent.com";
-pub const ANDROID_PKCE_REDIRECT_URI: &str = "com.local.inhousenotes:/oauth2redirect";
 pub const DRIVE_SCOPE: &str = "https://www.googleapis.com/auth/drive";
-const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const TOKEN_KEY: &str = "drive-token-v1";
 const REMEMBER_KEY: &str = "drive-remember-v1";
 const REFRESH_TOKEN_KEY: &str = "drive-refresh-token-v1";
@@ -49,21 +40,11 @@ pub enum Token {
     Failed(String),
 }
 
-#[derive(Clone, Copy, PartialEq)]
-enum Kind {
-    /// `tokenClient.requestAccessToken` (web).
-    Gis,
-    /// Refresh-token POST (Android), through `requestDriveToken`.
-    Refresh,
-    /// The same POST made directly by `initDriveAuth`: a failure is only logged.
-    BootRefresh,
-}
-
 struct Request {
     req: u32,
     interactive: bool,
     generation: u32,
-    kind: Kind,
+    boot_restore: bool,
 }
 
 #[derive(Default)]
@@ -85,16 +66,12 @@ pub struct State {
     profile: Option<Profile>,
     profile_req: u32,
     local_library: bool,
-    pkce_digest: u32,
-    pkce_open: u32,
-    pkce_url: String,
-    exchange: u32,
+
 }
 
 const fn id(n: u32) -> u32 { tag(Mod::Auth, n) }
 const T_RETRY: u32 = id(1);
 const T_REFRESH: u32 = id(2);
-const T_TOKEN_TIMEOUT: u32 = id(3);
 const L_GIS_SCRIPT: u32 = id(4);
 /// Waiters of this module's own `ensure_token` calls.
 const W_SIGN_IN: u32 = id(10);
@@ -178,7 +155,8 @@ fn schedule_refresh(app: &mut App, host: &mut dyn Host) {
 
 /// Forgets the access token after a 401 so the next [`ensure_token`] fetches a new one.
 // v5: app-v5.js:driveFetch "Token expired server-side"
-pub fn drop_token(app: &mut App) {
+pub fn drop_token(app: &mut App, host: &mut dyn Host) {
+    fx::oauth_invalidate(host.out());
     app.st.auth.token = None;
     app.st.auth.expiry = 0.0;
 }
@@ -195,9 +173,9 @@ pub fn init_drive_auth(app: &mut App, host: &mut dyn Host) {
         update_ui(app, host);
         if has_token {
             shell::signal(app, host, sig::REFRESH, "");
-        } else if let Some(refresh) = ls(host, REFRESH_TOKEN_KEY) {
+        } else if app.st.auth.request.is_none() {
             app.st.auth.waiters.push((W_BOOT, false));
-            post_refresh(app, host, &refresh, false, Kind::BootRefresh);
+            begin_request(app, host, false, true);
         }
         return;
     }
@@ -208,7 +186,7 @@ pub fn init_drive_auth(app: &mut App, host: &mut dyn Host) {
     }
     let req = app.req(Mod::Auth);
     app.st.auth.gis_init = req;
-    fx::gis_init(host.out(), req, GOOGLE_CLIENT_ID, DRIVE_SCOPE);
+    fx::gis_init(host.out(), req);
 }
 
 // v5: app-v5.js:scheduleDriveAuthRetry — every 200 ms while the app starts, every 2 s after 30 s; the GIS script's
@@ -266,63 +244,18 @@ pub fn ensure_token(app: &mut App, host: &mut dyn Host, interactive: bool, waite
 
 // v5: app-v5.js:requestDriveToken
 fn request_token(app: &mut App, host: &mut dyn Host, interactive: bool) -> Result<(), String> {
-    // Android PKCE path: silently refresh using the stored refresh token, no popup ever.
-    if app.cfg.has(mode::APP) {
-        if let Some(refresh) = ls(host, REFRESH_TOKEN_KEY) {
-            post_refresh(app, host, &refresh, interactive, Kind::Refresh);
-            return Ok(());
-        }
-        if interactive {
-            start_pkce(app, host);
-        } else {
-            mark_needs_reconnect(app, host, "missing refresh token");
-        }
-        return Err("No refresh token; user must sign in".into());
-    }
-    if !app.st.auth.gis_ready {
+    if !app.cfg.has(mode::APP) && !app.st.auth.gis_ready {
         return Err("Drive auth not ready".into());
     }
-    let req = app.req(Mod::Auth);
-    app.st.auth.request = Some(Request { req, interactive, generation: app.st.auth.generation, kind: Kind::Gis });
-    app.sched.timer(host.out(), T_TOKEN_TIMEOUT, if interactive { 60000.0 } else { 9000.0 });
-    // A silent request passes a hint to select the account without showing the picker.
-    let hint = if interactive {
-        String::new()
-    } else {
-        app.st.auth.profile.as_ref().map(|p| p.email.clone()).filter(|e| !e.is_empty()).or_else(|| ls(host, HINT_KEY)).unwrap_or_default()
-    };
-    fx::gis_request(host.out(), req, interactive, DRIVE_SCOPE, &hint);
+    begin_request(app, host, interactive, false);
     Ok(())
 }
 
-fn post_token(host: &mut dyn Host, req: u32, body: &str) {
-    // v5: fetchWithDeadline(…, 20000) reading the whole text.
-    fx::fetch(host.out(), req, &fx::Fetch {
-        method: "POST",
-        url: TOKEN_URL,
-        headers: "Content-Type: application/x-www-form-urlencoded\n",
-        deadline_ms: 20000.0,
-        body: fx::Src::Bytes(body.as_bytes()),
-        ..Default::default()
-    });
-}
-
-// v5: app-v5.js:refreshDriveAccessTokenWithRefreshToken
-fn post_refresh(app: &mut App, host: &mut dyn Host, refresh: &str, interactive: bool, kind: Kind) {
+fn begin_request(app: &mut App, host: &mut dyn Host, interactive: bool, boot_restore: bool) {
     let req = app.req(Mod::Auth);
-    app.st.auth.request = Some(Request { req, interactive, generation: app.st.auth.generation, kind });
-    post_token(host, req, &fx::form(&[("client_id", ANDROID_OAUTH_CLIENT_ID), ("grant_type", "refresh_token"), ("refresh_token", refresh)]));
+    app.st.auth.request = Some(Request { req, interactive, generation: app.st.auth.generation, boot_restore });
+    fx::oauth_request(host.out(), req, interactive);
 }
-
-/// The message of a failed token POST. v5: runtime-core-v5.js:fetchWithDeadline
-fn fetch_error(io: &crate::Io) -> String {
-    match io.status {
-        fx::status::TIMEOUT | fx::status::BODY_TIMEOUT => "Network request timed out".into(),
-        _ => String::from_utf8_lossy(io.data).into_owned(),
-    }
-}
-
-fn first_500(text: &str) -> String { text.chars().take(500).collect() }
 
 // v5: app-v5.js:applyTokenResponse
 fn apply_token_response(app: &mut App, host: &mut dyn Host, data: &Json) -> Result<(), String> {
@@ -350,7 +283,7 @@ fn apply_token_response(app: &mut App, host: &mut dyn Host, data: &Json) -> Resu
         return Err("Drive access was not granted by Google.".into());
     }
     st.token = Some(access.into());
-    st.expiry = host.time() + expires_in.max(60.0) * 1000.0;
+    st.expiry = data.get("expiresAt").and_then(Json::as_f64).unwrap_or_else(|| host.time() + expires_in.max(60.0) * 1000.0);
     save_token(host, access, st.expiry, scopes);
     let refresh = data.text("refresh_token");
     if !refresh.is_empty() {
@@ -362,68 +295,14 @@ fn apply_token_response(app: &mut App, host: &mut dyn Host, data: &Json) -> Resu
     Ok(())
 }
 
-/// The token response of the web client. v5: app-v5.js:requestDriveToken `driveTokenClient.callback`
-fn gis_response(app: &mut App, host: &mut dyn Host, request: &Request, io: &crate::Io) -> Result<(), String> {
-    if request.generation != app.st.auth.generation || app.st.auth.signed_out {
-        return Err("Drive sign-in request was cancelled".into());
-    }
-    if io.status < 0 {
-        return Err(String::from_utf8_lossy(io.data).into_owned());
-    }
-    let response = std::str::from_utf8(io.data).ok().and_then(Json::parse).unwrap_or(Json::Null);
-    let error = response.text("error");
-    if !error.is_empty() {
-        if !request.interactive {
-            mark_needs_reconnect(app, host, error);
-        }
-        // 5.18.0 rejects with the response object itself: its text form says nothing about auth.
-        return Err("[object Object]".into());
-    }
-    let st = &mut app.st.auth;
-    st.needs_reconnect = false;
-    let scopes = match response.text("scope") {
-        "" => DRIVE_SCOPE,
-        s => s,
-    };
-    if !has_scope(scopes, DRIVE_SCOPE) {
-        st.token = None;
-        st.expiry = 0.0;
-        return Err("Drive access was not granted by Google.".into());
-    }
-    let access = response.text("access_token").to_string();
-    st.expiry = host.time() + response.get("expires_in").and_then(Json::as_f64).unwrap_or(0.0) * 1000.0;
-    st.token = Some(access.clone());
-    save_token(host, &access, st.expiry, scopes);
-    schedule_refresh(app, host);
-    update_ui(app, host);
-    Ok(())
-}
-
-/// The answer of a refresh-token POST. v5: app-v5.js:refreshDriveAccessTokenWithRefreshToken
-fn refresh_response(app: &mut App, host: &mut dyn Host, request: &Request, io: &crate::Io) -> Result<(), String> {
-    if io.status < 0 {
-        return Err(fetch_error(io));
-    }
-    let text = fx::Response::parse(io.data).text();
-    if !(200..300).contains(&io.status) {
-        if io.status == 400 || io.status == 401 {
-            // Refresh token revoked or invalid — drop it so the user signs in again.
-            host.ls(LsOp::Remove, REFRESH_TOKEN_KEY, None);
-        }
-        return Err(format!("Refresh failed: {} {}", io.status, first_500(text)));
-    }
-    let Some(data @ Json::Obj(_)) = Json::parse(text) else {
-        return Err("Token refresh returned an invalid response".into());
-    };
-    if request.generation != app.st.auth.generation || app.st.auth.signed_out {
-        return Err("Drive sign-in request was cancelled".into());
-    }
+fn receive_session(app: &mut App, host: &mut dyn Host, bytes: &[u8]) -> Result<(), String> {
+    let data = std::str::from_utf8(bytes).ok().and_then(Json::parse).ok_or("Invalid Google session")?;
+    if !data.text("error").is_empty() { return Err(data.text("error").into()); }
     apply_token_response(app, host, &data)
 }
 
 /// Settles the running token request and everyone waiting for it.
 fn finish(app: &mut App, host: &mut dyn Host, request: Request, result: Result<(), String>) {
-    app.sched.clear(host.out(), T_TOKEN_TIMEOUT);
     let waiters = std::mem::take(&mut app.st.auth.waiters);
     let token = app.st.auth.token.clone().unwrap_or_default();
     for (waiter, interactive) in waiters {
@@ -472,89 +351,13 @@ pub fn sign_in(app: &mut App, host: &mut dyn Host) {
     app.st.auth.signed_out = false;
     app.st.auth.needs_reconnect = false;
     if app.cfg.has(mode::APP) {
-        return start_pkce(app, host);
+        host.ls(LsOp::Set, REMEMBER_KEY, Some("1"));
     }
     match ensure_token(app, host, true, W_SIGN_IN) {
         Token::Ready(token) => settle(app, host, W_SIGN_IN, Ok(&token)),
         Token::Failed(message) => settle(app, host, W_SIGN_IN, Err(&message)),
         Token::Pending => {}
     }
-}
-
-// v5: app-v5.js:startAndroidPkceSignIn — the challenge is the SHA-256 of the verifier (crypto effect).
-fn start_pkce(app: &mut App, host: &mut dyn Host) {
-    host.ls(LsOp::Set, REMEMBER_KEY, Some("1"));
-    let mut bytes = [0u8; 32];
-    host.random(&mut bytes);
-    let verifier = b64_encode(&bytes, true);
-    host.ls(LsOp::Set, PKCE_VERIFIER_KEY, Some(&verifier));
-    let req = app.req(Mod::Auth);
-    app.st.auth.pkce_digest = req;
-    fx::digest(host.out(), req, fx::Src::Bytes(verifier.as_bytes()));
-}
-
-fn pkce_url(host: &mut dyn Host, challenge: &str) -> String {
-    let mut pairs = vec![
-        ("client_id", ANDROID_OAUTH_CLIENT_ID.to_string()),
-        ("redirect_uri", ANDROID_PKCE_REDIRECT_URI.into()),
-        ("response_type", "code".into()),
-        ("scope", DRIVE_SCOPE.into()),
-        ("access_type", "offline".into()),
-        ("include_granted_scopes", "true".into()),
-        ("code_challenge", challenge.into()),
-        ("code_challenge_method", "S256".into()),
-        ("state", "inhouse_notes_pkce".into()),
-    ];
-    if let Some(hint) = ls(host, HINT_KEY) {
-        pairs.push(("login_hint", hint));
-    }
-    if host.ls(LsOp::Get, CONSENT_KEY, None).as_deref() != Some("1") {
-        pairs.push(("prompt", "consent".into()));
-    }
-    let pairs: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
-    format!("https://accounts.google.com/o/oauth2/v2/auth?{}", fx::form(&pairs))
-}
-
-/// `window.handleInhouseNativeOAuth(payload)`: the redirect of the Android Custom Tab.
-// v5: app-v5.js:handleInhouseNativeOAuth / exchangeAuthCodeForTokens
-fn native_oauth(app: &mut App, host: &mut dyn Host, raw: &str) {
-    match fx::query_param(raw, "code").filter(|c| !c.is_empty()) {
-        Some(code) if app.cfg.has(mode::APP) => {
-            let Some(verifier) = ls(host, PKCE_VERIFIER_KEY) else {
-                host.log(3, "Auth code exchange failed: Missing PKCE verifier");
-                return shell::home_status(host, "Sign-in failed. Try again.");
-            };
-            let req = app.req(Mod::Auth);
-            app.st.auth.exchange = req;
-            post_token(host, req, &fx::form(&[
-                ("client_id", ANDROID_OAUTH_CLIENT_ID),
-                ("code", &code),
-                ("code_verifier", &verifier),
-                ("grant_type", "authorization_code"),
-                ("redirect_uri", ANDROID_PKCE_REDIRECT_URI),
-            ]));
-        }
-        _ => {
-            if let Some(error) = fx::query_param(raw, "error").filter(|e| !e.is_empty()) {
-                shell::home_status(host, &format!("Sign-in failed: {error}"));
-            }
-        }
-    }
-}
-
-fn exchange_response(app: &mut App, host: &mut dyn Host, io: &crate::Io) -> Result<(), String> {
-    if io.status < 0 {
-        return Err(fetch_error(io));
-    }
-    let text = fx::Response::parse(io.data).text();
-    if !(200..300).contains(&io.status) {
-        return Err(format!("Token exchange failed: {} {}", io.status, first_500(text)));
-    }
-    let Some(data @ Json::Obj(_)) = Json::parse(text) else {
-        return Err("Token exchange returned an invalid response".into());
-    };
-    host.ls(LsOp::Remove, PKCE_VERIFIER_KEY, None);
-    apply_token_response(app, host, &data)
 }
 
 // ---- reconnect and sign-out -------------------------------------------------------------------------------------
@@ -566,6 +369,7 @@ pub fn mark_needs_reconnect(app: &mut App, host: &mut dyn Host, reason: &str) {
     if st.signed_out {
         return;
     }
+    fx::oauth_invalidate(host.out());
     st.needs_reconnect = true;
     st.token = None;
     st.expiry = 0.0;
@@ -591,19 +395,13 @@ pub fn sign_out(app: &mut App, host: &mut dyn Host) {
     st.generation += 1;
     // In-flight token requests are cancelled: their answers fail the generation check.
     let waiters = std::mem::take(&mut st.waiters);
-    if let Some(request) = st.request.take() {
-        if request.kind != Kind::Gis {
-            fx::fetch_abort(host.out(), request.req);
-        }
-        app.sched.clear(host.out(), T_TOKEN_TIMEOUT);
-    }
+    st.request = None;
+    fx::oauth_sign_out(host.out());
     for (waiter, _) in waiters {
         settle(app, host, waiter, Err("Drive sign-in request was cancelled"));
     }
     let st = &mut app.st.auth;
-    if let Some(token) = st.token.take() {
-        fx::gis_revoke(host.out(), &token);
-    }
+    st.token = None;
     st.expiry = 0.0;
     st.profile = None;
     st.listing_started = false;
@@ -760,16 +558,6 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
         Event::Timer(T_REFRESH) => {
             let _ = ensure_token(app, host, false, W_IGNORE);
         }
-        Event::Timer(T_TOKEN_TIMEOUT) => {
-            if let Some(request) = app.st.auth.request.take() {
-                let cancelled = request.generation != app.st.auth.generation || app.st.auth.signed_out;
-                let message = if cancelled { "Drive sign-in request was cancelled" } else { "Silent token refresh timed out" };
-                if !cancelled && !request.interactive {
-                    mark_needs_reconnect(app, host, message);
-                }
-                finish(app, host, request, Err(message.into()));
-            }
-        }
         Event::Io(io) => {
             let st = &mut app.st.auth;
             if io.req == st.gis_init {
@@ -791,52 +579,31 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
                 }
             } else if st.request.as_ref().is_some_and(|r| r.req == io.req) {
                 let Some(request) = st.request.take() else { return 0 };
-                let result = match request.kind {
-                    Kind::Gis => gis_response(app, host, &request, &io),
-                    Kind::Refresh | Kind::BootRefresh => refresh_response(app, host, &request, &io),
+                let result = if request.generation != st.generation || st.signed_out {
+                    Err("Drive sign-in request was cancelled".into())
+                } else if io.status < 0 {
+                    Err(String::from_utf8_lossy(io.data).into_owned())
+                } else {
+                    receive_session(app, host, io.data)
                 };
-                if let (Err(message), Kind::Refresh, false) = (&result, request.kind, request.interactive) {
-                    mark_needs_reconnect(app, host, message);
+                if let Err(message) = &result {
+                    if !request.interactive && !request.boot_restore { mark_needs_reconnect(app, host, message); }
                 }
                 finish(app, host, request, result);
-            } else if io.req == st.pkce_digest {
-                st.pkce_digest = 0;
-                let url = pkce_url(host, &b64_encode(io.data, true));
-                let req = app.req(Mod::Auth);
-                app.st.auth.pkce_open = req;
-                fx::native_call(host.out(), req, "openAuthUrl", &[&url]);
-                app.st.auth.pkce_url = url;
-            } else if io.req == st.pkce_open {
-                st.pkce_open = 0;
-                let url = std::mem::take(&mut st.pkce_url);
-                match io.status {
-                    0 => shell::home_status(host, "Complete sign-in in the Google window."),
-                    fx::status::FAILED => {
-                        host.log(2, "PKCE sign-in: Android bridge unavailable, falling back to web flow.");
-                        fx::navigate(host.out(), fx::Nav::Assign, &url);
-                    }
-                    _ => {
-                        host.log(3, &format!("PKCE sign-in failed: {}", String::from_utf8_lossy(io.data)));
-                        shell::home_status(host, "Sign-in failed. Try again.");
-                    }
-                }
-            } else if io.req == st.exchange {
-                st.exchange = 0;
-                match exchange_response(app, host, &io) {
-                    Ok(()) => {
-                        shell::signal(app, host, sig::REFRESH, "");
-                    }
-                    Err(message) => {
-                        host.log(3, &format!("Auth code exchange failed: {message}"));
-                        shell::home_status(host, "Sign-in failed. Try again.");
-                    }
-                }
             } else if io.req == st.profile_req {
                 st.profile_req = 0;
                 profile_response(app, host, &io);
             }
         }
-        Event::Msg(m) if m.chan == chan::OAUTH => native_oauth(app, host, &String::from_utf8_lossy(m.data)),
+        Event::Msg(m) if m.chan == chan::OAUTH => {
+            // A valid Android redirect can arrive after the WebView process was recreated.
+            if !app.st.auth.signed_out {
+                match receive_session(app, host, m.data) {
+                    Ok(()) => { shell::signal(app, host, sig::REFRESH, ""); }
+                    Err(_) => shell::home_status(host, "Sign-in failed. Try again."),
+                }
+            }
+        }
         _ => {}
     }
     0
@@ -863,7 +630,7 @@ pub fn test_cmd(app: &mut App, host: &mut dyn Host, name: &str, args: &str) -> O
             "true".into()
         }
         "expire" => {
-            drop_token(app);
+            drop_token(app, host);
             "true".into()
         }
         _ => return None,
@@ -897,13 +664,13 @@ mod tests {
         signals(&mut app);
         sign_in(&mut app, &mut host);
         let text = out(&mut host);
-        let req = req_of(&text, "gis_request");
-        assert_eq!(text, format!("timer_set {T_TOKEN_TIMEOUT} 60000 0\ngis_request {req} 1 \"{DRIVE_SCOPE}\" \"\"\n"));
+        let req = req_of(&text, "oauth_request");
+        assert_eq!(text, format!("oauth_request {req} 1\n"));
         io(&mut app, &mut host, req, 0, TOKEN_JSON.as_bytes());
         let expiry = host.time + 3_600_000.0;
         assert_eq!(host.local[TOKEN_KEY], format!("{{\"token\":\"tok-1\",\"expiry\":{expiry},\"grantedScopes\":\"{DRIVE_SCOPE}\"}}"));
         assert_eq!(host.local[REMEMBER_KEY], "1");
-        assert!(!host.local.contains_key(CONSENT_KEY), "the web flow does not record consent");
+        assert_eq!(host.local[CONSENT_KEY], "1");
         assert_eq!((token(&app), shell::view(&app)), (Some("tok-1"), View::Home));
         let text = out(&mut host);
         assert!(text.starts_with(&format!("timer_clear {T_REFRESH}\ntimer_set {T_REFRESH} 3300000 0\n")), "{text}");
@@ -928,7 +695,7 @@ mod tests {
         assert_eq!(ensure_token(&mut app, &mut host, false, W_IGNORE), Token::Ready("tok-1".into()));
         host.advance(3_600_000.0 - 60_000.0);
         assert_eq!(ensure_token(&mut app, &mut host, false, W_IGNORE), Token::Pending);
-        assert!(out(&mut host).ends_with(&format!("1 0 \"{DRIVE_SCOPE}\" \"Ana@Example.com\"\n").replace("1 0 ", " 0 ")));
+        assert!(line_of(&out(&mut host), "oauth_request").ends_with(" 0"));
     }
 
     #[test]
@@ -940,7 +707,7 @@ mod tests {
         });
         let boot_text = gis_ready(&mut app, &mut host);
         assert!(boot_text.contains(&format!("text {} \"Ana\"", Ui::DRIVE_PROFILE_NAME.0)), "the cached profile shows before Drive answers");
-        assert!(boot_text.contains(&format!("timer_set {T_REFRESH} 3300000 0")) && !boot_text.contains("gis_request"));
+        assert!(boot_text.contains(&format!("timer_set {T_REFRESH} 3300000 0")) && !boot_text.contains("oauth_request"));
         assert!(signals(&mut app).contains(&(sig::REFRESH, String::new())));
         assert_eq!(shell::view(&app), View::Home);
 
@@ -950,8 +717,8 @@ mod tests {
         // 401: the token is dropped and the request retried once with a fresh one.
         io(&mut app, &mut host, req_of(&text, "fetch"), 401, &response("", "expired"));
         let text = out(&mut host);
-        let gis = req_of(&text, "gis_request");
-        assert!(text.contains(&format!("gis_request {gis} 0 \"{DRIVE_SCOPE}\" \"Ana@example.com\"")) && text.contains(&format!("timer_set {T_TOKEN_TIMEOUT} 9000 0")));
+        let gis = req_of(&text, "oauth_request");
+        assert!(text.contains(&format!("oauth_request {gis} 0\n")));
         io(&mut app, &mut host, gis, 0, TOKEN_JSON.as_bytes());
         let text = out(&mut host);
         assert!(line_of(&text, "fetch").contains("files/x\" \"Authorization: Bearer tok-1\\n\""), "{text}");
@@ -974,15 +741,15 @@ mod tests {
             h.local.insert(REMEMBER_KEY.into(), "1".into());
         });
         let text = gis_ready(&mut app, &mut host);
-        let silent = req_of(&text, "gis_request");
-        assert!(text.contains(&format!("gis_request {silent} 0 ")));
+        let silent = req_of(&text, "oauth_request");
+        assert!(text.contains(&format!("oauth_request {silent} 0\n")));
         // The user taps "Sign in" while the silent request runs: no second request yet.
         sign_in(&mut app, &mut host);
         assert_eq!(out(&mut host), "");
-        timer(&mut app, &mut host, T_TOKEN_TIMEOUT);
+        io(&mut app, &mut host, silent, -2, b"Google sign-in timed out");
         let text = out(&mut host);
-        let interactive = req_of(&text, "gis_request");
-        assert!(interactive != silent && text.contains(&format!("gis_request {interactive} 1 ")) && text.contains(&format!("timer_set {T_TOKEN_TIMEOUT} 60000 0")));
+        let interactive = req_of(&text, "oauth_request");
+        assert!(interactive != silent && text.contains(&format!("oauth_request {interactive} 1")));
         assert!(!reconnecting(&app), "an interactive request clears the reconnect state");
         // The late answer of the silent request is ignored.
         io(&mut app, &mut host, silent, 0, TOKEN_JSON.as_bytes());
@@ -992,7 +759,7 @@ mod tests {
         assert!(out(&mut host).ends_with(&format!("text {} \"Sign-in failed. Try again.\"\n", Ui::DRIVE_STATUS.0)));
         // A token without the Drive scope is refused.
         sign_in(&mut app, &mut host);
-        let req = req_of(&out(&mut host), "gis_request");
+        let req = req_of(&out(&mut host), "oauth_request");
         io(&mut app, &mut host, req, 0, br#"{"access_token":"t","expires_in":3600,"scope":"openid"}"#);
         assert!(token(&app).is_none() && !host.local.contains_key(TOKEN_KEY));
     }
@@ -1008,7 +775,7 @@ mod tests {
         assert_eq!(out(&mut host), "");
         host.advance(245_000.0);
         timer(&mut app, &mut host, T_REFRESH);
-        let req = req_of(&out(&mut host), "gis_request");
+        let req = req_of(&out(&mut host), "oauth_request");
         io(&mut app, &mut host, req, 0, br#"{"error":"interaction_required"}"#);
         assert!(reconnecting(&app) && !host.local.contains_key(TOKEN_KEY));
         // Without a token a Drive request fails with the auth error and no network call.
@@ -1028,7 +795,7 @@ mod tests {
         });
         let text = gis_ready(&mut app, &mut host);
         assert!(!host.local.contains_key(TOKEN_KEY));
-        let silent = req_of(&text, "gis_request");
+        let silent = req_of(&text, "oauth_request");
         client::request(&mut app, &mut host, Mod::Shell, client::Req::get("https://www.googleapis.com/drive/v3/files"));
         out(&mut host);
         signals(&mut app);
@@ -1052,88 +819,25 @@ mod tests {
         io(&mut app, &mut host, silent, 0, TOKEN_JSON.as_bytes());
         assert!(token(&app).is_none());
         assert_eq!(ensure_token(&mut app, &mut host, false, W_IGNORE), Token::Failed("Signed out".into()));
-        // With a token in memory Google is asked to revoke it.
+        // Local logout always clears this installation’s shared session.
         sign_in(&mut app, &mut host);
-        let req = req_of(&out(&mut host), "gis_request");
+        let req = req_of(&out(&mut host), "oauth_request");
         io(&mut app, &mut host, req, 0, TOKEN_JSON.as_bytes());
         out(&mut host);
         sign_out(&mut app, &mut host);
-        assert!(out(&mut host).contains("gis_revoke \"tok-1\"\n"));
+        assert!(out(&mut host).contains("oauth_sign_out\n"));
     }
 
     #[test]
-    fn android_pkce_sign_in_exchange_and_refresh() {
-        let (mut app, mut host) = boot(mode::APP, |h| {
-            h.local.insert(HINT_KEY.into(), "ana@example.com".into());
-        });
-        let text = out(&mut host);
-        assert!(!text.contains("gis_init"), "GIS is never initialised in the APK");
-        assert!(text.contains(&format!("style {} \"display\" \"inline-flex\"", Ui::BTN_DRIVE_LOGIN.0)));
-        sign_in(&mut app, &mut host);
-        let verifier = host.local[PKCE_VERIFIER_KEY].clone();
-        assert_eq!((verifier.len(), host.local[REMEMBER_KEY].as_str()), (43, "1"));
-        let text = out(&mut host);
-        assert_eq!(text, format!("digest {} {verifier:?}\n", req_of(&text, "digest")));
-        io(&mut app, &mut host, req_of(&text, "digest"), 0, &[0xfb; 32]);
-        let text = out(&mut host);
-        let open = req_of(&text, "native_call");
-        let url = "https://accounts.google.com/o/oauth2/v2/auth?client_id=435784295430-9ta7t92s33r25bamvrnbmgt65iihqpfo.apps.googleusercontent.com&redirect_uri=com.local.inhousenotes%3A%2Foauth2redirect&response_type=code&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive&access_type=offline&include_granted_scopes=true&code_challenge=-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_s&code_challenge_method=S256&state=inhouse_notes_pkce&login_hint=ana%40example.com&prompt=consent";
-        assert_eq!(text, format!("native_call {open} \"openAuthUrl\" [{url:?}]\n"));
-        io(&mut app, &mut host, open, 0, b"");
-        assert_eq!(out(&mut host), format!("text {} \"Complete sign-in in the Google window.\"\n", Ui::DRIVE_STATUS.0));
-
-        // Android hands the redirect back: the code is exchanged without a client secret.
-        msg(&mut app, &mut host, chan::OAUTH, "state=inhouse_notes_pkce&code=4%2F0Ab_c&scope=x");
-        let text = out(&mut host);
-        let exchange = req_of(&text, "fetch");
-        assert_eq!(
-            text,
-            format!("fetch {exchange} \"POST\" \"https://oauth2.googleapis.com/token\" \"Content-Type: application/x-www-form-urlencoded\\n\" 0 20000 0 \"client_id={ANDROID_OAUTH_CLIENT_ID}&code=4%2F0Ab_c&code_verifier={verifier}&grant_type=authorization_code&redirect_uri=com.local.inhousenotes%3A%2Foauth2redirect\"\n")
-        );
-        signals(&mut app);
-        io(&mut app, &mut host, exchange, 200, &response("", &format!(r#"{{"access_token":"at-1","expires_in":"3599","refresh_token":"rt-1","scope":"{DRIVE_SCOPE}"}}"#)));
-        assert_eq!((host.local[REFRESH_TOKEN_KEY].as_str(), host.local[CONSENT_KEY].as_str()), ("rt-1", "1"));
-        assert!(!host.local.contains_key(PKCE_VERIFIER_KEY) && token(&app) == Some("at-1"));
-        assert_eq!(app.st.auth.expiry, host.time + 3_599_000.0);
-        assert_eq!(signals(&mut app).last(), Some(&(sig::REFRESH, String::new())));
-        out(&mut host);
-
-        // Later the access token is renewed with the refresh token, silently.
-        host.advance(3_599_000.0);
-        assert_eq!(ensure_token(&mut app, &mut host, false, tag(Mod::Shell, 77)), Token::Pending);
-        let text = out(&mut host);
-        let refresh = req_of(&text, "fetch");
-        assert!(text.ends_with(&format!("\"client_id={ANDROID_OAUTH_CLIENT_ID}&grant_type=refresh_token&refresh_token=rt-1\"\n")), "{text}");
-        io(&mut app, &mut host, refresh, 200, &response("", r#"{"access_token":"at-2","expires_in":3600}"#));
-        assert_eq!(token(&app), Some("at-2"));
-        assert_eq!(results(&mut app), [(0, "at-2".to_string())]);
-        // Google revoked the refresh token: it is dropped and Drive pauses until the user signs in.
-        host.advance(3_600_000.0);
-        assert_eq!(ensure_token(&mut app, &mut host, false, tag(Mod::Shell, 78)), Token::Pending);
-        let refresh = req_of(&out(&mut host), "fetch");
-        io(&mut app, &mut host, refresh, 400, &response("", r#"{"error":"invalid_grant"}"#));
-        assert_eq!(results(&mut app), [(-1, "Refresh failed: 400 {\"error\":\"invalid_grant\"}".to_string())]);
-        assert!(!host.local.contains_key(REFRESH_TOKEN_KEY) && reconnecting(&app));
-        // Without a refresh token a silent request fails at once; an interactive one starts PKCE again.
-        assert_eq!(ensure_token(&mut app, &mut host, false, W_IGNORE), Token::Failed("No refresh token; user must sign in".into()));
-        out(&mut host);
-        assert_eq!(ensure_token(&mut app, &mut host, true, W_IGNORE), Token::Failed("No refresh token; user must sign in".into()));
-        let text = out(&mut host);
-        io(&mut app, &mut host, req_of(&text, "digest"), 0, &[0; 32]);
-        let text = out(&mut host);
-        assert!(!text.contains("prompt=consent"), "consent was granted before");
-        // No Android bridge (a browser pretending to be the app): fall back to a navigation.
-        io(&mut app, &mut host, req_of(&text, "native_call"), -1, b"");
-        assert!(out(&mut host).starts_with("navigate 3 \"https://accounts.google.com/o/oauth2/v2/auth?client_id="));
-        assert_eq!(host.logs.last().map(|l| l.1.as_str()), Some("PKCE sign-in: Android bridge unavailable, falling back to web flow."));
-        // Errors of the redirect and of the exchange reach the status line.
-        msg(&mut app, &mut host, chan::OAUTH, "error=access_denied");
-        assert_eq!(out(&mut host), format!("text {} \"Sign-in failed: access_denied\"\n", Ui::DRIVE_STATUS.0));
-        msg(&mut app, &mut host, chan::OAUTH, "code=zz");
-        let exchange = req_of(&out(&mut host), "fetch");
-        io(&mut app, &mut host, exchange, -2, b"");
-        assert_eq!(out(&mut host), format!("text {} \"Sign-in failed. Try again.\"\n", Ui::DRIVE_STATUS.0));
-        assert_eq!(host.logs.last().map(|l| l.1.as_str()), Some("Auth code exchange failed: Network request timed out"));
+    fn android_discovers_a_session_without_a_local_refresh_token() {
+        let (mut app, mut host) = boot(mode::APP, |_| {});
+        let restore = req_of(&out(&mut host), "oauth_request");
+        io(&mut app, &mut host, restore, 0, TOKEN_JSON.as_bytes());
+        assert_eq!(token(&app), Some("tok-1"));
+        assert!(signals(&mut app).contains(&(sig::REFRESH, String::new())));
+        sign_out(&mut app, &mut host);
+        msg(&mut app, &mut host, chan::OAUTH, TOKEN_JSON);
+        assert!(token(&app).is_none());
     }
 
     #[test]
@@ -1142,8 +846,8 @@ mod tests {
             h.local.insert(REFRESH_TOKEN_KEY.into(), "rt-9".into());
         });
         let text = out(&mut host);
-        let refresh = req_of(&text, "fetch");
-        assert!(line_of(&text, "fetch").contains("refresh_token=rt-9"));
+        let refresh = req_of(&text, "oauth_request");
+        assert!(line_of(&text, "oauth_request").ends_with(" 0"));
         io(&mut app, &mut host, refresh, -1, b"Failed to fetch");
         assert!(!reconnecting(&app) && shell::view(&app) == View::Home);
         assert_eq!(host.logs.last().map(|l| l.1.as_str()), Some("Silent token refresh failed: Failed to fetch"));

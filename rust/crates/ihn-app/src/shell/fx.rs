@@ -29,8 +29,9 @@ pub mod op {
     pub const DIGEST: u8 = 0x78;
     pub const DEFLATE: u8 = 0x90;
     pub const GIS_INIT: u8 = 0xa0;
-    pub const GIS_REQUEST: u8 = 0xa1;
-    pub const GIS_REVOKE: u8 = 0xa2;
+    pub const OAUTH_REQUEST: u8 = 0xa1;
+    pub const OAUTH_SIGN_OUT: u8 = 0xa2;
+    pub const OAUTH_INVALIDATE: u8 = 0xa3;
     pub const NATIVE_CALL: u8 = 0xa4;
     pub const UPDATER_CREATE: u8 = 0xa8;
     pub const UPDATER_SETTINGS: u8 = 0xa9;
@@ -274,26 +275,16 @@ pub fn deflate(out: &mut OutBuf, req: u32, flags: u8, src: Src) {
     out.w.end(m);
 }
 
-/// `google.accounts.oauth2.initTokenClient` → 0, or -1 while the GIS script has not loaded.
-pub fn gis_init(out: &mut OutBuf, req: u32, client_id: &str, scope: &str) {
-    let m = rec(out, op::GIS_INIT, req);
-    out.w.str(client_id);
-    out.w.str(scope);
-    out.w.end(m);
-}
-/// `tokenClient.requestAccessToken` → 0 and the token response as JSON.
-pub fn gis_request(out: &mut OutBuf, req: u32, interactive: bool, scope: &str, login_hint: &str) {
-    let m = rec(out, op::GIS_REQUEST, req);
+/// Whether the GIS script is ready for web sign-in.
+pub fn gis_init(out: &mut OutBuf, req: u32) { out.fx_id(op::GIS_INIT, req); }
+/// Ask the shared OAuth client for a session, including Android account discovery.
+pub fn oauth_request(out: &mut OutBuf, req: u32, interactive: bool) {
+    let m = rec(out, op::OAUTH_REQUEST, req);
     out.w.u8(interactive as u8);
-    out.w.str(scope);
-    out.w.str(login_hint);
     out.w.end(m);
 }
-pub fn gis_revoke(out: &mut OutBuf, token: &str) {
-    let m = out.w.rec(fam::FX, op::GIS_REVOKE);
-    out.w.str(token);
-    out.w.end(m);
-}
+pub fn oauth_sign_out(out: &mut OutBuf) { out.fx0(op::OAUTH_SIGN_OUT); }
+pub fn oauth_invalidate(out: &mut OutBuf) { out.fx0(op::OAUTH_INVALIDATE); }
 /// `InhouseNative[method](...args)` → 0 and `String(result)`; -1 when the bridge has no such method. `req` 0:
 /// no answer. Covers `openAuthUrl`, `getPdfExportApiVersion`, `beginPdfExport`, `finishPdfExport`, `savePdf`.
 pub fn native_call(out: &mut OutBuf, req: u32, method: &str, args: &[&str]) {
@@ -526,9 +517,10 @@ pub fn dump(bytes: &[u8]) -> String {
     const LAYOUT: &[(u8, &str, &str)] = &[
         (op::FETCH, "fetch", "usssuffS"),
         (op::FETCH_ABORT, "fetch_abort", "u"),
-        (op::GIS_INIT, "gis_init", "uss"),
-        (op::GIS_REQUEST, "gis_request", "ubss"),
-        (op::GIS_REVOKE, "gis_revoke", "s"),
+        (op::GIS_INIT, "gis_init", "u"),
+        (op::OAUTH_REQUEST, "oauth_request", "ub"),
+        (op::OAUTH_SIGN_OUT, "oauth_sign_out", ""),
+        (op::OAUTH_INVALIDATE, "oauth_invalidate", ""),
         (op::NATIVE_CALL, "native_call", "usA"),
         (op::UPDATER_CREATE, "updater_create", "u"),
         (op::UPDATER_SETTINGS, "updater_settings", ""),

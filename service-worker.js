@@ -3,9 +3,8 @@
 // 5.x page registered, and keeps the VERSION line that boot.js reads to detect a published release.
 const VERSION='6.0.0';
 const CACHE=`inhouse-shell-${VERSION}`;
-// Kept until 6.0.1 for 5.18.0 tabs that are still open (ARCHITECTURE §10.4).
-const LEGACY_VERSION='5.18.0';
-const LEGACY_CACHE=`inhouse-shell-${LEGACY_VERSION}`;
+// Kept until 6.0.1 for 5.x tabs that are still open (ARCHITECTURE §10.4).
+const legacyCaches=new Map(['5.18.0','5.19.0'].map(version=>[version,`inhouse-shell-${version}`]));
 // One entry per window that announced itself as v6; survives worker restarts.
 const CLIENTS='ihn6-clients';
 importScripts('offline-assets.js');
@@ -20,7 +19,7 @@ self.addEventListener('install',event=>event.waitUntil((async()=>{
     await self.skipWaiting();
 })()));
 self.addEventListener('activate',event=>event.waitUntil((async()=>{
-    for(const key of await caches.keys())if(key.startsWith('inhouse-shell-')&&key!==CACHE&&key!==LEGACY_CACHE)await caches.delete(key);
+    for(const key of await caches.keys())if(key.startsWith('inhouse-shell-')&&key!==CACHE&&![...legacyCaches.values()].includes(key))await caches.delete(key);
     await self.clients.claim();
 })()));
 self.addEventListener('fetch',event=>{
@@ -30,9 +29,9 @@ self.addEventListener('fetch',event=>{
     if(url.pathname.startsWith('/oauth-callback'))return;
     const path=url.pathname==='/'?'/index.html':url.pathname;
     const requestedVersion=url.searchParams.get('v');
-    if(requestedVersion===LEGACY_VERSION) {
-        // A 5.18.0 page that has not reloaded yet: its own shell first, then the network.
-        event.respondWith((async()=>(await caches.match(path,{cacheName:LEGACY_CACHE}))||fetch(event.request))());
+    if(legacyCaches.has(requestedVersion)) {
+        // A 5.x page that has not reloaded yet: its own shell first, then the network.
+        event.respondWith((async()=>(await caches.match(path,{cacheName:legacyCaches.get(requestedVersion)}))||fetch(event.request))());
         return;
     }
     if(!self.INHOUSE_OFFLINE_ASSETS.includes(path))return;

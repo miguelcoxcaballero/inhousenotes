@@ -3,7 +3,7 @@ name: Production checks
 # Inhouse Notes 6 (docs/v6/ARCHITECTURE.md §14.2):
 #   checks  — every pull request and every push to v6 or main: cargo tests, a reproducible build from two paths,
 #             browser smoke tests and the quick pixel-parity run.
-#   full    — nightly on v6 and on the release pull request to main: the full parity matrix against 5.18.0 and
+#   full    — nightly on v6 and on the release pull request to main: the full parity matrix against 5.19.0 and
 #             the performance report.
 #   release — the release pull request to main only: the committed generated files equal a clean rebuild.
 on:
@@ -23,7 +23,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  V5_COMMIT: 1d6e8a0 # 5.18.0, the parity reference
+  V5_COMMIT: 35d0f22 # 5.19.0, the parity reference
 
 jobs:
   checks:
@@ -34,7 +34,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # 14b-sw-upgrade and the parity harness serve 5.18.0 from history
+          fetch-depth: 0 # 14b-sw-upgrade and the parity harness serve 5.19.0 from history
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -84,11 +84,11 @@ jobs:
       - name: Run browser smoke tests
         run: npm run test:e2e
 
-      - name: Run quick pixel parity against 5.18.0
+      - name: Run quick pixel parity against 5.19.0
         run: |
-          # A = the 5.18.0 tree served next to this one (B = this checkout with build/ over it).
-          git worktree add --detach "$RUNNER_TEMP/ihn-5.18.0" "$V5_COMMIT"
-          npm run test:parity -- --quick --a-root "$RUNNER_TEMP/ihn-5.18.0"
+          # A = the 5.19.0 tree served next to this one (B = this checkout with build/ over it).
+          git worktree add --detach "$RUNNER_TEMP/ihn-5.19.0" "$V5_COMMIT"
+          npm run test:parity -- --quick --a-root "$RUNNER_TEMP/ihn-5.19.0"
 
       - name: Upload reports on failure
         if: failure()
@@ -102,6 +102,8 @@ jobs:
           if-no-files-found: ignore
 
   full:
+    outputs:
+      states: ${{ steps.states.outputs.names }}
     if: >-
       github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
       || (github.event_name == 'pull_request' && github.base_ref == 'main')
@@ -132,16 +134,23 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Run the full parity matrix against 5.18.0
+      - name: Prepare full matrix
+        id: states
         run: |
-          git worktree add --detach "$RUNNER_TEMP/ihn-5.18.0" "$V5_COMMIT"
-          npm run test:parity -- --a-root "$RUNNER_TEMP/ihn-5.18.0"
+          git worktree add --detach "$RUNNER_TEMP/ihn-5.19.0" "$V5_COMMIT"
+          node -e 'console.log("names=" + JSON.stringify(require("node:fs").readdirSync("tests/v6/parity/states").filter(x => x.endsWith(".mjs")).sort()))' >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: parity-build
+          path: build/
+          retention-days: 1
 
       - name: Run the performance check
         run: |
           # Same phases, document and Drive mock for both apps (TESTING §6); report only.
           mkdir -p test-results/perf
-          npm run perf -- --app v5 --root "$RUNNER_TEMP/ihn-5.18.0" --short --out test-results/perf/v5.json
+          npm run perf -- --app v5 --root "$RUNNER_TEMP/ihn-5.19.0" --short --out test-results/perf/v5.json
           npm run perf -- --app v6 --overlay build --short --out test-results/perf/v6.json
 
       - name: Upload parity and performance reports
@@ -153,6 +162,45 @@ jobs:
             test-results/parity-report
             test-results/perf
           if-no-files-found: ignore
+
+  parity:
+    needs: full
+    if: ${{ !cancelled() && needs.full.outputs.states != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        state: ${{ fromJSON(needs.full.outputs.states) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      NODE_OPTIONS: --max-old-space-size=6000
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'v6' || github.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: parity-build
+          path: build
+      - run: npx playwright install --with-deps chromium
+      - name: Compare every cell for this state file
+        env:
+          STATE: ${{ matrix.state }}
+        run: npm run test:parity -- --states "$STATE"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: full-${{ matrix.state }}
+          path: |
+            test-results/parity-report/REPORT.md
+            test-results/parity-report/results.json
+          if-no-files-found: error
 
   release:
     if: github.event_name == 'pull_request' && github.base_ref == 'main'

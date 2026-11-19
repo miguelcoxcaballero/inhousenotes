@@ -1,3 +1,5 @@
+import "../vendor/inhouse-services-updater/auth/google-oauth.js";
+
 // Effect family 3.6 (0xa0..0xdf): Google Identity Services, the Android `InhouseNative` bridges and the callbacks
 // Android evaluates, the shared updater, file lists, clipboard, share, download, fullscreen and history. A dumb
 // executor of rust/crates/ihn-app/src/shell/fx.rs; app mode is the one thing decided here, because it must be
@@ -36,13 +38,22 @@ export default function install(host) {
   const done = (req, status = 0, value = '') => { if (req) host.io(req, status, 0, text(value)); };
   const failed = (req, error) => done(req, error?.name === 'AbortError' ? -3 : -2, error?.message || error);
   const strings = r => { const list = []; for (let n = r.u32(); n > 0; n -= 1) list.push(r.str()); return list; };
-  let tokenClient = null, updates = null;
-
-  // v5: app-v5.js:handleInhouseNativeOAuth — Android evaluates it with the redirect's query or fragment.
+  let updates = null;
+  const auth = window.InhouseGoogleOAuth.create({
+    clientId: '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com',
+    androidClientId: app ? '435784295430-9ta7t92s33r25bamvrnbmgt65iihqpfo.apps.googleusercontent.com' : undefined,
+    redirectUri: 'com.local.inhousenotes:/oauth2redirect',
+    scope: 'https://www.googleapis.com/auth/drive',
+    sessionKey: 'inhouse-notes-oauth-v1', refreshKey: 'drive-refresh-token-v1',
+    hint: () => localStorage.getItem('drive-hint-email'),
+    openAuthUrl: app ? url => window.InhouseNative.openAuthUrl(url) : undefined
+  });
   window.handleInhouseNativeOAuth = payload => {
-    const raw = String(payload || '').replace(/^[#?]/, '');
-    host.message(CHAN.OAUTH, raw);
-    return app && !!new URLSearchParams(raw).get('code');
+    const waiting = auth.hasPendingRequest();
+    auth.handleCallback(payload).then(session => {
+      if (session && !waiting) host.message(CHAN.OAUTH, JSON.stringify(session));
+    }).catch(() => { if (!waiting) host.message(CHAN.OAUTH, ''); });
+    return true;
   };
   // v5: app-v5.js:handleInhousePdfExportResult
   window.handleInhousePdfExportResult = payload => {
@@ -51,30 +62,13 @@ export default function install(host) {
   window.addEventListener('popstate', () => host.message(CHAN.POPSTATE, location.href));
 
   return {
-    // gis_init(u32 req, str client_id, str scope) → 0, or -1 while the GIS script has not loaded.
-    // v5: app-v5.js:initDriveAuth
-    [FX | 0xa0]: r => {
-      const req = r.u32(), client_id = r.str(), scope = r.str();
-      const oauth = window.google?.accounts?.oauth2;
-      if (!oauth) return done(req, -1);
-      tokenClient = oauth.initTokenClient({
-        client_id, scope, include_granted_scopes: true, callback: () => {},
-        error_callback: error => { console.warn('Google popup auth failed:', error); }
-      });
-      done(req);
-    },
-    // gis_request(u32 req, u8 interactive, str scope, str login_hint) → 0, the token response as JSON.
-    // v5: app-v5.js:requestDriveToken
+    [FX | 0xa0]: r => done(r.u32(), window.google?.accounts?.oauth2 ? 0 : -1),
     [FX | 0xa1]: r => {
-      const req = r.u32(), interactive = r.u8() !== 0, scope = r.str(), hint = r.str();
-      if (!tokenClient) return done(req, -1);
-      tokenClient.callback = response => done(req, 0, JSON.stringify(response || {}));
-      const options = { scope, include_granted_scopes: true, prompt: interactive ? 'consent' : 'none' };
-      if (hint) options.login_hint = hint;
-      try { tokenClient.requestAccessToken(options); } catch (error) { failed(req, error); }
+      const req = r.u32(), interactive = r.u8() !== 0;
+      auth.request(interactive).then(session => done(req, 0, JSON.stringify(session)), error => failed(req, error));
     },
-    // gis_revoke(str token)
-    [FX | 0xa2]: r => { const token = r.str(); window.google?.accounts?.oauth2?.revoke?.(token, () => {}); },
+    [FX | 0xa2]: () => auth.signOut(),
+    [FX | 0xa3]: () => auth.invalidate(),
     // native_call(u32 req, str method, u32 n, n × str) → 0 and String(result); -1 when the bridge lacks the method.
     [FX | 0xa4]: r => {
       const req = r.u32(), method = r.str(), args = strings(r), native = window.InhouseNative;
