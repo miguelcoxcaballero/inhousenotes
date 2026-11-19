@@ -1,0 +1,111 @@
+{
+ "app": "5.18.0",
+ "exportName": "cuaderno",
+ "pageCount": 2,
+ "strokeCount": 9,
+ "imageCount": 0,
+ "hasLegacyBakedOverlay": false,
+ "cleanOriginalBytes": 0,
+ "versions": [],
+ "pages": [
+  {
+   "pageId": "pg_mvuswpfc_ag5p8yfq0",
+   "pageWidth": 794,
+   "pageHeight": 1123,
+   "templateKind": "default",
+   "backgroundSource": "template",
+   "pdfPageIndex": null,
+   "backgroundImage": null,
+   "sidePanel": null,
+   "strokes": [
+    [
+     "leg-0",
+     "pen",
+     "#1a1a1a",
+     2,
+     22
+    ],
+    [
+     "mvuswpfk-znzbd7ntz",
+     "pen",
+     "#1a1a1a",
+     2,
+     22
+    ],
+    [
+     "leg-2",
+     "pen",
+     "#1a1a1a",
+     2,
+     22
+    ],
+    [
+     "mvuswpfc-wv6d248fm",
+     "pen",
+     "#1a1a1a",
+     2,
+     22
+    ],
+    [
+     "leg-4",
+     "pen",
+     "#1a1a1a",
+     2,
+     22
+    ]
+   ],
+   "pointsSha256": "c42ed6a224e6626f6e1c12b510d590426c8ac508743ebd9a6ba43a0a61ceea1e",
+   "images": [],
+   "deletedStrokeIds": [],
+   "legacyCoverStrokes": []
+  },
+  {
+   "pageId": "pg_mvuswpfk_lsmw8dbug",
+   "pageWidth": 794,
+   "pageHeight": 1123,
+   "templateKind": "default",
+   "backgroundSource": "template",
+   "pdfPageIndex": null,
+   "backgroundImage": null,
+   "sidePanel": null,
+   "strokes": [
+    [
+     "leg-0",
+     "pen",
+     "#4e342e",
+     2,
+     22
+    ],
+    [
+     "mvuswpoe-o6fd44392",
+     "pen",
+     "#4e342e",
+     2,
+     22
+    ],
+    [
+     "leg-7",
+     "pen",
+     "#4e342e",
+     2,
+     22
+    ],
+    [
+     "mvuswpfc-153cthjak",
+     "pen",
+     "#4e342e",
+     2,
+     22
+    ]
+   ],
+   "pointsSha256": "5519b438b05190cf9399773c3693fa1a7106f75daa4e0ba32b960ccecc66450b",
+   "images": [],
+   "deletedStrokeIds": [],
+   "legacyCoverStrokes": []
+  }
+ ],
+ "keywordSections": [
+  "STROKES_Z"
+ ],
+ "pdfBytes": 176809
+}

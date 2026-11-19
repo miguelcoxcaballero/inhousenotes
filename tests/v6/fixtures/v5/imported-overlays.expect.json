@@ -1,0 +1,90 @@
+{
+ "app": "5.18.0",
+ "exportName": "cuaderno",
+ "pageCount": 2,
+ "strokeCount": 3,
+ "imageCount": 0,
+ "hasLegacyBakedOverlay": false,
+ "cleanOriginalBytes": 104553,
+ "versions": [
+  {
+   "id": "v_mvuswqme_u3duug2r",
+   "originId": "v_mvuswqme_u3duug2r",
+   "ts": 1793354404550,
+   "summary": "+2 pages, +3 strokes",
+   "kind": "autosave",
+   "isMilestone": false,
+   "schemaVersion": 3,
+   "parentId": null,
+   "contentHash": "r0dw9l:2xe",
+   "deviceId": "cysc8gkpi",
+   "exportName": "cuaderno",
+   "pageCount": 2
+  }
+ ],
+ "pages": [
+  {
+   "pageId": "pg_mvuswpfc_xym746m65",
+   "pageWidth": 595,
+   "pageHeight": 842,
+   "templateKind": "default",
+   "backgroundSource": "pdf",
+   "pdfPageIndex": 1,
+   "backgroundImage": "2583fdb35501843cb39e850154ab6df7b4bf0ac8796124ff95c6e60720cba9c0",
+   "sidePanel": null,
+   "strokes": [
+    [
+     "imp-a",
+     "pen",
+     "#1a1a1a",
+     2,
+     36
+    ],
+    [
+     "imp-hl",
+     "highlighter",
+     "#ffeb3b",
+     14,
+     40
+    ]
+   ],
+   "pointsSha256": "b01cb4255dd6d657db5ceff1640307a0a193a2cfcb0d05eeb0074e5518662664",
+   "images": [],
+   "deletedStrokeIds": [],
+   "legacyCoverStrokes": []
+  },
+  {
+   "pageId": "pg_mvuswpfk_h5o6warrr",
+   "pageWidth": 595,
+   "pageHeight": 842,
+   "templateKind": "default",
+   "backgroundSource": "pdf",
+   "pdfPageIndex": 2,
+   "backgroundImage": "ccd89fe4f296943db3f0d125588e097f9ceb1e2459b920505e2ddba58f5edafa",
+   "sidePanel": null,
+   "strokes": [
+    [
+     "imp-b",
+     "pen",
+     "#6a1b9a",
+     2.5,
+     28
+    ]
+   ],
+   "pointsSha256": "33e0b22a7629fd818896d4b38ed8876e7fb98d803882c2e79ade6dfa5e7a617a",
+   "images": [],
+   "deletedStrokeIds": [],
+   "legacyCoverStrokes": []
+  }
+ ],
+ "keywordSections": [
+  "STROKES_Z",
+  "IH_NORM",
+  "IH_OVERLAY_REFS",
+  "IH_STRUCT",
+  "IH_FIELDS",
+  "IH_SYNC",
+  "IH_VERSIONS"
+ ],
+ "pdfBytes": 104566
+}

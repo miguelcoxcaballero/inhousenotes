@@ -10,11 +10,13 @@ import urllib.request
 root = Path(__file__).resolve().parents[2]
 version = re.search(r"const APP_VERSION = '([^']+)'", (root / 'index.html').read_text())[1]
 revision = os.environ['GITHUB_SHA']
-expected = {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
-            for name in ('app-v5.js', 'runtime-core-v5.js', 'peer-transport-v5.js', 'document-processing-v5.js', 'document-processing-worker-v5.js', 'timeline-core-v5.js', 'live-collaboration-v5.js', 'service-worker.js', 'updates/A.json', 'updates/B.json',
-                         'drive-ink-journal-v5.js', 'drive-ink-app-v5.js', 'drive-live-preview-v5.js', 'offline-store-v5.js', 'offline-library-v5.js', 'offline-app-v5.js', 'offline-media-v5.js',
-                         'offline-assets.js', 'vendor/fonts/ui.css', 'boot-v5.js', 'native-assets.json',
-                         'rust-core-v5.js', 'wasm/inhouse_notes_core.wasm', 'ink-palette.js')}
+# Inhouse Notes 6 (docs/v6/ARCHITECTURE.md §14.2): the v6 shell, the generated files committed by the release, the
+# A/B catalogs, and the 5.18.0 runtime that stays deployed (unreferenced) for still-open 5.18.0 tabs until 6.0.1 (§10.4).
+names = ['index.html', 'boot.js', 'service-worker.js', 'offline-assets.js', 'native-assets.json', 'wasm/ihn.wasm',
+         'offline-v5.css', 'vendor/fonts/ui.css', 'updates/A.json', 'updates/B.json']
+names += sorted(f'host/{path.name}' for path in (root / 'host').glob('*.js'))
+names += sorted(path.name for path in root.glob('*-v5.js'))
+expected = {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in names}
 deadline = time.monotonic() + 180
 attempt = 0
 while True:
@@ -32,7 +34,7 @@ while True:
         for name, digest in expected.items():
             if hashlib.sha256(fetch(name)).hexdigest() != digest:
                 raise RuntimeError(f'Pages still serves a different {name}')
-        print(f'PUBLIC RELEASE VERIFIED: https://inhousenotes.com/ v{version}; commit {revision}; app, Rust, service worker and A/B catalogs match.', flush=True)
+        print(f'PUBLIC RELEASE VERIFIED: https://inhousenotes.com/ v{version}; commit {revision}; {len(expected)} files match (shell, wasm, service worker, A/B catalogs, 5.18.0 runtime).', flush=True)
         break
     except Exception as error:
         if time.monotonic() >= deadline:

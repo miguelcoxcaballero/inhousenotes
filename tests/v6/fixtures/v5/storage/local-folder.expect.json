@@ -1,0 +1,56 @@
+{
+ "scenario": "local-folder",
+ "app": "5.18.0",
+ "account": "ana@example.test",
+ "document": {
+  "id": null,
+  "name": "cuaderno",
+  "driveFixture": null,
+  "pages": []
+ },
+ "unsyncedStrokeIds": [],
+ "editorOpen": false,
+ "offline": {
+  "account": "ana@example.test",
+  "sync": {
+   "phase": "idle",
+   "pending": 1,
+   "id": null,
+   "errors": [
+    {
+     "message": "Failed to fetch"
+    }
+   ]
+  }
+ },
+ "stores": {
+  "inhouse-offline-v1": {
+   "document-index": 0,
+   "documents": 0,
+   "entries": 3,
+   "leases": 1,
+   "outbox": 1,
+   "recoveries": 0,
+   "settings": 4
+  },
+  "notebook-data-db-v1": {
+   "pages": 0,
+   "snapshots": 0,
+   "stroke-ops": 0,
+   "timeline-history": 1
+  }
+ },
+ "inkCodecs": [],
+ "localStorageKeys": [
+  "drive-hint-email",
+  "drive-profile-v1",
+  "drive-remember-v1",
+  "drive-token-v1",
+  "inhouse-theme"
+ ],
+ "sessionStorageKeys": [
+  "ihn-home-tab",
+  "ihn-network-offline"
+ ],
+ "driveRequests": []
+}

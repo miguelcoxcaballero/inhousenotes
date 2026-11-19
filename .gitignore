@@ -21,4 +21,11 @@ android app/apk-output/
 .DS_Store
 Thumbs.db
 
-/rust-core/target/
+# v6: `npm run build` writes the generated files to build/ (ARCHITECTURE §14.1). The 6.0.0 release commit copies
+# wasm/ihn.wasm, offline-assets.js, native-assets.json and index.html from build/ over the tree and commits them
+# (§14.2/§14.3: the deployed site and the Android local assets are the committed files). The e2e-only test build is
+# never committed or deployed.
+/build/
+/rust/target/
+/wasm/ihn-test.wasm
+/node_modules
