@@ -47,8 +47,8 @@
       "mime": "application/javascript"
     },
     "/host/platform.js": {
-      "sha256": "b9011bb880edc4160474416ea1f0e38be46f990b75b4b94d944e7c0ad48aa2cd",
-      "size": 9993,
+      "sha256": "ea7c18fca4c3fe649c04cdd4afbf3501aa9d5e34567dc65f81126efa8bb07b2a",
+      "size": 9593,
       "mime": "application/javascript"
     },
     "/host/test-api.js": {
@@ -125,6 +125,11 @@
       "sha256": "554f2ddd74404b0d5a27068f2c696aa95fbf73cbe472d1179533fdb96fc50856",
       "size": 1534,
       "mime": "text/css"
+    },
+    "/vendor/inhouse-services-updater/auth/google-oauth.js": {
+      "sha256": "2f250daaa3437abe7a1ac907570ab929a62168cf1ed7b9f10081936bc4aff4f8",
+      "size": 12637,
+      "mime": "application/javascript"
     },
     "/vendor/pdf-lib/pdf-lib.min.js": {
       "sha256": "0f9a5cad07941f0826586c94e089d89b918c46e5c17cf2d5a3c6f666e3bc694f",
@@ -1052,8 +1057,8 @@
       "mime": "font/ttf"
     },
     "/wasm/ihn.wasm": {
-      "sha256": "84db22ef8589103fda897e294b969d4e92c37c1567ba4ebbbb84759e5d56452e",
-      "size": 1340739,
+      "sha256": "38abc2ee5e0608b56885b12e701cfeefb512d24bfa841bf5dd31ed7fd9f5fb65",
+      "size": 1334340,
       "mime": "application/wasm"
     }
   }

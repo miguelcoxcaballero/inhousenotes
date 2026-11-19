@@ -17,7 +17,7 @@ User-facing release notes: `RELEASE_NOTES_v6.0.0.md`. Per-unit details: `docs/v6
   compiled to `wasm/ihn.wasm`. A thin JavaScript host (`boot.js`, `host/*.js`) carries out the browser calls that
   Rust decides on. `service-worker.js`, pdf.js and pdf-lib remain JavaScript.
 - Same screens as 5.18.0: same markup and CSS. A pixel-parity suite (`tests/v6/parity/`) compares every state with
-  5.18.0.
+  5.19.0.
 - New document model built on operations, with instant sync over P2P or through small sync files in Drive (`SYNC.md`).
   The PDF in Drive is rebuilt after 10 s of inactivity, when the user leaves the document, and on Export.
 - Existing Drive documents open as before, and local 5.x data is migrated once on first start.
@@ -46,6 +46,7 @@ User-facing release notes: `RELEASE_NOTES_v6.0.0.md`. Per-unit details: `docs/v6
   several wasm-opt passes. Numbers are in the notes.
 
 ### Verified on `v6-int`
+- 5.19.0 integration: 360 Rust tests passed (one ignored), six shell checks passed. Production wasm is 1,334,340 bytes (595,562 gzip). The offline shell includes the canonical OAuth script.
 - Full parity matrix (W6.1e, at `6b4e85d`): 22 state files, 2,387 comparisons, 0 failures (`tests/v6/parity/REPORT.md`).
 - Deploy emulation (W6.2r): the site shows `v6.0.0`, the service worker activates, and there are no failed requests.
 
@@ -54,14 +55,14 @@ User-facing release notes: `RELEASE_NOTES_v6.0.0.md`. Per-unit details: `docs/v6
 - Drive sync has been verified only against the mock, not real Google accounts.
 - GitHub Actions workflows have not been run, only their commands locally.
 - 5.18.0 waits for structure mutations to settle before some repaints; v6 does not port that wait (states pass).
-- The 5.18.0 runtime files (`*-v5.js`, `wasm/inhouse_notes_core.wasm`) stay deployed unused until 6.0.1, so tabs
-  still open on 5.18.0 keep working until they reload.
+- The 5.19.0 runtime files (`*-v5.js`, `wasm/inhouse_notes_core.wasm`) stay deployed unused until 6.0.1, so tabs
+  still open on 5.x keep working until they reload.
 - Some commits on unit branches carry different co-author lines; review the trailers when preparing the `main`
   commit.
 
 ### Decisions pending from the owner
 1. Approve `docs/v6/BEHAVIOUR-CHANGES.md` (required before any push to `main`).
-2. Authorise splitting the wasm into two modules (or accept about 598 KB gzip).
+2. Authorise splitting the wasm into two modules (or accept about 596 KB gzip).
 3. Confirm no new APK for 6.0.0 (the APK loads the live site; Android is now 1.0.29 / 30 from 5.19.0).
 4. Keep or delete `stencil.html`.
 5. Real Google test accounts for checking Drive sync.
