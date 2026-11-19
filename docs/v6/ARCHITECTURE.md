@@ -1,7 +1,7 @@
 # Inhouse Notes 6.0.0 — Architecture
 
 Status: definitive design by the lead architect, revision 2 (2026-10-30, after review). Binding inputs: `REQUIREMENTS.md` (user decisions),
-`spec/*.md` (5.17.22 behaviour; **5.18.0 at `1d6e8a0` wins where they differ**), `spec/existing-rust-and-rebuild.md`
+`spec/*.md` (5.17.22 behaviour; **5.19.0 at `35d0f22` is the parity reference; 5.18.0 remains the historical design baseline**), `spec/existing-rust-and-rebuild.md`
 (reuse verdicts). The sync wire protocol is specified by the peer document `SYNC.md`; this document owns the
 document model, stamps and actors, the core↔sync interface, the storage schema (including every field sync
 persists), rendering, the browser boundary, the build and the release. Where both documents touch a topic, the text
@@ -287,7 +287,7 @@ pub trait Host {
 | Contract | v6 owner | Notes |
 |---|---|---|
 | App mode: `?inhouse_app=1|true`, `?app=`, UA `InhouseNotesApp/<n>`, `localStorage.inhouseNotesAppMode`; `?inhouse_app=0` clears | `host/platform.js` computes, Rust receives in `ihn_init` | `html[data-inhouse-app]`, `window.INHOUSE_NOTES_APP`, removal of `#btn-drive-fullscreen`/`#btn-fullscreen` |
-| `InhouseNative.openAuthUrl(url)` (PKCE in Custom Tab) and `window.handleInhouseNativeOAuth(payload)` | `auth.rs` + `host/platform.js` | PKCE: verifier = base64url(32 random bytes) (Rust), challenge via `crypto.subtle.digest` effect; token POST to `oauth2.googleapis.com/token` with the Android client id, no secret; scope `https://www.googleapis.com/auth/drive` (5.18.0) |
+| `InhouseNative.openAuthUrl(url)` (PKCE in Custom Tab) and `window.handleInhouseNativeOAuth(payload)` | `auth.rs` + `host/platform.js` | The canonical 5.19.0 OAuth module owns grant discovery, PKCE, callback validation, token renewal and local opt-out. Rust owns the profile, screens and Drive request waiters. |
 | PDF export bridge v2: `getPdfExportApiVersion()`, `beginPdfExport(name)`, `appendPdfExportChunk(b64 ≤240000)`, `finishPdfExport()`, await `handleInhousePdfExportResult` ≤30 s; legacy `savePdf(name,b64)`; app `navigator.share`; web `<a download>` | `export/user.rs` + `host/platform.js` | 5.18.0 removed bridge v1; same here |
 | Updater: `InhouseServicesUpdater.create({appId:'notes', appName:'Inhouse Notes', repository:'miguelcoxcaballero/inhousenotes', installedVersion:'1.0.2', install})` with `installInhouseUpdate(url, sha256)` → `installAppUpdate(url)` → throw `'Abre la app Android para instalar.'`; `window.InhouseUpdater = updates; updates.start()` | `host/platform.js` (verbatim from 5.18.0 `app-v5.js`) | only in app mode; the updater reads `getAppVersion`, `getUpdateState`, etc. itself |
 | Background: `InhouseBackgroundChannel` → `InhouseBackground.{schedule,cancel,complete(json)}`; headless page `?inhouse_app=1&offline-worker=1` must call `complete({busy,pending,errors})` | `boot.js` (unchanged facade) + `export/headless.rs` | WorkManager succeeds iff `!busy && pending==0 && errors.length==0` |
