@@ -47,13 +47,15 @@ User-facing release notes: `RELEASE_NOTES_v6.0.0.md`. Per-unit details: `docs/v6
 
 ### Verified on `v6-int`
 - 5.19.0 integration: 360 Rust tests passed (one ignored), six shell checks passed. Production wasm is 1,334,340 bytes (595,562 gzip). The offline shell includes the canonical OAuth script.
-- Full parity matrix (W6.1e, at `6b4e85d`): 22 state files, 2,387 comparisons, 0 failures (`tests/v6/parity/REPORT.md`).
+- [Browser and reproducible build checks](https://github.com/miguelcoxcaballero/inhousenotes/actions/runs/44502820292): all 98 existing e2e cases plus the Android shared-account regression passed (99/99).
+- [Full 5.19.0 matrix](https://github.com/miguelcoxcaballero/inhousenotes/actions/runs/44498736786): 22 state files, 2,387 comparisons, 2,088 pixel-identical with DOM/trace diagnostics, 298 expected differences, one failure and zero errors. See `tests/v6/parity/REPORT.md`.
+- The failure is the first capture of `home/folder-colours` on phone-412, system-dark. It differs in 26 pixels in a 41×38 rectangle at (654,57). Three independent runs with the pinned Playwright Chromium reproduced the same 26-pixel difference **between two runs of 5.19.0 itself**. A separate reference-only run (`--self --states home --filter home/folder-colours --viewports phone-412 --runs 3`) also reproduced variation. The original verdict and zero tolerance are retained. The previous 5.18.0 matrix had a clean run; its notes also record intermittent variation at this icon (`NOTES-W6.1e.md`).
 - Deploy emulation (W6.2r): the site shows `v6.0.0`, the service worker activates, and there are no failed requests.
 
 ### Known limits and open items
 - Images and version snapshots do not travel over P2P or the relay; they arrive with the next PDF export.
 - Drive sync has been verified only against the mock, not real Google accounts.
-- GitHub Actions workflows have not been run, only their commands locally.
+- Production checks ran on the integration branch. Live deployment remains gated on owner approval.
 - 5.18.0 waits for structure mutations to settle before some repaints; v6 does not port that wait (states pass).
 - The 5.19.0 runtime files (`*-v5.js`, `wasm/inhouse_notes_core.wasm`) stay deployed unused until 6.0.1, so tabs
   still open on 5.x keep working until they reload.
@@ -62,7 +64,7 @@ User-facing release notes: `RELEASE_NOTES_v6.0.0.md`. Per-unit details: `docs/v6
 
 ### Decisions pending from the owner
 1. Approve `docs/v6/BEHAVIOUR-CHANGES.md` (required before any push to `main`).
-2. Authorise splitting the wasm into two modules (or accept about 596 KB gzip).
-3. Confirm no new APK for 6.0.0 (the APK loads the live site; Android is now 1.0.29 / 30 from 5.19.0).
-4. Keep or delete `stencil.html`.
-5. Real Google test accounts for checking Drive sync.
+2. Keep or delete `stencil.html`.
+3. Supply real test accounts/devices for end-to-end Google and cross-app Android acceptance.
+
+Current scope keeps one wasm module and the existing APK. A split or Android release needs a separate request.
