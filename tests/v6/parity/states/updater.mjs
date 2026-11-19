@@ -6,7 +6,7 @@ import { fixtures, ANA } from '../../mock/fixtures.mjs';
 
 const parity = (name, options, script) => register(name, options, shellOnly(script));
 const APP = { only: { modes: ['app'] } };
-const offer = mock => { fixtures.empty(mock); mock.github.setCatalog('B', [{ version: '1.0.29', versionCode: 30, changelog: 'Inhouse Notes 6.' }]); };
+const offer = mock => { fixtures.empty(mock); mock.github.setCatalog('B', [{ version: '1.0.30', versionCode: 31, changelog: 'Inhouse Notes 6.' }]); };
 const dialog = '#inhouse-services-update';
 
 // The only intended difference in these states: the version label of the open profile menu (v5.18.0 → v6.0.0).
