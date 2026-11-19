@@ -240,6 +240,39 @@ test('app mode: PKCE through InhouseNative.openAuthUrl and handleInhouseNativeOA
   expect(calls.token).toHaveLength(2);
 });
 
+test('Android restores a grant from another app and keeps local sign-out after restart', async ({ page }) => {
+  const calls = await stubGoogle(page);
+  await page.addInitScript(scope => {
+    window.__bridgeCalls = [];
+    window.InhouseOAuthNative = {
+      postMessage(raw) {
+        const { id, method } = JSON.parse(raw);
+        window.__bridgeCalls.push(method);
+        // The other app keeps its expired grant, even after Notes clears its own.
+        const session = method === 'read' ? {
+          email: 'ana@example.com', access_token: 'old', refresh_token: 'shared-refresh',
+          client_id: 'originating-client', expiresAt: 1, scope
+        } : null;
+        queueMicrotask(() => this.onmessage({ data: JSON.stringify({ id, session }) }));
+      }
+    };
+  }, DRIVE_SCOPE);
+  await open(page, '/?e2e=1&inhouse_app=1');
+  await expect(page.locator('#drive-profile-name')).toHaveText('Ana Test', { useInnerText: false });
+  expect(calls.token).toEqual([{ client_id: 'originating-client', grant_type: 'refresh_token', refresh_token: 'shared-refresh' }]);
+  expect(await page.evaluate(() => window.__bridgeCalls)).toContain('read');
+  await page.click('#btn-drive-profile');
+  await page.click('#btn-drive-menu-logout');
+  await expect(page.locator('#welcome-view')).toBeVisible();
+  expect(await page.evaluate(() => window.__bridgeCalls)).toContain('clear');
+  await page.reload();
+  await page.waitForFunction(() => window.__IHN_TEST_API__?.ready());
+  await expect(page.locator('#welcome-view')).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('inhouse-notes-oauth-v1:signed-out'))).toBe('1');
+  expect(await page.evaluate(() => window.__bridgeCalls)).toEqual([]);
+  expect(calls.token).toHaveLength(1);
+});
+
 test('theme, profile menu, fullscreen and the loading overlay follow 5.18.0', async ({ page }) => {
   await stubGoogle(page);
   await page.addInitScript(() => { localStorage.setItem('drive-remember-v1', '1'); });

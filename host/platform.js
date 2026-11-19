@@ -1,5 +1,3 @@
-import "../vendor/inhouse-services-updater/auth/google-oauth.js";
-
 // Effect family 3.6 (0xa0..0xdf): Google Identity Services, the Android `InhouseNative` bridges and the callbacks
 // Android evaluates, the shared updater, file lists, clipboard, share, download, fullscreen and history. A dumb
 // executor of rust/crates/ihn-app/src/shell/fx.rs; app mode is the one thing decided here, because it must be
