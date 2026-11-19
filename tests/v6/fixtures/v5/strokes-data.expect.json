@@ -1,0 +1,81 @@
+{
+ "app": "5.18.0",
+ "exportName": "Strokes data",
+ "pageCount": 1,
+ "strokeCount": 4,
+ "imageCount": 0,
+ "hasLegacyBakedOverlay": false,
+ "cleanOriginalBytes": 0,
+ "versions": [
+  {
+   "id": "v_mvuswpqg_z9ucj8hl",
+   "originId": "v_mvuswpqg_z9ucj8hl",
+   "ts": 1793354403400,
+   "summary": "+1 page, +4 strokes",
+   "kind": "autosave",
+   "isMilestone": false,
+   "schemaVersion": 3,
+   "parentId": null,
+   "contentHash": "v46v9f:2sq",
+   "deviceId": "c1741gpgk",
+   "exportName": "Strokes data",
+   "pageCount": 1
+  }
+ ],
+ "pages": [
+  {
+   "pageId": "pg_mvuswpfc_xpuuymqri",
+   "pageWidth": 794,
+   "pageHeight": 1123,
+   "templateKind": "default",
+   "backgroundSource": "template",
+   "pdfPageIndex": null,
+   "backgroundImage": null,
+   "sidePanel": null,
+   "strokes": [
+    [
+     "sd-0",
+     "pen",
+     "#1a1a1a",
+     2,
+     26
+    ],
+    [
+     "sd-1",
+     "pen",
+     "#283593",
+     2,
+     26
+    ],
+    [
+     "sd-2",
+     "pen",
+     "#1a1a1a",
+     2,
+     26
+    ],
+    [
+     "sd-3",
+     "pen",
+     "#283593",
+     2,
+     26
+    ]
+   ],
+   "pointsSha256": "511581039b38f16a47b16d11425f1fcd5ce6aca443b6bef7e25ea2982c4e7522",
+   "images": [],
+   "deletedStrokeIds": [],
+   "legacyCoverStrokes": []
+  }
+ ],
+ "keywordSections": [
+  "STROKES_DATA",
+  "IH_NORM",
+  "IH_OVERLAY_REFS",
+  "IH_STRUCT",
+  "IH_FIELDS",
+  "IH_SYNC",
+  "IH_VERSIONS"
+ ],
+ "pdfBytes": 200089
+}

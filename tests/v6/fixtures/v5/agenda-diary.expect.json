@@ -1,0 +1,117 @@
+{
+ "app": "5.18.0",
+ "exportName": "Agenda 2026-2027",
+ "pageCount": 3,
+ "strokeCount": 3,
+ "imageCount": 0,
+ "hasLegacyBakedOverlay": false,
+ "cleanOriginalBytes": 0,
+ "versions": [
+  {
+   "id": "v_mvuswqi8_2eux9ihn",
+   "originId": "v_mvuswqi8_2eux9ihn",
+   "ts": 1793354404400,
+   "summary": "+3 pages, +3 strokes",
+   "kind": "autosave",
+   "isMilestone": false,
+   "schemaVersion": 3,
+   "parentId": null,
+   "contentHash": "1puno4:2oi",
+   "deviceId": "c5dgo0z2b",
+   "exportName": "Agenda 2026-2027",
+   "pageCount": 3
+  }
+ ],
+ "pages": [
+  {
+   "pageId": "pg_mvuswpqg_xf9yrbxlu",
+   "pageWidth": 559,
+   "pageHeight": 794,
+   "templateKind": "agenda",
+   "backgroundSource": "template",
+   "pdfPageIndex": null,
+   "backgroundImage": null,
+   "sidePanel": {
+    "title": "Week 44",
+    "dateKeys": [
+     "2026-10-26",
+     "2026-10-27",
+     "2026-10-28"
+    ]
+   },
+   "strokes": [
+    [
+     "ag-a",
+     "pen",
+     "#1a1a1a",
+     2,
+     24
+    ],
+    [
+     "ag-b",
+     "pen",
+     "#0277bd",
+     2,
+     24
+    ]
+   ],
+   "pointsSha256": "c46abdf52ed6f5614bbd17c51e718f781559c891289496db2224e22fd95fb88a",
+   "images": [],
+   "deletedStrokeIds": [],
+   "legacyCoverStrokes": []
+  },
+  {
+   "pageId": "pg_mvuswpqg_0vql4f4ml",
+   "pageWidth": 559,
+   "pageHeight": 794,
+   "templateKind": "diary",
+   "backgroundSource": "template",
+   "pdfPageIndex": null,
+   "backgroundImage": null,
+   "sidePanel": {
+    "title": "30 October 2026",
+    "dateKeys": [
+     "2026-10-30"
+    ]
+   },
+   "strokes": [
+    [
+     "di-a",
+     "pen",
+     "#1a1a1a",
+     2,
+     30
+    ]
+   ],
+   "pointsSha256": "1a9900feabf17c300f75c46f7d55fe53d8f454e3edef0af82990da0579a33671",
+   "images": [],
+   "deletedStrokeIds": [],
+   "legacyCoverStrokes": []
+  },
+  {
+   "pageId": "pg_mvuswpqg_m5k30u0xo",
+   "pageWidth": 794,
+   "pageHeight": 1123,
+   "templateKind": "default",
+   "backgroundSource": "template",
+   "pdfPageIndex": null,
+   "backgroundImage": null,
+   "sidePanel": null,
+   "strokes": [],
+   "pointsSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "images": [],
+   "deletedStrokeIds": [],
+   "legacyCoverStrokes": []
+  }
+ ],
+ "keywordSections": [
+  "STROKES_Z",
+  "IH_NORM",
+  "IH_OVERLAY_REFS",
+  "IH_STRUCT",
+  "IH_FIELDS",
+  "IH_SYNC",
+  "IH_VERSIONS"
+ ],
+ "pdfBytes": 355461
+}
