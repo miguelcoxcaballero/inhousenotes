@@ -15,6 +15,9 @@ const KEYS = ['drive-token-v1', 'drive-remember-v1', 'drive-hint-email', 'drive-
 // 'grant' | 'deny' | 'silent-fail' (only interactive requests succeed) | 'none' (the script never loads).
 async function stubGoogle(page, { gis = 'grant', about = true } = {}) {
   const calls = { drive: [], token: [] };
+  // Account tests run independently of published Android update offers.
+  await page.route('https://raw.githubusercontent.com/**', route => route.fulfill({ status: 404, body: '' }));
+  await page.route('https://api.github.com/**', route => route.fulfill({ status: 404, body: '' }));
   await page.route('https://accounts.google.com/gsi/client', route => route.fulfill({
     contentType: 'text/javascript',
     body: gis === 'none' ? '' : `(() => {
@@ -183,8 +186,6 @@ test('app mode: PKCE through InhouseNative.openAuthUrl and handleInhouseNativeOA
   await page.addInitScript(() => {
     window.InhouseNative = { openAuthUrl: url => { (window.__authUrls ||= []).push(url); }, getAppVersion: () => '1.0.28', getAppVersionCode: () => 29, getUpdateState: () => '{}', saveUpdateState() {} };
   });
-  await page.route('https://raw.githubusercontent.com/**', route => route.fulfill({ status: 404, body: '' }));
-  await page.route('https://api.github.com/**', route => route.fulfill({ status: 404, body: '' }));
   await open(page, '/?e2e=1&inhouse_app=1');
   expect(await page.evaluate(() => [document.documentElement.dataset.inhouseApp, window.INHOUSE_NOTES_APP, localStorage.getItem('inhouseNotesAppMode')])).toEqual(['true', true, '1']);
   expect(await page.evaluate(() => [!!document.getElementById('btn-drive-fullscreen'), !!document.getElementById('btn-fullscreen')])).toEqual([false, false]);
@@ -233,10 +234,9 @@ test('app mode: PKCE through InhouseNative.openAuthUrl and handleInhouseNativeOA
   await expect.poll(() => calls.token.length).toBe(2);
   expect(calls.token[1]).toEqual({ client_id: '435784295430-9ta7t92s33r25bamvrnbmgt65iihqpfo.apps.googleusercontent.com', grant_type: 'refresh_token', refresh_token: 'refresh-1' });
   await expect.poll(async () => (await cmd(page, 'auth.state')).signedIn).toBe(true);
-  // Home's folder listing has answered (this stub refuses it: 5.18.0's `Unable to load this folder.` replaces the
-  // status line), so the OAuth error is the line's last word.
-  await expect(page.locator('#drive-status')).toHaveText(/^(Recents: |Unable to load this folder)/, { useInnerText: false });
+  // An unsolicited denial cannot replace the restored account or start another exchange.
   expect(await page.evaluate(() => window.handleInhouseNativeOAuth('#error=access_denied'))).toBe(true);
+  expect(JSON.parse((await stored(page))['drive-token-v1']).token).toBe('pkce-token-2');
   expect(calls.token).toHaveLength(2);
 });
 
