@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       full_matrix:
-        description: Run full pixel parity and performance as well as browser checks
+        description: Include pixel parity and performance alongside browser checks
         type: boolean
         default: true
 
@@ -23,7 +23,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: production-checks-${{ github.ref }}-${{ github.event_name }}
+  group: production-checks-${{ github.ref }}-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && !inputs.full_matrix && 'browser' || 'all' }}
   # Let the running full suite finish while frequent releases queue the newest head.
   cancel-in-progress: false
 
@@ -90,6 +90,7 @@ jobs:
         run: npm run test:e2e
 
       - name: Run quick pixel parity against 5.19.0
+        if: github.event_name != 'workflow_dispatch' || inputs.full_matrix
         run: |
           # A = the 5.19.0 tree served next to this one (B = this checkout with build/ over it).
           git worktree add --detach "$RUNNER_TEMP/ihn-5.19.0" "$V5_COMMIT"
