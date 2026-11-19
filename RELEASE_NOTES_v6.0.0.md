@@ -9,3 +9,5 @@ Inhouse Notes rewritten in Rust/WebAssembly: the same screens and behaviour as 5
 - Known limits: the download is larger: `ihn.wasm` is 596 KB gzip (1.33 MB raw), against 456 KB gzip of first-party JS in 5.18.0. GitHub Pages serves gzip only. Images and version snapshots do not travel over P2P or the relay: they arrive with the next PDF export. Drive sync is verified only against the test mock, not yet against real Google accounts.
 - The 5.x runtime stays deployed for tabs still open on 5.x; they reload into 6.0.0 at their next check. Those files go in 6.0.1.
 - Google sign-in uses the same shared OAuth module as 5.19.0. Android APK 1.0.29 (versionCode 30, channel A) supports shared account discovery. Signing out applies only to Notes.
+
+Candidate verification: 360 Rust tests and 99 browser tests passed. The full visual comparison against 5.19.0 recorded one unexpected 26-pixel icon difference, also reproduced between runs of 5.19.0 itself. Details are in `tests/v6/parity/REPORT.md` and `docs/v6/CHANGELOG.md`.

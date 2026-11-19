@@ -51,19 +51,15 @@ npx playwright test --workers=1 --trace off --reporter=line       # includes the
 - The machine has 4 CPUs: run one heavy job at a time.
 
 **What is open** (details in `docs/v6/CHANGELOG.md`)
-1. Waiting on the owner (before publication): approval of BEHAVIOUR-CHANGES; whether to split the wasm (598 KB gzip vs 456 KB in 5.18.0);
-   confirm no APK for 6.0.0; keep or delete `stencil.html`; real Google test accounts.
+1. Waiting on the owner (before publication): approval of BEHAVIOUR-CHANGES; keep or delete `stencil.html`; real Google test accounts and devices. Keep the single wasm and the existing APK unless the owner asks otherwise.
 2. Work that can be done without the owner:
-   - Run the GitHub Actions workflows' steps end to end where possible (`production-checks.yml`,
-     `deploy-pages.yml`); they have only been checked locally.
-   - Re-run the full parity matrix on the current `v6-int` head (the last full run was at `6b4e85d`; later runs were
-     the quick matrix on 22 files).
+   - Investigate the intermittent raster difference documented in the full 5.19.0 matrix without widening tolerances.
    - Further size work that changes neither behaviour nor performance (see the "tried and reverted" lists in
      `NOTES-W6.2z.md` and `NOTES-W6.2y.md`; do not repeat those).
    - Images and version snapshots over P2P/relay (currently they only arrive with the next PDF export): design it
      first in `SYNC.md` and ask the owner before changing the wire format.
-3. After 6.0.0 is live: 6.0.1 removes the 5.18.0 runtime files (`*-v5.js`, `wasm/inhouse_notes_core.wasm`) and the
-   `inhouse-shell-5.18.0` exception in the service worker.
+3. After 6.0.0 is live: 6.0.1 removes the 5.x runtime files (`*-v5.js`, `wasm/inhouse_notes_core.wasm`) and the
+   5.18.0 and 5.19.0 legacy cache exceptions in the service worker.
 
 Commit on `v6-int` (or a `v6-w*` unit branch merged into it), push, and tell the owner in Spanish what changed and
 what still needs their decision.
