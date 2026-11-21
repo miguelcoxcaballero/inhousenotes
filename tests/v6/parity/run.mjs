@@ -347,7 +347,20 @@ export class Driver {
     let regions = null;
     if (this.state.expected) regions = await this.state.expected(this);
     // BEHAVIOUR-CHANGES W7-1 (every state): where v6 draws pen ink with varying pressure. 5.19.0 has no such command.
-    const ink = this.side === 'b' ? await this.page.evaluate(() => { try { const r = window.__IHN_TEST_API__?.cmd?.('editor.pages.ink'); return Array.isArray(r) ? r : []; } catch { return []; } }) : [];
+    // On the page rows (`screen`) and on the pages panel's thumbnails (page boxes scaled onto `#thumb-<index>`).
+    const ink = this.side === 'b' ? await this.page.evaluate(() => {
+      let r;
+      try { r = window.__IHN_TEST_API__?.cmd?.('editor.pages.ink'); } catch { return []; }
+      if (!r || !Array.isArray(r.screen)) return [];
+      const out = [...r.screen];
+      for (const p of r.pages) {
+        const c = document.getElementById(`thumb-${p.index}`)?.getBoundingClientRect();
+        if (!c || !c.width) continue;
+        const kx = c.width / p.w, ky = c.height / p.h;
+        for (const [x0, y0, x1, y1] of p.boxes) out.push({ x: c.x + x0 * kx - 1, y: c.y + y0 * ky - 1, width: (x1 - x0) * kx + 2, height: (y1 - y0) * ky + 2 });
+      }
+      return out;
+    }) : [];
     this.captures.push({ label, png, dom, trace, regions, ink });
   }
 }

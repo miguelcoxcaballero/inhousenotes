@@ -84,6 +84,16 @@ pub fn set_live_sink(app: &mut App, on: bool) {
 }
 
 /// The live preview packets produced since the last call (`SyncEngine::live`).
+/// The pen stroke being drawn, if any: its page, the bounds of its points and predicted points, and its width.
+pub fn live_ink(app: &App) -> Option<(Id, [f64; 4], f64)> {
+    let st = &app.st.editor_pen;
+    if !st.active || st.tool != Tool::Pen || st.xy.is_empty() {
+        return None;
+    }
+    let (a, b) = (ihn_core::geom::bounds(&st.xy), ihn_core::geom::bounds(&st.pred));
+    Some((st.page, [a[0].min(b[0]), a[1].min(b[1]), a[2].max(b[2]), a[3].max(b[3])], st.width))
+}
+
 /// The predicted points drawn on the live tip layer (W7).
 pub fn predicted(app: &App) -> &[f64] { &app.st.editor_pen.pred }
 

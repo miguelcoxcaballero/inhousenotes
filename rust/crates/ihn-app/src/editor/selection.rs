@@ -465,6 +465,20 @@ fn transformed(d: &Doc, items: &[(Id, Stamp)], m: &Affine) -> Vec<(Id, Body)> {
 }
 
 /// The page's items with the preview in place of the originals.
+/// The pen strokes of a move/scale/rotate in progress as shown: their page, bounds and widths.
+pub fn preview_ink(app: &App) -> Option<(Id, Vec<([f64; 4], f64)>)> {
+    let tf = app.st.editor_selection.tf.as_ref()?;
+    let list = tf
+        .preview
+        .iter()
+        .filter_map(|(_, b)| match b {
+            Body::Stroke { tool: ihn_core::op::Tool::Pen, width, xy, .. } if !xy.is_empty() => Some((ihn_core::geom::bounds(xy), *width)),
+            _ => None,
+        })
+        .collect();
+    Some((tf.page, list))
+}
+
 fn preview_items<'a>(items: &PageItems<'a>, preview: &'a [(Id, Body)], images: &[Id]) -> PageItems<'a> {
     let strokes = items
         .strokes
