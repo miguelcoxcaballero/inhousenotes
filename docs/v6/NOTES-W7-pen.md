@@ -18,7 +18,9 @@ field, so every pen stroke was drawn with one `lineWidth`. There was no predicti
   and the committed stroke get the same radii and the ink does not change at lift. Radii are interpolated
   between points.
 - A stroke counts as pressure-sensitive when its pressure varies by more than `PRESSURE_RANGE` = 0.04. Otherwise
-  (mouse, touch, documents written without pressure) every radius is width / 2, as before.
+  (mouse, touch, documents written without pressure) it is drawn exactly as in 6.0.0: a round-capped line, which
+  is the same shape and cheaper to draw.
+- The outline is simplified (Ramer–Douglas–Peucker over x, y and radius, `SIMPLIFY` = 0.15 page px) before filling.
 - Outline: one closed "ribbon" per run (left edge forward, round end cap, right edge back, round start cap),
   filled with the nonzero rule. Every piece of a ribbon winds the same way, so self-crossings never leave holes.
   Turns sharper than about 100° (`SPLIT_COS`) split the ribbon, so the outer side gets a round join.
@@ -57,7 +59,25 @@ container on some GPUs, and it could not be checked on a real phone here.
   button and eraser end, side button pressed in the air, hover with side button, predicted points not stored).
 - e2e `04d-pen-pressure`: widths ordered by pressure on the real page bitmap, constant pressure keeps the width,
   side-button erase with the CDP stylus (`pointerType: 'pen'`, `force`, chorded buttons), toolbar unchanged.
-- Size: `ihn.wasm` 1,341,706 bytes / 598,680 gzip (main: 1,334,340 / 589,605 by `gzip -9`), JS 121,863 bytes.
+- e2e full suite: 100/100. Quick parity against 5.19.0, all 22 state files: 0 failures. Pen-ink differences are
+  expected inside the boxes from `editor.pages.ink` (page rows snapped to the scroll preview's JPEG blocks, page
+  thumbnails, timeline preview pages, the stroke being drawn, a moving selection).
+- Size (build): `ihn.wasm` 1,343,265 bytes / 599,638 gzip vs 6.0.0 1,334,340 / 595,562 (+4 KB gzip).
+- Perf, `bench.mjs --runs 3`, dense page (2,400 strokes, all with varying pressure: the worst case), CPU ms per step,
+  6.0.0 vs new, two alternating rounds. Before simplification the new ink was about 20 % slower (repaint 4,025 →
+  4,811 ms). After it:
+
+  | Measure | 6.0.0 #1 / #2 | new #1 / #2 |
+  |---|---|---|
+  | Pen | 4.77 / 5.67 | 5.90 / 4.50 |
+  | Eraser | 5.78 / 6.09 | 6.71 / 5.85 |
+  | Lasso | 7.32 / 6.72 | 8.07 / 6.94 |
+  | Scroll | 24.5 / 15.4 | 20.9 / 21.4 |
+  | Zoom | 24.2 / — | 22.5 / 28.9 |
+  | Full repaint (ms) | 4,147 / — | 4,618 / 4,310 |
+
+  Frame times are 16.7 ms p95 on both. The full repaint of the worst-case page is still about 5–10 % slower;
+  the rest is within noise.
 
 ## Not done / open
 

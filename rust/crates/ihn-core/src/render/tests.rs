@@ -655,11 +655,12 @@ fn pdf_pen_ink_is_a_filled_pressure_outline() {
             }
         }
     }
+    // The edges of a straight ramp are simplified to their ends: compare the outline's height at both ends.
     let spread = |x0: f64, x1: f64| {
         let ys: Vec<f64> = pts.iter().filter(|p| p.0 >= x0 && p.0 <= x1).map(|p| p.1).collect();
         ys.iter().cloned().fold(f64::MIN, f64::max) - ys.iter().cloned().fold(f64::MAX, f64::min)
     };
-    assert!(spread(20.0, 30.0) < spread(100.0, 110.0), "{} {}", spread(20.0, 30.0), spread(100.0, 110.0));
+    assert!(spread(0.0, 40.0) < spread(90.0, 140.0), "{} {} {pts:?}", spread(0.0, 40.0), spread(90.0, 140.0));
 }
 
 #[test]
@@ -668,7 +669,9 @@ fn pen_strokes_fill_their_outline_on_the_page() {
     super::ink::LEGACY.with(|l| l.set(false));
     let p = s.page(0);
     let ink = [stroke(Tool::Pen, "#111111", 2.0, &[10.0, 10.0, 30.0, 10.0, 30.0, 40.0])];
-    let all = items(&ink, 0);
+    let pressure = [0.2f32, 0.6, 0.9];
+    let mut all = items(&ink, 0);
+    all.strokes[0].p = Some(&pressure);
     let view = a4(&all);
     page::repaint(&mut s.c, &mut s.tpl, &mut s.paths, p.page, PAGE_PX, &view, 2.0);
     s.h.run(&mut s.c);
@@ -677,6 +680,14 @@ fn pen_strokes_fill_their_outline_on_the_page() {
     assert_eq!((names.iter().filter(|n| **n == "fill(path)").count(), names.iter().filter(|n| **n == "stroke(path)").count()), (1, 0));
     assert!(names.contains(&"path:closePath") && names.contains(&"path:arc"), "{names:?}");
     assert!(ops.contains(&"[\"set:fillStyle\",\"#111111\"]".to_string()));
+    // Without varying pressure the same stroke is a round-capped line, as in 6.0.0.
+    s.h.reset();
+    s.paths.clear(&mut s.c);
+    let plain = items(&ink, 1);
+    page::repaint(&mut s.c, &mut s.tpl, &mut s.paths, p.page, PAGE_PX, &a4(&plain), 2.0);
+    s.h.run(&mut s.c);
+    let names: Vec<String> = s.h.surfaces()[0].1.iter().map(|l| super::trace::name(l).to_string()).collect();
+    assert_eq!((names.iter().filter(|n| *n == "fill(path)").count(), names.iter().filter(|n| *n == "stroke(path)").count()), (0, 1));
 }
 
 fn count_ops(ops: &[String], suffix: &str) -> usize { ops.iter().filter(|o| o.ends_with(suffix)).count() }
