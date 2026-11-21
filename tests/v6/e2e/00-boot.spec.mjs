@@ -22,13 +22,13 @@ async function open(page, url = '/?e2e=1') {
   return { problems, requests };
 }
 
-test('boots signed out into Welcome with v6.1.0 labels and a clean console', async ({ page }) => {
+test('boots signed out into Welcome with v6.1.1 labels and a clean console', async ({ page }) => {
   const { problems, requests } = await open(page);
   await expect(page.locator('#welcome-view')).toBeVisible();
   await expect(page.locator('#drive-home')).toBeHidden();
   await expect(page.locator('#editor-view')).toBeHidden();
   const labels = await page.locator('[data-app-version]').allTextContents();
-  expect(labels).toEqual(['v6.1.0', 'v6.1.0']);
+  expect(labels).toEqual(['v6.1.1', 'v6.1.1']);
   expect(await page.evaluate(() => document.documentElement.dataset.bootDestination)).toBe('welcome');
 
   const api = await page.evaluate(() => {
@@ -37,7 +37,7 @@ test('boots signed out into Welcome with v6.1.0 labels and a clean console', asy
   });
   expect(api.imports).toEqual(api.allowed);
   expect(api.imports).toHaveLength(9);
-  expect(api.state).toMatchObject({ version: '6.1.0', abi: 6, ready: true });
+  expect(api.state).toMatchObject({ version: '6.1.1', abi: 6, ready: true });
   expect(api.state.modules).toContain('shell');
   expect(api.state.flags & 4).toBe(4); // e2e
 
@@ -59,7 +59,7 @@ test('the test API exists only on localhost with ?e2e=1', async ({ page }) => {
   const wasm = [];
   page.on('request', request => { if (request.url().includes('/wasm/')) wasm.push(new URL(request.url()).pathname); });
   await page.goto('/');
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v6.1.0');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v6.1.1');
   expect(await page.evaluate(() => typeof window.__IHN_TEST_API__)).toBe('undefined');
   expect(wasm).toEqual(['/wasm/ihn.wasm']); // the production build, without the test API
 });

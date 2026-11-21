@@ -66,7 +66,7 @@ no wasm threads; none are needed.
 
 ## 2. Crates, modules and files
 
-### 2.1 Repository layout (v6 additions; v5 runtime files stay deployed but unreferenced until 6.0.1, §10.4)
+### 2.1 Repository layout (v6 additions; the v5 runtime files were removed in 6.1.1, §10.4)
 
 ```
 index.html                 5.18.0 copy; only <head> version/native map and the script tags differ (§3.1)
@@ -875,6 +875,12 @@ reloads an open editor). Until then:
   answers requests carrying `v=5.18.0` from it first, then the network. Both are removed in 6.0.1.
 - The browser's update check of the 5.x registration fetches `/service-worker.js`, now the v6 worker (same URL,
   classic), which installs and takes control; its `freshPage` rule then caches only HTML containing `v=6.0.0`.
+
+
+> **6.1.1:** the 5.x runtime files (`*-v5.js`, `boot-v5.js`, `bullet-template.js`, `ink-palette.js`,
+> `wasm/inhouse_notes_core.wasm`, `vendor/jspdf/`) and the service worker's `inhouse-shell-5.x` exception were
+> removed (planned here for 6.0.1). A tab still open on 5.x gets 404 for any file it had not loaded, and reloads
+> into 6.x at its next release check.
 
 ## 11. Editor tools and the input pipeline
 

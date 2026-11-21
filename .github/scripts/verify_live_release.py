@@ -15,7 +15,6 @@ revision = os.environ['GITHUB_SHA']
 names = ['index.html', 'boot.js', 'service-worker.js', 'offline-assets.js', 'native-assets.json', 'wasm/ihn.wasm',
          'offline-v5.css', 'vendor/fonts/ui.css', 'updates/A.json', 'updates/B.json']
 names += sorted(f'host/{path.name}' for path in (root / 'host').glob('*.js'))
-names += sorted(path.name for path in root.glob('*-v5.js'))
 expected = {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in names}
 deadline = time.monotonic() + 180
 attempt = 0

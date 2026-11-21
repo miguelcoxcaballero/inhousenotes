@@ -1,10 +1,8 @@
 'use strict';
 // Inhouse Notes 6 service worker (ARCHITECTURE §12): shell cache only. It stays a classic script at the URL every
 // 5.x page registered, and keeps the VERSION line that boot.js reads to detect a published release.
-const VERSION='6.1.0';
+const VERSION='6.1.1';
 const CACHE=`inhouse-shell-${VERSION}`;
-// Kept until 6.0.1 for 5.x tabs that are still open (ARCHITECTURE §10.4).
-const legacyCaches=new Map(['5.18.0','5.19.0'].map(version=>[version,`inhouse-shell-${version}`]));
 // One entry per window that announced itself as v6; survives worker restarts.
 const CLIENTS='ihn6-clients';
 importScripts('offline-assets.js');
@@ -19,7 +17,7 @@ self.addEventListener('install',event=>event.waitUntil((async()=>{
     await self.skipWaiting();
 })()));
 self.addEventListener('activate',event=>event.waitUntil((async()=>{
-    for(const key of await caches.keys())if(key.startsWith('inhouse-shell-')&&key!==CACHE&&![...legacyCaches.values()].includes(key))await caches.delete(key);
+    await dropOldShells();
     await self.clients.claim();
 })()));
 self.addEventListener('fetch',event=>{
@@ -29,11 +27,6 @@ self.addEventListener('fetch',event=>{
     if(url.pathname.startsWith('/oauth-callback'))return;
     const path=url.pathname==='/'?'/index.html':url.pathname;
     const requestedVersion=url.searchParams.get('v');
-    if(legacyCaches.has(requestedVersion)) {
-        // A 5.x page that has not reloaded yet: its own shell first, then the network.
-        event.respondWith((async()=>(await caches.match(path,{cacheName:legacyCaches.get(requestedVersion)}))||fetch(event.request))());
-        return;
-    }
     if(!self.INHOUSE_OFFLINE_ASSETS.includes(path))return;
     if(requestedVersion&&/^\d+\.\d+\.\d+$/.test(requestedVersion)&&requestedVersion!==VERSION)return;
     event.respondWith(path.endsWith('.html')?freshPage(event.request,path,event):(async()=>{
@@ -45,6 +38,11 @@ self.addEventListener('fetch',event=>{
         return response;
     })());
 });
+// 6.1.1: the 5.x shells are no longer kept either (ARCHITECTURE §10.4); their files left the site with them. Also run
+// when a v6 window starts, since a 5.x page that was still open may have written its cache again before reloading.
+async function dropOldShells(){
+    for(const key of await caches.keys())if(key.startsWith('inhouse-shell-')&&key!==CACHE)await caches.delete(key);
+}
 // A complete versioned shell is immediately usable. Revalidate in the
 // background; boot.js checks published versions and reloads only outside editing.
 async function freshPage(request,path,event){
@@ -74,7 +72,7 @@ async function v6Clients(){
 self.addEventListener('message',event=>{
     const id=event.source?.id;
     if(event.data==='ihn6-hello'&&id) {
-        event.waitUntil(caches.open(CLIENTS).then(registry=>registry.put(`/__ihn6-client__/${id}`,new Response(''))));
+        event.waitUntil(Promise.all([caches.open(CLIENTS).then(registry=>registry.put(`/__ihn6-client__/${id}`,new Response(''))),dropOldShells()]));
     } else if(event.data?.type==='ihn6-clients') {
         event.waitUntil(v6Clients().then(answer=>(event.ports[0]||event.source)?.postMessage(answer)));
     }

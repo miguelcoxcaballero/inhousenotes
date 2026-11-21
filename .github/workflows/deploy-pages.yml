@@ -82,8 +82,8 @@ jobs:
           for file in index.html CNAME boot.js host/main.js wasm/ihn.wasm service-worker.js offline-assets.js native-assets.json; do
             test -f "$site_dir/$file"
           done
-          # The 5.18.0 runtime stays deployed but unreferenced until 6.0.1 for tabs still open (ARCHITECTURE §10.4).
-          test -f "$site_dir/app-v5.js"
+          # 6.1.1: the 5.x runtime is no longer deployed (ARCHITECTURE §10.4).
+          if ls "$site_dir"/*-v5.js >/dev/null 2>&1; then echo "5.x runtime files must not be deployed"; exit 1; fi
           grep -q "const APP_VERSION = '" "$site_dir/index.html"
           if grep -q 'native=__NATIVE__' "$site_dir/index.html"; then echo "index.html is not the generated build (npm run build)"; exit 1; fi
           echo "Production artifact: $(find "$site_dir" -type f | wc -l) files, $(du -sh "$site_dir" | cut -f1)"
