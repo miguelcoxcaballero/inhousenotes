@@ -12,8 +12,8 @@
       "mime": "application/javascript"
     },
     "/host/dom.js": {
-      "sha256": "e1fbfbe50c8ea1ceeeb57969604ba9a6c72d7440fd46d04af745fc7820b849a3",
-      "size": 14305,
+      "sha256": "c0929b85408dc0d8abca19a5339bed5e8eeec3afede2049ba374e336a32da2ec",
+      "size": 13962,
       "mime": "application/javascript"
     },
     "/host/export-worker.js": {
@@ -1057,12 +1057,12 @@
       "mime": "font/ttf"
     },
     "/wasm/ihn-2.wasm": {
-      "sha256": "25d4f00248175cd6699b6b2908cd42aeff19ff1ef606b3404322f614a637d1a3",
+      "sha256": "57413619225e3b88591c8ce4c7f8026727bc7192b945ca4797fa54a01daeaa61",
       "size": 818156,
       "mime": "application/wasm"
     },
     "/wasm/ihn.wasm": {
-      "sha256": "fbcf30e26708eaf5e8937096994163e7741b85d2ac910f102a7c78ce4664e5ea",
+      "sha256": "53f4dd53f45081849cbe34085e2ac006861739ee023c3ebf5cec0212789267aa",
       "size": 571242,
       "mime": "application/wasm"
     }
