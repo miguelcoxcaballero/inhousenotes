@@ -33,7 +33,7 @@ pub const PRESSURE_RANGE: f32 = 0.04;
 pub const STEP: f64 = 1.5;
 /// Outline samples closer than this (page px) to the line between their kept neighbours, in position and in
 /// radius, are dropped (fewer vertices to fill, no visible change).
-pub const SIMPLIFY: f64 = 0.15;
+pub const SIMPLIFY: f64 = 0.05;
 /// Turns sharper than about 100° split the ribbon: the cosine of the angle between the incoming and outgoing
 /// direction below this value (cos 100° ≈ −0.17).
 pub const SPLIT_COS: f64 = -0.17;
@@ -222,24 +222,29 @@ fn ribbon(c: &mut Cmds, s: &[Sample]) {
     };
     // Normal on the "left" side: the tangent turned a quarter anticlockwise on screen.
     let normal = |t: P| (t.1, -t.0);
-    let mut right = Vec::with_capacity(n);
+    let (mut left, mut right) = (Vec::with_capacity(n), Vec::with_capacity(n));
     for (i, p) in s.iter().enumerate() {
         let m = normal(tangent(i));
-        let (lx, ly) = (p.x + m.0 * p.r, p.y + m.1 * p.r);
-        if i == 0 {
-            c.move_to(lx, ly);
-        } else {
-            c.line_to(lx, ly);
-        }
+        left.push((p.x + m.0 * p.r, p.y + m.1 * p.r));
         right.push((p.x - m.0 * p.r, p.y - m.1 * p.r));
     }
+    // 6.2.3: each edge is a smooth curve (quadratics through the midpoints between its points, the points as
+    // control points), not a polyline, so no straight facets show however far the page is zoomed.
+    let edge = |c: &mut Cmds, pts: &[P]| {
+        for i in 1..pts.len() - 1 {
+            c.quad_to(pts[i].0, pts[i].1, (pts[i].0 + pts[i + 1].0) / 2.0, (pts[i].1 + pts[i + 1].1) / 2.0);
+        }
+        let end = pts[pts.len() - 1];
+        c.line_to(end.0, end.1);
+    };
+    c.move_to(left[0].0, left[0].1);
+    edge(c, &left);
     // End cap: from the left edge round the front to the right edge.
     let (last, m) = (s[n - 1], normal(tangent(n - 1)));
     let a = jsmath::atan2(m.1, m.0);
     c.arc(last.x, last.y, last.r, a, a + PI);
-    for &(x, y) in right.iter().rev() {
-        c.line_to(x, y);
-    }
+    right.reverse();
+    edge(c, &right);
     // Start cap: from the right edge round the back to the left edge.
     let (first, m) = (s[0], normal(tangent(0)));
     let a = jsmath::atan2(m.1, m.0);
@@ -337,6 +342,7 @@ mod tests {
             let code = bytes[i];
             i += 1 + 8 * match code {
                 op::MOVE_TO | op::LINE_TO => 2,
+                op::QUAD_TO => 4,
                 op::ARC => 5,
                 op::CLOSE_PATH => 0,
                 _ => panic!("unexpected op {code}"),

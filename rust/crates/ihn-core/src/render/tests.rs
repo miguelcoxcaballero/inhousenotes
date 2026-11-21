@@ -650,6 +650,8 @@ fn pdf_pen_ink_is_a_filled_pressure_outline() {
             Err(_) => {
                 if matches!(*t, "m" | "l") {
                     pts.push((stack[0], stack[1]));
+                } else if *t == "c" {
+                    pts.push((stack[4], stack[5]));
                 }
                 stack.clear();
             }

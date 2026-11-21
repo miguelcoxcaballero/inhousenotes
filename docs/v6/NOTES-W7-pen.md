@@ -89,3 +89,7 @@ container on some GPUs, and it could not be checked on a real phone here.
 ## 6.2.1
 
 The owner found the width variation exaggerated, its transitions abrupt and the predicted tip distracting: the range is now ×0.85–×1.15, the pressure average is slower (0.12) and `host/dom.js` no longer sends predicted points (the tip draws real samples only).
+
+## 6.2.3
+
+The outline edges were polylines through the samples, simplified at 0.15 px, which showed as straight facets on fast strokes and when zoomed. Each edge is now a chain of quadratics through the midpoints (the samples as control points) and the simplification tolerance is 0.05 px.
