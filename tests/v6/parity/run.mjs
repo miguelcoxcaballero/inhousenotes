@@ -346,7 +346,9 @@ export class Driver {
     const trace = this.traceEnabled ? normalizeTrace(await this.page.evaluate(() => self.__ihnTrace ? self.__ihnTrace.take() : null)) : { surfaces: [] };
     let regions = null;
     if (this.state.expected) regions = await this.state.expected(this);
-    this.captures.push({ label, png, dom, trace, regions });
+    // BEHAVIOUR-CHANGES W7-1 (every state): where v6 draws pen ink with varying pressure. 5.19.0 has no such command.
+    const ink = this.side === 'b' ? await this.page.evaluate(() => { try { const r = window.__IHN_TEST_API__?.cmd?.('editor.pages.ink'); return Array.isArray(r) ? r : []; } catch { return []; } }) : [];
+    this.captures.push({ label, png, dom, trace, regions, ink });
   }
 }
 
@@ -375,14 +377,16 @@ function judge(state, a, b, dpr) {
   const comparison = compareCaptures(a, b);
   if (comparison.pixelsEqual) return { status: comparison.dom || comparison.trace ? 'warn' : 'pass', comparison };
   // The rule's rectangles in both apps: the same element can be larger in 5.19.0 than in v6 (a line that wraps).
-  const regions = a.regions || b.regions ? [...(a.regions || []), ...(b.regions || [])] : null;
-  if (state.tags?.length && regions && comparison.pixels.box) {
+  // (`editor.pages.ink` already covers the scroll preview's JPEG blocks that hold pen ink.)
+  const ink = b.ink || [];
+  const regions = a.regions || b.regions || ink.length ? [...(a.regions || []), ...(b.regions || []), ...ink] : null;
+  if ((state.tags?.length || ink.length) && regions && comparison.pixels.box) {
     // Expected difference: every differing pixel must lie inside the rule's rectangles (TESTING §3.5).
     // (Several rules may each allow their own rectangles, so pixels are tested one by one, not their bounding box.)
     const rects = regions.map(r => [Math.floor(r.x * dpr), Math.floor(r.y * dpr), Math.ceil((r.x + r.width) * dpr), Math.ceil((r.y + r.height) * dpr)]);
     const { width, marks } = comparison.pixels;
     const inside = marks.every(i => { const p = i / 4, x = p % width, y = (p / width) | 0; return rects.some(([x0, y0, x1, y1]) => x >= x0 && y >= y0 && x < x1 && y < y1); });
-    if (inside) return { status: 'expected', comparison };
+    if (inside) return { status: 'expected', comparison, ...(ink.length ? { tags: [...new Set([...(state.tags || []), 'W7-1'])] } : {}) };
   }
   return { status: 'fail', comparison };
 }
