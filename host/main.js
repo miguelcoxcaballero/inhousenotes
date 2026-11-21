@@ -364,9 +364,15 @@ function secondPart(host, url, env) {
     now: () => {
       if (!instance) instance = new WebAssembly.Instance(part.module(), { env, p: host.ex });
     },
-    prefetch: () => fetch(url)
+    // The download starts after boot (`prefetch`): started with the first part it delays a first load on a slow
+    // network by about 3 s. Offline it starts with the first part (see boot): the service worker's cache answers it
+    // within milliseconds, and `now()` must not need the synchronous request, which that cache does not answer.
+    download: null,
+    fetch: () => (part.download ||= fetch(url)
       .then(response => { if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`); return response.arrayBuffer(); })
-      .then(buffer => { bytes ||= new Uint8Array(buffer); return module || WebAssembly.compile(bytes); })
+      .then(buffer => { bytes ||= new Uint8Array(buffer); })),
+    prefetch: () => part.fetch()
+      .then(() => module || WebAssembly.compile(bytes))
       .then(compiled => { module ||= compiled; part.now(); performance.mark('ihn-wasm2-ready'); })
       .catch(error => console.warn('Inhouse Notes: the second part of the app will load when needed', error))
   };
@@ -454,6 +460,7 @@ async function boot() {
   performance.mark('ihn-boot-start');
   const env = imports(host);
   host.split = secondPart(host, asset(config.e2e ? 'wasm/ihn-test-2.wasm' : 'wasm/ihn-2.wasm'), env);
+  if (navigator.onLine === false) host.split.fetch().catch(() => {});
   const [wasm, ...executors] = await Promise.all([
     // `?e2e=1` on localhost loads the test build: the same code plus the test API (scripts/build-wasm.mjs).
     loadWasm(asset(config.e2e ? 'wasm/ihn-test.wasm' : 'wasm/ihn.wasm'), { env }),

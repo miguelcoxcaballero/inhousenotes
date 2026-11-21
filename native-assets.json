@@ -32,8 +32,8 @@
       "mime": "application/javascript"
     },
     "/host/main.js": {
-      "sha256": "c47f1dec28b79d9efc0d1a87432faf0336b035f5ff8b9567f5dc83d7939b2e7f",
-      "size": 23785,
+      "sha256": "b219754643e8a975f95f517cc1cda1e61f05ce8b6c770588f42d1157008f729c",
+      "size": 24280,
       "mime": "application/javascript"
     },
     "/host/pdf.js": {

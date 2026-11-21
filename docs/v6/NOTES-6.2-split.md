@@ -23,3 +23,10 @@ match). A stale list is safe: it only makes the second part load earlier.
 Measured: Rust tests, 100/100 e2e (the production boot fetches each part once; boot, offline, export worker,
 5.19.0 → v6 upgrade), quick parity `canvas` 0 failures. First load on an emulated slow mobile network (1.6 Mbps,
 150 ms, empty cache): app ready 11.7 s → 7.9 s. On a local server boot and document open are unchanged within noise.
+
+## 6.2.2: offline
+
+A synchronous request is not answered from the service worker's cache, so offline the on-the-spot fallback could
+fail. Offline the second part is now fetched together with the first one (the cache answers within milliseconds:
+measured, app ready at 86 ms, second part at 96 ms, no synchronous request). Online it is still fetched after boot:
+fetched together with the first part it delayed a first load on a slow network from 7.9 s to 10.8 s.
