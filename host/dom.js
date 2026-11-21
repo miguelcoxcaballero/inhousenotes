@@ -58,13 +58,19 @@ export default function install(host) {
     if (kind === 2) { try { coalesced = event.getCoalescedEvents?.(); } catch (_) { /* v5: synthetic input */ } }
     const count = coalesced ? coalesced.length : 0;
     const found = kind === 2 || kind === 9 ? [] : path(event.target);
-    const w = host.writer.begin(72 + count * 40 + found.length * 4);
+    // W7: where the pen will probably be next frame (drawn on the live tip layer only, never stored).
+    let predicted = null;
+    if (kind === 2 && event.pointerType === 'pen') { try { predicted = event.getPredictedEvents?.(); } catch (_) { /* unsupported */ } }
+    const ahead = predicted ? Math.min(predicted.length, 4) : 0;
+    const w = host.writer.begin(76 + (count + ahead) * 40 + found.length * 4);
     w.u32(id).u32(h).u8(kind).u8(POINTER_TYPE[event.pointerType] || 0).i32(event.pointerId).i32(event.button).u32(flags(event, found));
     sample(w, event);
     w.u32(count);
     for (let i = 0; i < count; i += 1) sample(w, coalesced[i]);
     w.u32(found.length);
     for (const handle of found) w.u32(handle);
+    w.u32(ahead);
+    for (let i = 0; i < ahead; i += 1) sample(w, predicted[i]);
     return w;
   }
 

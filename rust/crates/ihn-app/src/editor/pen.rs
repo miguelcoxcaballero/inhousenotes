@@ -9,6 +9,7 @@
 use super::input::{self, Tool as InputTool, ToolHandler};
 use super::{history, pages};
 use crate::doc::session;
+use crate::abi::ptr;
 use crate::{App, Event, Host, Mod, PointerBatch};
 use ihn_core::doc::LivePreview;
 use ihn_core::geom::{js_max, js_min};
@@ -30,6 +31,8 @@ pub struct State {
     /// `x0, y0, x1, y1, …` and the pressure of each sample (v5 `points[i].p`).
     xy: Vec<f64>,
     p: Vec<f32>,
+    /// W7: predicted next positions (page px), drawn on the live tip layer until the next frame; never stored.
+    pred: Vec<f64>,
     min_d2: f64,
     live: Live,
     bounds: Option<Bounds>,
@@ -55,6 +58,7 @@ impl Default for State {
             width: 2.0,
             xy: Vec::with_capacity(2 * RESERVE),
             p: Vec::with_capacity(RESERVE),
+            pred: Vec::with_capacity(8),
             min_d2: 0.0,
             live: Live::default(),
             bounds: None,
@@ -80,6 +84,9 @@ pub fn set_live_sink(app: &mut App, on: bool) {
 }
 
 /// The live preview packets produced since the last call (`SyncEngine::live`).
+/// The predicted points drawn on the live tip layer (W7).
+pub fn predicted(app: &App) -> &[f64] { &app.st.editor_pen.pred }
+
 pub fn drain_live(app: &mut App) -> Vec<LivePreview> { std::mem::take(&mut app.st.editor_pen.out) }
 
 /// The pen and highlighter [`ToolHandler`].
@@ -105,7 +112,7 @@ fn paint(app: &mut App, host: &mut dyn Host) {
         let ink = pages::with_gfx(app, |app, g| {
             let st = &mut app.st.editor_pen;
             let s = stroke(st.tool, &st.color, st.width, &st.xy, &st.p);
-            let ink = live::update(&mut g.cmds, &mut st.live, target, &mut cursor, &s);
+            let ink = live::update(&mut g.cmds, &mut st.live, target, &mut cursor, &s, &st.pred);
             st.bounds = cursor.bounds;
             ink
         });
@@ -150,6 +157,7 @@ impl ToolHandler for Pen {
         st.width = width;
         st.xy.clear();
         st.p.clear();
+        st.pred.clear();
         st.xy.extend_from_slice(&[x, y]);
         st.p.push(pressure as f32);
         // v5: appendPenSamples' minimum distance (pen 0.001 px; highlighter max(0.6, 0.12·width)).
@@ -194,7 +202,19 @@ impl ToolHandler for Pen {
             st.xy.push(y);
             st.p.push(if s.pressure != 0.0 && !s.pressure.is_nan() { s.pressure } else if last_p != 0.0 && !last_p.is_nan() { last_p } else { 0.5 });
         }
-        let appended = st.p.len() != before;
+        // W7: the predicted points of this event replace the previous ones (pen only; the highlighter's
+        // translucent passes would show the prediction being redrawn).
+        let had = !st.pred.is_empty();
+        st.pred.clear();
+        if st.tool == Tool::Pen && p.kind == ptr::MOVE {
+            for s in p.predicted().filter(|s| s.t >= last_t) {
+                let (x, y) = c.page_xy(&s);
+                if x.is_finite() && y.is_finite() {
+                    st.pred.extend_from_slice(&[x, y]);
+                }
+            }
+        }
+        let appended = st.p.len() != before || had || !st.pred.is_empty();
         if appended && !std::mem::replace(&mut st.frame_armed, true) {
             app.sched.frame(host.out(), Mod::EditorPen);
         }
@@ -209,6 +229,7 @@ impl ToolHandler for Pen {
         if !std::mem::replace(&mut st.active, false) {
             return;
         }
+        st.pred.clear();
         let page = st.page;
         let live_id = st.live_id;
         if !session::get(app).is_some_and(|s| s.doc.order().contains(&page)) {

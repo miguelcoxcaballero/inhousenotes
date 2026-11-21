@@ -609,6 +609,8 @@ pub struct PointerBatch<'a> {
     pub raw: Sample,
     coalesced: &'a [u8],
     pub path: Handles<'a>,
+    /// `event.getPredictedEvents()` of a pen `pointermove` (W7; at most 4, empty elsewhere or when absent).
+    predicted: &'a [u8],
 }
 
 impl<'a> PointerBatch<'a> {
@@ -628,8 +630,14 @@ impl<'a> PointerBatch<'a> {
                 r.take(n.checked_mul(40)?)?
             },
             path: handles(&mut r)?,
+            predicted: {
+                let n = r.u32().unwrap_or(0) as usize;
+                r.take(n.checked_mul(40)?).unwrap_or(&[])
+            },
         })
     }
+    /// The predicted samples (see `predicted`).
+    pub fn predicted(&self) -> impl Iterator<Item = Sample> + 'a { self.predicted.chunks_exact(40).filter_map(|c| sample(&mut Reader::new(c))) }
     /// `event.getCoalescedEvents()` (empty for every type but `pointermove`, and on WebViews that report none).
     pub fn coalesced(&self) -> impl Iterator<Item = Sample> + 'a {
         self.coalesced.chunks_exact(40).filter_map(|c| sample(&mut Reader::new(c)))
