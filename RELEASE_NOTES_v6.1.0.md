@@ -1,6 +1,6 @@
 # v6.1.0
 
-Pen writing (pending the owner's approval of `docs/v6/BEHAVIOUR-CHANGES.md` §7).
+Pen writing (`docs/v6/BEHAVIOUR-CHANGES.md` §7, approved by the owner).
 
 - Pen ink follows the stylus pressure: thin when pressing lightly, thicker when pressing hard, with natural
   tapering. The same ink everywhere: on the page, in thumbnails, in other devices' live view and in exported PDFs.
