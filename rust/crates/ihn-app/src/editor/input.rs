@@ -291,6 +291,12 @@ fn canvas_in(app: &App, p: &PointerBatch) -> Option<(Node, Id)> {
 /// v5: the canvas' `pointerdown` (`setupCanvasEvents`).
 fn down(app: &mut App, host: &mut dyn Host, p: &PointerBatch) -> u32 {
     let Some((canvas, page)) = canvas_in(app, p) else { return 0 };
+    // W7: the side button pressed while the pen is in the air (no tip, no pressure) is a pointerdown of its own;
+    // the contact starts when the tip touches (a move with the tip bit, see `moved`).
+    if p.ptype == ptr::PEN && p.raw.buttons == PEN_BARREL && p.raw.pressure == 0.0 {
+        app.st.editor_input.side_eraser = true;
+        return ret::PREVENT_DEFAULT;
+    }
     app.st.editor_input.events += 1;
     let read_only = view::read_only(app);
     if let Some(c) = app.st.editor_input.contact {
@@ -340,7 +346,14 @@ fn down(app: &mut App, host: &mut dyn Host, p: &PointerBatch) -> u32 {
 /// v5: `moveDrawing(e)` (pointermove and pointerrawupdate).
 fn moved(app: &mut App, host: &mut dyn Host, p: &PointerBatch) -> u32 {
     let st = &mut app.st.editor_input;
-    let Some(c) = st.contact.filter(|c| c.pointer_id == p.pointer_id) else { return 0 };
+    let Some(c) = st.contact.filter(|c| c.pointer_id == p.pointer_id) else {
+        // W7: the tip touches while the side button is held since the air: Chrome sends a move, not a down.
+        let touching = p.raw.buttons & 1 != 0 || p.raw.pressure > 0.0;
+        if p.ptype == ptr::PEN && p.kind == ptr::MOVE && p.raw.buttons & PEN_BARREL != 0 && touching && st.contact.is_none() {
+            return down(app, host, p);
+        }
+        return 0;
+    };
     st.events += 1;
     if view::read_only(app) {
         return 0;
@@ -807,6 +820,30 @@ mod tests {
         t.frame();
         t.send(L_UP, ptr::UP, ptr::PEN, &[(160.0, 80.0, 6.0)], 0);
         assert_eq!(t.live_strokes(), vec![vec![10.0, 10.0, 30.0, 20.0, 60.0, 30.0]]);
+    }
+
+    #[test]
+    fn the_side_button_pressed_in_the_air_erases_from_the_first_touch() {
+        let mut t = boot();
+        t.stroke(ptr::PEN, &[(10.0, 100.0), (200.0, 100.0)]);
+        let before = t.live_strokes();
+        // Side button pressed while hovering: a pointerdown without tip or pressure starts nothing.
+        let r = t.send(L_DOWN, ptr::DOWN, ptr::PEN, &[(200.0, 120.0, t.host.now)], PEN_BARREL);
+        assert_eq!(r, ret::PREVENT_DEFAULT);
+        assert!(contact(&t.app).is_none());
+        assert_eq!(t.live_strokes(), before);
+        // The tip touches: a move with both buttons (and the target path, sent for pen moves with the side button).
+        let t0 = t.host.now;
+        let bytes = encode(L_MOVE, ptr::MOVE, ptr::PEN, 1, &[(200.0, 130.0, t0 + 1.0)], 1 | PEN_BARREL, &[t.canvas, Ui::CANVAS_CONTAINER]);
+        t.app.event(&mut t.host, kind::POINTER, &bytes);
+        assert!(contact(&t.app).is_some_and(|c| c.tool.is_eraser()));
+        t.send(L_MOVE, ptr::MOVE, ptr::PEN, &[(200.0, 160.0, t0 + 2.0), (200.0, 180.0, t0 + 3.0)], 1 | PEN_BARREL);
+        t.frame();
+        // The tip lifts with the button still held: the contact ends.
+        t.send(L_MOVE, ptr::MOVE, ptr::PEN, &[(200.0, 190.0, t0 + 4.0)], PEN_BARREL);
+        assert!(contact(&t.app).is_none());
+        assert_ne!(t.live_strokes(), before, "the stroke was erased");
+        assert_eq!(t.app.st.editor_input.tool, Tool::Pen);
     }
 
     #[test]

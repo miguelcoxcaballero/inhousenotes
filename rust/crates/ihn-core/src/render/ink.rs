@@ -11,24 +11,27 @@
 //! width, so they look like the round-capped strokes drawn before.
 
 use super::cmd::Cmds;
+use crate::jsmath;
 use std::f64::consts::PI;
 
 type P = (f64, f64);
 
 /// Width multiplier at pressure 0 (lightest touch).
-pub const MIN_FACTOR: f64 = 0.3;
-/// Added to `MIN_FACTOR` at full pressure: the multiplier is `MIN_FACTOR + SPAN · p^GAMMA`.
-pub const SPAN: f64 = 1.25;
-/// < 1 makes the light end of the range thicker, so normal handwriting (p ≈ 0.25–0.5) lands near the chosen width.
-pub const GAMMA: f64 = 0.6;
+pub const MIN_FACTOR: f64 = 0.4;
+/// Added to `MIN_FACTOR` at full pressure: the multiplier is `MIN_FACTOR + SPAN · p^GAMMA`. Normal handwriting
+/// (p ≈ 0.35) gets about the chosen width (×1.05); a light touch (p ≈ 0.1) ×0.64; pressing hard (p ≈ 0.9) ×1.78.
+pub const SPAN: f64 = 1.5;
+/// < 1 lifts the light end of the range a little, so light writing does not turn into hairlines.
+pub const GAMMA: f64 = 0.8;
 /// Weight of each new pressure sample in the running average (lower = smoother width changes).
 pub const PRESSURE_SMOOTHING: f64 = 0.35;
 /// A stroke counts as pressure-sensitive when its pressure varies by more than this.
 pub const PRESSURE_RANGE: f32 = 0.04;
 /// Centreline sample spacing in page px (smaller = smoother outline, more path points).
 pub const STEP: f64 = 1.5;
-/// Turns sharper than this (radians between the incoming and outgoing direction) split the ribbon.
-pub const SPLIT_TURN: f64 = 1.75;
+/// Turns sharper than about 100° split the ribbon: the cosine of the angle between the incoming and outgoing
+/// direction below this value (cos 100° ≈ −0.17).
+pub const SPLIT_COS: f64 = -0.17;
 
 #[cfg(test)]
 thread_local! {
@@ -61,7 +64,7 @@ pub fn has_pressure(p: Option<&[f32]>) -> bool {
 pub fn max_factor() -> f64 { MIN_FACTOR + SPAN }
 
 /// Width multiplier for a (smoothed) pressure in 0..1.
-pub fn factor(p: f64) -> f64 { MIN_FACTOR + SPAN * p.clamp(0.0, 1.0).powf(GAMMA) }
+pub fn factor(p: f64) -> f64 { MIN_FACTOR + SPAN * jsmath::pow(p.clamp(0.0, 1.0), GAMMA) }
 
 /// Radius of every point: `width / 2`, scaled by the smoothed pressure when the stroke has real pressure.
 /// The smoothing is causal (each value depends only on earlier samples), so a live stroke and the same stroke
@@ -130,7 +133,7 @@ pub fn samples(xy: &[f64], radii: &[f64], from: usize, to: usize) -> Vec<Sample>
     for i in from..to {
         let (p0, p1, p2, p3) = (pt(xy, i.saturating_sub(1)), pt(xy, i), pt(xy, i + 1), pt(xy, (i + 2).min(end)));
         let (r1, r2) = (radii[i], radii[i + 1]);
-        let chord = ((p2.0 - p1.0).powi(2) + (p2.1 - p1.1).powi(2)).sqrt();
+        let chord = ((p2.0 - p1.0) * (p2.0 - p1.0) + (p2.1 - p1.1) * (p2.1 - p1.1)).sqrt();
         let steps = ((chord / STEP).ceil() as usize).clamp(1, 32);
         let curve = controls(p0, p1, p2, p3);
         for k in 1..=steps {
@@ -192,14 +195,14 @@ fn ribbon(c: &mut Cmds, s: &[Sample]) {
     }
     // End cap: from the left edge round the front to the right edge.
     let (last, m) = (s[n - 1], normal(tangent(n - 1)));
-    let a = m.1.atan2(m.0);
+    let a = jsmath::atan2(m.1, m.0);
     c.arc(last.x, last.y, last.r, a, a + PI);
     for &(x, y) in right.iter().rev() {
         c.line_to(x, y);
     }
     // Start cap: from the right edge round the back to the left edge.
     let (first, m) = (s[0], normal(tangent(0)));
-    let a = m.1.atan2(m.0);
+    let a = jsmath::atan2(m.1, m.0);
     c.arc(first.x, first.y, first.r, a + PI, a + 2.0 * PI);
     c.close_path();
 }
@@ -222,8 +225,7 @@ pub fn outline(c: &mut Cmds, samples: &[Sample]) {
     let mut start = 0;
     for i in 1..s.len() - 1 {
         let (a, b) = (unit(s[i].x - s[i - 1].x, s[i].y - s[i - 1].y), unit(s[i + 1].x - s[i].x, s[i + 1].y - s[i].y));
-        let turn = (a.0 * b.0 + a.1 * b.1).clamp(-1.0, 1.0).acos();
-        if turn > SPLIT_TURN {
+        if a.0 * b.0 + a.1 * b.1 < SPLIT_COS {
             ribbon(c, &s[start..=i]);
             start = i;
         }

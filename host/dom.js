@@ -57,7 +57,9 @@ export default function install(host) {
     let coalesced = null;
     if (kind === 2) { try { coalesced = event.getCoalescedEvents?.(); } catch (_) { /* v5: synthetic input */ } }
     const count = coalesced ? coalesced.length : 0;
-    const found = kind === 2 || kind === 9 ? [] : path(event.target);
+    // Moves carry no target path, except a pen move with its side button held: with the button pressed in the air
+    // first, touching the page arrives as a move (chorded buttons), and Rust starts the eraser contact from it.
+    const found = (kind === 2 || kind === 9) && !(event.pointerType === 'pen' && event.buttons & 2) ? [] : path(event.target);
     // W7: where the pen will probably be next frame (drawn on the live tip layer only, never stored).
     let predicted = null;
     if (kind === 2 && event.pointerType === 'pen') { try { predicted = event.getPredictedEvents?.(); } catch (_) { /* unsupported */ } }
