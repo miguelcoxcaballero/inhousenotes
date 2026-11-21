@@ -19,7 +19,7 @@ use std::rc::Rc;
 use ihn_core::geom::{js_max, js_min};
 use ihn_core::id::{Hash, Id};
 use ihn_core::jsfmt::num;
-use ihn_core::op::{Background, Template};
+use ihn_core::op::{Background, Body, Template, Tool};
 use ihn_core::render::cmd::{Cmds, Img, Surf, REC_BATCH};
 use ihn_core::render::page::{self as rpage, Bg, PageView, Staged};
 use ihn_core::render::template::{self, BgUrls, Templates};
@@ -1658,6 +1658,40 @@ pub fn test_cmd(app: &mut App, host: &mut dyn Host, name: &str, _args: &str) -> 
         "add" => {
             add_page(app, host, false);
             Some("{}".into())
+        }
+        // W7: screen boxes (CSS px) of the pen strokes, padded by their widest outline — where the parity suite
+        // allows the outline ink (BEHAVIOUR-CHANGES W7-1) to differ. Strokes without varying pressure keep their
+        // width, but a filled outline is antialiased slightly differently from a stroked line.
+        "ink" => {
+            let Some(s) = crate::doc::session::get(app) else { return Some("[]".into()) };
+            let mut boxes = Vec::new();
+            for r in &app.st.editor_pages.rows {
+                let rect = host.rect(r.wrapper);
+                if rect.w <= 0.0 || r.w <= 0.0 {
+                    continue;
+                }
+                let (kx, ky) = (rect.w / r.w, rect.h / r.h);
+                for d in s.doc.draw_list(r.id).strokes {
+                    let Some(Body::Stroke { tool: Tool::Pen, width, .. }) = s.doc.live(d.id).map(|i| &i.body.v) else { continue };
+                    let pad = width * ihn_core::render::ink::max_factor() / 2.0 + 2.0;
+                    // The page's scroll preview is a JPEG of the bitmap at PAGE_PREVIEW_SCALE: a changed stroke
+                    // changes its whole 16 × 16 block (4:2:0 chroma), and scaling the preview blends one more preview
+                    // pixel. Snap the box outwards to that block grid.
+                    let (m, blend) = (16.0 / thumb::PAGE_PREVIEW_SCALE, 1.0 / thumb::PAGE_PREVIEW_SCALE);
+                    let snap = |v: f64, up: bool| if up { (v / m).ceil() * m + blend } else { (v / m).floor() * m - blend };
+                    let [x0, y0, x1, y1] = d.bounds;
+                    let [x0, y0, x1, y1] = [snap(x0 - pad, false).max(-pad), snap(y0 - pad, false).max(-pad), snap(x1 + pad, true), snap(y1 + pad, true)];
+                    let pad = 0.0;
+                    boxes.push(format!(
+                        "{{\"x\":{},\"y\":{},\"width\":{},\"height\":{}}}",
+                        num(rect.x + (x0 - pad) * kx),
+                        num(rect.y + (y0 - pad) * ky),
+                        num((x1 - x0 + 2.0 * pad) * kx),
+                        num((y1 - y0 + 2.0 * pad) * ky)
+                    ));
+                }
+            }
+            Some(format!("[{}]", boxes.join(",")))
         }
         _ => None,
     }
