@@ -618,7 +618,6 @@ function initLiquidPills() {
   const toolbar = document.getElementById('toolbar');
   if (toolbar && !toolbar._liquidInit) {
     toolbar._liquidInit = true;
-    toolbar.classList.add('has-liquid-pill');
     const pill = document.createElement('span');
     pill.className = 'toolbar-liquid-pill';
     pill.setAttribute('aria-hidden', 'true');
@@ -643,9 +642,14 @@ function initLiquidPills() {
     });
     const syncToolbar = (instant) => {
       const active = toolbar.querySelector('.tool-btn.active');
-      if (!active || toolbar.offsetParent === null) { pill.style.opacity = '0'; return; }
+      if (!active || toolbar.offsetParent === null || !active.offsetWidth) {
+        pill.style.opacity = '0';
+        toolbar.classList.remove('has-liquid-pill');
+        return;
+      }
       const nextHoriz = toolbar.classList.contains('horizontal');
       if (nextHoriz !== isHoriz) { isHoriz = nextHoriz; tbSpring.reset(); instant = true; }
+      toolbar.classList.add('has-liquid-pill');
       pill.style.opacity = '1';
       if (isHoriz) {
         crossPos = active.offsetTop;
@@ -660,6 +664,16 @@ function initLiquidPills() {
     new MutationObserver(() => syncToolbar(false)).observe(toolbar, {
       subtree: true, attributes: true, attributeFilter: ['class']
     });
+    const editorView = document.getElementById('editor-view');
+    if (editorView) {
+      new MutationObserver(() => requestAnimationFrame(() => syncToolbar(true))).observe(editorView, {
+        attributes: true, attributeFilter: ['class']
+      });
+    }
+    if (typeof ResizeObserver === 'function') {
+      new ResizeObserver(() => syncToolbar(true)).observe(toolbar);
+    }
+    toolbar.addEventListener('click', () => requestAnimationFrame(() => syncToolbar(false)));
     window.addEventListener('resize', () => syncToolbar(true));
     requestAnimationFrame(() => syncToolbar(true));
   }
@@ -668,7 +682,6 @@ function initLiquidPills() {
   const capsule = document.querySelector('#home-nav .home-nav-capsule');
   if (capsule && !capsule._liquidInit) {
     capsule._liquidInit = true;
-    capsule.classList.add('has-liquid-glider');
     const glider = document.createElement('span');
     glider.className = 'home-nav-glider';
     glider.setAttribute('aria-hidden', 'true');
@@ -684,17 +697,32 @@ function initLiquidPills() {
     });
     const syncHome = (instant) => {
       const active = capsule.querySelector('.home-nav-tab.is-active');
-      if (!active || capsule.offsetParent === null) { glider.style.opacity = '0'; return; }
+      if (!active || capsule.offsetParent === null) {
+        glider.style.opacity = '0';
+        capsule.classList.remove('has-liquid-glider');
+        return;
+      }
       const pillEl = active.querySelector('.home-nav-pill') || active;
       const capRect = capsule.getBoundingClientRect();
       const pillRect = pillEl.getBoundingClientRect();
       if (!pillRect.width) return;
+      capsule.classList.add('has-liquid-glider');
       glider.style.opacity = '1';
       homeSpring.set(pillRect.left - capRect.left, pillRect.width, !!instant);
     };
     new MutationObserver(() => syncHome(false)).observe(capsule, {
       subtree: true, attributes: true, attributeFilter: ['class']
     });
+    const driveHome = document.getElementById('drive-home');
+    if (driveHome) {
+      new MutationObserver(() => requestAnimationFrame(() => syncHome(true))).observe(driveHome, {
+        attributes: true, attributeFilter: ['class', 'data-home-tab']
+      });
+    }
+    if (typeof ResizeObserver === 'function') {
+      new ResizeObserver(() => syncHome(true)).observe(capsule);
+    }
+    capsule.addEventListener('click', () => requestAnimationFrame(() => syncHome(false)));
     window.addEventListener('resize', () => syncHome(true));
     // Touch scrubbing across the Home island
     let scrubbing = false;
