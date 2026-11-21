@@ -76,9 +76,11 @@ pub fn setup(c: &mut Cmds, s: &StrokeRef) {
     c.line_join(Join::Round);
 }
 
-/// Whether the stroke is drawn as a filled ink outline (`ink.rs`) rather than a stroked centreline: every pen
-/// stroke. The highlighter keeps its own two-pass look and the 5.x area eraser still strokes `destination-out`.
-pub fn fills(s: &StrokeRef) -> bool { ink::enabled() && !matches!(s.tool, Tool::Highlighter | Tool::LegacyEraseArea) }
+/// Whether the stroke is drawn as a filled ink outline (`ink.rs`) rather than a stroked centreline: pen strokes
+/// whose pressure varies. A constant-width stroke is the same shape as a round-capped line, which is cheaper to
+/// draw (and keeps the pixels of 6.0.0). The highlighter keeps its two-pass look and the 5.x area eraser still
+/// strokes `destination-out`.
+pub fn fills(s: &StrokeRef) -> bool { ink::enabled() && !matches!(s.tool, Tool::Highlighter | Tool::LegacyEraseArea) && ink::has_pressure(s.p) }
 
 /// v5: `drawSmoothStroke(ctx, stroke)` (app-v5.js:12726); pens fill their pressure outline (W7).
 pub fn draw(c: &mut Cmds, paths: &mut PathCache, s: &StrokeRef) {

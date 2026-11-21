@@ -29,6 +29,9 @@ pub const PRESSURE_SMOOTHING: f64 = 0.35;
 pub const PRESSURE_RANGE: f32 = 0.04;
 /// Centreline sample spacing in page px (smaller = smoother outline, more path points).
 pub const STEP: f64 = 1.5;
+/// Outline samples closer than this (page px) to the line between their kept neighbours, in position and in
+/// radius, are dropped (fewer vertices to fill, no visible change).
+pub const SIMPLIFY: f64 = 0.15;
 /// Turns sharper than about 100° split the ribbon: the cosine of the angle between the incoming and outgoing
 /// direction below this value (cos 100° ≈ −0.17).
 pub const SPLIT_COS: f64 = -0.17;
@@ -152,6 +155,41 @@ pub fn samples(xy: &[f64], radii: &[f64], from: usize, to: usize) -> Vec<Sample>
     out
 }
 
+/// Ramer–Douglas–Peucker over (x, y, r): keeps the samples that move the outline by more than `SIMPLIFY`.
+fn simplify(s: &[Sample]) -> Vec<Sample> {
+    if s.len() < 3 {
+        return s.to_vec();
+    }
+    let mut keep = vec![false; s.len()];
+    keep[0] = true;
+    keep[s.len() - 1] = true;
+    let mut stack = vec![(0usize, s.len() - 1)];
+    while let Some((a, b)) = stack.pop() {
+        if b <= a + 1 {
+            continue;
+        }
+        let (p, q) = (s[a], s[b]);
+        let (dx, dy, dr) = (q.x - p.x, q.y - p.y, q.r - p.r);
+        let len2 = dx * dx + dy * dy;
+        let (mut worst, mut at) = (0.0, a);
+        for (i, m) in s.iter().enumerate().take(b).skip(a + 1) {
+            // Parameter of the projection on the chord; distance in position plus the radius error there.
+            let t = if len2 > 1e-12 { (((m.x - p.x) * dx + (m.y - p.y) * dy) / len2).clamp(0.0, 1.0) } else { 0.0 };
+            let (ex, ey) = (p.x + dx * t - m.x, p.y + dy * t - m.y);
+            let e = (ex * ex + ey * ey).sqrt() + (p.r + dr * t - m.r).abs();
+            if e > worst {
+                (worst, at) = (e, i);
+            }
+        }
+        if worst > SIMPLIFY {
+            keep[at] = true;
+            stack.push((a, at));
+            stack.push((at, b));
+        }
+    }
+    s.iter().zip(keep).filter_map(|(v, k)| k.then_some(*v)).collect()
+}
+
 /// Drops samples that sit on the previous one (they have no direction).
 fn distinct(samples: &[Sample]) -> Vec<Sample> {
     let mut out: Vec<Sample> = Vec::with_capacity(samples.len());
@@ -216,7 +254,7 @@ fn disc(c: &mut Cmds, s: Sample) {
 
 /// Appends the outline of `samples` to the current path: one ribbon per run between sharp turns.
 pub fn outline(c: &mut Cmds, samples: &[Sample]) {
-    let s = distinct(samples);
+    let s = simplify(&distinct(samples));
     match s.len() {
         0 => return,
         1 => return disc(c, s[0]),
@@ -321,6 +359,20 @@ mod tests {
         // Each ribbon has two caps.
         assert_eq!(count(&c.take(), op::ARC), 4);
         assert_eq!(count(&straight.take(), op::ARC), 2);
+    }
+
+    #[test]
+    fn simplify_drops_samples_that_do_not_move_the_outline() {
+        // A straight line of constant width keeps its two ends; a bend and a width change are kept.
+        let line: Vec<Sample> = (0..50).map(|i| Sample { x: i as f64, y: 0.0, r: 1.0 }).collect();
+        assert_eq!(simplify(&line).len(), 2);
+        let mut bent = line.clone();
+        bent[25].y = 1.0;
+        let kept = simplify(&bent);
+        assert!(kept.len() <= 5 && kept.iter().any(|s| s.y == 1.0), "{kept:?}");
+        let mut wider = line;
+        wider[10].r = 1.5;
+        assert!(simplify(&wider).iter().any(|s| s.r == 1.5));
     }
 
     #[test]
