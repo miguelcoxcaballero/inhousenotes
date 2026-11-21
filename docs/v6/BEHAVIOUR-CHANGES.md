@@ -143,7 +143,7 @@ here are 5.18.0's. "Unsynced" = own batches not sealed in the relay, or the docu
 | Popup detail sentences (`driveDetail`, `localDetail`, `detail`) | computed, never rendered by `renderSaveDebugPopup` | not computed |
 | `#save-timestamp` | `Last saved <t>` title, element `hidden` and `display: none` | not written (never visible) |
 
-## 7. After 6.0.0: pen writing (W7) — **proposed, needs the owner's approval**
+## 7. After 6.0.0: pen writing (W7) — **approved by the owner on 2026-11-21, released in 6.1.0**
 
 Differences from the published 6.0.0 (`488f6d7`). Details and tuning: `docs/v6/NOTES-W7-pen.md`.
 
