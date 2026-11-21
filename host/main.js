@@ -408,11 +408,77 @@ function lifecycle(host) {
 function serviceWorker(host) {
   const sw = navigator.serviceWorker;
   if (!sw || host.config.flags & MODE.HEADLESS) return;
-  sw.register('/service-worker.js', { updateViaCache: 'none' }).catch(() => {});
+  sw.register('/service-worker.js', { updateViaCache: 'none' }).then(reg => reg.update().catch(() => {})).catch(() => {});
   const hello = () => sw.ready.then(registration => registration.active?.postMessage('ihn6-hello'), () => {});
   hello();
   sw.addEventListener('controllerchange', hello);
   sw.addEventListener('message', event => host.message(CHAN.SERVICE_WORKER, JSON.stringify(event.data ?? null)));
+  initAutoVersionCheck(host);
+}
+
+function initAutoVersionCheck(host) {
+  if (host.config.flags & (MODE.HEADLESS | MODE.E2E)) return;
+  const currentVersion = String(host.config.version || '');
+  try {
+    const u = new URL(location.href);
+    if (u.searchParams.has('_v')) {
+      u.searchParams.delete('_v');
+      history.replaceState(null, '', u.pathname + u.search + u.hash);
+    }
+  } catch (_) {}
+
+  window.forceReloadLatestVersion = function () {
+    return Promise.resolve().then(async () => {
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.filter(k => k.startsWith('inhouse-shell-')).map(k => caches.delete(k)));
+      }
+      if (navigator.serviceWorker) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.update().catch(() => {})));
+      }
+    }).catch(() => {}).finally(() => {
+      try {
+        const next = new URL(location.href);
+        next.searchParams.set('_v', String(Date.now()));
+        location.replace(next.toString());
+      } catch (_) {
+        location.reload();
+      }
+    });
+  };
+
+  window.checkLatestAppVersion = function (forceReloadIfSame) {
+    if (navigator.onLine === false) return Promise.resolve(false);
+    return fetch('index.html?_=' + Date.now(), { cache: 'no-store' })
+      .then(res => res.ok ? res.text() : '')
+      .then(html => {
+        const m = html && html.match(/const\s+APP_VERSION\s*=\s*['"]([^'"]+)['"]/);
+        const remoteVersion = m ? m[1] : '';
+        if (remoteVersion && currentVersion && remoteVersion !== currentVersion) {
+          const isEditing = !!document.querySelector('#mode-toggle-btn.is-editing') && !document.getElementById('editor-view')?.classList.contains('hidden');
+          if (isEditing && !forceReloadIfSame) return false;
+          try {
+            if (sessionStorage.getItem('ihn_reloaded_version') === remoteVersion) return false;
+            sessionStorage.setItem('ihn_reloaded_version', remoteVersion);
+          } catch (_) {}
+          window.forceReloadLatestVersion();
+          return true;
+        }
+        if (forceReloadIfSame) {
+          window.forceReloadLatestVersion();
+          return true;
+        }
+        return false;
+      })
+      .catch(() => false);
+  };
+
+  setTimeout(() => window.checkLatestAppVersion(false), 1200);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') window.checkLatestAppVersion(false);
+  });
+  window.addEventListener('online', () => window.checkLatestAppVersion(false));
 }
 
 // Rust 1.90 emits reference-types and multivalue; Android System WebView < 96 cannot compile them.

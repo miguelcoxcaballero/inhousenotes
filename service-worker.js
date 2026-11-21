@@ -1,7 +1,7 @@
 'use strict';
 // Inhouse Notes 6 service worker (ARCHITECTURE §12): shell cache only. It stays a classic script at the URL every
 // 5.x page registered, and keeps the VERSION line that boot.js reads to detect a published release.
-const VERSION='6.2.4';
+const VERSION='6.2.5';
 const CACHE=`inhouse-shell-${VERSION}`;
 // One entry per window that announced itself as v6; survives worker restarts.
 const CLIENTS='ihn6-clients';
@@ -26,6 +26,7 @@ self.addEventListener('fetch',event=>{
     if(event.request.method!=='GET'||url.origin!==self.location.origin)return;
     if(url.pathname.startsWith('/oauth-callback'))return;
     const path=url.pathname==='/'?'/index.html':url.pathname;
+    if(url.searchParams.has('_')||url.searchParams.has('_v'))return;
     const requestedVersion=url.searchParams.get('v');
     if(!self.INHOUSE_OFFLINE_ASSETS.includes(path))return;
     if(requestedVersion&&/^\d+\.\d+\.\d+$/.test(requestedVersion)&&requestedVersion!==VERSION)return;
@@ -43,17 +44,19 @@ self.addEventListener('fetch',event=>{
 async function dropOldShells(){
     for(const key of await caches.keys())if(key.startsWith('inhouse-shell-')&&key!==CACHE)await caches.delete(key);
 }
-// A complete versioned shell is immediately usable. Revalidate in the
-// background; boot.js checks published versions and reloads only outside editing.
+// Network-first for HTML so online reloads always get the latest release;
+// falls back cleanly to the versioned shell cache when offline.
 async function freshPage(request,path,event){
     const cache=await caches.open(CACHE);
     const cached=await cache.match(path);
-    const network=fetch(request,{cache:'no-cache'}).then(async response=>{
-        if(response.ok&&(await response.clone().text()).includes(`v=${VERSION}`))await cache.put(path,response.clone());
-        return response;
-    });
-    event.waitUntil(network.then(()=>{},()=>{}));
-    return cached||network;
+    try{
+        const response=await fetch(request,{cache:'no-store'});
+        if(response.ok){
+            if((await response.clone().text()).includes(`v=${VERSION}`))await cache.put(path,response.clone());
+            return response;
+        }
+    }catch(_){}
+    return cached||fetch(request);
 }
 // v6 client registry for the 5.x data migration (ARCHITECTURE §10.2): a v6 window posts 'ihn6-hello' at boot; the
 // migration asks {type:'ihn6-clients'} (reply on the message port, else to the sender) and deletes 5.x data only
