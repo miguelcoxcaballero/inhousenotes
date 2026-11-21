@@ -68,18 +68,18 @@ fn rgb(color: &Color) -> [f64; 3] {
 /// starting with a line from the current point to the arc's start, as canvas does.
 fn arc_ops(out: &mut String, a: &[f64; 6], started: bool) -> (f64, f64) {
     let (cx, cy, r, a0, a1) = (a[0], a[1], a[2], a[3], a[4]);
-    let at = |t: f64| (cx + r * t.cos(), cy + r * t.sin());
+    let at = |t: f64| (cx + r * jsmath::cos(t), cy + r * jsmath::sin(t));
     let start = at(a0);
     nums(out, &[start.0, start.1], if started { "l" } else { "m" });
     let sweep = (a1 - a0).clamp(0.0, std::f64::consts::TAU);
     let parts = ((sweep / std::f64::consts::FRAC_PI_2).ceil() as usize).max(1);
     let step = sweep / parts as f64;
-    // Control distance of a cubic that matches a circular arc of `step` radians.
-    let k = 4.0 / 3.0 * (step / 4.0).tan() * r;
+    // Control distance of a cubic that matches a circular arc of `step` radians: 4/3 · tan(step / 4) · r.
+    let k = 4.0 / 3.0 * jsmath::sin(step / 4.0) / jsmath::cos(step / 4.0) * r;
     let mut t = a0;
     for _ in 0..parts {
         let (p0, p1) = (at(t), at(t + step));
-        let (d0, d1) = ((-t.sin(), t.cos()), (-(t + step).sin(), (t + step).cos()));
+        let (d0, d1) = ((-jsmath::sin(t), jsmath::cos(t)), (-jsmath::sin(t + step), jsmath::cos(t + step)));
         nums(out, &[p0.0 + k * d0.0, p0.1 + k * d0.1, p1.0 - k * d1.0, p1.1 - k * d1.1, p1.0, p1.1], "c");
         t += step;
     }
@@ -106,7 +106,7 @@ fn path_ops(out: &mut String, cmds: &[u8]) {
         match code {
             op::ARC => {
                 if !started {
-                    let s = (a[0] + a[2] * a[3].cos(), a[1] + a[2] * a[3].sin());
+                    let s = (a[0] + a[2] * jsmath::cos(a[3]), a[1] + a[2] * jsmath::sin(a[3]));
                     (sx, sy) = s;
                 }
                 (x, y) = arc_ops(out, &a, started);
