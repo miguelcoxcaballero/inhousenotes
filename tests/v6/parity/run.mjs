@@ -353,11 +353,15 @@ export class Driver {
       try { r = window.__IHN_TEST_API__?.cmd?.('editor.pages.ink'); } catch { return []; }
       if (!r || !Array.isArray(r.screen)) return [];
       const out = [...r.screen];
+      // Miniature renders of a page: the pages panel's thumbnails and the version timeline's preview pages.
+      const timeline = new Map([...document.querySelectorAll('.timeline-preview-page')].map(n => [Number(/\d+/.exec(n.querySelector('.timeline-preview-page-label')?.textContent || '')?.[0]) - 1, n.querySelector('canvas')]));
       for (const p of r.pages) {
-        const c = document.getElementById(`thumb-${p.index}`)?.getBoundingClientRect();
-        if (!c || !c.width) continue;
-        const kx = c.width / p.w, ky = c.height / p.h;
-        for (const [x0, y0, x1, y1] of p.boxes) out.push({ x: c.x + x0 * kx - 1, y: c.y + y0 * ky - 1, width: (x1 - x0) * kx + 2, height: (y1 - y0) * ky + 2 });
+        for (const canvas of [document.getElementById(`thumb-${p.index}`), timeline.get(p.index)]) {
+          const c = canvas?.getBoundingClientRect();
+          if (!c || !c.width) continue;
+          const kx = c.width / p.w, ky = c.height / p.h;
+          for (const [x0, y0, x1, y1] of p.boxes) out.push({ x: c.x + x0 * kx - 1, y: c.y + y0 * ky - 1, width: (x1 - x0) * kx + 2, height: (y1 - y0) * ky + 2 });
+        }
       }
       return out;
     }) : [];
