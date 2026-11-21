@@ -6,6 +6,7 @@
 pub mod cmd;
 pub mod damage;
 pub mod highlighter;
+pub mod ink;
 pub mod live;
 pub mod overlay;
 pub mod page;
@@ -36,6 +37,8 @@ pub struct StrokeRef<'a> {
     pub width: f64,
     /// `x0, y0, x1, y1, …`
     pub xy: &'a [f64],
+    /// Pen pressure of each point (0..1), when stored. Drives the ink width (`ink.rs`).
+    pub p: Option<&'a [f32]>,
     /// `[minX, minY, maxX, maxY]` of the points (5.18.0 `getStrokeBounds`).
     pub bounds: [f64; 4],
     /// Identity of the geometry for the `Path2D` cache: item id + stamp of its body. `None`: never cached.
@@ -43,11 +46,13 @@ pub struct StrokeRef<'a> {
 }
 
 impl<'a> StrokeRef<'a> {
-    pub fn new(tool: Tool, color: &'a Color, width: f64, xy: &'a [f64]) -> StrokeRef<'a> { StrokeRef { tool, color, width, xy, bounds: geom::bounds(xy), key: None } }
+    pub fn new(tool: Tool, color: &'a Color, width: f64, xy: &'a [f64]) -> StrokeRef<'a> { StrokeRef { tool, color, width, xy, p: None, bounds: geom::bounds(xy), key: None } }
     /// The stroke of a live document item (`None` for images and dropped bodies).
     pub fn of(id: Id, item: &'a Item, bounds: [f64; 4]) -> Option<StrokeRef<'a>> {
         match &item.body.v {
-            Body::Stroke { tool, color, width, xy, .. } => Some(StrokeRef { tool: *tool, color, width: *width, xy, bounds, key: Some((id, item.body.at)) }),
+            Body::Stroke { tool, color, width, xy, p } => {
+                Some(StrokeRef { tool: *tool, color, width: *width, xy, p: p.as_deref(), bounds, key: Some((id, item.body.at)) })
+            }
             _ => None,
         }
     }
@@ -109,9 +114,14 @@ impl PathCache {
     pub fn is_empty(&self) -> bool { self.map.is_empty() }
     /// The path of `s`, building it when the cache has none for this geometry. `.1`: drop it after use.
     fn path(&mut self, c: &mut Cmds, s: &StrokeRef) -> (PathId, bool) {
+        // Pen ink is a filled outline (`ink.rs`); the area eraser of 5.x data still strokes its centreline.
         let build = |c: &mut Cmds| {
             let p = c.path_begin();
-            pen::path(c, s.xy);
+            if pen::fills(s) {
+                ink::stroke(c, s.xy, s.width, s.p);
+            } else {
+                pen::path(c, s.xy);
+            }
             c.path_end();
             p
         };
@@ -166,7 +176,7 @@ fn or(value: f64, fallback: f64) -> f64 {
 pub fn test_cmd(name: &str, _args: &str) -> Option<String> {
     match name {
         // The batch record op and the last command byte: enough for a host self-test to notice another ABI.
-        "abi" => Some(format!("{{\"batch\":{},\"last\":{}}}", cmd::REC_BATCH, cmd::op::READ_PIXELS)),
+        "abi" => Some(format!("{{\"batch\":{},\"last\":{}}}", cmd::REC_BATCH, cmd::op::CLOSE_PATH)),
         _ => None,
     }
 }

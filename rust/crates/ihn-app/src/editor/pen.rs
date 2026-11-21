@@ -94,7 +94,9 @@ fn surfaces(app: &App, page: Id) -> Option<(PageTarget, Cursor)> {
 }
 
 /// The contact as a stroke (live drawing reads no bounds and caches no path).
-fn stroke<'a>(tool: Tool, color: &'a Color, width: f64, xy: &'a [f64]) -> StrokeRef<'a> { StrokeRef { tool, color, width, xy, bounds: [0.0; 4], key: None } }
+fn stroke<'a>(tool: Tool, color: &'a Color, width: f64, xy: &'a [f64], p: &'a [f32]) -> StrokeRef<'a> {
+    StrokeRef { tool, color, width, xy, p: Some(p), bounds: [0.0; 4], key: None }
+}
 
 /// v5: `updateLiveStroke(pageIndex, canvas, stroke, previewCanvas, metrics)`, then `publishLiveStrokePreview`.
 fn paint(app: &mut App, host: &mut dyn Host) {
@@ -102,7 +104,7 @@ fn paint(app: &mut App, host: &mut dyn Host) {
     if let Some((target, mut cursor)) = surfaces(app, page) {
         let ink = pages::with_gfx(app, |app, g| {
             let st = &mut app.st.editor_pen;
-            let s = stroke(st.tool, &st.color, st.width, &st.xy);
+            let s = stroke(st.tool, &st.color, st.width, &st.xy, &st.p);
             let ink = live::update(&mut g.cmds, &mut st.live, target, &mut cursor, &s);
             st.bounds = cursor.bounds;
             ink
@@ -220,7 +222,7 @@ impl ToolHandler for Pen {
         if let Some((target, _)) = surfaces(app, page) {
             pages::with_gfx(app, |app, g| {
                 let st = &mut app.st.editor_pen;
-                let s = stroke(st.tool, &st.color, st.width, &st.xy);
+                let s = stroke(st.tool, &st.color, st.width, &st.xy, &st.p);
                 live::commit(&mut g.cmds, &mut g.paths, &mut st.live, target, &s);
             });
             pages::flush(app, host);

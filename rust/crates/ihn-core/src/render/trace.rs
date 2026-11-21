@@ -116,6 +116,7 @@ impl Host {
                 op::CLIP => self.emit("clip", &[]),
                 op::STROKE => self.emit("stroke", &[]),
                 op::FILL => self.emit("fill", &[]),
+                op::CLOSE_PATH => self.emit("closePath", &[]),
                 op::CLEAR_RECT => self.emit("clearRect", &f(4)),
                 op::FILL_RECT => self.emit("fillRect", &f(4)),
                 op::STROKE_RECT => self.emit("strokeRect", &f(4)),
@@ -207,6 +208,14 @@ impl Host {
                     self.push(self.cur, line);
                 }
                 self.push(self.cur, "[\"stroke(path)\"]".into());
+            }
+            op::FILL_PATH => {
+                let p = u(r);
+                self.push(self.cur, "[\"path:begin\"]".into());
+                for line in self.paths[&p].clone() {
+                    self.push(self.cur, line);
+                }
+                self.push(self.cur, "[\"fill(path)\"]".into());
             }
             op::PATH_DROP => drop(self.paths.remove(&u(r))),
             op::TO_DATA_URL | op::TO_BLOB => {

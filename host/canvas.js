@@ -14,7 +14,7 @@ export const OP = {
   ARC: 27, ROUND_RECT: 28, RECT: 29, CLIP: 30, STROKE: 31, FILL: 32, CLEAR_RECT: 33, FILL_RECT: 34, STROKE_RECT: 35,
   DRAW_IMAGE: 36, PATH_BEGIN: 37, PATH_END: 38, STROKE_PATH: 39, PATH_DROP: 40, FILTER: 41, SHADOW_COLOR: 42,
   SHADOW_BLUR: 43, RADIAL_FILL: 44, TO_DATA_URL: 45, TO_BLOB: 46, IMAGE_URL: 47, IMAGE_BLOB: 48, IMAGE_DROP: 49,
-  FONT: 50, TEXT_ALIGN: 51, TEXT_BASELINE: 52, FILL_TEXT: 53, READ_PIXELS: 54
+  FONT: 50, TEXT_ALIGN: 51, TEXT_BASELINE: 52, FILL_TEXT: 53, READ_PIXELS: 54, FILL_PATH: 55, CLOSE_PATH: 56
 };
 
 export default function install(host) {
@@ -113,6 +113,8 @@ export default function install(host) {
         case OP.PATH_BEGIN: target = new Path2D(); paths.set(u32(), target); break;
         case OP.PATH_END: target = ctx || lost(); break;
         case OP.STROKE_PATH: { const path = paths.get(u32()); if (path) target.stroke(path); break; }
+        case OP.FILL_PATH: { const path = paths.get(u32()); if (path) target.fill(path); break; }
+        case OP.CLOSE_PATH: target.closePath(); break;
         case OP.PATH_DROP: paths.delete(u32()); break;
         case OP.FILTER: target.filter = str(); break;
         case OP.SHADOW_COLOR: target.shadowColor = str(); break;

@@ -303,7 +303,7 @@ fn outlines(app: &mut App, host: &mut dyn Host) {
             .items
             .iter()
             .filter_map(|&(id, _)| match preview.iter().find(|p| p.0 == id).map(|p| &p.1).or_else(|| s.doc.live(id).map(|i| &i.body.v)) {
-                Some(Body::Stroke { tool, color, width, xy, .. }) => Some(StrokeRef { tool: *tool, color, width: *width, xy, bounds: [0.0; 4], key: None }),
+                Some(Body::Stroke { tool, color, width, xy, p }) => Some(StrokeRef { tool: *tool, color, width: *width, xy, p: p.as_deref(), bounds: [0.0; 4], key: None }),
                 _ => None,
             })
             .collect();

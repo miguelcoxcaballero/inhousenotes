@@ -41,7 +41,10 @@ struct PageCanvases {
 }
 
 impl Scene {
-    fn new() -> Scene { Scene { c: Cmds::new(), h: Host::default(), tpl: Templates::new(901, 902), paths: PathCache::default(), urls: BgUrls::default(), nodes: 2000, reqs: 0 } }
+    fn new() -> Scene {
+        super::ink::LEGACY.with(|l| l.set(true));
+        Scene { c: Cmds::new(), h: Host::default(), tpl: Templates::new(901, 902), paths: PathCache::default(), urls: BgUrls::default(), nodes: 2000, reqs: 0 }
+    }
     fn req(&mut self) -> u32 {
         self.reqs += 1;
         self.reqs
@@ -398,7 +401,7 @@ fn host_table_matches() {
     theirs.sort();
     ours.sort();
     assert_eq!(ours, theirs);
-    assert_eq!(ours.len(), 54);
+    assert_eq!(ours.len(), 56);
     for (name, list) in [("CAPS", &super::cmd::CAPS), ("JOINS", &super::cmd::JOINS), ("COMPOSITES", &super::cmd::COMPOSITES)] {
         let text = js.split(&format!("const {name} = [")).nth(1).unwrap().split(']').next().unwrap();
         assert_eq!(text.split(", ").map(|v| v.trim_matches('\'')).collect::<Vec<_>>(), list.to_vec());
@@ -561,6 +564,7 @@ fn panel_thumbnail_backgrounds() {
 
 #[test]
 fn pdf_ink_streams_parse_and_keep_every_sample() {
+    super::ink::LEGACY.with(|l| l.set(true));
     let pen: Vec<f64> = (0..40).flat_map(|k| [10.0 + k as f64 * 5.5, 300.0 + crate::jsmath::sin(k as f64 / 2.5) * 22.0]).collect();
     let dense: Vec<f64> = (0..30).flat_map(|k| [400.0 + k as f64 * 0.37, 500.0 + k as f64 * 0.11]).collect();
     let list = [
@@ -623,6 +627,56 @@ fn pdf_ink_streams_parse_and_keep_every_sample() {
     // Short segments are lines, long ones curves — the screen's rule. Lines: 29 dense pen segments + the last
     // point of each highlighter pass; curves: 39 pen segments + 8 quadratics per pass + two dots of 4 arcs.
     assert_eq!((count_ops(&ops, " l"), count_ops(&ops, " c")), (29 + 2, 39 + 2 * 8 + 2 * 4));
+}
+
+#[test]
+fn pdf_pen_ink_is_a_filled_pressure_outline() {
+    // A pressure ramp: the PDF has one closed, filled outline that grows wider along the stroke.
+    let xy: Vec<f64> = (0..20).flat_map(|k| [10.0 + k as f64 * 6.0, 200.0]).collect();
+    let p: Vec<f32> = (0..20).map(|k| k as f32 / 19.0).collect();
+    let color = Color::parse("#1a1a1a");
+    let s = StrokeRef { p: Some(&p), ..StrokeRef::new(Tool::Pen, &color, 4.0, &xy) };
+    let ink = pdfink::content_stream(1123.0, &PageItems { strokes: vec![s], ..PageItems::default() }).unwrap();
+    let tokens: Vec<&str> = ink.content.split_ascii_whitespace().collect();
+    let count = |op: &str| tokens.iter().filter(|t| **t == op).count();
+    assert_eq!((count("f"), count("h"), count("S"), count("RG"), count("w")), (1, 1, 0, 0, 0));
+    assert!(tokens.iter().all(|t| !t.contains(['e', 'E']) || t.starts_with('/')), "no exponents");
+    // The outline's vertical extent near the start (light) is smaller than near the end (heavy).
+    let mut pts = Vec::new();
+    let mut stack: Vec<f64> = Vec::new();
+    for t in &tokens {
+        match t.parse::<f64>() {
+            Ok(v) => stack.push(v),
+            Err(_) => {
+                if matches!(*t, "m" | "l") {
+                    pts.push((stack[0], stack[1]));
+                }
+                stack.clear();
+            }
+        }
+    }
+    let spread = |x0: f64, x1: f64| {
+        let ys: Vec<f64> = pts.iter().filter(|p| p.0 >= x0 && p.0 <= x1).map(|p| p.1).collect();
+        ys.iter().cloned().fold(f64::MIN, f64::max) - ys.iter().cloned().fold(f64::MAX, f64::min)
+    };
+    assert!(spread(20.0, 30.0) < spread(100.0, 110.0), "{} {}", spread(20.0, 30.0), spread(100.0, 110.0));
+}
+
+#[test]
+fn pen_strokes_fill_their_outline_on_the_page() {
+    let mut s = Scene::new();
+    super::ink::LEGACY.with(|l| l.set(false));
+    let p = s.page(0);
+    let ink = [stroke(Tool::Pen, "#111111", 2.0, &[10.0, 10.0, 30.0, 10.0, 30.0, 40.0])];
+    let all = items(&ink, 0);
+    let view = a4(&all);
+    page::repaint(&mut s.c, &mut s.tpl, &mut s.paths, p.page, PAGE_PX, &view, 2.0);
+    s.h.run(&mut s.c);
+    let ops = s.h.surfaces()[0].1.clone();
+    let names: Vec<&str> = ops.iter().map(|l| super::trace::name(l)).collect();
+    assert_eq!((names.iter().filter(|n| **n == "fill(path)").count(), names.iter().filter(|n| **n == "stroke(path)").count()), (1, 0));
+    assert!(names.contains(&"path:closePath") && names.contains(&"path:arc"), "{names:?}");
+    assert!(ops.contains(&"[\"set:fillStyle\",\"#111111\"]".to_string()));
 }
 
 fn count_ops(ops: &[String], suffix: &str) -> usize { ops.iter().filter(|o| o.ends_with(suffix)).count() }

@@ -216,7 +216,9 @@ fn cut_items<'a>(items: &PageItems<'a>, cuts: &[Cut]) -> PageItems<'a> {
             Some(i) => {
                 for &(a, b) in &cuts[i].ranges {
                     let xy = &s.xy[2 * a as usize..2 * b as usize];
-                    strokes.push(StrokeRef { xy, bounds: geom::bounds(xy), key: None, ..*s });
+                    // The fragment's own pressure samples, so its width matches the stroke it was cut from.
+                    let p = s.p.and_then(|p| p.get(a as usize..b as usize));
+                    strokes.push(StrokeRef { xy, p, bounds: geom::bounds(xy), key: None, ..*s });
                 }
             }
         }

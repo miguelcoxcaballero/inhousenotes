@@ -5,7 +5,7 @@
 //! has_ink)` (the caller toggles `visibility`, once per change) and `None` when it does not.
 
 use super::cmd::{Cap, Cmds, Composite, Join, Surf};
-use super::{highlighter, or, pen, with_css, PathCache, StrokeRef};
+use super::{highlighter, ink, or, pen, with_css, PathCache, StrokeRef};
 use crate::geom::{js_max, js_min};
 use crate::op::Tool;
 
@@ -109,11 +109,19 @@ fn tip(c: &mut Cmds, live: &Live, cursor: &mut Cursor, s: &StrokeRef) -> Option<
     let chain = &s.xy[2 * from.saturating_sub(1)..];
     let offset = (from > 0) as usize;
     pen::setup(c, s);
-    c.line_width(s.width);
-    c.begin_path();
-    c.move_to(chain[2 * offset], chain[2 * offset + 1]);
-    pen::segments(c, chain, offset, chain.len() / 2 - 1);
-    c.stroke();
+    if pen::fills(s) {
+        c.begin_path();
+        let r = ink::radii(s.width, s.len(), s.p);
+        ink::outline(c, &ink::samples(s.xy, &r, from, last));
+        with_css(s.color, |css| c.fill_style(css));
+        c.fill();
+    } else {
+        c.line_width(s.width);
+        c.begin_path();
+        c.move_to(chain[2 * offset], chain[2 * offset + 1]);
+        pen::segments(c, chain, offset, chain.len() / 2 - 1);
+        c.stroke();
+    }
     cursor.bounds = Some(padded(extent(chain, EMPTY), js_max(4.0, s.width + 2.0), false));
     Some(true)
 }
