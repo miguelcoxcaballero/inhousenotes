@@ -495,10 +495,157 @@ async function boot() {
     host.ex.ihn_init(w.base, w.length);
   });
   performance.mark('ihn-ready');
+  initLiquidPills();
   serviceWorker(host);
   // The rest of the app, now that the first screen is up (the profiling build is not split).
   if (WebAssembly.Module.imports(host.module).some(entry => entry.name === 'host_mark')) window.__IHN_SPLIT_MARKS__ = () => [...(host.marks || [])];
   else host.split.prefetch();
+}
+
+function initLiquidPills() {
+  const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)');
+  function createSpring1D(onFrame) {
+    let a = 0, b = 0, va = 0, vb = 0, ta = 0, tb = 0, bloom = 1, vbloom = 0;
+    let ready = false, raf = 0, last = 0;
+    function step(now) {
+      const dt = Math.min(0.025, Math.max(0.004, (now - last) / 1000));
+      last = now;
+      const forward = (ta + tb) * 0.5 >= (a + b) * 0.5;
+      const kLead = 430, dLead = 24.5, kTrail = 235, dTrail = 18.5;
+      const kA = forward ? kTrail : kLead, dA = forward ? dTrail : dLead;
+      const kB = forward ? kLead : kTrail, dB = forward ? dLead : dTrail;
+      va += (-kA * (a - ta) - dA * va) * dt;
+      vb += (-kB * (b - tb) - dB * vb) * dt;
+      a += va * dt;
+      b += vb * dt;
+      if (b < a + 16) b = a + 16;
+      const speed = Math.abs(va) + Math.abs(vb);
+      const dist = Math.abs(a - ta) + Math.abs(b - tb);
+      const targetBloom = 1 + Math.min(0.24, speed / 1150);
+      vbloom += (-320 * (bloom - targetBloom) - 20 * vbloom) * dt;
+      bloom = Math.max(0.94, Math.min(1.26, bloom + vbloom * dt));
+      const moving = speed > 16 || dist > 1.5 || Math.abs(bloom - 1) > 0.015;
+      onFrame(a, b - a, bloom, moving);
+      if (speed < 1.2 && dist < 0.35 && Math.abs(bloom - 1) < 0.004) {
+        a = ta; b = tb; va = 0; vb = 0; bloom = 1; vbloom = 0; raf = 0;
+        onFrame(a, b - a, 1, false);
+        return;
+      }
+      raf = requestAnimationFrame(step);
+    }
+    return {
+      set(start, size, instant) {
+        ta = start; tb = start + Math.max(16, size);
+        if (instant || !ready || (reducedMotion && reducedMotion.matches)) {
+          if (raf) { cancelAnimationFrame(raf); raf = 0; }
+          a = ta; b = tb; va = 0; vb = 0; bloom = 1; vbloom = 0; ready = true;
+          onFrame(a, b - a, 1, false);
+          return;
+        }
+        if (!raf) { last = performance.now(); raf = requestAnimationFrame(step); }
+      },
+      reset() { if (raf) { cancelAnimationFrame(raf); raf = 0; } ready = false; }
+    };
+  }
+
+  // 1. Editor #toolbar Liquid Glass active pill (vertical & horizontal)
+  const toolbar = document.getElementById('toolbar');
+  if (toolbar && !toolbar._liquidInit) {
+    toolbar._liquidInit = true;
+    toolbar.classList.add('has-liquid-pill');
+    const pill = document.createElement('span');
+    pill.className = 'toolbar-liquid-pill';
+    pill.setAttribute('aria-hidden', 'true');
+    const lens = document.createElement('span');
+    lens.className = 'toolbar-liquid-lens';
+    pill.appendChild(lens);
+    toolbar.insertBefore(pill, toolbar.firstChild);
+    let crossPos = 0, crossSize = 38, isHoriz = false;
+    const tbSpring = createSpring1D((pos, size, bloom, moving) => {
+      pill.classList.toggle('is-moving', moving);
+      if (isHoriz) {
+        pill.style.width = size + 'px';
+        pill.style.height = crossSize + 'px';
+        pill.style.transform = `translate3d(${pos}px, ${crossPos}px, 0)`;
+        lens.style.transform = `scaleY(${bloom.toFixed(4)})`;
+      } else {
+        pill.style.width = crossSize + 'px';
+        pill.style.height = size + 'px';
+        pill.style.transform = `translate3d(${crossPos}px, ${pos}px, 0)`;
+        lens.style.transform = `scaleX(${bloom.toFixed(4)})`;
+      }
+    });
+    const syncToolbar = (instant) => {
+      const active = toolbar.querySelector('.tool-btn.active');
+      if (!active || toolbar.offsetParent === null) { pill.style.opacity = '0'; return; }
+      const nextHoriz = toolbar.classList.contains('horizontal');
+      if (nextHoriz !== isHoriz) { isHoriz = nextHoriz; tbSpring.reset(); instant = true; }
+      pill.style.opacity = '1';
+      if (isHoriz) {
+        crossPos = active.offsetTop;
+        crossSize = active.offsetHeight;
+        tbSpring.set(active.offsetLeft, active.offsetWidth, !!instant);
+      } else {
+        crossPos = active.offsetLeft;
+        crossSize = active.offsetWidth;
+        tbSpring.set(active.offsetTop, active.offsetHeight, !!instant);
+      }
+    };
+    new MutationObserver(() => syncToolbar(false)).observe(toolbar, {
+      subtree: true, attributes: true, attributeFilter: ['class']
+    });
+    window.addEventListener('resize', () => syncToolbar(true));
+    requestAnimationFrame(() => syncToolbar(true));
+  }
+
+  // 2. Home bottom island (.home-nav-capsule) Liquid Glass glider + touch scrubbing
+  const capsule = document.querySelector('#home-nav .home-nav-capsule');
+  if (capsule && !capsule._liquidInit) {
+    capsule._liquidInit = true;
+    capsule.classList.add('has-liquid-glider');
+    const glider = document.createElement('span');
+    glider.className = 'home-nav-glider';
+    glider.setAttribute('aria-hidden', 'true');
+    const lens = document.createElement('span');
+    lens.className = 'home-nav-glider-lens';
+    glider.appendChild(lens);
+    capsule.insertBefore(glider, capsule.firstChild);
+    const homeSpring = createSpring1D((left, width, bloom, moving) => {
+      glider.classList.toggle('is-moving', moving);
+      glider.style.width = width + 'px';
+      glider.style.transform = `translate3d(${left}px, 0, 0)`;
+      lens.style.transform = `scaleY(${bloom.toFixed(4)})`;
+    });
+    const syncHome = (instant) => {
+      const active = capsule.querySelector('.home-nav-tab.is-active');
+      if (!active || capsule.offsetParent === null) { glider.style.opacity = '0'; return; }
+      const pillEl = active.querySelector('.home-nav-pill') || active;
+      const capRect = capsule.getBoundingClientRect();
+      const pillRect = pillEl.getBoundingClientRect();
+      if (!pillRect.width) return;
+      glider.style.opacity = '1';
+      homeSpring.set(pillRect.left - capRect.left, pillRect.width, !!instant);
+    };
+    new MutationObserver(() => syncHome(false)).observe(capsule, {
+      subtree: true, attributes: true, attributeFilter: ['class']
+    });
+    window.addEventListener('resize', () => syncHome(true));
+    // Touch scrubbing across the Home island
+    let scrubbing = false;
+    capsule.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse') return;
+      scrubbing = true;
+    });
+    capsule.addEventListener('pointermove', (e) => {
+      if (!scrubbing) return;
+      const hit = document.elementFromPoint(e.clientX, e.clientY);
+      const tab = hit && hit.closest && hit.closest('.home-nav-tab');
+      if (tab && !tab.classList.contains('is-active')) tab.click();
+    });
+    window.addEventListener('pointerup', () => { scrubbing = false; });
+    window.addEventListener('pointercancel', () => { scrubbing = false; });
+    requestAnimationFrame(() => syncHome(true));
+  }
 }
 
 boot().catch(error => console.error(error));
