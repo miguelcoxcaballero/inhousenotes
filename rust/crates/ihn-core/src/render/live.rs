@@ -70,7 +70,8 @@ fn padded(e: [f64; 4], padding: f64, keep: bool) -> Bounds {
 }
 
 /// v5: `updateLiveStroke(pageIndex, canvas, stroke, previewCanvas, metrics)` (app-v5.js:4660), once per frame.
-pub fn update(c: &mut Cmds, live: &mut Live, page: PageTarget, cursor: &mut Cursor, s: &StrokeRef) -> Option<bool> {
+/// `predicted`: where the pen will probably be next (page px, W7), drawn on the tip layer only.
+pub fn update(c: &mut Cmds, live: &mut Live, page: PageTarget, cursor: &mut Cursor, s: &StrokeRef, predicted: &[f64]) -> Option<bool> {
     if s.tool == Tool::Highlighter {
         return highlighter_append(c, live, cursor, s);
     }
@@ -89,20 +90,21 @@ pub fn update(c: &mut Cmds, live: &mut Live, page: PageTarget, cursor: &mut Curs
             page.begin(c);
             pen::tail(c, s, &mut live.curve, false);
             live.finalized = Some(n - 1);
-            tip(c, live, cursor, s)
+            tip(c, live, cursor, s, predicted)
         }
     }
 }
 
 /// v5: `drawLivePenTip(previewCanvas, pageIndex, stroke, metrics)` (app-v5.js:4507): the newest segment.
-fn tip(c: &mut Cmds, live: &Live, cursor: &mut Cursor, s: &StrokeRef) -> Option<bool> {
+fn tip(c: &mut Cmds, live: &Live, cursor: &mut Cursor, s: &StrokeRef, predicted: &[f64]) -> Option<bool> {
     c.ctx(cursor.surf, false);
     c.set_transform(cursor.scale, 0.0, 0.0, cursor.scale, 0.0, 0.0);
     if let Some(b) = cursor.bounds {
         c.clear_rect(b.x, b.y, b.w, b.h);
     }
     let (last, from) = (s.len() - 1, live.curve.unwrap_or(0));
-    if from >= last {
+    let ahead = if pen::fills(s) { predicted } else { &[] };
+    if from >= last && ahead.is_empty() {
         cursor.bounds = None;
         return Some(false);
     }
@@ -112,7 +114,15 @@ fn tip(c: &mut Cmds, live: &Live, cursor: &mut Cursor, s: &StrokeRef) -> Option<
     if pen::fills(s) {
         c.begin_path();
         let r = ink::radii(s.width, s.len(), s.p);
-        ink::outline(c, &ink::samples(s.xy, &r, from, last));
+        ink::outline(c, &ink::samples(s.xy, &r, from.min(last), last));
+        if !ahead.is_empty() {
+            // The prediction continues from the last real point with its width; the next frame replaces it.
+            let mut xy = Vec::with_capacity(4 + ahead.len());
+            xy.extend_from_slice(&s.xy[2 * last.saturating_sub(1)..2 * last + 2]);
+            xy.extend_from_slice(ahead);
+            let start = xy.len() / 2 - 1 - ahead.len() / 2;
+            ink::outline(c, &ink::samples(&xy, &vec![r[last]; xy.len() / 2], start, xy.len() / 2 - 1));
+        }
         with_css(s.color, |css| c.fill_style(css));
         c.fill();
     } else {
@@ -122,7 +132,8 @@ fn tip(c: &mut Cmds, live: &Live, cursor: &mut Cursor, s: &StrokeRef) -> Option<
         pen::segments(c, chain, offset, chain.len() / 2 - 1);
         c.stroke();
     }
-    cursor.bounds = Some(padded(extent(chain, EMPTY), js_max(4.0, s.width + 2.0), false));
+    let reach = if pen::fills(s) { js_max(4.0, s.width * ink::max_factor() + 2.0) } else { js_max(4.0, s.width + 2.0) };
+    cursor.bounds = Some(padded(extent(ahead, extent(chain, EMPTY)), reach, false));
     Some(true)
 }
 

@@ -57,6 +57,9 @@ pub fn has_pressure(p: Option<&[f32]>) -> bool {
     hi - lo > PRESSURE_RANGE
 }
 
+/// The largest width multiplier (full pressure).
+pub fn max_factor() -> f64 { MIN_FACTOR + SPAN }
+
 /// Width multiplier for a (smoothed) pressure in 0..1.
 pub fn factor(p: f64) -> f64 { MIN_FACTOR + SPAN * p.clamp(0.0, 1.0).powf(GAMMA) }
 

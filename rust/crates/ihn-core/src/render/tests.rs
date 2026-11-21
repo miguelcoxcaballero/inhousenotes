@@ -274,7 +274,7 @@ fn live_ink(scene: &str, tool: Tool, colour: &str, width: f64) {
     // Pointer down, then one frame per two samples.
     let mut ink = Vec::new();
     for n in std::iter::once(1).chain((2..40).step_by(2)) {
-        ink.push(live::update(&mut s.c, &mut live, target, &mut cursor, &StrokeRef::new(tool, &colour, width, &xy[..2 * n])));
+        ink.push(live::update(&mut s.c, &mut live, target, &mut cursor, &StrokeRef::new(tool, &colour, width, &xy[..2 * n]), &[]));
     }
     assert_eq!(ink[0], if tool == Tool::Pen { None } else { Some(true) });
     assert!(ink[1..].iter().all(|v| *v == Some(true)));

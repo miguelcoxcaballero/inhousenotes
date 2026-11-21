@@ -781,6 +781,35 @@ mod tests {
     }
 
     #[test]
+    fn predicted_pen_points_are_drawn_but_never_stored() {
+        let mut t = boot();
+        t.send(L_DOWN, ptr::DOWN, ptr::PEN, &[(110.0, 60.0, 1.0)], 1);
+        // A move whose event carries two predicted samples (appended after the path, as host/dom.js does).
+        let mut bytes = encode(L_MOVE, ptr::MOVE, ptr::PEN, 1, &[(130.0, 70.0, 2.0)], 1, &[]);
+        let mut w = Writer::default();
+        w.u32(2);
+        for (x, t) in [(140.0, 3.0), (150.0, 4.0)] {
+            w.f64(x);
+            w.f64(75.0);
+            w.f64(t);
+            w.f32(0.5);
+            w.f32(0.0);
+            w.f32(0.0);
+            w.u32(1);
+        }
+        bytes.extend_from_slice(&w.buf);
+        t.app.event(&mut t.host, kind::POINTER, &bytes);
+        assert_eq!(super::super::pen::predicted(&t.app), [40.0, 25.0, 50.0, 25.0]);
+        t.frame();
+        // The next event without a prediction clears it; the stored stroke has only real samples.
+        t.send(L_MOVE, ptr::MOVE, ptr::PEN, &[(160.0, 80.0, 5.0)], 1);
+        assert!(super::super::pen::predicted(&t.app).is_empty());
+        t.frame();
+        t.send(L_UP, ptr::UP, ptr::PEN, &[(160.0, 80.0, 6.0)], 0);
+        assert_eq!(t.live_strokes(), vec![vec![10.0, 10.0, 30.0, 20.0, 60.0, 30.0]]);
+    }
+
+    #[test]
     fn a_pen_hovering_with_its_side_button_held_ends_a_lost_contact() {
         let mut t = boot();
         t.send(L_DOWN, ptr::DOWN, ptr::PEN, &[(110.0, 60.0, 1.0)], 1);
