@@ -29,6 +29,7 @@ const L_BACKGROUND: u32 = tag(Mod::EditorInput, 5);
 /// One listener per toolbar button (`L_TOOL + i`; a listener id is attached once).
 const L_TOOL: u32 = tag(Mod::EditorInput, 16);
 const L_TOUCH_DRAW: u32 = tag(Mod::EditorInput, 7);
+const L_CONTEXT: u32 = tag(Mod::EditorInput, 13);
 const T_PEN_IDLE: u32 = tag(Mod::EditorInput, 8);
 
 /// v5: `DOCUMENT_SAVE_IDLE_MS` (the pen-writing idle tail) and the re-arm while a pointer is still down.
@@ -40,6 +41,9 @@ const PALM_MS: f64 = 2000.0;
 const DOUBLE_TAP_MS: f64 = 320.0;
 const DOUBLE_TAP_DIST: f64 = 42.0;
 const TOUCH_DRAW_KEY: &str = "touchDrawEnabled";
+/// Pointer Events `buttons` bits of a pen: the barrel (side) button and the eraser end.
+const PEN_BARREL: u32 = 2;
+const PEN_ERASER_END: u32 = 32;
 
 /// v5 `state.currentTool`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -142,6 +146,8 @@ pub struct State {
     last_pen_t: f64,
     contact: Option<Contact>,
     last_tap: Option<(f64, f64, f64)>,
+    /// The last pen contact started with the side button or the eraser end: its `contextmenu` is cancelled.
+    side_eraser: bool,
     buttons: Vec<ToolButton>,
     /// Pointer events handled (test counter).
     pub events: u32,
@@ -160,6 +166,7 @@ impl Default for State {
             last_pen_t: f64::NEG_INFINITY,
             contact: None,
             last_tap: None,
+            side_eraser: false,
             buttons: Vec::new(),
             events: 0,
         }
@@ -210,6 +217,16 @@ fn remember(st: &mut State) {
 }
 
 fn eraser_tool(st: &State) -> Tool { if st.eraser_stroke { Tool::EraserStroke } else { Tool::EraserArea } }
+
+/// W7: a pen pressed down while its side button is held (or with its eraser end) erases with the eraser mode
+/// chosen in the eraser menu; the toolbar keeps its tool. Decided once per contact, at pen-down.
+fn contact_tool(st: &State, ptype: u8, buttons: u32) -> Tool {
+    if ptype == ptr::PEN && buttons & (PEN_BARREL | PEN_ERASER_END) != 0 {
+        eraser_tool(st)
+    } else {
+        st.tool
+    }
+}
 
 /// v5: `setActiveTool(name, {color, width})` (`None` tool = the eraser in its current mode).
 pub fn set_tool(app: &mut App, host: &mut dyn Host, tool: Option<Tool>, color: Option<&'static str>, width: Option<f64>) {
@@ -297,7 +314,8 @@ fn down(app: &mut App, host: &mut dyn Host, p: &PointerBatch) -> u32 {
     if !accepts(st, p.ptype, p.raw.t) {
         return 0;
     }
-    let tool = st.tool;
+    let tool = contact_tool(st, p.ptype, p.raw.buttons);
+    st.side_eraser = p.ptype == ptr::PEN && tool != st.tool;
     // v5: a drawing pointerdown clears the selection (the lasso clears it in its own down).
     if tool != Tool::Lasso {
         super::selection::clear(app, host);
@@ -327,8 +345,9 @@ fn moved(app: &mut App, host: &mut dyn Host, p: &PointerBatch) -> u32 {
     if view::read_only(app) {
         return 0;
     }
-    // A hovering pen ended its contact without an up: end it here, without the hover position.
-    if p.ptype == ptr::PEN && p.raw.buttons == 0 && p.raw.pressure == 0.0 {
+    // A hovering pen ended its contact without an up: end it here, without the hover position. The tip bit
+    // (`buttons & 1`) is what matters: a pen hovering with its side button held reports `buttons == 2`.
+    if p.ptype == ptr::PEN && p.raw.buttons & 1 == 0 && p.raw.buttons & PEN_ERASER_END == 0 && p.raw.pressure == 0.0 {
         finish(app, host, c.pointer_id);
         return 0;
     }
@@ -469,6 +488,8 @@ pub fn init(app: &mut App, host: &mut dyn Host) {
         buttons.push(ToolButton { node, tool, color, width });
     }
     out.listen(Ui::TOUCH_DRAW_TOGGLE, "change", L_TOUCH_DRAW, 0);
+    // W7: the side button is a secondary button; on some systems pressing it on the page opens the context menu.
+    out.listen(Ui::CANVAS_CONTAINER, "contextmenu", L_CONTEXT, 0);
     app.st.editor_input.buttons = buttons;
     // v5: touchDrawEnabled = localStorage.getItem('touchDrawEnabled') === 'true'; the checkbox follows.
     let on = host.ls(LsOp::Get, TOUCH_DRAW_KEY, None).as_deref() == Some("true");
@@ -489,6 +510,13 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
         Event::Dom(e) if (L_TOOL..L_TOOL + TOOL_BUTTONS.len() as u32).contains(&e.listener) && e.ty == ety::CLICK => {
             tool_click(app, host, e.node);
             0
+        }
+        Event::Dom(e) if e.listener == L_CONTEXT => {
+            if app.st.editor_input.side_eraser || app.st.editor_input.contact.is_some_and(|c| c.ptype == ptr::PEN) {
+                ret::PREVENT_DEFAULT
+            } else {
+                0
+            }
         }
         Event::Dom(e) if e.listener == L_TOUCH_DRAW => {
             let on = e.has(ev::CHECKED);
@@ -607,7 +635,8 @@ mod tests {
             w.f64(s.0);
             w.f64(s.1);
             w.f64(s.2);
-            w.f32(if buttons != 0 { 0.5 } else { 0.0 });
+            // Pressure comes from a touching tip (bit 1) or eraser end (bit 32), not from the side button.
+            w.f32(if buttons & (1 | PEN_ERASER_END) != 0 { 0.5 } else { 0.0 });
             w.f32(0.0);
             w.f32(0.0);
             w.u32(buttons);
@@ -720,6 +749,46 @@ mod tests {
         view::set_read_only(&mut t.app, &mut t.host, true, false);
         assert_eq!(t.send(L_DOWN, ptr::DOWN, ptr::PEN, &[(150.0, 150.0, t.host.now)], 1), 0);
         assert_eq!(history::depth(&t.app), (3, 3));
+    }
+
+    #[test]
+    fn the_pen_side_button_and_eraser_end_erase_without_changing_the_tool() {
+        let mut t = boot();
+        for buttons in [1 | PEN_BARREL, PEN_ERASER_END] {
+            t.stroke(ptr::PEN, &[(10.0, 100.0), (200.0, 100.0)]);
+            let before = t.live_strokes();
+            // Page (100, 70) → (100, 130): across the stroke, with the side button held (or the eraser end down).
+            let t0 = t.host.now;
+            t.send(L_DOWN, ptr::DOWN, ptr::PEN, &[(200.0, 120.0, t0)], buttons);
+            let c = contact(&t.app).copied().expect("a contact");
+            assert!(c.tool.is_eraser(), "{buttons}: {:?}", c.tool);
+            assert_eq!(t.app.st.editor_input.tool, Tool::Pen, "the toolbar keeps the pen");
+            assert!(t.app.st.editor_input.side_eraser);
+            t.send(L_MOVE, ptr::MOVE, ptr::PEN, &[(200.0, 150.0, t0 + 1.0), (200.0, 180.0, t0 + 2.0)], buttons);
+            t.frame();
+            t.send(L_UP, ptr::UP, ptr::PEN, &[(200.0, 180.0, t0 + 3.0)], 0);
+            assert_ne!(t.live_strokes(), before, "{buttons}: the stroke was erased");
+            // Without the button the pen writes again.
+            let n = t.live_strokes().len();
+            t.stroke(ptr::PEN, &[(10.0, 300.0), (60.0, 300.0)]);
+            assert_eq!(t.live_strokes().len(), n + 1);
+            assert!(!t.app.st.editor_input.side_eraser);
+            history::undo(&mut t.app, &mut t.host);
+        }
+        // A mouse's right button is not a pen side button.
+        t.send(L_DOWN, ptr::DOWN, ptr::MOUSE, &[(300.0, 300.0, t.host.now)], 2);
+        assert!(contact(&t.app).is_none_or(|c| !c.tool.is_eraser()));
+    }
+
+    #[test]
+    fn a_pen_hovering_with_its_side_button_held_ends_a_lost_contact() {
+        let mut t = boot();
+        t.send(L_DOWN, ptr::DOWN, ptr::PEN, &[(110.0, 60.0, 1.0)], 1);
+        t.send(L_MOVE, ptr::MOVE, ptr::PEN, &[(150.0, 90.0, 2.0)], 1);
+        // Lifted with the side button held, the up lost: buttons == 2, no pressure.
+        t.send(L_MOVE, ptr::MOVE, ptr::PEN, &[(400.0, 400.0, 3.0)], PEN_BARREL);
+        assert!(contact(&t.app).is_none());
+        assert_eq!(t.live_strokes(), vec![vec![10.0, 10.0, 50.0, 40.0]]);
     }
 
     #[test]
