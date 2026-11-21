@@ -1,0 +1,184 @@
+/* Canonical Inhouse services updater UI. Sync all apps; never edit vendored copies.
+   Follows Material Design 3: modal bottom sheet (surface container low, 28dp top
+   corners, 32x4 handle, 640dp max width) on phones and a basic dialog (surface
+   container high, 28dp corners, 24dp padding, end-aligned buttons) on wide
+   screens. Containers are flat: only the sheet itself has a shape.
+   Neutral Inhouse surfaces are explicit, independent of wallpaper/accent colors.
+   Keep semantic warning/error/success colors confined to their status elements. */
+
+.isu-overlay {
+  --isu-surface: #fafafa; --isu-surface-high: #f0f0f0; --isu-surface-highest: #e5e5e5;
+  --isu-on-surface: #1c1c1c; --isu-on-variant: #4a4a4a; --isu-outline-variant: #d0d0d0;
+  --isu-primary: #242424; --isu-on-primary: #ffffff; --isu-error: #b3261e; --isu-warn: #8b5000; --isu-ok: #1f7a46;
+  --isu-font: "Google Sans Text", Roboto, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --isu-decelerate: cubic-bezier(.05, .7, .1, 1); --isu-accelerate: cubic-bezier(.3, 0, .8, .15); --isu-standard: cubic-bezier(.2, 0, 0, 1);
+  position: fixed; inset: 0; z-index: 2147483647; display: flex; align-items: flex-end; justify-content: center; box-sizing: border-box;
+  background: rgba(0, 0, 0, .32); background: rgb(0 0 0 / calc(.32 * (1 - var(--isu-drag, 0))));
+  color: var(--isu-on-surface); font: 400 14px/20px var(--isu-font); letter-spacing: .25px; color-scheme: light;
+  -webkit-tap-highlight-color: transparent; animation: isu-scrim .2s linear backwards;
+}
+@media (prefers-color-scheme: dark) {
+  .isu-overlay { --isu-surface: #1c1c1c; --isu-surface-high: #262626; --isu-surface-highest: #333333; --isu-on-surface: #ededed; --isu-on-variant: #c7c7c7; --isu-outline-variant: #4a4a4a; --isu-primary: #ededed; --isu-on-primary: #242424; --isu-error: #f2b8b5; --isu-warn: #ffb95c; --isu-ok: #7fd8a2; color-scheme: dark; }
+}
+[data-theme=dark] .isu-overlay { --isu-surface: #1c1c1c; --isu-surface-high: #262626; --isu-surface-highest: #333333; --isu-on-surface: #ededed; --isu-on-variant: #c7c7c7; --isu-outline-variant: #4a4a4a; --isu-primary: #ededed; --isu-on-primary: #242424; --isu-error: #f2b8b5; --isu-warn: #ffb95c; --isu-ok: #7fd8a2; color-scheme: dark; }
+[data-theme=light] .isu-overlay { --isu-surface: #fafafa; --isu-surface-high: #f0f0f0; --isu-surface-highest: #e5e5e5; --isu-on-surface: #1c1c1c; --isu-on-variant: #4a4a4a; --isu-outline-variant: #d0d0d0; --isu-primary: #242424; --isu-on-primary: #ffffff; --isu-error: #b3261e; --isu-warn: #8b5000; --isu-ok: #1f7a46; color-scheme: light; }
+.isu-overlay *, .isu-inline * { box-sizing: border-box; }
+.isu-overlay [hidden], .isu-inline [hidden] { display: none !important; }
+
+/* Container */
+.isu-overlay .isu-card {
+  position: relative; width: 100%; max-width: 640px; max-height: calc(100% - 56px); overflow: auto; overscroll-behavior: contain; outline: none;
+  padding: 0 24px max(16px, env(safe-area-inset-bottom)); border-radius: 28px 28px 0 0; background: var(--isu-surface);
+  animation: isu-sheet-in .5s var(--isu-decelerate) backwards; transition: transform .35s var(--isu-decelerate);
+}
+.isu-overlay .isu-card.isu-dragging { transition: none; }
+.isu-handle { width: 32px; height: 4px; margin: 22px auto 18px; border-radius: 2px; background: var(--isu-on-variant); opacity: .4; touch-action: none; }
+.isu-overlay .isu-head { touch-action: none; }
+.isu-overlay.isu-leaving { background: transparent; transition: background .2s linear; pointer-events: none; }
+.isu-overlay.isu-leaving .isu-card { transform: translateY(100%); transition: transform .22s var(--isu-accelerate); }
+@media (min-width: 720px) {
+  .isu-overlay { align-items: center; padding: 48px 24px; }
+  .isu-overlay .isu-card { width: auto; min-width: 280px; max-width: 520px; flex: 1; max-height: 100%; padding: 24px; border-radius: 28px; background: var(--isu-surface-high); animation: isu-dialog-in .3s var(--isu-decelerate) backwards; }
+  .isu-handle { display: none; }
+  .isu-overlay.isu-leaving .isu-card { transform: none; opacity: 0; transition: opacity .15s linear; }
+}
+
+/* Hosts such as Notes style every header element. Keep their app-bar background,
+   flex layout and spacing out of the popup; .isu-centered below still handles warnings. */
+.isu-head { display: block; margin: 0; padding: 0; min-height: 0; background: transparent; border: 0; z-index: auto; justify-content: normal; }
+
+/* Type */
+.isu-card h2 { margin: 0; font-size: 24px; line-height: 32px; font-weight: 400; letter-spacing: 0; color: var(--isu-on-surface); }
+.isu-sub { margin: 4px 0 0; color: var(--isu-on-variant); font-variant-numeric: tabular-nums; }
+.isu-versions b { font-weight: 500; color: var(--isu-on-surface); }
+.isu-subheader { margin: 24px 0 4px; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: .1px; color: var(--isu-on-surface); }
+.isu-text-body { margin: 16px 0 0; color: var(--isu-on-variant); overflow-wrap: anywhere; }
+.isu-note { margin-top: 0; }
+.isu-centered { display: grid; justify-items: center; text-align: center; }
+.isu-icon { display: inline-grid; place-items: center; }
+.isu-icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.isu-alert { margin-bottom: 16px; color: var(--isu-warn); }
+.isu-alert svg { width: 24px; height: 24px; }
+
+/* Buttons: 40dp, full shape, label large; state layer instead of scaling */
+.isu-card button { font-family: var(--isu-font); -webkit-tap-highlight-color: transparent; }
+.isu-btn, .isu-item, .isu-disclosure, .isu-link { position: relative; overflow: hidden; border: 0; background: transparent; color: inherit; cursor: pointer; }
+.isu-btn::before, .isu-item::before, .isu-disclosure::before, .isu-link::before { content: ""; position: absolute; inset: 0; background: currentColor; opacity: 0; transition: opacity .15s linear; pointer-events: none; }
+.isu-btn:hover::before, .isu-item:hover::before, .isu-disclosure:hover::before, .isu-link:hover::before { opacity: .08; }
+.isu-btn:active::before, .isu-item:active::before, .isu-disclosure:active::before, .isu-link:active::before { opacity: .12; }
+.isu-btn { height: 40px; padding: 0 24px; border-radius: 20px; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: .1px; white-space: nowrap; }
+.isu-text { padding: 0 12px; color: var(--isu-primary); }
+.isu-filled { background: var(--isu-primary); color: var(--isu-on-primary); transition: background-color .2s, color .2s; }
+.isu-btn:disabled { cursor: default; }
+.isu-btn:disabled::before { opacity: 0; }
+.isu-text:disabled { color: color-mix(in srgb, var(--isu-on-surface) 38%, transparent); }
+.isu-filled:disabled { background: color-mix(in srgb, var(--isu-on-surface) 12%, transparent); color: color-mix(in srgb, var(--isu-on-surface) 38%, transparent); }
+.isu-card :focus-visible { outline: 2px solid var(--isu-on-surface); outline-offset: 2px; }
+.isu-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 24px; }
+.isu-actions-split { justify-content: space-between; }
+.isu-credits { display: flex; align-items: center; gap: 0; margin-left: -2px; color: var(--isu-on-variant); font-size: 12px; line-height: 16px; letter-spacing: .4px; }
+.isu-credits a { padding: 12px 2px; color: inherit; text-decoration: none; }
+.isu-credits a:hover { color: var(--isu-on-surface); }
+.isu-github::before { content: "·"; margin: 0 8px; }
+
+/* Details disclosure */
+.isu-disclosure { display: inline-flex; align-items: center; gap: 4px; height: 40px; margin: 12px 0 0 -12px; padding: 0 8px 0 12px; border-radius: 20px; color: var(--isu-primary); font-size: 14px; font-weight: 500; letter-spacing: .1px; }
+.isu-disclosure .isu-icon { transition: transform .3s var(--isu-standard); }
+.isu-disclosure[aria-expanded=true] .isu-icon { transform: rotate(180deg); }
+.isu-more { margin-top: 4px; animation: isu-fade .25s var(--isu-standard) backwards; }
+.isu-subheader-first { margin-top: 4px; }
+.isu-changes { display: grid; gap: 8px; margin: 8px 0 16px; padding: 0; list-style: none; }
+.isu-changes li { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 12px; overflow-wrap: anywhere; }
+.isu-changes small { color: var(--isu-on-variant); font-size: 12px; line-height: 20px; letter-spacing: .4px; font-variant-numeric: tabular-nums; }
+.isu-earlier { margin: -4px 0 12px 68px; color: var(--isu-on-variant); font-size: 12px; }
+.isu-facts { margin: 0; }
+.isu-facts div { display: flex; justify-content: space-between; align-items: center; gap: 16px; min-height: 44px; border-top: 1px solid var(--isu-outline-variant); }
+.isu-facts dt { color: var(--isu-on-variant); }
+.isu-facts dd { margin: 0; color: var(--isu-on-surface); font-variant-numeric: tabular-nums; text-align: right; }
+.isu-link { height: 32px; margin-right: -8px; padding: 0 8px; border-radius: 16px; color: var(--isu-primary); font-size: 14px; font-weight: 500; letter-spacing: .1px; }
+.isu-link:disabled { opacity: .38; cursor: default; }
+
+/* Status */
+.isu-status { display: flex; align-items: center; gap: 8px; margin-top: 16px; color: var(--isu-on-variant); overflow-wrap: anywhere; }
+.isu-status:empty { display: none; }
+.isu-status[data-tone=error] { color: var(--isu-error); }
+.isu-status[data-tone=warn] { color: var(--isu-warn); }
+.isu-status-icon svg { display: block; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.isu-status[data-tone=ok] .isu-status-icon { color: var(--isu-ok); }
+.isu-spinner { flex: none; width: 16px; height: 16px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: isu-spin .8s linear infinite; }
+.isu-recovery { margin-top: 12px; }
+.isu-download { display: inline-flex; align-items: center; min-height: 40px; color: var(--isu-primary); font-weight: 500; text-decoration: underline; text-underline-offset: 3px; }
+.isu-recovery-help { margin: 0; color: var(--isu-on-variant); font-size: 12px; line-height: 18px; }
+
+/* Settings list: 72dp two-line items with a leading radio, as in Android settings */
+.isu-channels { display: grid; margin: 0 -24px; }
+.isu-item { display: flex; align-items: center; gap: 16px; width: calc(100% + 48px); min-height: 72px; margin: 0 -24px; padding: 8px 24px; text-align: left; }
+.isu-channels .isu-item { width: 100%; margin: 0; }
+.isu-item-text { display: grid; flex: 1; min-width: 0; }
+.isu-item-title { color: var(--isu-on-surface); font-size: 16px; line-height: 24px; letter-spacing: .5px; }
+.isu-item-support { color: var(--isu-on-variant); }
+.isu-radio { display: grid; place-items: center; flex: none; width: 20px; height: 20px; border: 2px solid var(--isu-on-variant); border-radius: 50%; transition: border-color .2s; }
+.isu-radio::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--isu-primary); transform: scale(0); transition: transform .2s var(--isu-standard); }
+.isu-item[aria-pressed=true] .isu-radio { border-color: var(--isu-primary); }
+.isu-item[aria-pressed=true] .isu-radio::after { transform: scale(1); }
+.isu-divider { height: 1px; margin: 8px 0; background: var(--isu-outline-variant); }
+.isu-check { min-height: 56px; }
+.isu-check .isu-status { margin-top: 0; }
+
+/* Install dock: the buttons give way to a linear progress indicator */
+.isu-dock { display: grid; margin-top: 24px; }
+.isu-dock > * { grid-area: 1 / 1; margin-top: 0; transition: opacity .2s var(--isu-standard), visibility 0s; }
+.isu-dock[data-state=busy] .isu-actions, .isu-dock[data-state=idle] .isu-progress { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .15s linear, visibility 0s .15s; }
+.isu-progress { position: relative; display: grid; align-content: center; gap: 8px; }
+.isu-progress-row { display: flex; justify-content: space-between; gap: 12px; }
+.isu-progress-label { color: var(--isu-on-surface); font-weight: 500; letter-spacing: .1px; }
+.isu-progress-value { color: var(--isu-on-variant); font-variant-numeric: tabular-nums; }
+.isu-track { height: 4px; overflow: hidden; border-radius: 2px; background: var(--isu-surface-highest); }
+.isu-track i { display: block; height: 100%; border-radius: inherit; background: var(--isu-primary); transform-origin: 0 50%; transform: scaleX(var(--p, 0)); transition: transform .3s var(--isu-standard); }
+.isu-track.is-indeterminate i { width: 40%; transform: none; animation: isu-indeterminate 1.4s var(--isu-standard) infinite; }
+.isu-progress progress { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
+
+/* Slide to confirm version A */
+.isu-slide { --v: 0; position: relative; height: 56px; margin-top: 24px; overflow: hidden; border-radius: 28px; background: var(--isu-surface-highest); touch-action: none; -webkit-user-select: none; user-select: none; animation: isu-fade .25s var(--isu-standard) backwards; }
+.isu-slide:has(input:focus-visible) { outline: 2px solid var(--isu-on-surface); outline-offset: 2px; }
+.isu-slide input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; pointer-events: none; }
+.isu-slide-fill { position: absolute; top: 0; bottom: 0; left: 0; width: calc(56px + var(--v) * (100% - 56px)); border-radius: inherit; background: color-mix(in srgb, var(--isu-warn) 20%, transparent); transition: width .4s var(--isu-decelerate); }
+.isu-slide-label { position: absolute; inset: 0; display: grid; place-items: center; padding-left: 48px; color: var(--isu-on-variant); font-weight: 500; letter-spacing: .1px; opacity: calc(1 - var(--v) * 1.8); pointer-events: none; }
+.isu-slide-thumb { position: absolute; top: 4px; left: calc(4px + var(--v) * (100% - 56px)); display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--isu-primary); color: var(--isu-on-primary); cursor: grab; transition: left .4s var(--isu-decelerate); }
+.isu-slide-thumb svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.isu-slide.is-dragging .isu-slide-thumb, .isu-slide.is-dragging .isu-slide-fill { transition: none; }
+
+/* Motion (Material 3 easing and durations) */
+.isu-swap { animation: isu-through .3s var(--isu-standard) .05s backwards; }
+@keyframes isu-scrim { from { background: transparent; } }
+@keyframes isu-sheet-in { from { transform: translateY(100%); } }
+@keyframes isu-dialog-in { from { opacity: 0; transform: scale(.94); } }
+@keyframes isu-through { from { opacity: 0; transform: scale(.98); } }
+@keyframes isu-fade { from { opacity: 0; } }
+@keyframes isu-spin { to { transform: rotate(360deg); } }
+@keyframes isu-indeterminate { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@media (prefers-reduced-motion: reduce) {
+  .isu-overlay, .isu-overlay .isu-card, .isu-swap, .isu-more, .isu-slide { animation: none !important; }
+  .isu-overlay *, .isu-inline * { transition: none !important; }
+  .isu-spinner, .isu-track.is-indeterminate i { animation-duration: 2s; }
+}
+@media (max-width: 340px) { .isu-overlay .isu-card { padding-inline: 16px; } .isu-channels, .isu-item { margin-inline: -16px; } .isu-item { width: calc(100% + 32px); padding-inline: 16px; } }
+
+/* Embedded in a host's settings or account menu: inherits its colors and type. */
+.isu-inline {
+  --isu-surface: transparent; --isu-surface-highest: color-mix(in srgb, currentColor 10%, transparent); --isu-on-surface: currentColor;
+  --isu-on-variant: color-mix(in srgb, currentColor 66%, transparent); --isu-outline-variant: color-mix(in srgb, currentColor 14%, transparent);
+  --isu-primary: currentColor; --isu-on-primary: currentColor; --isu-error: #d0483b; --isu-warn: #c47a12; --isu-ok: #2e9e5b;
+  --isu-font: inherit; --isu-standard: cubic-bezier(.2, 0, 0, 1); --isu-decelerate: cubic-bezier(.05, .7, .1, 1);
+  color: inherit; font: inherit;
+}
+.isu-inline .isu-card { padding: 0; background: none; outline: none; }
+.isu-inline .isu-head h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.isu-inline .isu-sub { margin: 0; }
+.isu-inline .isu-subheader { margin-top: 16px; }
+.isu-inline .isu-channels, .isu-inline .isu-item { margin-inline: 0; }
+.isu-inline .isu-item { width: 100%; padding-inline: 0; min-height: 60px; }
+.isu-inline .isu-item::before { inset: 0 -8px; border-radius: 8px; }
+.isu-inline .isu-filled { background: color-mix(in srgb, currentColor 14%, transparent); }
+.isu-inline .isu-slide-thumb { background: color-mix(in srgb, currentColor 22%, transparent); }
+.isu-inline .isu-actions { margin-top: 12px; }
