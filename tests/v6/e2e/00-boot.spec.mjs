@@ -22,13 +22,13 @@ async function open(page, url = '/?e2e=1') {
   return { problems, requests };
 }
 
-test('boots signed out into Welcome with v6.1.1 labels and a clean console', async ({ page }) => {
+test('boots signed out into Welcome with v6.2.0 labels and a clean console', async ({ page }) => {
   const { problems, requests } = await open(page);
   await expect(page.locator('#welcome-view')).toBeVisible();
   await expect(page.locator('#drive-home')).toBeHidden();
   await expect(page.locator('#editor-view')).toBeHidden();
   const labels = await page.locator('[data-app-version]').allTextContents();
-  expect(labels).toEqual(['v6.1.1', 'v6.1.1']);
+  expect(labels).toEqual(['v6.2.0', 'v6.2.0']);
   expect(await page.evaluate(() => document.documentElement.dataset.bootDestination)).toBe('welcome');
 
   const api = await page.evaluate(() => {
@@ -36,8 +36,8 @@ test('boots signed out into Welcome with v6.1.1 labels and a clean console', asy
     return { state: test.state(), imports: test.wasmImports().sort(), allowed: test.allowedImports().sort() };
   });
   expect(api.imports).toEqual(api.allowed);
-  expect(api.imports).toHaveLength(9);
-  expect(api.state).toMatchObject({ version: '6.1.1', abi: 6, ready: true });
+  expect(api.imports).toHaveLength(10);
+  expect(api.state).toMatchObject({ version: '6.2.0', abi: 6, ready: true });
   expect(api.state.modules).toContain('shell');
   expect(api.state.flags & 4).toBe(4); // e2e
 
@@ -45,7 +45,7 @@ test('boots signed out into Welcome with v6.1.1 labels and a clean console', asy
   const local = requests.map(url => new URL(url)).filter(url => url.hostname === '127.0.0.1').map(url => url.pathname);
   expect(local.filter(path => /vendor\/(pdfjs|pdf-lib|jspdf)|-v5\.js|rust-core/.test(path))).toEqual([]);
   // `?e2e=1` boots the test build (W6.2t): production code plus the test API.
-  expect(local).toEqual(expect.arrayContaining(['/boot.js', '/host/main.js', '/host/dom.js', '/wasm/ihn-test.wasm']));
+  expect(local).toEqual(expect.arrayContaining(['/boot.js', '/host/main.js', '/host/dom.js', '/wasm/ihn-test.wasm', '/wasm/ihn-test-2.wasm']));
   expect(local).not.toContain('/wasm/ihn.wasm');
   expect(await page.evaluate(() => [typeof window.pdfjsLib, typeof window.PDFLib, typeof window.jspdf])).toEqual(['undefined', 'undefined', 'undefined']);
   expect(await page.evaluate(() => performance.getEntriesByName('ihn-wasm-ready').length)).toBe(1);
@@ -59,9 +59,10 @@ test('the test API exists only on localhost with ?e2e=1', async ({ page }) => {
   const wasm = [];
   page.on('request', request => { if (request.url().includes('/wasm/')) wasm.push(new URL(request.url()).pathname); });
   await page.goto('/');
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v6.1.1');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v6.2.0');
   expect(await page.evaluate(() => typeof window.__IHN_TEST_API__)).toBe('undefined');
-  expect(wasm).toEqual(['/wasm/ihn.wasm']); // the production build, without the test API
+  // The production build, without the test API: its first part, then the second one fetched after boot (6.2).
+  await expect.poll(() => wasm).toEqual(['/wasm/ihn.wasm', '/wasm/ihn-2.wasm']);
 });
 
 test('a returning user boots to the Home skeleton, not Welcome', async ({ page }) => {

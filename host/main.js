@@ -222,7 +222,7 @@ function coreOps(host) {
       worker = new Worker(window.InhouseAssetUrl(`host/export-worker.js?v=${host.config.version}`));
       worker.onmessage = event => host.message(CHAN.WORKER, event.data?.bytes || '', host.hold(event.data?.obj));
       worker.onerror = event => host.message(CHAN.WORKER_ERROR, String(event.message || 'Worker failed'));
-      worker.postMessage({ type: 'init', module: host.module, version: host.config.version, url: location.href });
+      worker.postMessage({ type: 'init', module: host.module, module2: host.split.module(), version: host.config.version, url: location.href });
     },
     [FX | 0x71]: r => {
       const obj = host.obj(r.u32()), bytes = r.copy();
@@ -335,8 +335,42 @@ function imports(host) {
     },
     host_log: (level, ptr, len) => {
       console[['debug', 'info', 'warn', 'error'][level] || 'log'](decoder.decode(host.u8(ptr, len)));
-    }
+    },
+    // 6.2 (scripts/split-wasm.mjs): a function of the second module is needed before it was instantiated.
+    host_split: () => host.split.now(),
+    // Profiling build only (IHN_SPLIT_PROFILE=1): function `index` ran.
+    host_mark: index => { (host.marks ||= new Set()).add(index); }
   };
+}
+
+// 6.2: ihn.wasm comes in two parts (scripts/split-wasm.mjs). The first one boots the app; the second one holds every
+// function Home does not need. It is fetched and compiled in the background right after boot and instantiated as
+// soon as it is compiled. If the first part calls into it earlier, `now()` compiles and instantiates it on the spot:
+// synchronously, from the bytes already fetched or, failing that, from a synchronous request.
+function secondPart(host, url, env) {
+  let module = null, bytes = null, instance = null;
+  const fetchSync = () => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', url, false);
+    xhr.overrideMimeType('text/plain; charset=x-user-defined');
+    xhr.send();
+    if (xhr.status !== 200) throw new Error(`${url}: HTTP ${xhr.status}`);
+    const text = xhr.responseText, out = new Uint8Array(text.length);
+    for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i) & 0xff;
+    return out;
+  };
+  const part = {
+    module: () => module || (module = new WebAssembly.Module(bytes || (bytes = fetchSync()))),
+    now: () => {
+      if (!instance) instance = new WebAssembly.Instance(part.module(), { env, p: host.ex });
+    },
+    prefetch: () => fetch(url)
+      .then(response => { if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`); return response.arrayBuffer(); })
+      .then(buffer => { bytes ||= new Uint8Array(buffer); return module || WebAssembly.compile(bytes); })
+      .then(compiled => { module ||= compiled; part.now(); performance.mark('ihn-wasm2-ready'); })
+      .catch(error => console.warn('Inhouse Notes: the second part of the app will load when needed', error))
+  };
+  return part;
 }
 
 function lifecycle(host) {
@@ -418,9 +452,11 @@ async function boot() {
   const host = createHost(config);
   const asset = path => window.InhouseAssetUrl(`${path}?v=${config.version}`);
   performance.mark('ihn-boot-start');
+  const env = imports(host);
+  host.split = secondPart(host, asset(config.e2e ? 'wasm/ihn-test-2.wasm' : 'wasm/ihn-2.wasm'), env);
   const [wasm, ...executors] = await Promise.all([
     // `?e2e=1` on localhost loads the test build: the same code plus the test API (scripts/build-wasm.mjs).
-    loadWasm(asset(config.e2e ? 'wasm/ihn-test.wasm' : 'wasm/ihn.wasm'), { env: imports(host) }),
+    loadWasm(asset(config.e2e ? 'wasm/ihn-test.wasm' : 'wasm/ihn.wasm'), { env }),
     ...EXECUTORS.map(name => import(asset(`host/${name}.js`)))
   ]);
   performance.mark('ihn-wasm-ready');
@@ -453,6 +489,9 @@ async function boot() {
   });
   performance.mark('ihn-ready');
   serviceWorker(host);
+  // The rest of the app, now that the first screen is up (the profiling build is not split).
+  if (WebAssembly.Module.imports(host.module).some(entry => entry.name === 'host_mark')) window.__IHN_SPLIT_MARKS__ = () => [...(host.marks || [])];
+  else host.split.prefetch();
 }
 
 boot().catch(error => console.error(error));

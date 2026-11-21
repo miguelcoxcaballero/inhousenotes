@@ -5,7 +5,7 @@ import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 const out=process.argv.includes('--out')?process.argv[process.argv.indexOf('--out')+1]:'build';
 const roots=['host','vendor/pdfjs','vendor/pdf-lib','vendor/fonts'];
-const files=['index.html','boot.js','wasm/ihn.wasm','offline-v5.css','shared/inhouse-services-updater/updater.css',
+const files=['index.html','boot.js','wasm/ihn.wasm','wasm/ihn-2.wasm','offline-v5.css','shared/inhouse-services-updater/updater.css',
     'shared/inhouse-services-updater/updater.js','icons/welcome-pages.svg',
     'vendor/inhouse-services-updater/auth/google-oauth.js',
     // Template SVGs join the shell when W2.3 adds them.
