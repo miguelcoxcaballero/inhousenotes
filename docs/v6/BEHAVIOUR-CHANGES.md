@@ -142,3 +142,13 @@ here are 5.18.0's. "Unsynced" = own batches not sealed in the relay, or the docu
 | Button | `Retry save` / `Save now` / `Reconnect Drive`; `Save now` runs `queueSave` then the outbox upload | same labels; `Save now` / `Retry save` ask the sync binding for an immediate relay flush (`save_state::SIG_SAVE_NOW`) |
 | Popup detail sentences (`driveDetail`, `localDetail`, `detail`) | computed, never rendered by `renderSaveDebugPopup` | not computed |
 | `#save-timestamp` | `Last saved <t>` title, element `hidden` and `display: none` | not written (never visible) |
+
+## 7. After 6.0.0: pen writing (W7) — **proposed, needs the owner's approval**
+
+Differences from the published 6.0.0 (`488f6d7`). Details and tuning: `docs/v6/NOTES-W7-pen.md`.
+
+| Id | 6.0.0 | Proposed | Why | Visible |
+|---|---|---|---|---|
+| W7-1 | Pen ink is a fixed-width line; the pen pressure is stored with each point but never used. | Pen ink is a filled outline whose width follows the smoothed pressure (×0.4 at the lightest touch, about ×1 at normal writing pressure, ×1.9 at full pressure). Strokes whose pressure does not change (mouse, touch, older documents) keep exactly the chosen width. Same geometry live, on the page, in thumbnails, in other devices' live view and in the exported PDF (a filled vector path). The highlighter and the stored data are unchanged. | The owner found writing unsatisfying; ink that responds to pressure is what handwriting apps do. | **yes** (pen strokes written with a stylus; old strokes with varying pressure also change) |
+| W7-2 | — | While the S Pen side button is held (or with a stylus eraser end), the pen erases with the eraser mode chosen in the eraser menu; releasing it writes again. The toolbar keeps its tool. The context menu the button can open on the page is cancelled. | Requested by the owner. | flow |
+| W7-3 | The live ink ends at the last pen sample. | The browser's predicted pen positions (`getPredictedEvents`) extend the live ink for one frame; they are never stored or sent. | Less perceived lag behind the pen tip. | flow (only while writing) |
