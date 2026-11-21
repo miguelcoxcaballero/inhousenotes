@@ -66,7 +66,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: |
           # On main the generated files are committed (ARCHITECTURE §14.2/§14.3): the deployed site must be this build.
-          for file in wasm/ihn.wasm offline-assets.js native-assets.json index.html; do
+          for file in wasm/ihn.wasm wasm/ihn-2.wasm offline-assets.js native-assets.json index.html; do
             git ls-files --error-unmatch "$file" >/dev/null
             cmp "build/$file" "$file"
           done
@@ -231,5 +231,5 @@ jobs:
           cp -R build/. .
           # Three of them are ignored on v6 (.gitignore): an untracked file would pass `git diff`, and the site
           # would be published without it.
-          git ls-files --error-unmatch wasm/ihn.wasm offline-assets.js native-assets.json index.html vendor/fonts/ui.css
-          git diff --exit-code -- wasm/ihn.wasm offline-assets.js native-assets.json index.html vendor/fonts/ui.css
+          git ls-files --error-unmatch wasm/ihn.wasm wasm/ihn-2.wasm offline-assets.js native-assets.json index.html vendor/fonts/ui.css
+          git diff --exit-code -- wasm/ihn.wasm wasm/ihn-2.wasm offline-assets.js native-assets.json index.html vendor/fonts/ui.css

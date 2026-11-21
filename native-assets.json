@@ -17,8 +17,8 @@
       "mime": "application/javascript"
     },
     "/host/export-worker.js": {
-      "sha256": "d4b8953f1bd95057a9a74ee69337336e7475010a38fd6baf2a4b8c200ad35c20",
-      "size": 13181,
+      "sha256": "47ffd5e97d7d2e1333d96238fcf04d87714d2286be8bfa811e7fc93a70bcd568",
+      "size": 13435,
       "mime": "application/javascript"
     },
     "/host/fetch.js": {
@@ -32,8 +32,8 @@
       "mime": "application/javascript"
     },
     "/host/main.js": {
-      "sha256": "0564cf7b2046e1b8f243bc0beccd210638079cad43b4949ab93ddce8a0cf3f08",
-      "size": 21391,
+      "sha256": "c47f1dec28b79d9efc0d1a87432faf0336b035f5ff8b9567f5dc83d7939b2e7f",
+      "size": 23785,
       "mime": "application/javascript"
     },
     "/host/pdf.js": {
@@ -52,8 +52,8 @@
       "mime": "application/javascript"
     },
     "/host/test-api.js": {
-      "sha256": "6e7efb241f61023f5f635434c21c3d4476f6760746de13a1bf95a99924ba706b",
-      "size": 1208,
+      "sha256": "75083f87710f574bf3a6951a8607f9706ac2d93bb0fc042a6a96cf4dc89cb290",
+      "size": 1442,
       "mime": "application/javascript"
     },
     "/icons/agenda.svg": {
@@ -1056,9 +1056,14 @@
       "size": 139512,
       "mime": "font/ttf"
     },
+    "/wasm/ihn-2.wasm": {
+      "sha256": "25d4f00248175cd6699b6b2908cd42aeff19ff1ef606b3404322f614a637d1a3",
+      "size": 818156,
+      "mime": "application/wasm"
+    },
     "/wasm/ihn.wasm": {
-      "sha256": "a21c0ad9bd4717c4442c551ff129840b0a1bbf2e829b430395ecbcfc7317dd77",
-      "size": 1343265,
+      "sha256": "fbcf30e26708eaf5e8937096994163e7741b85d2ac910f102a7c78ce4664e5ea",
+      "size": 571242,
       "mime": "application/wasm"
     }
   }

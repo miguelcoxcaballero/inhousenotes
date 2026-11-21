@@ -16,9 +16,11 @@ export default function install(host, { KIND, IMPORTS }) {
     // `<module>.<command>` handled by that module's `test_cmd` (rust/crates/ihn-app/src/testapi.rs).
     cmd,
     state: () => cmd('app.state'),
-    // The imports the running module really has, and the allowlist the build enforces (ARCHITECTURE §3.2).
-    wasmImports: () => WebAssembly.Module.imports(host.module).map(entry => `${entry.module}.${entry.name}`),
-    allowedImports: () => IMPORTS.map(name => `env.${name}`),
+    // The host imports both parts of the running module really have, and the allowlist the build enforces
+    // (ARCHITECTURE §3.2; 6.2: plus `host_split`, which the first part calls to instantiate the second).
+    wasmImports: () => [...new Set([host.module, host.split.module()].flatMap(module => WebAssembly.Module.imports(module))
+      .filter(entry => entry.module === 'env').map(entry => `${entry.module}.${entry.name}`))],
+    allowedImports: () => [...IMPORTS, 'host_split'].map(name => `env.${name}`),
     wasmMemoryBytes: () => host.memory.buffer.byteLength
   });
 }

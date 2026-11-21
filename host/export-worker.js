@@ -55,7 +55,10 @@ const env = {
   host_log: (level, ptr, len) => console[['debug', 'info', 'warn', 'error'][level] || 'log'](decoder.decode(u8(ptr, len)))
 };
 
-async function init(module) {
+async function init(module, module2) {
+  // 6.2: the second part of ihn.wasm (scripts/split-wasm.mjs), instantiated against this instance when first needed.
+  let second = null;
+  env.host_split = () => { second ||= new WebAssembly.Instance(module2, { env, p: ex }); };
   const instance = await WebAssembly.instantiate(module, { env });
   ex = instance.exports;
   memory = ex.memory;
@@ -247,7 +250,7 @@ self.onmessage = event => {
   const data = event.data || {};
   if (data.type === 'init') {
     version = data.version || '';
-    ready = init(data.module);
+    ready = init(data.module, data.module2);
     return;
   }
   const bytes = data.bytes instanceof Uint8Array ? data.bytes : new Uint8Array(data.bytes || 0);

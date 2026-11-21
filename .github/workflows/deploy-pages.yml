@@ -62,6 +62,7 @@ jobs:
             --exclude 'rust/' \
             --exclude 'rust-toolchain.toml' \
             --exclude 'wasm/ihn-test.wasm' \
+            --exclude 'wasm/ihn-test-2.wasm' \
             --exclude 'scripts/' \
             --exclude 'test-results/' \
             --exclude 'tests/' \
@@ -79,7 +80,7 @@ jobs:
             ./ "$site_dir/"
           touch "$site_dir/.nojekyll"
           # Inhouse Notes 6 (docs/v6/ARCHITECTURE.md §14.2): the shell and the generated files committed by the release.
-          for file in index.html CNAME boot.js host/main.js wasm/ihn.wasm service-worker.js offline-assets.js native-assets.json; do
+          for file in index.html CNAME boot.js host/main.js wasm/ihn.wasm wasm/ihn-2.wasm service-worker.js offline-assets.js native-assets.json; do
             test -f "$site_dir/$file"
           done
           # 6.1.1: the 5.x runtime is no longer deployed (ARCHITECTURE §10.4).

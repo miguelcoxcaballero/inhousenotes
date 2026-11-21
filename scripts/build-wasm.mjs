@@ -1,6 +1,9 @@
 // `npm run build`: the reproducible v6 build (ARCHITECTURE §14.1). Compiles rust/ to wasm, checks the ABI, the
 // import allowlist, the exact-maths gate and the size budgets, and writes the generated files to build/:
-//   build/wasm/ihn.wasm, build/wasm/ihn-test.wasm (e2e), build/offline-assets.js, build/native-assets.json, build/index.html
+//   build/wasm/ihn.wasm + ihn-2.wasm, build/wasm/ihn-test.wasm + ihn-test-2.wasm (e2e), build/offline-assets.js,
+//   build/native-assets.json, build/index.html
+// 6.2: each wasm is split in two (scripts/split-wasm.mjs): what boots the app and shows Home, and the rest.
+// IHN_SPLIT_PROFILE=1 writes an unsplit, instrumented ihn-test.wasm instead (scripts/profile-wasm-split.mjs).
 // Nothing generated is committed on the v6 branch; `tests/v6/server.mjs --overlay build` serves build/ over the tree.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -9,6 +12,7 @@ import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
+import { instrument, split } from './split-wasm.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/[\\/]$/, '');
 const out = join(root, 'build');
@@ -18,7 +22,9 @@ const EXPORTS = ['memory', 'ihn_abi', 'ihn_alloc', 'ihn_free', 'ihn_init', 'ihn_
 // gzip / 100 KB JS) is not reachable without dropping features or splitting the module; these are the measured
 // production sizes after W6.2x (wasm 1,340,739 / 597,941 bytes gzip -9, first-party JS 121,316 bytes) plus 5 %,
 // rounded up to the byte. Any growth beyond that fails the build. ihn-test.wasm is not budgeted.
-const LIMITS = { wasm: 1407776, wasmGzip: 627839, js: 127382 };
+// 6.2: `wasm` is the first part of ihn.wasm (what boots the app and shows Home), `wasm2` the second one, fetched
+// after boot: measured at 6.2.0 (571,242 / 260,990 and 818,156 / 365,833 bytes gzip -9) plus 5 %.
+const LIMITS = { wasm: 599805, wasmGzip: 274040, wasm2: 859064, wasm2Gzip: 384125, js: 127382 };
 
 function run(command, args, env = {}) {
   const result = spawnSync(command, args, { cwd: root, stdio: 'inherit', env: { ...process.env, ...env } });
@@ -59,7 +65,12 @@ const linked = join(root, 'rust/target/wasm32-unknown-unknown/release/ihn.wasm')
 // `-aimfs 4` (`--always-inline-max-function-size`, default 2): bodies of up to 4 instructions (field getters, small
 // wrappers) are inlined at every call site; the call sequence they replace is about as long (measured: -0.4 KB raw,
 // -0.4 KB gzip; 5 and above grow the code).
-const WASM_OPT = ['-ocimfs', '20', '-aimfs', '4', '-Os', '--low-memory-unused', '--merge-similar-functions', '-Os', '--reorder-functions-by-name', '--strip-debug', '--strip-producers', '--strip-target-features'];
+const WASM_OPT = ['-ocimfs', '20', '-aimfs', '4', '-Os', '--low-memory-unused', '--merge-similar-functions', '-Os', '--reorder-functions-by-name'];
+// The names stay through the split (the profile lists functions by name) and are removed afterwards.
+const STRIP = ['--strip-debug', '--strip-producers', '--strip-target-features'];
+// Functions that stay in the first module (one name per line; produced by scripts/profile-wasm-split.mjs).
+const KEEP = join(root, 'scripts/wasm-split-keep.txt');
+const PROFILE = process.env.IHN_SPLIT_PROFILE === '1';
 const WASM_FEATURES = ['bulk-memory', 'bulk-memory-opt', 'call-indirect-overlong', 'multivalue', 'mutable-globals', 'nontrapping-float-to-int', 'reference-types', 'sign-ext'];
 const wasmOpt = join(root, 'node_modules/binaryen/bin/wasm-opt');
 const optimised = existsSync(wasmOpt);
@@ -75,32 +86,63 @@ async function build(features) {
     '--target', 'wasm32-unknown-unknown', '--locked', ...features, ...(process.env.IHN_CARGO_JOBS ? ['-j', process.env.IHN_CARGO_JOBS] : [])],
     // W6.2y: the symbol names stay in the linked binary for wasm-opt's `--reorder-functions-by-name` (see WASM_OPT).
     { RUSTFLAGS: `--remap-path-prefix=${cargoHome}=/cargo --remap-path-prefix=${root}=.`, CARGO_PROFILE_RELEASE_STRIP: optimised ? 'debuginfo' : 'true' });
-  if (optimised) run(process.execPath, [wasmOpt, ...WASM_OPT, ...WASM_FEATURES.map(f => `--enable-${f}`), linked, '-o', `${linked}.opt`]);
-  const wasm = await readFile(optimised ? `${linked}.opt` : linked);
-
-  const module = await WebAssembly.compile(wasm);
-  const imports = WebAssembly.Module.imports(module).map(entry => `${entry.module}.${entry.name}:${entry.kind}`).sort();
-  const allowed = IMPORTS.map(name => `env.${name}:function`).sort();
-  if (imports.join() !== allowed.join()) {
-    throw new Error(`Wasm imports differ from the ABI allowlist:\n  found   ${imports.join(' ')}\n  allowed ${allowed.join(' ')}`);
+  if (!optimised) throw new Error('the split build needs node_modules/binaryen (npm ci)');
+  // `-g` keeps the name section (wasm-opt drops it otherwise): the split profile names functions.
+  run(process.execPath, [wasmOpt, ...WASM_OPT, '-g', ...WASM_FEATURES.map(f => `--enable-${f}`), linked, '-o', `${linked}.opt`]);
+  const named = await readFile(`${linked}.opt`);
+  const strip = async (bytes, name) => {
+    const path = `${linked}.${name}`;
+    await writeFile(path, bytes);
+    run(process.execPath, [wasmOpt, ...STRIP, ...WASM_FEATURES.map(f => `--enable-${f}`), path, '-o', `${path}.out`]);
+    return readFile(`${path}.out`);
+  };
+  if (PROFILE) {
+    const { bytes, names } = instrument(named);
+    return { first: await strip(bytes, 'profile'), second: null, names };
   }
+  const keep = new Set(existsSync(KEEP) ? (await readFile(KEEP, 'utf8')).split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('#')) : []);
+  const parts = split(named, keep);
+  const first = await strip(parts.first, 'first'), second = await strip(parts.second, 'second');
+  console.log(`split${features.length ? ' (test)' : ''}: ${parts.kept} functions in the first module, ${parts.moved} in the second`);
+
+  // Each part imports only ABI functions (the second one also the first one's exports, module `p`), and together
+  // they import exactly the ABI allowlist plus `host_split`.
+  const secondModule = await WebAssembly.compile(second);
+  const own = WebAssembly.Module.imports(await WebAssembly.compile(first)).map(entry => `${entry.module}.${entry.name}:${entry.kind}`);
+  const theirs = WebAssembly.Module.imports(secondModule).filter(entry => entry.module !== 'p').map(entry => `${entry.module}.${entry.name}:${entry.kind}`);
+  const allowed = [...IMPORTS, 'host_split'].map(name => `env.${name}:function`).sort();
+  const found = [...new Set([...own, ...theirs])].sort();
+  if (found.join() !== allowed.join() || theirs.includes('env.host_split:function')) {
+    throw new Error(`Wasm imports differ from the ABI allowlist:\n  found   ${found.join(' ')}\n  allowed ${allowed.join(' ')}`);
+  }
+  const module = await WebAssembly.compile(first);
   const exported = WebAssembly.Module.exports(module).map(entry => entry.name);
   const missing = EXPORTS.filter(name => !exported.includes(name));
   if (missing.length) throw new Error(`Wasm exports missing: ${missing.join(', ')}`);
   const stubs = Object.fromEntries(IMPORTS.map(name => [name, () => 0]));
-  const { exports } = await WebAssembly.instantiate(module, { env: stubs });
-  if (exports.ihn_abi() !== 6) throw new Error(`ABI mismatch: ihn_abi() = ${exports.ihn_abi()}`);
-  return wasm;
+  let instance;
+  stubs.host_split = () => new WebAssembly.Instance(secondModule, { env: stubs, p: instance.exports });
+  instance = await WebAssembly.instantiate(module, { env: stubs });
+  if (instance.exports.ihn_abi() !== 6) throw new Error(`ABI mismatch: ihn_abi() = ${instance.exports.ihn_abi()}`);
+  // The two parts fit together: the second one instantiates against the first and fills the table.
+  stubs.host_split();
+  return { first, second };
 }
-const testWasm = await build(['--features', 'testapi']);
-const wasm = await build([]);
+
+const test = await build(['--features', 'testapi']);
+const prod = await build([]);
+const wasm = prod.first;
+if (PROFILE) prod.second = new Uint8Array(0);
 
 const gzip = gzipSync(wasm, { level: 9 }).length;
+const gzip2 = gzipSync(prod.second, { level: 9 }).length;
 // IHN_SIZE_REPORT_ONLY=1 (local test builds only, never CI): the budgets are reported instead of enforced (W3.1);
 // the same applies when wasm-opt was skipped.
 const sizeError = message => { if (process.env.IHN_SIZE_REPORT_ONLY === '1' || !optimised) console.warn(`SIZE BUDGET EXCEEDED (reported only): ${message}`); else throw new Error(message); };
-if (wasm.length > LIMITS.wasm) sizeError(`ihn.wasm is ${wasm.length} bytes (limit ${LIMITS.wasm})`);
-if (gzip > LIMITS.wasmGzip) sizeError(`ihn.wasm is ${gzip} bytes gzipped (limit ${LIMITS.wasmGzip})`);
+if (!PROFILE && wasm.length > LIMITS.wasm) sizeError(`ihn.wasm is ${wasm.length} bytes (limit ${LIMITS.wasm})`);
+if (!PROFILE && gzip > LIMITS.wasmGzip) sizeError(`ihn.wasm is ${gzip} bytes gzipped (limit ${LIMITS.wasmGzip})`);
+if (!PROFILE && prod.second.length > LIMITS.wasm2) sizeError(`ihn-2.wasm is ${prod.second.length} bytes (limit ${LIMITS.wasm2})`);
+if (!PROFILE && gzip2 > LIMITS.wasm2Gzip) sizeError(`ihn-2.wasm is ${gzip2} bytes gzipped (limit ${LIMITS.wasm2Gzip})`);
 
 // First-party JS budget: boot, host/*, service worker (the export worker lives in host/).
 const scripts = ['boot.js', 'service-worker.js', ...(await readdir(join(root, 'host'))).filter(name => name.endsWith('.js')).sort().map(name => `host/${name}`)];
@@ -111,13 +153,17 @@ if (jsBytes > LIMITS.js) sizeError(`First-party JS is ${jsBytes} bytes (limit ${
 await rm(out, { recursive: true, force: true });
 await mkdir(join(out, 'wasm'), { recursive: true });
 await writeFile(join(out, 'wasm/ihn.wasm'), wasm);
-await writeFile(join(out, 'wasm/ihn-test.wasm'), testWasm);
+await writeFile(join(out, 'wasm/ihn-2.wasm'), prod.second); // empty in a profiling build (not split)
+await writeFile(join(out, 'wasm/ihn-test.wasm'), test.first);
+if (test.second) await writeFile(join(out, 'wasm/ihn-test-2.wasm'), test.second);
+if (test.names) await writeFile(join(out, 'split-names.json'), JSON.stringify(test.names));
+if (prod.names) await writeFile(join(out, 'split-names-prod.json'), JSON.stringify(prod.names));
 node('build-offline-assets.mjs', '--out', 'build');
 node('build-native-assets.mjs', '--out', 'build');
 
-console.log(`ihn.wasm: ${wasm.length} bytes (${gzip} gzip -9), first-party JS: ${jsBytes} bytes in ${scripts.length} files`);
-console.log(`ihn-test.wasm (e2e only, not budgeted): ${testWasm.length} bytes (${gzipSync(testWasm, { level: 9 }).length} gzip -9)`);
-for (const file of ['wasm/ihn.wasm', 'wasm/ihn-test.wasm', 'offline-assets.js', 'native-assets.json', 'index.html']) {
+console.log(`ihn.wasm: ${wasm.length} bytes (${gzip} gzip -9) + ihn-2.wasm: ${prod.second.length} bytes (${gzip2} gzip -9), first-party JS: ${jsBytes} bytes in ${scripts.length} files`);
+console.log(`ihn-test.wasm (e2e only, not budgeted): ${test.first.length} bytes (${gzipSync(test.first, { level: 9 }).length} gzip -9)${PROFILE ? ' — instrumented for the split profile' : ''}`);
+for (const file of ['wasm/ihn.wasm', 'wasm/ihn-2.wasm', 'wasm/ihn-test.wasm', ...(test.second ? ['wasm/ihn-test-2.wasm'] : []), 'offline-assets.js', 'native-assets.json', 'index.html']) {
   if (!existsSync(join(out, file))) throw new Error(`build/${file} was not written`);
   console.log(`${sha256(await readFile(join(out, file)))}  build/${file}`);
 }

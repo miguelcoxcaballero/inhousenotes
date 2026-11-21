@@ -212,5 +212,6 @@ self.INHOUSE_OFFLINE_ASSETS=[
   "/vendor/pdfjs/standard_fonts/LiberationSans-BoldItalic.ttf",
   "/vendor/pdfjs/standard_fonts/LiberationSans-Italic.ttf",
   "/vendor/pdfjs/standard_fonts/LiberationSans-Regular.ttf",
+  "/wasm/ihn-2.wasm",
   "/wasm/ihn.wasm"
 ];
