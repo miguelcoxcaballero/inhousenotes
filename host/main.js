@@ -562,6 +562,7 @@ async function boot() {
   });
   performance.mark('ihn-ready');
   initLiquidPills();
+  initZoomAndA4Lock();
   serviceWorker(host);
   // The rest of the app, now that the first screen is up (the profiling build is not split).
   if (WebAssembly.Module.imports(host.module).some(entry => entry.name === 'host_mark')) window.__IHN_SPLIT_MARKS__ = () => [...(host.marks || [])];
@@ -625,7 +626,7 @@ function initLiquidPills() {
     lens.className = 'toolbar-liquid-lens';
     pill.appendChild(lens);
     toolbar.insertBefore(pill, toolbar.firstChild);
-    let crossPos = 0, crossSize = 38, isHoriz = false;
+    let crossPos = 0, crossSize = 38, isHoriz = toolbar.classList.contains('horizontal'), hasMeasuredToolbar = false, pivotTimer = 0;
     const tbSpring = createSpring1D((pos, size, bloom, moving) => {
       pill.classList.toggle('is-moving', moving);
       if (isHoriz) {
@@ -648,7 +649,21 @@ function initLiquidPills() {
         return;
       }
       const nextHoriz = toolbar.classList.contains('horizontal');
-      if (nextHoriz !== isHoriz) { isHoriz = nextHoriz; tbSpring.reset(); instant = true; }
+      if (nextHoriz !== isHoriz) {
+        isHoriz = nextHoriz;
+        tbSpring.reset();
+        instant = true;
+        if (hasMeasuredToolbar && !(reducedMotion && reducedMotion.matches)) {
+          toolbar.classList.remove('is-pivoting-to-h', 'is-pivoting-to-v');
+          void toolbar.offsetWidth;
+          toolbar.classList.add(nextHoriz ? 'is-pivoting-to-h' : 'is-pivoting-to-v');
+          if (pivotTimer) clearTimeout(pivotTimer);
+          pivotTimer = setTimeout(() => {
+            toolbar.classList.remove('is-pivoting-to-h', 'is-pivoting-to-v');
+          }, 420);
+        }
+      }
+      hasMeasuredToolbar = true;
       toolbar.classList.add('has-liquid-pill');
       pill.style.opacity = '1';
       if (isHoriz) {
@@ -740,6 +755,191 @@ function initLiquidPills() {
     window.addEventListener('pointercancel', () => { scrubbing = false; });
     requestAnimationFrame(() => syncHome(true));
   }
+}
+
+function initZoomAndA4Lock() {
+  const zoomBtn = document.getElementById('btn-zoom');
+  const zoomMenu = document.getElementById('zoom-menu');
+  const slider = document.getElementById('zoom-slider');
+  const valueBtn = document.getElementById('zoom-value-btn');
+  const a4Row = document.getElementById('zoom-a4-row');
+  const a4Toggle = document.getElementById('zoom-a4-lock-toggle');
+  const viewport = document.getElementById('canvas-viewport');
+  const container = document.getElementById('canvas-container');
+  const toolbar = document.getElementById('toolbar');
+  if (!zoomBtn || !zoomMenu || !slider || !valueBtn || !viewport || !container) return;
+
+  let a4Locked = false;
+  let internalZooming = false;
+  try { a4Locked = localStorage.getItem('ihn_a4_lock') === '1'; } catch (_) {}
+
+  function readZoom() {
+    const tr = container.style.transform || '';
+    const m = tr.match(/scale\(([0-9.]+)\)/);
+    return m ? Math.max(0.25, Math.min(4, parseFloat(m[1]) || 1)) : 1;
+  }
+
+  function supportsA4Lock() {
+    const vpW = viewport.clientWidth || window.innerWidth;
+    return vpW >= 820;
+  }
+
+  function computeA4Zoom() {
+    const vpW = viewport.clientWidth || window.innerWidth;
+    const firstPage = container.querySelector('.page-wrapper');
+    const pageW = (firstPage && firstPage.offsetWidth) ? firstPage.offsetWidth : 794;
+    // Fit A4 page width comfortably with breathing margin for the left toolbar
+    return Math.max(0.85, Math.min(1.15, (vpW - 110) / pageW));
+  }
+
+  function applyZoomTarget(targetZoom) {
+    const clamped = Math.max(0.5, Math.min(2.5, targetZoom));
+    const rect = viewport.getBoundingClientRect();
+    const cx = rect.left + rect.width * 0.5;
+    const cy = rect.top + rect.height * 0.5;
+    internalZooming = true;
+    try {
+      for (let i = 0; i < 40; i++) {
+        const cur = readZoom();
+        const ratio = clamped / cur;
+        if (Math.abs(ratio - 1) < 0.032) break;
+        const deltaY = ratio > 1 ? -10 : 10;
+        viewport.dispatchEvent(new WheelEvent('wheel', {
+          bubbles: true, cancelable: true, ctrlKey: true, deltaY, clientX: cx, clientY: cy
+        }));
+      }
+    } finally {
+      internalZooming = false;
+    }
+    syncZoomUi();
+  }
+
+  function syncZoomUi() {
+    const canA4 = supportsA4Lock();
+    if (a4Row) a4Row.classList.toggle('hidden', !canA4);
+    const effectiveLock = canA4 && a4Locked;
+    if (a4Toggle) a4Toggle.checked = effectiveLock;
+    slider.disabled = effectiveLock;
+    zoomBtn.classList.toggle('is-a4-locked', effectiveLock);
+    const pct = Math.round(readZoom() * 100);
+    if (document.activeElement !== slider) slider.value = String(Math.max(50, Math.min(250, pct)));
+    valueBtn.textContent = effectiveLock ? 'A4' : (pct + '%');
+  }
+
+  function positionMenu() {
+    const btnRect = zoomBtn.getBoundingClientRect();
+    const isHoriz = toolbar && toolbar.classList.contains('horizontal');
+    const menuW = 216, menuH = supportsA4Lock() ? 92 : 54;
+    let left, top;
+    if (isHoriz) {
+      left = Math.max(12, Math.min(window.innerWidth - menuW - 12, btnRect.left + btnRect.width / 2 - menuW / 2));
+      top = btnRect.top > menuH + 24 ? btnRect.top - menuH - 10 : btnRect.bottom + 10;
+    } else {
+      left = btnRect.left < window.innerWidth / 2 ? btnRect.right + 12 : btnRect.left - menuW - 12;
+      left = Math.max(12, Math.min(window.innerWidth - menuW - 12, left));
+      top = Math.max(60, Math.min(window.innerHeight - menuH - 16, btnRect.top - 10));
+    }
+    zoomMenu.style.left = Math.round(left) + 'px';
+    zoomMenu.style.top = Math.round(top) + 'px';
+  }
+
+  function setMenuOpen(open) {
+    zoomMenu.classList.toggle('visible', open);
+    zoomMenu.setAttribute('aria-hidden', open ? 'false' : 'true');
+    zoomBtn.classList.toggle('is-zoom-open', open);
+    zoomBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) {
+      const eraserMenu = document.getElementById('eraser-menu');
+      if (eraserMenu) eraserMenu.classList.remove('visible');
+      syncZoomUi();
+      positionMenu();
+    }
+  }
+
+  zoomBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setMenuOpen(!zoomMenu.classList.contains('visible'));
+  });
+  document.addEventListener('pointerdown', (e) => {
+    if (!zoomMenu.classList.contains('visible')) return;
+    if (zoomMenu.contains(e.target) || zoomBtn.contains(e.target)) return;
+    setMenuOpen(false);
+  });
+
+  slider.addEventListener('input', () => {
+    if (a4Locked && supportsA4Lock()) return;
+    const pct = Number(slider.value) || 100;
+    valueBtn.textContent = pct + '%';
+    applyZoomTarget(pct / 100);
+  });
+  valueBtn.addEventListener('click', () => {
+    if (a4Locked && supportsA4Lock()) {
+      applyZoomTarget(computeA4Zoom());
+    } else {
+      applyZoomTarget(1.0);
+    }
+  });
+  if (a4Toggle) {
+    a4Toggle.addEventListener('change', () => {
+      a4Locked = !!a4Toggle.checked;
+      try { localStorage.setItem('ihn_a4_lock', a4Locked ? '1' : '0'); } catch (_) {}
+      if (a4Locked && supportsA4Lock()) {
+        applyZoomTarget(computeA4Zoom());
+      } else {
+        syncZoomUi();
+      }
+    });
+  }
+
+  // Block pinch-zoom & Ctrl+wheel when A4 lock is active (preserving 1-finger vertical scroll & pen)
+  viewport.addEventListener('wheel', (e) => {
+    if (internalZooming || !(a4Locked && supportsA4Lock())) return;
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }
+  }, { capture: true, passive: false });
+
+  const activeTouchIds = new Set();
+  viewport.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch') return;
+    activeTouchIds.add(e.pointerId);
+    if (a4Locked && supportsA4Lock() && activeTouchIds.size >= 2) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }
+  }, { capture: true, passive: false });
+  viewport.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'touch') return;
+    if (a4Locked && supportsA4Lock() && activeTouchIds.size >= 2) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }
+  }, { capture: true, passive: false });
+  const dropTouch = (e) => { if (e.pointerType === 'touch') activeTouchIds.delete(e.pointerId); };
+  window.addEventListener('pointerup', dropTouch, true);
+  window.addEventListener('pointercancel', dropTouch, true);
+
+  new MutationObserver(() => syncZoomUi()).observe(container, { attributes: true, attributeFilter: ['style'] });
+  const editorView = document.getElementById('editor-view');
+  if (editorView) {
+    new MutationObserver(() => {
+      if (!editorView.classList.contains('hidden')) {
+        syncZoomUi();
+        if (a4Locked && supportsA4Lock()) setTimeout(() => applyZoomTarget(computeA4Zoom()), 180);
+      } else {
+        setMenuOpen(false);
+      }
+    }).observe(editorView, { attributes: true, attributeFilter: ['class'] });
+  }
+  window.addEventListener('resize', () => {
+    syncZoomUi();
+    if (zoomMenu.classList.contains('visible')) positionMenu();
+    if (a4Locked && supportsA4Lock() && editorView && !editorView.classList.contains('hidden')) {
+      applyZoomTarget(computeA4Zoom());
+    }
+  });
+  syncZoomUi();
 }
 
 boot().catch(error => console.error(error));
