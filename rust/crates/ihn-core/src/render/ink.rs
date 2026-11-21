@@ -17,14 +17,16 @@ use std::f64::consts::PI;
 type P = (f64, f64);
 
 /// Width multiplier at pressure 0 (lightest touch).
-pub const MIN_FACTOR: f64 = 0.4;
-/// Added to `MIN_FACTOR` at full pressure: the multiplier is `MIN_FACTOR + SPAN · p^GAMMA`. Normal handwriting
-/// (p ≈ 0.35) gets about the chosen width (×1.05); a light touch (p ≈ 0.1) ×0.64; pressing hard (p ≈ 0.9) ×1.78.
-pub const SPAN: f64 = 1.5;
-/// < 1 lifts the light end of the range a little, so light writing does not turn into hairlines.
-pub const GAMMA: f64 = 0.8;
-/// Weight of each new pressure sample in the running average (lower = smoother width changes).
-pub const PRESSURE_SMOOTHING: f64 = 0.35;
+/// 6.2.1: a very slight variation, as the owner asked: ×0.85 at the lightest touch, about ×1 at normal writing
+/// pressure (p ≈ 0.35), ×1.15 at full pressure.
+pub const MIN_FACTOR: f64 = 0.85;
+/// Added to `MIN_FACTOR` at full pressure: the multiplier is `MIN_FACTOR + SPAN · p^GAMMA`.
+pub const SPAN: f64 = 0.3;
+/// < 1 lifts the light end of the range a little.
+pub const GAMMA: f64 = 0.6;
+/// Weight of each new pressure sample in the running average (lower = smoother width changes; 6.2.1: 0.12, so the
+/// width changes gradually instead of in steps).
+pub const PRESSURE_SMOOTHING: f64 = 0.12;
 /// A stroke counts as pressure-sensitive when its pressure varies by more than this.
 pub const PRESSURE_RANGE: f32 = 0.04;
 /// Centreline sample spacing in page px (smaller = smoother outline, more path points).
@@ -301,8 +303,12 @@ mod tests {
         assert!((r[0] - MIN_FACTOR).abs() < 1e-9, "lightest touch");
         // The running average climbs towards full pressure without jumping there at once.
         assert!(r.windows(2).all(|w| w[1] > w[0]));
-        assert!(r[1] < factor(1.0) * 0.7);
-        assert!(r[7] > factor(1.0) * 0.9 && r[7] < factor(1.0));
+        // Running average after k samples of full pressure: 1 − (1 − PRESSURE_SMOOTHING)^k.
+        for k in [1usize, 7] {
+            let avg = 1.0 - (0..k).fold(1.0, |acc, _| acc * (1.0 - PRESSURE_SMOOTHING));
+            assert!((r[k] - factor(avg)).abs() < 1e-9, "{k}: {} vs {}", r[k], factor(avg));
+        }
+        assert!(r[7] < factor(1.0));
         // A live prefix gets the same radii as the whole stroke.
         assert_eq!(radii(2.0, 4, Some(&p[..4])), r[..4]);
         assert!((factor(0.0) - MIN_FACTOR).abs() < 1e-12 && (factor(1.0) - (MIN_FACTOR + SPAN)).abs() < 1e-12);

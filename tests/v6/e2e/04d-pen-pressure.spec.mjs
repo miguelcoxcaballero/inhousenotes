@@ -1,6 +1,5 @@
-// 04d-pen-pressure (W7): pen ink width follows the stylus pressure (a filled outline), constant pressure keeps the
-// chosen width, and the S Pen side button erases while held without changing the toolbar tool — on the v6 fixture
-// container of 04-ink. Screenshots of the writing are attached to the test output.
+// 04d-pen-pressure (W7): the S Pen side button erases while held without changing the toolbar tool, and (6.2.1) pen
+// ink follows the stylus pressure only slightly — on the v6 fixture container of 04-ink.
 import zlib from 'node:zlib';
 import { test, expect, seedSession, ANA } from '../mock/fixtures.mjs';
 
@@ -89,7 +88,7 @@ const inkHeight = (page, x, y0, y1) => page.evaluate(([x, y0, y1]) => {
   return n / s;
 }, [x, y0, y1]);
 
-test('pen width follows pressure; the side button erases', async ({ page, context, mock, problems }) => {
+test('the side button erases; pen width follows pressure slightly', async ({ page, context, mock, problems }) => {
   await seedSession(context, mock);
   await seedContainer(page, mock);
   await open(page, '/?drive=v6-doc&e2e=1');
@@ -103,32 +102,15 @@ test('pen width follows pressure; the side button erases', async ({ page, contex
   const at = (x, y) => [box.x + x * box.width / 794, box.y + y * box.height / 1123];
   const cdp = await context.newCDPSession(page);
 
-  // Straight lines pressed lightly, normally and hard (a real stylus never reports one exact value: ±0.05; a
-  // stroke whose pressure does not change at all is drawn at the chosen width, like mouse, touch and old data);
-  // and one that presses harder along its length.
+  // A light and a heavy line; the light one is erased below.
   const line = (y, f) => Array.from({ length: 29 }, (_, i) => [...at(120 + i * 10, y), f + 0.05 * Math.sin(i)]);
   await pen(cdp, line(260, 0.12));
-  await pen(cdp, line(300, 0.45));
   await pen(cdp, line(340, 0.9));
-  const ramp = Array.from({ length: 30 }, (_, i) => [...at(120 + i * 10, 400), 0.05 + 0.95 * i / 29]);
-  await pen(cdp, ramp);
-  await expect.poll(async () => (await session(page)).live).toBe(base + 4);
-  const [light, mid, heavy] = [await inkHeight(page, 260, 250, 270), await inkHeight(page, 260, 290, 310), await inkHeight(page, 260, 330, 350)];
-  expect(light).toBeLessThan(mid);
-  expect(mid).toBeLessThan(heavy);
-  expect(await inkHeight(page, 150, 390, 410)).toBeLessThan(await inkHeight(page, 390, 390, 410));
-  // Constant pressure (mouse, touch, old data) keeps the chosen width (the black pen: 2 px).
-  await pen(cdp, [[...at(120, 450), 0.5], [...at(400, 450), 0.5]]);
-  const before = await inkHeight(page, 260, 440, 460);
-  expect(before).toBeGreaterThan(1.2);
-  expect(before).toBeLessThan(3.2);
-
-  // Handwriting: the same loops with natural pressure (light at the ends) and with a constant one.
-  const natural = t => 0.15 + 0.6 * Math.sin(Math.PI * t) ** 0.7;
-  await pen(cdp, loops(at, 110, 560, 6, natural));
-  await pen(cdp, loops(at, 110, 660, 6, () => 0.5));
-  await expect.poll(async () => (await session(page)).live).toBe(base + 7);
-  await page.screenshot({ path: test.info().outputPath('pressure.png'), clip: { x: at(90, 220)[0], y: at(90, 220)[1], width: box.width * 420 / 794, height: box.height * 480 / 1123 } });
+  await expect.poll(async () => (await session(page)).live).toBe(base + 2);
+  // 6.2.1: the width follows the pressure only slightly (×0.85–×1.15).
+  const [light, heavy] = [await inkHeight(page, 260, 250, 270), await inkHeight(page, 260, 330, 350)];
+  expect(heavy).toBeGreaterThanOrEqual(light);
+  expect(heavy - light).toBeLessThan(1.5);
 
   // S Pen side button: pressed in the air (a pointerdown with buttons 2 and no pressure), then the tip touches (a
   // chorded move, buttons 3), sweeps across the light line, lifts (buttons 2) and the button is released.

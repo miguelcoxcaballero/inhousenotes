@@ -13,8 +13,8 @@ field, so every pen stroke was drawn with one `lineWidth`. There was no predicti
 
 - Centreline: the same centripetal Catmull–Rom spline as before (`pen::segment`), sampled every `STEP` = 1.5 page
   px (at most 32 samples per segment).
-- Width: radius = width / 2 × `factor(p̄)`, `factor(p) = MIN_FACTOR + SPAN · p^GAMMA` = 0.4 + 1.5 · p^0.8.
-  p̄ is a running average of the pressure (`PRESSURE_SMOOTHING` = 0.35). The average is causal, so the live stroke
+- Width: radius = width / 2 × `factor(p̄)`, `factor(p) = MIN_FACTOR + SPAN · p^GAMMA` = 0.85 + 0.3 · p^0.6 (6.2.1, the owner found ×0.4–×1.9 exaggerated).
+  p̄ is a running average of the pressure (`PRESSURE_SMOOTHING` = 0.12 since 6.2.1, for gradual transitions). The average is causal, so the live stroke
   and the committed stroke get the same radii and the ink does not change at lift. Radii are interpolated
   between points.
 - A stroke counts as pressure-sensitive when its pressure varies by more than `PRESSURE_RANGE` = 0.04. Otherwise
@@ -85,3 +85,7 @@ container on some GPUs, and it could not be checked on a real phone here.
 - A fragment left by the area eraser restarts the pressure average, so its width can differ slightly from the
   stroke it came from; a fragment whose remaining pressure no longer varies is drawn at the chosen width.
 - Selection outlines (the dashed halo) still follow the centreline.
+
+## 6.2.1
+
+The owner found the width variation exaggerated, its transitions abrupt and the predicted tip distracting: the range is now ×0.85–×1.15, the pressure average is slower (0.12) and `host/dom.js` no longer sends predicted points (the tip draws real samples only).
