@@ -7,7 +7,7 @@
 //! `/ExtGState` [`GS`] and one image XObject `/Im<k>` per entry of [`InkStream::images`].
 
 use super::cmd::{op, Cmds};
-use super::{highlighter, or, pen, PageItems, StrokeRef};
+use super::{highlighter, ink, or, PageItems, StrokeRef};
 use crate::codec::Reader;
 use crate::geom::js_max;
 use crate::jsmath;
@@ -64,20 +64,63 @@ fn rgb(color: &Color) -> [f64; 3] {
     [(v >> 16 & 255) as f64 / 255.0, (v >> 8 & 255) as f64 / 255.0, (v & 255) as f64 / 255.0]
 }
 
-/// Replays path commands (`move/line/bezier/quad`) as PDF operators; a quadratic becomes the equal cubic.
+/// A canvas `arc(cx, cy, r, a0, a1)` (clockwise on screen, `a1 ≥ a0`) as cubic Béziers of at most a quarter turn,
+/// starting with a line from the current point to the arc's start, as canvas does.
+fn arc_ops(out: &mut String, a: &[f64; 6], started: bool) -> (f64, f64) {
+    let (cx, cy, r, a0, a1) = (a[0], a[1], a[2], a[3], a[4]);
+    let at = |t: f64| (cx + r * t.cos(), cy + r * t.sin());
+    let start = at(a0);
+    nums(out, &[start.0, start.1], if started { "l" } else { "m" });
+    let sweep = (a1 - a0).clamp(0.0, std::f64::consts::TAU);
+    let parts = ((sweep / std::f64::consts::FRAC_PI_2).ceil() as usize).max(1);
+    let step = sweep / parts as f64;
+    // Control distance of a cubic that matches a circular arc of `step` radians.
+    let k = 4.0 / 3.0 * (step / 4.0).tan() * r;
+    let mut t = a0;
+    for _ in 0..parts {
+        let (p0, p1) = (at(t), at(t + step));
+        let (d0, d1) = ((-t.sin(), t.cos()), (-(t + step).sin(), (t + step).cos()));
+        nums(out, &[p0.0 + k * d0.0, p0.1 + k * d0.1, p1.0 - k * d1.0, p1.1 - k * d1.1, p1.0, p1.1], "c");
+        t += step;
+    }
+    at(a0 + sweep)
+}
+
+/// Replays path commands (`move/line/bezier/quad/arc/close`) as PDF operators; a quadratic becomes the equal cubic.
 fn path_ops(out: &mut String, cmds: &[u8]) {
     let mut r = Reader::new(cmds);
     let (mut x, mut y) = (0.0, 0.0);
+    let (mut sx, mut sy, mut started) = (0.0, 0.0, false);
     while let Some(code) = r.u8() {
         let n = match code {
             op::MOVE_TO | op::LINE_TO => 2,
             op::QUAD_TO => 4,
+            op::ARC => 5,
             op::BEZIER_TO => 6,
             _ => 0,
         };
         let mut a = [0.0; 6];
         for v in a.iter_mut().take(n) {
             *v = r.f64().unwrap_or(0.0);
+        }
+        match code {
+            op::ARC => {
+                if !started {
+                    let s = (a[0] + a[2] * a[3].cos(), a[1] + a[2] * a[3].sin());
+                    (sx, sy) = s;
+                }
+                (x, y) = arc_ops(out, &a, started);
+                started = true;
+                continue;
+            }
+            op::CLOSE_PATH => {
+                out.push_str("h\n");
+                (x, y, started) = (sx, sy, false);
+                continue;
+            }
+            op::MOVE_TO => (sx, sy, started) = (a[0], a[1], true),
+            op::LINE_TO | op::QUAD_TO | op::BEZIER_TO => started = true,
+            _ => {}
         }
         match code {
             op::MOVE_TO => nums(out, &a[..2], "m"),
@@ -134,12 +177,22 @@ fn stroke(out: &mut String, scratch: &mut Cmds, s: &StrokeRef, color: [f64; 3], 
         out.push_str("f\n");
         return;
     }
-    nums(out, &color, "RG");
-    nums(out, &[width], "w");
+    if !ink::enabled() {
+        // The 5.18.0 trace tests: a stroked centreline.
+        nums(out, &color, "RG");
+        nums(out, &[width], "w");
+        scratch.take();
+        super::pen::path(scratch, s.xy);
+        path_ops(out, &scratch.take());
+        out.push_str("S\n");
+        return;
+    }
+    // W7: the same pressure outline as on screen, filled with the nonzero rule.
+    nums(out, &color, "rg");
     scratch.take();
-    pen::path(scratch, s.xy);
+    ink::stroke(scratch, s.xy, width, s.p);
     path_ops(out, &scratch.take());
-    out.push_str("S\n");
+    out.push_str("f\n");
 }
 
 /// The content stream of a page's ink. `None` when the page has nothing to draw (no stream is appended).

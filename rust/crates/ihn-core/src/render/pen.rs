@@ -1,7 +1,7 @@
 //! Pen ink: the centripetal Catmull–Rom spline of 5.18.0 and the context set-up shared by every stroke draw.
 
 use super::cmd::{Cap, Cmds, Composite, Join};
-use super::{highlighter, with_css, PathCache, StrokeRef, TAU};
+use super::{highlighter, ink, with_css, PathCache, StrokeRef, TAU};
 use crate::geom::js_max;
 use crate::op::Tool;
 
@@ -76,7 +76,11 @@ pub fn setup(c: &mut Cmds, s: &StrokeRef) {
     c.line_join(Join::Round);
 }
 
-/// v5: `drawSmoothStroke(ctx, stroke)` (app-v5.js:12726).
+/// Whether the stroke is drawn as a filled ink outline (`ink.rs`) rather than a stroked centreline: every pen
+/// stroke. The highlighter keeps its own two-pass look and the 5.x area eraser still strokes `destination-out`.
+pub fn fills(s: &StrokeRef) -> bool { ink::enabled() && !matches!(s.tool, Tool::Highlighter | Tool::LegacyEraseArea) }
+
+/// v5: `drawSmoothStroke(ctx, stroke)` (app-v5.js:12726); pens fill their pressure outline (W7).
 pub fn draw(c: &mut Cmds, paths: &mut PathCache, s: &StrokeRef) {
     if s.is_empty() {
         return;
@@ -91,9 +95,14 @@ pub fn draw(c: &mut Cmds, paths: &mut PathCache, s: &StrokeRef) {
         return;
     }
     setup(c, s);
-    c.line_width(s.width);
     let (p, temporary) = paths.path(c, s);
-    c.stroke_path(p);
+    if fills(s) {
+        with_css(s.color, |css| c.fill_style(css));
+        c.fill_path(p);
+    } else {
+        c.line_width(s.width);
+        c.stroke_path(p);
+    }
     if temporary {
         c.path_drop(p);
     }
@@ -109,12 +118,16 @@ pub fn dot(c: &mut Cmds, s: &StrokeRef) {
         return;
     }
     setup(c, s);
-    let radius = js_max(0.7, s.width * 0.5);
+    let radius = dot_radius(s);
     with_css(s.color, |css| c.fill_style(css));
     c.begin_path();
     c.arc(s.xy[0], s.xy[1], radius, 0.0, TAU);
     c.fill();
 }
+
+/// Radius of a single-tap dot: `max(0.7, width / 2)` (B-E3); a single point has no pressure range, so the width
+/// is the chosen one.
+pub fn dot_radius(s: &StrokeRef) -> f64 { js_max(0.7, s.width * 0.5) }
 
 /// v5: `drawStrokeTailSegment(ctx, stroke, final)` (app-v5.js:4485). `done` is `stroke.liveCurveIndex`.
 pub fn tail(c: &mut Cmds, s: &StrokeRef, done: &mut Option<usize>, last_too: bool) {
@@ -127,12 +140,22 @@ pub fn tail(c: &mut Cmds, s: &StrokeRef, done: &mut Option<usize>, last_too: boo
         return;
     }
     setup(c, s);
-    c.line_width(s.width);
-    c.begin_path();
-    let (x, y) = s.pt(from);
-    c.move_to(x, y);
-    segments(c, s.xy, from, to);
-    c.stroke();
+    if fills(s) {
+        c.begin_path();
+        // The new part as its own outline (round caps overlap the part drawn before, so no seam shows); the radii
+        // come from the whole stroke so far, so they equal those of the committed stroke.
+        let r = ink::radii(s.width, s.len(), s.p);
+        ink::outline(c, &ink::samples(s.xy, &r, from, to));
+        with_css(s.color, |css| c.fill_style(css));
+        c.fill();
+    } else {
+        c.line_width(s.width);
+        c.begin_path();
+        let (x, y) = s.pt(from);
+        c.move_to(x, y);
+        segments(c, s.xy, from, to);
+        c.stroke();
+    }
     *done = Some(to);
 }
 
@@ -144,7 +167,9 @@ pub fn covers(c: &mut Cmds, paths: &mut PathCache, covers: &[StrokeRef]) {
     const WHITE: crate::op::Color = crate::op::Color::Hex(0xff_ffff);
     c.save();
     for s in covers.iter().filter(|s| s.len() >= 2) {
-        draw(c, paths, &StrokeRef { tool: Tool::Pen, color: &WHITE, width: js_max(1.0, super::or(s.width, 1.0) * 1.35), ..*s });
+        // An outline depends on the width, which differs from the cover item's own: not cached.
+        let key = if ink::enabled() { None } else { s.key };
+        draw(c, paths, &StrokeRef { tool: Tool::Pen, color: &WHITE, width: js_max(1.0, super::or(s.width, 1.0) * 1.35), key, ..*s });
     }
     c.restore();
 }

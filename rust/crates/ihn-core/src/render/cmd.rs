@@ -98,6 +98,10 @@ pub mod op {
     pub const FILL_TEXT: u8 = 53;
     /// `x, y, w, h`: `getImageData` whose result is dropped (5.18.0 materialises CPU canvases this way).
     pub const READ_PIXELS: u8 = 54;
+    /// `ctx.fill(path)` with the nonzero rule (pen ink outlines).
+    pub const FILL_PATH: u8 = 55;
+    /// `closePath()`.
+    pub const CLOSE_PATH: u8 = 56;
 }
 
 /// `lineCap` values by index.
@@ -314,6 +318,11 @@ impl Cmds {
         self.o(op::STROKE_PATH);
         self.w.u32(p.0);
     }
+    pub fn fill_path(&mut self, p: PathId) {
+        self.o(op::FILL_PATH);
+        self.w.u32(p.0);
+    }
+    pub fn close_path(&mut self) { self.o(op::CLOSE_PATH) }
     pub fn path_drop(&mut self, p: PathId) {
         self.o(op::PATH_DROP);
         self.w.u32(p.0);

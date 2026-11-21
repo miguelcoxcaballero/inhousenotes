@@ -3,7 +3,7 @@
 
 use super::cmd::{Cap, Cmds, Join, Surf};
 use super::live::{Bounds, Cursor};
-use super::{pen, PathCache, StrokeRef, TAU};
+use super::{ink, pen, with_css, PathCache, StrokeRef, TAU};
 
 /// v5: `clearLassoCanvas(pageIndex)` (app-v5.js:4419); ink → false.
 pub fn clear_lasso(c: &mut Cmds, lasso: Surf, px: (u32, u32)) {
@@ -110,6 +110,15 @@ pub fn remote_append(c: &mut Cmds, overlay: Surf, scale: f64, s: &StrokeRef, ren
         return true;
     }
     pen::setup(c, s);
+    if pen::fills(s) {
+        c.begin_path();
+        let r = ink::radii(s.width, n, s.p);
+        ink::outline(c, &ink::samples(s.xy, &r, start.saturating_sub(1), n - 1));
+        with_css(s.color, |css| c.fill_style(css));
+        c.fill();
+        *rendered = n;
+        return true;
+    }
     c.line_width(s.width);
     c.begin_path();
     let (x, y) = s.pt(start.saturating_sub(1));
