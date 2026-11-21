@@ -68,7 +68,7 @@ test('an open 5.19.0 page with its service worker upgrades into v6', async ({ co
     uncached: (await fetch('/app-v5.js?v=5.17.0')).status
   }), offline);
   expect(during).toEqual({
-    caches: ['inhouse-shell-5.19.0', 'inhouse-shell-6.0.0'],
+    caches: ['inhouse-shell-5.19.0', 'inhouse-shell-6.1.0'],
     version: 'v5.19.0',
     legacy: [[200, true], [200, true]],
     uncached: 404
@@ -85,20 +85,20 @@ test('an open 5.19.0 page with its service worker upgrades into v6', async ({ co
   const reloaded = page.waitForEvent('load');
   await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
   await reloaded;
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v6.0.0');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v6.1.0');
   await expect(page.locator('#welcome-view')).toBeVisible();
   const after = await page.evaluate(async () => ({
     scriptURL: (await navigator.serviceWorker.getRegistration()).active.scriptURL,
     registrations: (await navigator.serviceWorker.getRegistrations()).length,
     controlled: !!navigator.serviceWorker.controller,
-    v6Host: !!document.querySelector('script[type="module"][src^="host/main.js?v=6.0.0"]'),
+    v6Host: !!document.querySelector('script[type="module"][src^="host/main.js?v=6.1.0"]'),
     v5Scripts: document.querySelectorAll('script[src*="-v5.js"]').length,
     reloadGuard: sessionStorage.getItem('ihn-release-reload'),
     legacy: (await fetch('/app-v5.js?v=5.19.0')).status,
-    shell: (await (await caches.open('inhouse-shell-6.0.0')).keys()).map(request => new URL(request.url).pathname)
+    shell: (await (await caches.open('inhouse-shell-6.1.0')).keys()).map(request => new URL(request.url).pathname)
   }));
   expect(after).toMatchObject({
-    scriptURL: registered, registrations: 1, controlled: true, v6Host: true, v5Scripts: 0, reloadGuard: '6.0.0', legacy: 200
+    scriptURL: registered, registrations: 1, controlled: true, v6Host: true, v5Scripts: 0, reloadGuard: '6.1.0', legacy: 200
   });
   expect(after.shell).toEqual(expect.arrayContaining(['/index.html', '/boot.js', '/host/main.js', '/wasm/ihn.wasm']));
   expect(after.shell.filter(path => /-v5\.js$|jspdf/.test(path))).toEqual([]);
@@ -107,7 +107,7 @@ test('an open 5.19.0 page with its service worker upgrades into v6', async ({ co
   // 5. Offline, v6 starts from its own shell; the worker has no background-sync handlers (N-5).
   site.deny = () => true;
   await page.reload();
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v6.0.0');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v6.1.0');
   site.deny = null;
   expect(pageErrors).toEqual([]);
 });
