@@ -566,7 +566,7 @@ setCls(cap,'has-liquid-glider',1);g.style.opacity='1';sp.set(pr.left-cr.left,pr.
 sched=inst=>{qi=qi||!!inst;if(!q){q=requestAnimationFrame(()=>{const i=qi;q=0;qi=0;sync(i);});}};
 new MutationObserver(rs=>{if(rs.some(r=>r.target!==cap&&r.target!==g&&r.target!==ln&&r.target.classList?.contains('home-nav-tab')))sched(0);}).observe(cap,{subtree:true,attributes:true,attributeFilter:['class']});
 const dh=document.getElementById('drive-home');
-if(dh)new MutationObserver(()=>sched(1)).observe(dh,{attributes:true,attributeFilter:['class','data-home-tab']});
+if(dh)new MutationObserver(rs=>sched(rs.some(r=>r.attributeName==='class')?1:0)).observe(dh,{attributes:true,attributeFilter:['class','data-home-tab']});
 if(typeof ResizeObserver==='function')new ResizeObserver(()=>sched(1)).observe(cap);
 cap.addEventListener('click',()=>sched(0));
 addEventListener('resize',()=>sched(1));

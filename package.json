@@ -1,6 +1,6 @@
 {
   "name": "inhouse-notes-production",
-  "version": "6.2.15",
+  "version": "6.2.16",
   "private": true,
   "scripts": {
     "build": "node scripts/build-wasm.mjs",
