@@ -584,12 +584,14 @@ sched(1);
 function initZoomAndA4Lock(){
 const q=s=>document.querySelector(s),zb=q('[data-ih-zoom="btn"]'),zm=q('[data-ih-zoom="menu"]'),sl=q('[data-ih-zoom="slider"]'),vb=q('[data-ih-zoom="value"]'),ar=q('[data-ih-zoom="a4-row"]'),at=q('[data-ih-zoom="a4-toggle"]'),ac=q('[data-ih-zoom="a4-cal"]'),ad=q('[data-ih-zoom="a4-dec"]'),ai=q('[data-ih-zoom="a4-inc"]'),vp=document.getElementById('canvas-viewport'),ct=document.getElementById('canvas-container'),tb=document.getElementById('toolbar');
 if(!zb||!zm||!sl||!vb||!vp||!ct)return;
-let lk=0,iz=0,dr=0,la=0,cal=0;
+let lk=0,iz=0,dr=0,la=0,cal=0,wasA4=0,rt=0;
 try{lk=localStorage.getItem('ihn_a4_lock')==='1';const sc=parseFloat(localStorage.getItem('ihn_a4_cal')||'0');if(sc>=.75&&sc<=2.2)cal=sc;}catch(_){}
 const rz=()=>{const m=(ct.style.transform||'').match(/scale\(([0-9.]+)\)/);return m?Math.max(.5,Math.min(3,parseFloat(m[1])||1)):1;},
-canA4=()=>(vp.clientWidth||innerWidth)>=820,
-defA4=(pw,vpW)=>{const sw=Math.max(screen?.width||0,vpW),touch=(navigator.maxTouchPoints||0)>0||(matchMedia&&matchMedia('(pointer: coarse)').matches);return touch?(0.79*sw/pw):(sw>2000?(0.36*sw/pw):(0.66*sw/pw));},
-a4z=()=>{const pw=ct.querySelector('.page-wrapper')?.offsetWidth||794,vpW=vp.clientWidth||innerWidth,maxFit=Math.max(.85,(vpW-48)/pw);return Math.max(.75,Math.min(2.2,maxFit,cal||defA4(pw,vpW)));},
+isT=()=>(navigator.maxTouchPoints||0)>0||(matchMedia&&matchMedia('(pointer: coarse)').matches),
+canA4=()=>{const w=vp.clientWidth||innerWidth,h=vp.clientHeight||innerHeight;return isT()?(w>h&&w>=820):w>=820;},
+defA4=(pw,vpW,vpH)=>{if(isT())return .79*vpW/pw;if(vpW<vpH)return .70*vpW/pw;const sw=Math.max(screen?.width||0,vpW);return sw>2000?(.36*sw/pw):(.66*sw/pw);},
+a4z=()=>{const pw=ct.querySelector('.page-wrapper')?.offsetWidth||794,vpW=vp.clientWidth||innerWidth,vpH=vp.clientHeight||innerHeight,maxFit=Math.max(.85,(vpW-48)/pw);return Math.max(.75,Math.min(2.2,maxFit,cal||defA4(pw,vpW,vpH)));},
+fitW=()=>{const pw=ct.querySelector('.page-wrapper')?.offsetWidth||794,vpW=vp.clientWidth||innerWidth;return Math.max(.5,Math.min(1,(vpW-32)/pw));},
 pe=(t,id,x,y)=>vp.dispatchEvent(new PointerEvent(t,{bubbles:false,cancelable:true,pointerId:id,pointerType:'touch',isPrimary:id===9901,clientX:x,clientY:y,buttons:t==='pointerup'?0:1})),
 apply=(tz,ctr)=>{
 const c=Math.max(.5,Math.min(2.5,tz)),cur=rz();
@@ -611,7 +613,7 @@ const endDr=()=>{if(dr){dr=0;sync();}};
 sl.addEventListener('pointerdown',()=>{dr=1;});sl.addEventListener('change',endDr);addEventListener('pointerup',endDr,true);addEventListener('pointercancel',endDr,true);
 sl.addEventListener('input',()=>{if(lk&&canA4())return;dr=1;const p=Number(sl.value)||100;vb.textContent=p+'%';apply(p/100,0);});
 vb.addEventListener('click',()=>apply(lk&&canA4()?a4z():1,lk&&canA4()));
-if(at)at.addEventListener('change',()=>{lk=!!at.checked;try{localStorage.setItem('ihn_a4_lock',lk?'1':'0');}catch(_){}if(lk&&canA4()){apply(a4z(),1);if(zm.classList.contains('visible'))pos();}else sync();});
+if(at)at.addEventListener('change',()=>{lk=!!at.checked;wasA4=lk&&canA4();try{localStorage.setItem('ihn_a4_lock',lk?'1':'0');}catch(_){}if(lk&&canA4()){apply(a4z(),1);if(zm.classList.contains('visible'))pos();}else sync();});
 const nudgeA4=d=>{if(!(lk&&canA4()))return;cal=Math.max(.75,Math.min(2.2,(cal||a4z())+d));try{localStorage.setItem('ihn_a4_cal',cal.toFixed(3));}catch(_){}apply(a4z(),1);};
 if(ad)ad.addEventListener('click',()=>nudgeA4(-.03));
 if(ai)ai.addEventListener('click',()=>nudgeA4(.03));
@@ -623,7 +625,21 @@ const dt=e=>{if(!iz&&e.pointerType==='touch')ts.delete(e.pointerId);};addEventLi
 const ev=document.getElementById('editor-view');
 new MutationObserver(()=>{sync();if(lk&&canA4()&&!iz&&!la&&ev&&!ev.classList.contains('hidden')&&ct.querySelector('.page-wrapper')&&Math.abs(rz()/a4z()-1)>.02){la=1;requestAnimationFrame(()=>{la=0;if(lk&&canA4()&&ev&&!ev.classList.contains('hidden'))apply(a4z(),1);});}}).observe(ct,{attributes:true,attributeFilter:['style'],childList:true});
 if(ev)new MutationObserver(()=>{if(!ev.classList.contains('hidden')){sync();if(lk&&canA4())setTimeout(()=>apply(a4z(),1),180);}else setOpen(false);}).observe(ev,{attributes:true,attributeFilter:['class','style']});
-addEventListener('resize',()=>{sync();if(zm.classList.contains('visible'))pos();if(lk&&canA4()&&ev&&!ev.classList.contains('hidden'))apply(a4z(),1);});
+const onLayout=()=>{
+const nowA4=canA4()&&lk;
+sync();
+if(zm.classList.contains('visible'))pos();
+if(ev&&!ev.classList.contains('hidden')){
+if(nowA4)apply(a4z(),1);
+else if(wasA4&&!canA4())apply(fitW(),1);
+}
+wasA4=nowA4;
+};
+const schedLayout=()=>{clearTimeout(rt);rt=setTimeout(onLayout,140);};
+addEventListener('resize',schedLayout);
+addEventListener('orientationchange',schedLayout);
+if(screen?.orientation?.addEventListener)screen.orientation.addEventListener('change',schedLayout);
+wasA4=canA4()&&lk;
 sync();
 }
 boot().catch(error => console.error(error));
