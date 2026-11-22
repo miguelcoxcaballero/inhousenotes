@@ -588,8 +588,8 @@ let lk=0,iz=0,dr=0,la=0,cal=0;
 try{lk=localStorage.getItem('ihn_a4_lock')==='1';const sc=parseFloat(localStorage.getItem('ihn_a4_cal')||'0');if(sc>=.75&&sc<=2.2)cal=sc;}catch(_){}
 const rz=()=>{const m=(ct.style.transform||'').match(/scale\(([0-9.]+)\)/);return m?Math.max(.5,Math.min(3,parseFloat(m[1])||1)):1;},
 canA4=()=>(vp.clientWidth||innerWidth)>=820,
-defA4=()=>{const touch=(navigator.maxTouchPoints||0)>0||(matchMedia&&matchMedia('(pointer: coarse)').matches);return touch?1.32:((devicePixelRatio||1)>1.05?1.30:1.22);},
-a4z=()=>{const pw=ct.querySelector('.page-wrapper')?.offsetWidth||794,vpW=vp.clientWidth||innerWidth,maxFit=Math.max(.85,(vpW-72)/pw);return Math.max(.75,Math.min(2.2,maxFit,cal||defA4()));},
+defA4=(pw,vpW)=>{const sw=Math.max(screen?.width||0,vpW),touch=(navigator.maxTouchPoints||0)>0||(matchMedia&&matchMedia('(pointer: coarse)').matches);return touch?(0.79*sw/pw):(sw>2000?(0.36*sw/pw):(0.66*sw/pw));},
+a4z=()=>{const pw=ct.querySelector('.page-wrapper')?.offsetWidth||794,vpW=vp.clientWidth||innerWidth,maxFit=Math.max(.85,(vpW-48)/pw);return Math.max(.75,Math.min(2.2,maxFit,cal||defA4(pw,vpW)));},
 pe=(t,id,x,y)=>vp.dispatchEvent(new PointerEvent(t,{bubbles:false,cancelable:true,pointerId:id,pointerType:'touch',isPrimary:id===9901,clientX:x,clientY:y,buttons:t==='pointerup'?0:1})),
 apply=(tz,ctr)=>{
 const c=Math.max(.5,Math.min(2.5,tz)),cur=rz();
