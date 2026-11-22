@@ -533,7 +533,7 @@ else{p.style.width=cs+'px';p.style.height=sz+'px';p.style.transform=`translate3d
 }),
 sync=inst=>{
 const ac=tb.querySelector('.tool-btn.active');
-if(!ac||tb.offsetParent===null||!ac.offsetWidth){p.style.opacity='0';setCls(tb,'has-liquid-pill',0);return;}
+if(!ac||!ac.offsetWidth||!ac.offsetHeight){p.style.opacity='0';setCls(tb,'has-liquid-pill',0);return;}
 const nh=tb.classList.contains('horizontal');
 if(nh!==hz){hz=nh;sp.reset();inst=1;if(ms&&!(rm&&rm.matches)){tb.classList.remove('is-pivoting-to-h','is-pivoting-to-v');void tb.offsetWidth;tb.classList.add(nh?'is-pivoting-to-h':'is-pivoting-to-v');clearTimeout(pt);pt=setTimeout(()=>tb.classList.remove('is-pivoting-to-h','is-pivoting-to-v'),420);}}
 ms=1;setCls(tb,'has-liquid-pill',1);p.style.opacity='1';
@@ -543,7 +543,7 @@ else{cx=ac.offsetLeft;cs=ac.offsetWidth;sp.set(ac.offsetTop,ac.offsetHeight,!!in
 sched=inst=>{qi=qi||!!inst;if(!q){q=requestAnimationFrame(()=>{const i=qi;q=0;qi=0;sync(i);});}};
 new MutationObserver(rs=>{if(rs.some(r=>(r.target===tb&&tb.classList.contains('horizontal')!==hz)||(r.target!==tb&&r.target!==p&&r.target!==ln&&r.target.classList?.contains('tool-btn'))))sched(0);}).observe(tb,{subtree:true,attributes:true,attributeFilter:['class']});
 const ev=document.getElementById('editor-view');
-if(ev)new MutationObserver(()=>sched(1)).observe(ev,{attributes:true,attributeFilter:['class']});
+if(ev)new MutationObserver(()=>sched(1)).observe(ev,{attributes:true,attributeFilter:['class','style']});
 if(typeof ResizeObserver==='function')new ResizeObserver(()=>sched(1)).observe(tb);
 tb.addEventListener('click',()=>sched(0));
 addEventListener('resize',()=>sched(1));
