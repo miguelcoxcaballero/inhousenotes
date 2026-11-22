@@ -95,12 +95,12 @@ test('release watcher: a newer published version reloads exactly once', async ({
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem('ihn-release-reload'))).toBe('999.0.0');
   await page.waitForTimeout(2500);
   expect(navigations).toBe(2);
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v6.2.12');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v6.2.13');
 });
 
 test('release watcher: the running version and an open editor never reload', async ({ page }) => {
   await page.route('https://accounts.google.com/**', route => route.fulfill({ contentType: 'text/javascript', body: '' }));
-  await publish(page, '6.2.12');
+  await publish(page, '6.2.13');
   let navigations = 0;
   page.on('framenavigated', frame => { if (frame === page.mainFrame()) navigations += 1; });
   await page.goto('/?e2e=1');
