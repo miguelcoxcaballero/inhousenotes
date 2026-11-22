@@ -758,12 +758,12 @@ function initLiquidPills() {
 }
 
 function initZoomAndA4Lock() {
-  const zoomBtn = document.getElementById('btn-zoom');
-  const zoomMenu = document.getElementById('zoom-menu');
-  const slider = document.getElementById('zoom-slider');
-  const valueBtn = document.getElementById('zoom-value-btn');
-  const a4Row = document.getElementById('zoom-a4-row');
-  const a4Toggle = document.getElementById('zoom-a4-lock-toggle');
+  const zoomBtn = document.querySelector('[data-ih-zoom="btn"]');
+  const zoomMenu = document.querySelector('[data-ih-zoom="menu"]');
+  const slider = document.querySelector('[data-ih-zoom="slider"]');
+  const valueBtn = document.querySelector('[data-ih-zoom="value"]');
+  const a4Row = document.querySelector('[data-ih-zoom="a4-row"]');
+  const a4Toggle = document.querySelector('[data-ih-zoom="a4-toggle"]');
   const viewport = document.getElementById('canvas-viewport');
   const container = document.getElementById('canvas-container');
   const toolbar = document.getElementById('toolbar');
