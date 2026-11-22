@@ -61,7 +61,7 @@ fn finish(app: &mut App, host: &mut dyn Host, waited: bool) {
         return shell::status(app, host, "Could not finish saving. The document is still open; please try Home again.", Status::Error);
     }
     let status = session::sync_status(app);
-    let pending = status.unsealed_local > 0 || status.not_created;
+    let pending = status.unsealed_local > 0 || status.not_created || status.export_pending;
     // Home's badges read the persisted flags (ARCHITECTURE §6.6): own batches not sealed yet = `relay_pending` (the
     // relay's seal clears it).
     if status.unsealed_local > 0 && !session::get(app).is_some_and(|s| s.record.flags.relay_pending) {
@@ -81,8 +81,7 @@ fn finish(app: &mut App, host: &mut dyn Host, waited: bool) {
 /// Tells Home the open document's persisted state (its card badge, ARCHITECTURE §6.6).
 pub fn note_home(app: &mut App, host: &mut dyn Host) {
     let Some(s) = session::get(app).filter(|s| s.persistent) else { return };
-    let f = s.record.flags;
-    let info = ihn_core::catalog::DocInfo { last_opened_at: s.record.last_opened_at, pinned: s.record.pinned, available: true, pending: f.relay_pending || !f.created };
+    let info = ihn_core::catalog::DocInfo { last_opened_at: s.record.last_opened_at, pinned: s.record.pinned, available: true, pending: s.record.upload_pending() };
     let id = s.doc_id.clone();
     home::doc_changed(app, host, &id, Some(info));
 }

@@ -61,8 +61,8 @@ pub struct Inputs {
 pub fn derive(i: &Inputs) -> (Phase, Option<(&'static str, &'static str)>) {
     let s = &i.status;
     let exporting = !matches!(s.export, ExportPhase::Idle | ExportPhase::Failed { .. });
-    let unsynced = s.unsealed_local > 0 || s.not_created;
-    if i.local.failed || (s.last_error.is_some() && !s.relay_writing && !exporting) {
+    let unsynced = s.unsealed_local > 0 || s.not_created || s.export_pending;
+    if i.local.failed || matches!(s.export, ExportPhase::Failed { .. }) || (s.last_error.is_some() && !s.relay_writing && !exporting) {
         return (Phase::Error, Some(("Retry upload", "error")));
     }
     if i.local.pending {
@@ -86,7 +86,7 @@ pub fn derive(i: &Inputs) -> (Phase, Option<(&'static str, &'static str)>) {
         let offline = !s.online && !s.auth_paused;
         return (Phase::Paused, Some((if offline { "Saved offline" } else { "Waiting to upload" }, if offline { "offline" } else { "queued" })));
     }
-    (Phase::Saved, None)
+    (if i.connected { Phase::Saved } else { Phase::Paused }, None)
 }
 
 /// The texts of the indicator and of the save-details popup.
@@ -111,7 +111,7 @@ pub fn present(i: &Inputs) -> View {
     let (phase, _) = derive(i);
     let (s, local) = (&i.status, i.local);
     let (offline, reconnect) = (!s.online, i.connected && s.auth_paused);
-    let unsynced = s.unsealed_local > 0 || s.not_created;
+    let unsynced = s.unsealed_local > 0 || s.not_created || s.export_pending;
     let exporting = !matches!(s.export, ExportPhase::Idle | ExportPhase::Failed { .. });
     let title = match phase {
         Phase::Error => "Save needs attention",
@@ -123,6 +123,8 @@ pub fn present(i: &Inputs) -> View {
             _ => "Saving to Google Drive",
         },
         Phase::Syncing => "Receiving changes",
+        Phase::Paused if !i.connected && local.saved_at > 0.0 => "Saved on this device",
+        Phase::Paused if !i.connected => "No pending changes",
         Phase::Paused if reconnect => "Reconnect to Google Drive",
         Phase::Paused if offline => "Waiting for connection",
         Phase::Paused => "Waiting to save to Drive",
@@ -137,6 +139,7 @@ pub fn present(i: &Inputs) -> View {
         Phase::Error => "Check save",
         Phase::Saving => "Saving",
         Phase::Building | Phase::Uploading | Phase::Syncing => "Syncing",
+        Phase::Paused if !i.connected => "Local",
         Phase::Paused if reconnect => "Sign in",
         Phase::Paused if offline => "Offline",
         Phase::Paused => "Pending",
@@ -164,10 +167,10 @@ pub fn present(i: &Inputs) -> View {
             "syncing",
         ),
         _ if s.relay_writing && unsynced => ("Uploading", "syncing"),
+        _ if matches!(s.export, ExportPhase::Failed { .. }) => ("Upload failed", "active"),
         _ if unsynced && s.last_error.is_some() => ("Upload failed", "active"),
         _ if unsynced => ("Waiting", "active"),
         _ if i.catching_up => ("Receiving changes", "syncing"),
-        _ if s.export_pending => ("Strokes saved", ""),
         _ => ("Saved", ""),
     };
     let notice = match &s.last_error {
@@ -243,7 +246,7 @@ pub fn refresh(app: &mut App, host: &mut dyn Host) {
     let view = present(&inputs(app));
     let st = &mut app.st.doc_save_state;
     let out = host.out();
-    if st.class.unwrap_or("saved") != view.phase.class() {
+    if st.class != Some(view.phase.class()) {
         for p in Phase::ALL {
             out.class(Ui::SAVE_INDICATOR, p.class(), p == view.phase);
         }
@@ -454,7 +457,7 @@ mod tests {
     fn status_mapping_follows_the_table_in_order() {
         // One row at a time.
         assert_eq!(with(|_| {}), (Phase::Saved, None));
-        assert_eq!(with(|i| i.status.export_pending = true), (Phase::Saved, None), "an export may still be pending");
+        assert_eq!(with(|i| i.status.export_pending = true), (Phase::Paused, Some("Waiting to upload")), "a sealed stroke still needs its PDF");
         assert_eq!(with(|i| i.status.unsealed_local = 2), (Phase::Paused, Some("Waiting to upload")));
         assert_eq!(with(|i| i.status.not_created = true), (Phase::Paused, Some("Waiting to upload")));
         assert_eq!(with(|i| (i.status.unsealed_local, i.status.online) = (1, false)), (Phase::Paused, Some("Saved offline")));
@@ -479,7 +482,7 @@ mod tests {
         assert_eq!(with(|i| (i.status.export, i.status.relay_writing, i.status.unsealed_local) = (ExportPhase::Building, true, 1)).0, Phase::Building);
         assert_eq!(with(|i| (i.status.export, i.catching_up) = (ExportPhase::Checking, true)).0, Phase::Uploading);
         assert_eq!(with(|i| (i.catching_up, i.status.unsealed_local, i.status.online) = (true, 1, false)).0, Phase::Syncing);
-        assert_eq!(with(|i| (i.status.export, i.status.unsealed_local) = (ExportPhase::Failed { code: "x".into(), detail: String::new() }, 1)).0, Phase::Paused);
+        assert_eq!(with(|i| (i.status.export, i.status.unsealed_local) = (ExportPhase::Failed { code: "x".into(), detail: String::new() }, 1)).0, Phase::Error);
         // Classes are 5.18.0's SAVE_STATES.
         let mut classes: Vec<&str> = Phase::ALL.iter().map(|p| p.class()).collect();
         ihn_core::sort::ord(&mut classes);

@@ -823,6 +823,13 @@ pub fn event(app: &mut App, host: &mut dyn Host, event: &Event) -> u32 {
                     });
                 }
             }
+            save_state::SIG_SAVE_NOW => {
+                if let Some(run) = app.st.collab.run.as_mut() {
+                    run.sync.core.flush = ihn_sync::Flush::Soon.max(run.sync.core.flush);
+                    run.sync.core.export.force = true;
+                    kick(app, host);
+                }
+            }
             session::sig::STATE => {
                 let code = save_state::phase(app).code();
                 let Some(run) = app.st.collab.run.as_mut().filter(|r| !r.leaving && r.phase_code != code) else { return 0 };

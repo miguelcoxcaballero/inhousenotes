@@ -1,8 +1,10 @@
 # inhousenotes
 
-[Android 1.0.16 — A y B](https://github.com/miguelcoxcaballero/inhousenotes/releases/tag/android-v1.0.16) · Web 6.2.28. El enlace de recuperación abre la página de la versión en GitHub para elegir la APK en Assets. Disponible en los dos canales para instalaciones antiguas.
+[Android 1.0.16 — A y B](https://github.com/miguelcoxcaballero/inhousenotes/releases/tag/android-v1.0.16) · Web 6.2.29. El enlace de recuperación abre la página de la versión en GitHub para elegir la APK en Assets. Disponible en los dos canales para instalaciones antiguas.
 
 ## Inhouse Notes 6
+
+6.2.29 · Verde cuando Drive confirma trazos y PDF.
 
 La web 6.0.0 es la reescritura de 5.18.0 en Rust/WebAssembly, con el mismo aspecto y comportamiento ([cambios previstos](docs/v6/BEHAVIOUR-CHANGES.md)). La APK Android y su instalador congelado no cambian: la app carga la web publicada.
 
@@ -10,7 +12,7 @@ La web 6.0.0 es la reescritura de 5.18.0 en Rust/WebAssembly, con el mismo aspec
 | --- | --- |
 | `index.html`, `offline-v5.css`, `boot.js` | Marcado, estilos y arranque de 5.18.0 (tema, esqueleto, comprobación de versiones) |
 | `host/*.js` | La capa JavaScript fina: cargador wasm, DOM, canvas, IndexedDB, red, pdf.js, WebRTC, plataforma |
-| `service-worker.js` | Caché del shell `inhouse-shell-6.2.28` (misma URL que en 5.x) |
+| `service-worker.js` | Caché del shell `inhouse-shell-6.2.29` (misma URL que en 5.x) |
 | `rust/` | Workspace cargo: `ihn-core`, `ihn-sync`, `ihn-app`, `ihn-wasm` |
 | `wasm/ihn.wasm`, `offline-assets.js`, `native-assets.json` | Generados por `npm run build` y confirmados en `main` con la versión que publican |
 | `tests/v6/` | e2e (Playwright), paridad de píxeles contra 5.18.0, mock de Google, rendimiento |

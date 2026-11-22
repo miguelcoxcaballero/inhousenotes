@@ -912,7 +912,7 @@ impl Sync {
         self.views = c.presence.views(now);
         c.status.online = c.online;
         c.status.not_created = !c.stored.created;
-        c.status.export_pending = c.stored.export_pending;
+        c.status.export_pending = c.stored.export_pending || (c.can_edit && !r.version_vector().is_empty() && !c.stored.export_vv().is_some_and(|vv| vv.covers(r.version_vector())));
         c.status.peers_connected = self.views.iter().filter(|v| v.link == ihn_core::doc::PeerLink::Connected).count() as u32;
         c.status.unsealed_local = r.version_vector().iter().filter(|(a, _)| c.relays(*a)).map(|(a, seq)| seq.saturating_sub(c.stored.sealed.get(&a).copied().unwrap_or(0))).sum();
         let wake = std::mem::replace(&mut c.wake, f64::INFINITY);

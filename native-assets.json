@@ -1057,13 +1057,13 @@
       "mime": "font/ttf"
     },
     "/wasm/ihn-2.wasm": {
-      "sha256": "0761ca401d218155ca8364a06ec8163bdc0666c086e1d34cc70c2a338cf08a5f",
-      "size": 818629,
+      "sha256": "daa817d883a95b28183a3592c2382cfc8d435a5f17cc4d1305d025fe641e0ea7",
+      "size": 820799,
       "mime": "application/wasm"
     },
     "/wasm/ihn.wasm": {
-      "sha256": "fc56c0e267599cdcf1796613ed6eecf781da17c59a2ab6814ff5a0e66513b859",
-      "size": 571322,
+      "sha256": "8f46b577b281f4dcc4aa2948838ba9f99792e45b7b883c529b40e3f87fedf095",
+      "size": 571848,
       "mime": "application/wasm"
     }
   }

@@ -129,6 +129,8 @@ pub struct Export {
     leaving: bool,
     /// Local time of the latest remote batch (export interval under remote activity).
     remote_at: f64,
+    /// Monotonic timestamp, valid only for the current engine.
+    last_put_at: f64,
     seen: u64,
     /// Unknown head and the local time it was first seen.
     unknown: Option<(String, f64)>,
@@ -150,6 +152,7 @@ impl Default for Export {
             retry_at: f64::NEG_INFINITY,
             leaving: false,
             remote_at: f64::NEG_INFINITY,
+            last_put_at: f64::NEG_INFINITY,
             seen: 0,
             unknown: None,
         }
@@ -229,16 +232,17 @@ impl Export {
         self.fetch(cx, meta.head.clone(), meta.modified_ms);
     }
 
-    fn done(&mut self, cx: &mut Core, head: String, etag: &str) {
+    fn done(&mut self, cx: &mut Core, head: String, etag: &str, r: &dyn Replica) {
+        self.last_put_at = cx.now;
         let vv = std::mem::take(&mut self.vv);
         cx.persist(SyncRecord::KnownExport { head: head.clone(), vv: vv.clone() });
         cx.persist(SyncRecord::LastExport { head: head.clone(), vv: vv.clone(), etag: etag.into(), at: cx.now.max(0.0) as u64 });
-        cx.persist(SyncRecord::Flags { relay_pending: None, export_pending: Some(false), created: None });
+        cx.persist(SyncRecord::Flags { relay_pending: None, export_pending: Some(!vv.covers(r.version_vector())), created: None });
         cx.send_all(&Frame::ExportDone { head: head.clone(), vv });
         // The descriptor goes into our next relay write (§14.2 Done), so relay-only readers need no download.
         cx.flush = cx.flush.max(Flush::Soon);
         cx.export.done = Some(head);
-        cx.export.force = false;
+        cx.export.force = cx.stored.export_pending && cx.mode == Mode::Alone;
         (self.fails, self.loops, self.fast) = (0, 0, 0);
         self.bytes = Vec::new();
         self.leaving = false;
@@ -277,9 +281,8 @@ impl Export {
             return;
         }
         let auto = || {
-            let last = cx.stored.last_export.as_ref().map_or(f64::NEG_INFINITY, |l| l.3 as f64);
             let interval = if cx.now - self.remote_at < IDLE_MS { BUSY_INTERVAL_MS } else { MIN_INTERVAL_MS };
-            (last + interval).max(cx.last_input_at + IDLE_MS)
+            (self.last_put_at + interval).max(cx.last_input_at + IDLE_MS)
         };
         let at = if cx.export.force || (self.leaving && needed && cx.mode == Mode::Alone) {
             cx.now
@@ -323,7 +326,7 @@ impl Part for Export {
         }
     }
 
-    fn http(&mut self, cx: &mut Core, id: u32, status: u16, etag: &str, body: &[u8], _r: &mut dyn Replica) {
+    fn http(&mut self, cx: &mut Core, id: u32, status: u16, etag: &str, body: &[u8], r: &mut dyn Replica) {
         match self.st.clone() {
             St::Check(req) | St::Recheck(req) if req == id => {
                 let Some(meta) = (status == 200).then(|| DriveMeta::decode(body)).flatten() else {
@@ -352,7 +355,8 @@ impl Part for Export {
             St::Put(req) if req == id => match status {
                 s if (200..300).contains(&s) => {
                     let head = String::from_utf8_lossy(body).trim().to_string();
-                    self.done(cx, head, etag);
+                    if head.is_empty() { return self.fail(cx, "missing-head-revision"); }
+                    self.done(cx, head, etag, r);
                 }
                 412 => {
                     self.st = St::Recheck(cx.http(HttpReq::Meta { file: cx.doc_id.clone() }));
@@ -391,6 +395,10 @@ impl Part for Export {
     }
 
     fn tick(&mut self, cx: &mut Core, r: &mut dyn Replica) {
+        let pending = Self::needed(cx, r);
+        if cx.leader && cx.polled && cx.can_edit && pending != cx.stored.export_pending {
+            cx.persist(SyncRecord::Flags { relay_pending: None, export_pending: Some(pending), created: None });
+        }
         let sum = vv_sum(r.version_vector());
         if sum > self.seen {
             self.remote_at = cx.now;

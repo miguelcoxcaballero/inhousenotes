@@ -447,6 +447,15 @@ impl DocRecord {
         }
     }
 
+    /// Also recover older records whose dirty flags were cleared before their PDF caught up.
+    pub fn upload_pending(&self) -> bool {
+        if !self.flags.created || self.flags.relay_pending || self.flags.export_pending { return true; }
+        if self.seq.is_empty() { return false; }
+        let vv = self.exports.last().and_then(|(_, bytes)| ihn_core::stamp::VersionVector::decode(&mut ihn_core::codec::Reader::new(bytes)));
+        self.seq.iter().any(|(actor, &seq)| self.relay.sealed.get(actor).copied().unwrap_or(0) < seq
+            || vv.as_ref().is_none_or(|v| v.get(ihn_core::id::ActorId(actor)) < seq))
+    }
+
     /// 5.18.0's retention rule (`offline-store-v5.js:prune`) in v6 terms: the local copy of a document may be
     /// dropped when it is not pinned, not open, everything local is sealed and exported, the Drive file exists,
     /// and it was last opened more than `retention_days` ago.

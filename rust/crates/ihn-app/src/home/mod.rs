@@ -299,7 +299,7 @@ fn loaded(app: &mut App, host: &mut dyn Host, io: &Io) {
         let record = DocRecord::from_value(value);
         if record.account == account {
             let id = key.text();
-            let info = DocInfo { last_opened_at: record.last_opened_at, pinned: record.pinned, available: with_chunks.binary_search(&id).is_ok(), pending: record.flags.relay_pending || !record.flags.created };
+            let info = DocInfo { last_opened_at: record.last_opened_at, pinned: record.pinned, available: with_chunks.binary_search(&id).is_ok(), pending: record.upload_pending() };
             infos.push((id, info));
         }
     }

@@ -620,9 +620,8 @@ pub fn sync_status(app: &App) -> SyncStatus {
     let Some(s) = get(app) else { return SyncStatus::default() };
     let mut st = s.sync.clone().unwrap_or_else(|| SyncStatus {
         unsealed_local: s.unsealed_local(),
-        // While an open runs the Drive facts are not known yet (`set_meta` marks the document created): 5.18.0's
-        // indicator shows nothing pending there.
-        not_created: !s.record.flags.created && !crate::doc::open::busy(app),
+        // A newly opened file is unconfirmed until its Drive metadata arrives.
+        not_created: !s.record.flags.created,
         export_pending: s.record.flags.export_pending,
         online: !shell::offline(app),
         auth_paused: auth::reconnecting(app),
@@ -632,6 +631,8 @@ pub fn sync_status(app: &App) -> SyncStatus {
     if s.sync.is_some() {
         st.unsealed_local += s.unstored.len() as u32;
     }
+    st.export_pending |= s.record.flags.export_pending;
+    if s.sync.is_none() { st.export_pending |= s.record.upload_pending(); }
     st
 }
 
@@ -693,6 +694,7 @@ pub fn edit(app: &mut App, host: &mut dyn Host, f: impl FnOnce(&mut Tx)) -> Opti
             t.doc_put(&s.doc_id, &s.record);
         }
         t.ops_append(&s.doc_id, actor, seq, &encoded.0);
+        t.persist(&s.account, &s.doc_id, &mut s.record, Record::Flags { relay_pending: None, export_pending: Some(true), created: None });
         if let Some(mark) = mark {
             t.kv_put(&s.account, &kv::ctr(actor), &Value::from(mark as f64));
         }

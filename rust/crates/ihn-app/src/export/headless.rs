@@ -80,7 +80,7 @@ fn start(app: &mut App, host: &mut dyn Host) {
     store::tx(app, host, req, t);
 }
 
-fn needs_work(r: &DocRecord) -> bool { r.flags.relay_pending || r.flags.export_pending || !r.flags.created }
+fn needs_work(r: &DocRecord) -> bool { r.upload_pending() }
 
 fn scanned(app: &mut App, host: &mut dyn Host, io: &crate::abi::Io) {
     let mut reply = Reply::new(io);
@@ -166,7 +166,7 @@ fn poll(app: &mut App, host: &mut dyn Host) {
     let created = session::get(app).is_some_and(|s| s.record.flags.created);
     let state = collab::with_sync(app, |s| {
         let st = s.status();
-        let settled = st.unsealed_local == 0 && !st.not_created && !st.relay_writing && matches!(st.export, ExportPhase::Idle);
+        let settled = st.unsealed_local == 0 && !st.not_created && !st.export_pending && !st.relay_writing && matches!(st.export, ExportPhase::Idle);
         (s.core.export.force, settled, s.core.polled)
     });
     if let (Some((force, settled, polled)), true) = (state, created) {

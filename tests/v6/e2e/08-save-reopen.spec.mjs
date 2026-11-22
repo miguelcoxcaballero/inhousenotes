@@ -96,7 +96,7 @@ test('write, Home, reopen on a fresh device: the export is a v6 container with t
   await openDoc(A.page, id);
   await writeAndLeave(A.page, mock, id);
   const snapshot = (await session(A.page)).snapshot;
-  expect((await cmd(A.page, 'export.lifecycle.state')).log[0][1]).toBe('All changes saved.');
+  expect((await cmd(A.page, 'export.lifecycle.state')).log[0][1]).toMatch(/waiting to sync|All changes saved/);
   const pdf = await container(mock.drive.content(id));
   expect(pdf.keywords.startsWith('STROKES_Z:!;IHN6:')).toBe(true);
   expect(pdf.title).toBe('Cuaderno Digital');
@@ -236,4 +236,35 @@ test('export to the user: web download, Android bridge v2 and navigator.share', 
   await expect.poll(() => C.page.evaluate(() => window.__shared), { timeout: 60_000 }).toEqual({ name: 'Shared.pdf', type: 'application/pdf', title: 'Shared.pdf' });
   expect([...B.problems, ...C.problems, ...problems]).toEqual([]);
   await C.context.close();
+});
+
+test('green waits for both the sealed strokes and the PDF containing the last edit', async ({ browser, page, context, mock }) => {
+  await seedSession(context, mock);
+  addScene(mock, 'template');
+  const id = sceneId('template');
+  await openDoc(page, id);
+  const hold = mock.inject({ method: 'PATCH', path: '/upload/drive/v3/files/' + id, hold: true });
+  await stroke(page, line(100, 190));
+  await page.locator('.mode-toggle-status').click();
+  const save = page.locator('.save-debug-action');
+  await expect(save).toHaveText('Save now');
+  await save.click();
+  await page.locator('.save-debug-close').click();
+  await expect.poll(() => hold.hits, { timeout: 30000 }).toBe(1);
+  await expect.poll(async () => (await collab(page)).unsealed, { timeout: 30000 }).toBe(0);
+  await expect(page.locator('#save-indicator')).not.toHaveClass(/\bsaved\b/);
+  await stroke(page, line(160, 380));
+  const before = revisions(mock, id);
+  mock.release();
+  await expect.poll(() => revisions(mock, id), { timeout: 30000 }).toBeGreaterThanOrEqual(before + 2);
+  await expect(page.locator('#save-indicator')).toHaveClass(/\bsaved\b/);
+  expect((await container(mock.drive.content(id))).inked[0]).toBe(true);
+  const fresh = await device(browser, mock);
+  try {
+    await fresh.context.route(/\/files\/[^/?]+\?.*alt=media/, route => route.request().url().includes(id) ? route.fallback() : route.abort());
+    await openDoc(fresh.page, id, { edit: false });
+    expect((await session(fresh.page)).snapshot).toBe((await session(page)).snapshot);
+  } finally {
+    await fresh.context.close();
+  }
 });
