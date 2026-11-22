@@ -243,10 +243,72 @@ export default function install(host) {
     [DOM | 18]: r => nodes[r.u32()]?.blur?.(),
     [DOM | 19]: r => scrollTo(nodes[r.u32()], r.f64(), r.f64(), r.u8()),
     [DOM | 20]: r => {
-      const h = r.u32(), node = nodes[r.u32()], keyframes = JSON.parse(r.str()), options = JSON.parse(r.str());
+      const h = r.u32(), node = nodes[r.u32()];
+      let keyframes = JSON.parse(r.str()), options = JSON.parse(r.str());
+      const ghost = node?.classList?.contains('drive-folder-ghost') ? node : node?.closest?.('.drive-folder-ghost');
+      if (ghost) {
+        const opening = ghost.dataset.direction !== 'close';
+        const dur = opening ? 500 : 450;
+        if (node === ghost) {
+          options = { ...options, duration: dur, easing: opening ? 'cubic-bezier(0.20, 0.95, 0.30, 1)' : 'cubic-bezier(0.28, 0.05, 0.22, 1)' };
+          const sheets = ghost.querySelector(':scope > .drive-folder-sheets');
+          if (sheets) {
+            const slot = document.createElement('div');
+            slot.className = 'drive-folder-sheets-slot';
+            sheets.parentNode.insertBefore(slot, sheets);
+            slot.appendChild(sheets);
+            ghost._sheetsAnim = sheets.animate(
+              opening
+                ? [
+                    { transform: 'translateY(0%)', offset: 0, easing: 'cubic-bezier(0.32, 0, 0.2, 1)' },
+                    { transform: 'translateY(55%)', offset: 0.45 },
+                    { transform: 'translateY(55%)', offset: 1 }
+                  ]
+                : [
+                    { transform: 'translateY(55%)', offset: 0 },
+                    { transform: 'translateY(55%)', offset: 0.55, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+                    { transform: 'translateY(0%)', offset: 1 }
+                  ],
+              { duration: dur, fill: 'both' }
+            );
+          }
+        } else if (node.classList.contains('drive-folder-cover')) {
+          const hd = 0.68;
+          const closedT = (opening ? keyframes?.[0]?.transform : keyframes?.[1]?.transform) || 'rotateY(0deg)';
+          keyframes = opening
+            ? [
+                { transform: closedT, opacity: 1, offset: 0, easing: 'cubic-bezier(0.28, 0.05, 0.48, 1)' },
+                { transform: 'rotateY(-96deg)', opacity: 1, offset: hd * 0.84, easing: 'linear' },
+                { transform: 'rotateY(-118deg)', opacity: 0, offset: hd },
+                { transform: 'rotateY(-118deg)', opacity: 0, offset: 1 }
+              ]
+            : [
+                { transform: 'rotateY(-118deg)', opacity: 0, offset: 0 },
+                { transform: 'rotateY(-118deg)', opacity: 0, offset: 1 - hd, easing: 'linear' },
+                { transform: 'rotateY(-96deg)', opacity: 1, offset: 1 - hd * 0.84, easing: 'cubic-bezier(0.24, 0.1, 0.22, 1)' },
+                { transform: closedT, opacity: 1, offset: 1 }
+              ];
+          options = { duration: dur, fill: 'both' };
+        } else if (node.classList.contains('drive-folder-print') || node.classList.contains('drive-card-menu')) {
+          keyframes = [{ opacity: 1 }, { opacity: 1 }];
+          options = { duration: dur, fill: 'both' };
+        } else if (node.classList.contains('drive-folder-view')) {
+          options = { ...options, duration: dur };
+          if (!opening) {
+            keyframes = [{ offset: 0, opacity: 1 }, { offset: 0.36, opacity: 0 }, { offset: 1, opacity: 0 }];
+          }
+        }
+      }
       set(h, node?.animate?.(keyframes, options));
     },
-    [DOM | 21]: r => { const animation = nodes[r.u32()]; quiet(() => animation?.cancel()); },
+    [DOM | 21]: r => {
+      const animation = nodes[r.u32()];
+      quiet(() => {
+        const ghost = animation?.effect?.target;
+        if (ghost?._sheetsAnim) { ghost._sheetsAnim.cancel(); ghost._sheetsAnim = null; }
+        animation?.cancel();
+      });
+    },
     [DOM | 22]: r => { const animation = nodes[r.u32()]; quiet(() => animation?.finish()); },
     [DOM | 23]: r => {
       const node = nodes[r.u32()], id = r.i32(), on = r.u8() !== 0;
@@ -264,7 +326,17 @@ export default function install(host) {
     [DOM | 30]: r => {
       const animation = nodes[r.u32()], play = r.u8(), keyframes = r.ostr(), sync = nodes[r.u32()];
       quiet(() => {
-        if (keyframes !== null) animation?.effect?.setKeyframes(JSON.parse(keyframes));
+        if (keyframes !== null) {
+          let kf = JSON.parse(keyframes);
+          const target = animation?.effect?.target;
+          if (target?.classList?.contains('drive-folder-view') && target.closest('.drive-folder-ghost[data-direction="open"]')) {
+            const elapsed = sync ? Math.max(0, Math.min(1, (Number(sync.currentTime) || 0) / 500)) : 0;
+            const from = Math.min(0.85, Math.max(0.14, elapsed + 0.02));
+            const to = Math.min(1, Math.max(0.54, from + 0.18));
+            kf = [{ offset: 0, opacity: 0 }, { offset: from, opacity: 0 }, { offset: to, opacity: 1 }, { offset: 1, opacity: 1 }];
+          }
+          animation?.effect?.setKeyframes(kf);
+        }
         if (play === 1) animation?.play();
         else if (play === 2) animation?.pause();
         if (sync && animation) animation.startTime = sync.startTime;
