@@ -408,77 +408,11 @@ function lifecycle(host) {
 function serviceWorker(host) {
   const sw = navigator.serviceWorker;
   if (!sw || host.config.flags & MODE.HEADLESS) return;
-  sw.register('/service-worker.js', { updateViaCache: 'none' }).then(reg => reg.update().catch(() => {})).catch(() => {});
+  sw.register('/service-worker.js', { updateViaCache: 'none' }).then(r => r.update().catch(() => {})).catch(() => {});
   const hello = () => sw.ready.then(registration => registration.active?.postMessage('ihn6-hello'), () => {});
   hello();
   sw.addEventListener('controllerchange', hello);
   sw.addEventListener('message', event => host.message(CHAN.SERVICE_WORKER, JSON.stringify(event.data ?? null)));
-  initAutoVersionCheck(host);
-}
-
-function initAutoVersionCheck(host) {
-  if (host.config.flags & (MODE.HEADLESS | MODE.E2E)) return;
-  const currentVersion = String(host.config.version || '');
-  try {
-    const u = new URL(location.href);
-    if (u.searchParams.has('_v')) {
-      u.searchParams.delete('_v');
-      history.replaceState(null, '', u.pathname + u.search + u.hash);
-    }
-  } catch (_) {}
-
-  window.forceReloadLatestVersion = function () {
-    return Promise.resolve().then(async () => {
-      if ('caches' in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.filter(k => k.startsWith('inhouse-shell-')).map(k => caches.delete(k)));
-      }
-      if (navigator.serviceWorker) {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(regs.map(r => r.update().catch(() => {})));
-      }
-    }).catch(() => {}).finally(() => {
-      try {
-        const next = new URL(location.href);
-        next.searchParams.set('_v', String(Date.now()));
-        location.replace(next.toString());
-      } catch (_) {
-        location.reload();
-      }
-    });
-  };
-
-  window.checkLatestAppVersion = function (forceReloadIfSame) {
-    if (navigator.onLine === false) return Promise.resolve(false);
-    return fetch('index.html?_=' + Date.now(), { cache: 'no-store' })
-      .then(res => res.ok ? res.text() : '')
-      .then(html => {
-        const m = html && html.match(/const\s+APP_VERSION\s*=\s*['"]([^'"]+)['"]/);
-        const remoteVersion = m ? m[1] : '';
-        if (remoteVersion && currentVersion && remoteVersion !== currentVersion) {
-          const isEditing = !!document.querySelector('#mode-toggle-btn.is-editing') && !document.getElementById('editor-view')?.classList.contains('hidden');
-          if (isEditing && !forceReloadIfSame) return false;
-          try {
-            if (sessionStorage.getItem('ihn_reloaded_version') === remoteVersion) return false;
-            sessionStorage.setItem('ihn_reloaded_version', remoteVersion);
-          } catch (_) {}
-          window.forceReloadLatestVersion();
-          return true;
-        }
-        if (forceReloadIfSame) {
-          window.forceReloadLatestVersion();
-          return true;
-        }
-        return false;
-      })
-      .catch(() => false);
-  };
-
-  setTimeout(() => window.checkLatestAppVersion(false), 1200);
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') window.checkLatestAppVersion(false);
-  });
-  window.addEventListener('online', () => window.checkLatestAppVersion(false));
 }
 
 // Rust 1.90 emits reference-types and multivalue; Android System WebView < 96 cannot compile them.
@@ -569,377 +503,104 @@ async function boot() {
   else host.split.prefetch();
 }
 
-function initLiquidPills() {
-  const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)');
-  function createSpring1D(onFrame) {
-    let a = 0, b = 0, va = 0, vb = 0, ta = 0, tb = 0, bloom = 1, vbloom = 0;
-    let ready = false, raf = 0, last = 0;
-    function step(now) {
-      const dt = Math.min(0.025, Math.max(0.004, (now - last) / 1000));
-      last = now;
-      const forward = (ta + tb) * 0.5 >= (a + b) * 0.5;
-      const kLead = 430, dLead = 24.5, kTrail = 235, dTrail = 18.5;
-      const kA = forward ? kTrail : kLead, dA = forward ? dTrail : dLead;
-      const kB = forward ? kLead : kTrail, dB = forward ? dLead : dTrail;
-      va += (-kA * (a - ta) - dA * va) * dt;
-      vb += (-kB * (b - tb) - dB * vb) * dt;
-      a += va * dt;
-      b += vb * dt;
-      if (b < a + 16) b = a + 16;
-      const speed = Math.abs(va) + Math.abs(vb);
-      const dist = Math.abs(a - ta) + Math.abs(b - tb);
-      const targetBloom = 1 + Math.min(0.24, speed / 1150);
-      vbloom += (-320 * (bloom - targetBloom) - 20 * vbloom) * dt;
-      bloom = Math.max(0.94, Math.min(1.26, bloom + vbloom * dt));
-      const moving = speed > 16 || dist > 1.5 || Math.abs(bloom - 1) > 0.015;
-      onFrame(a, b - a, bloom, moving);
-      if (speed < 1.2 && dist < 0.35 && Math.abs(bloom - 1) < 0.004) {
-        a = ta; b = tb; va = 0; vb = 0; bloom = 1; vbloom = 0; raf = 0;
-        onFrame(a, b - a, 1, false);
-        return;
-      }
-      raf = requestAnimationFrame(step);
-    }
-    return {
-      set(start, size, instant) {
-        ta = start; tb = start + Math.max(16, size);
-        if (instant || !ready || (reducedMotion && reducedMotion.matches)) {
-          if (raf) { cancelAnimationFrame(raf); raf = 0; }
-          a = ta; b = tb; va = 0; vb = 0; bloom = 1; vbloom = 0; ready = true;
-          onFrame(a, b - a, 1, false);
-          return;
-        }
-        if (!raf) { last = performance.now(); raf = requestAnimationFrame(step); }
-      },
-      reset() { if (raf) { cancelAnimationFrame(raf); raf = 0; } ready = false; }
-    };
-  }
-
-  // 1. Editor #toolbar Liquid Glass active pill (vertical & horizontal)
-  const toolbar = document.getElementById('toolbar');
-  if (toolbar && !toolbar._liquidInit) {
-    toolbar._liquidInit = true;
-    const pill = document.createElement('span');
-    pill.className = 'toolbar-liquid-pill';
-    pill.setAttribute('aria-hidden', 'true');
-    const lens = document.createElement('span');
-    lens.className = 'toolbar-liquid-lens';
-    pill.appendChild(lens);
-    toolbar.insertBefore(pill, toolbar.firstChild);
-    let crossPos = 0, crossSize = 38, isHoriz = toolbar.classList.contains('horizontal'), hasMeasuredToolbar = false, pivotTimer = 0;
-    const tbSpring = createSpring1D((pos, size, bloom, moving) => {
-      pill.classList.toggle('is-moving', moving);
-      if (isHoriz) {
-        pill.style.width = size + 'px';
-        pill.style.height = crossSize + 'px';
-        pill.style.transform = `translate3d(${pos}px, ${crossPos}px, 0)`;
-        lens.style.transform = `scaleY(${bloom.toFixed(4)})`;
-      } else {
-        pill.style.width = crossSize + 'px';
-        pill.style.height = size + 'px';
-        pill.style.transform = `translate3d(${crossPos}px, ${pos}px, 0)`;
-        lens.style.transform = `scaleX(${bloom.toFixed(4)})`;
-      }
-    });
-    const syncToolbar = (instant) => {
-      const active = toolbar.querySelector('.tool-btn.active');
-      if (!active || toolbar.offsetParent === null || !active.offsetWidth) {
-        pill.style.opacity = '0';
-        toolbar.classList.remove('has-liquid-pill');
-        return;
-      }
-      const nextHoriz = toolbar.classList.contains('horizontal');
-      if (nextHoriz !== isHoriz) {
-        isHoriz = nextHoriz;
-        tbSpring.reset();
-        instant = true;
-        if (hasMeasuredToolbar && !(reducedMotion && reducedMotion.matches)) {
-          toolbar.classList.remove('is-pivoting-to-h', 'is-pivoting-to-v');
-          void toolbar.offsetWidth;
-          toolbar.classList.add(nextHoriz ? 'is-pivoting-to-h' : 'is-pivoting-to-v');
-          if (pivotTimer) clearTimeout(pivotTimer);
-          pivotTimer = setTimeout(() => {
-            toolbar.classList.remove('is-pivoting-to-h', 'is-pivoting-to-v');
-          }, 420);
-        }
-      }
-      hasMeasuredToolbar = true;
-      toolbar.classList.add('has-liquid-pill');
-      pill.style.opacity = '1';
-      if (isHoriz) {
-        crossPos = active.offsetTop;
-        crossSize = active.offsetHeight;
-        tbSpring.set(active.offsetLeft, active.offsetWidth, !!instant);
-      } else {
-        crossPos = active.offsetLeft;
-        crossSize = active.offsetWidth;
-        tbSpring.set(active.offsetTop, active.offsetHeight, !!instant);
-      }
-    };
-    new MutationObserver(() => syncToolbar(false)).observe(toolbar, {
-      subtree: true, attributes: true, attributeFilter: ['class']
-    });
-    const editorView = document.getElementById('editor-view');
-    if (editorView) {
-      new MutationObserver(() => requestAnimationFrame(() => syncToolbar(true))).observe(editorView, {
-        attributes: true, attributeFilter: ['class']
-      });
-    }
-    if (typeof ResizeObserver === 'function') {
-      new ResizeObserver(() => syncToolbar(true)).observe(toolbar);
-    }
-    toolbar.addEventListener('click', () => requestAnimationFrame(() => syncToolbar(false)));
-    window.addEventListener('resize', () => syncToolbar(true));
-    requestAnimationFrame(() => syncToolbar(true));
-  }
-
-  // 2. Home bottom island (.home-nav-capsule) Liquid Glass glider + touch scrubbing
-  const capsule = document.querySelector('#home-nav .home-nav-capsule');
-  if (capsule && !capsule._liquidInit) {
-    capsule._liquidInit = true;
-    const glider = document.createElement('span');
-    glider.className = 'home-nav-glider';
-    glider.setAttribute('aria-hidden', 'true');
-    const lens = document.createElement('span');
-    lens.className = 'home-nav-glider-lens';
-    glider.appendChild(lens);
-    capsule.insertBefore(glider, capsule.firstChild);
-    const homeSpring = createSpring1D((left, width, bloom, moving) => {
-      glider.classList.toggle('is-moving', moving);
-      glider.style.width = width + 'px';
-      glider.style.transform = `translate3d(${left}px, 0, 0)`;
-      lens.style.transform = `scaleY(${bloom.toFixed(4)})`;
-    });
-    const syncHome = (instant) => {
-      const active = capsule.querySelector('.home-nav-tab.is-active');
-      if (!active || capsule.offsetParent === null) {
-        glider.style.opacity = '0';
-        capsule.classList.remove('has-liquid-glider');
-        return;
-      }
-      const pillEl = active.querySelector('.home-nav-pill') || active;
-      const capRect = capsule.getBoundingClientRect();
-      const pillRect = pillEl.getBoundingClientRect();
-      if (!pillRect.width) return;
-      capsule.classList.add('has-liquid-glider');
-      glider.style.opacity = '1';
-      homeSpring.set(pillRect.left - capRect.left, pillRect.width, !!instant);
-    };
-    new MutationObserver(() => syncHome(false)).observe(capsule, {
-      subtree: true, attributes: true, attributeFilter: ['class']
-    });
-    const driveHome = document.getElementById('drive-home');
-    if (driveHome) {
-      new MutationObserver(() => requestAnimationFrame(() => syncHome(true))).observe(driveHome, {
-        attributes: true, attributeFilter: ['class', 'data-home-tab']
-      });
-    }
-    if (typeof ResizeObserver === 'function') {
-      new ResizeObserver(() => syncHome(true)).observe(capsule);
-    }
-    capsule.addEventListener('click', () => requestAnimationFrame(() => syncHome(false)));
-    window.addEventListener('resize', () => syncHome(true));
-    // Touch scrubbing across the Home island
-    let scrubbing = false;
-    capsule.addEventListener('pointerdown', (e) => {
-      if (e.pointerType === 'mouse') return;
-      scrubbing = true;
-    });
-    capsule.addEventListener('pointermove', (e) => {
-      if (!scrubbing) return;
-      const hit = document.elementFromPoint(e.clientX, e.clientY);
-      const tab = hit && hit.closest && hit.closest('.home-nav-tab');
-      if (tab && !tab.classList.contains('is-active')) tab.click();
-    });
-    window.addEventListener('pointerup', () => { scrubbing = false; });
-    window.addEventListener('pointercancel', () => { scrubbing = false; });
-    requestAnimationFrame(() => syncHome(true));
-  }
+function initLiquidPills(){
+const rm=matchMedia&&matchMedia('(prefers-reduced-motion: reduce)'),
+setCls=(el,c,on)=>{if(el.classList.contains(c)!==!!on)el.classList.toggle(c,!!on);},
+mkSpring=fn=>{
+let a=0,b=0,va=0,vb=0,ta=0,tb=0,bl=1,vbl=0,ok=0,raf=0,t0=0;
+const step=now=>{
+const dt=Math.min(.025,Math.max(.004,(now-t0)/1e3));t0=now;
+const fw=(ta+tb)*.5>=(a+b)*.5,kA=fw?235:430,dA=fw?18.5:24.5,kB=fw?430:235,dB=fw?24.5:18.5;
+va+=(-kA*(a-ta)-dA*va)*dt;vb+=(-kB*(b-tb)-dB*vb)*dt;a+=va*dt;b+=vb*dt;if(b<a+16)b=a+16;
+const sp=Math.abs(va)+Math.abs(vb),ds=Math.abs(a-ta)+Math.abs(b-tb),tb2=1+Math.min(.24,sp/1150);
+vbl+=(-320*(bl-tb2)-20*vbl)*dt;bl=Math.max(.94,Math.min(1.26,bl+vbl*dt));
+fn(a,b-a,bl,sp>16||ds>1.5||Math.abs(bl-1)>.015);
+if(sp<1.2&&ds<.35&&Math.abs(bl-1)<.004){a=ta;b=tb;va=vb=vbl=0;bl=1;raf=0;fn(a,b-a,1,0);return;}
+raf=requestAnimationFrame(step);
+};
+return{set(s,w,inst){ta=s;tb=s+Math.max(16,w);if(inst||!ok||(rm&&rm.matches)){if(raf){cancelAnimationFrame(raf);raf=0;}a=ta;b=tb;va=vb=vbl=0;bl=1;ok=1;fn(a,b-a,1,0);return;}if(!raf){t0=performance.now();raf=requestAnimationFrame(step);}},reset(){if(raf){cancelAnimationFrame(raf);raf=0;}ok=0;}};
+},
+tb=document.getElementById('toolbar');
+if(tb&&!tb._lq){
+tb._lq=1;
+const p=document.createElement('span'),ln=document.createElement('span');
+p.className='toolbar-liquid-pill';p.setAttribute('aria-hidden','true');ln.className='toolbar-liquid-lens';p.appendChild(ln);tb.insertBefore(p,tb.firstChild);
+let cx=0,cs=38,hz=tb.classList.contains('horizontal'),ms=0,pt=0,q=0,qi=0;
+const sp=mkSpring((pos,sz,bl,mv)=>{
+setCls(p,'is-moving',mv);
+if(hz){p.style.width=sz+'px';p.style.height=cs+'px';p.style.transform=`translate3d(${pos}px,${cx}px,0)`;ln.style.transform=`scaleY(${bl.toFixed(4)})`;}
+else{p.style.width=cs+'px';p.style.height=sz+'px';p.style.transform=`translate3d(${cx}px,${pos}px,0)`;ln.style.transform=`scaleX(${bl.toFixed(4)})`;}
+}),
+sync=inst=>{
+const ac=tb.querySelector('.tool-btn.active');
+if(!ac||tb.offsetParent===null||!ac.offsetWidth){p.style.opacity='0';setCls(tb,'has-liquid-pill',0);return;}
+const nh=tb.classList.contains('horizontal');
+if(nh!==hz){hz=nh;sp.reset();inst=1;if(ms&&!(rm&&rm.matches)){tb.classList.remove('is-pivoting-to-h','is-pivoting-to-v');void tb.offsetWidth;tb.classList.add(nh?'is-pivoting-to-h':'is-pivoting-to-v');clearTimeout(pt);pt=setTimeout(()=>tb.classList.remove('is-pivoting-to-h','is-pivoting-to-v'),420);}}
+ms=1;setCls(tb,'has-liquid-pill',1);p.style.opacity='1';
+if(hz){cx=ac.offsetTop;cs=ac.offsetHeight;sp.set(ac.offsetLeft,ac.offsetWidth,!!inst);}
+else{cx=ac.offsetLeft;cs=ac.offsetWidth;sp.set(ac.offsetTop,ac.offsetHeight,!!inst);}
+},
+sched=inst=>{qi=qi||!!inst;if(!q){q=requestAnimationFrame(()=>{const i=qi;q=0;qi=0;sync(i);});}};
+new MutationObserver(rs=>{if(rs.some(r=>(r.target===tb&&tb.classList.contains('horizontal')!==hz)||(r.target!==tb&&r.target!==p&&r.target!==ln&&r.target.classList?.contains('tool-btn'))))sched(0);}).observe(tb,{subtree:true,attributes:true,attributeFilter:['class']});
+const ev=document.getElementById('editor-view');
+if(ev)new MutationObserver(()=>sched(1)).observe(ev,{attributes:true,attributeFilter:['class']});
+if(typeof ResizeObserver==='function')new ResizeObserver(()=>sched(1)).observe(tb);
+tb.addEventListener('click',()=>sched(0));
+addEventListener('resize',()=>sched(1));
+sched(1);
 }
-
-function initZoomAndA4Lock() {
-  const zoomBtn = document.querySelector('[data-ih-zoom="btn"]');
-  const zoomMenu = document.querySelector('[data-ih-zoom="menu"]');
-  const slider = document.querySelector('[data-ih-zoom="slider"]');
-  const valueBtn = document.querySelector('[data-ih-zoom="value"]');
-  const a4Row = document.querySelector('[data-ih-zoom="a4-row"]');
-  const a4Toggle = document.querySelector('[data-ih-zoom="a4-toggle"]');
-  const viewport = document.getElementById('canvas-viewport');
-  const container = document.getElementById('canvas-container');
-  const toolbar = document.getElementById('toolbar');
-  if (!zoomBtn || !zoomMenu || !slider || !valueBtn || !viewport || !container) return;
-
-  let a4Locked = false;
-  let internalZooming = false;
-  try { a4Locked = localStorage.getItem('ihn_a4_lock') === '1'; } catch (_) {}
-
-  function readZoom() {
-    const tr = container.style.transform || '';
-    const m = tr.match(/scale\(([0-9.]+)\)/);
-    return m ? Math.max(0.25, Math.min(4, parseFloat(m[1]) || 1)) : 1;
-  }
-
-  function supportsA4Lock() {
-    const vpW = viewport.clientWidth || window.innerWidth;
-    return vpW >= 820;
-  }
-
-  function computeA4Zoom() {
-    const vpW = viewport.clientWidth || window.innerWidth;
-    const firstPage = container.querySelector('.page-wrapper');
-    const pageW = (firstPage && firstPage.offsetWidth) ? firstPage.offsetWidth : 794;
-    // Fit A4 page width comfortably with breathing margin for the left toolbar
-    return Math.max(0.85, Math.min(1.15, (vpW - 110) / pageW));
-  }
-
-  function applyZoomTarget(targetZoom) {
-    const clamped = Math.max(0.5, Math.min(2.5, targetZoom));
-    const rect = viewport.getBoundingClientRect();
-    const cx = rect.left + rect.width * 0.5;
-    const cy = rect.top + rect.height * 0.5;
-    internalZooming = true;
-    try {
-      for (let i = 0; i < 40; i++) {
-        const cur = readZoom();
-        const ratio = clamped / cur;
-        if (Math.abs(ratio - 1) < 0.032) break;
-        const deltaY = ratio > 1 ? -10 : 10;
-        viewport.dispatchEvent(new WheelEvent('wheel', {
-          bubbles: true, cancelable: true, ctrlKey: true, deltaY, clientX: cx, clientY: cy
-        }));
-      }
-    } finally {
-      internalZooming = false;
-    }
-    syncZoomUi();
-  }
-
-  function syncZoomUi() {
-    const canA4 = supportsA4Lock();
-    if (a4Row) a4Row.classList.toggle('hidden', !canA4);
-    const effectiveLock = canA4 && a4Locked;
-    if (a4Toggle) a4Toggle.checked = effectiveLock;
-    slider.disabled = effectiveLock;
-    zoomBtn.classList.toggle('is-a4-locked', effectiveLock);
-    const pct = Math.round(readZoom() * 100);
-    if (document.activeElement !== slider) slider.value = String(Math.max(50, Math.min(250, pct)));
-    valueBtn.textContent = effectiveLock ? 'A4' : (pct + '%');
-  }
-
-  function positionMenu() {
-    const btnRect = zoomBtn.getBoundingClientRect();
-    const isHoriz = toolbar && toolbar.classList.contains('horizontal');
-    const menuW = 216, menuH = supportsA4Lock() ? 92 : 54;
-    let left, top;
-    if (isHoriz) {
-      left = Math.max(12, Math.min(window.innerWidth - menuW - 12, btnRect.left + btnRect.width / 2 - menuW / 2));
-      top = btnRect.top > menuH + 24 ? btnRect.top - menuH - 10 : btnRect.bottom + 10;
-    } else {
-      left = btnRect.left < window.innerWidth / 2 ? btnRect.right + 12 : btnRect.left - menuW - 12;
-      left = Math.max(12, Math.min(window.innerWidth - menuW - 12, left));
-      top = Math.max(60, Math.min(window.innerHeight - menuH - 16, btnRect.top - 10));
-    }
-    zoomMenu.style.left = Math.round(left) + 'px';
-    zoomMenu.style.top = Math.round(top) + 'px';
-  }
-
-  function setMenuOpen(open) {
-    zoomMenu.classList.toggle('visible', open);
-    zoomMenu.setAttribute('aria-hidden', open ? 'false' : 'true');
-    zoomBtn.classList.toggle('is-zoom-open', open);
-    zoomBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    if (open) {
-      const eraserMenu = document.getElementById('eraser-menu');
-      if (eraserMenu) eraserMenu.classList.remove('visible');
-      syncZoomUi();
-      positionMenu();
-    }
-  }
-
-  zoomBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    setMenuOpen(!zoomMenu.classList.contains('visible'));
-  });
-  document.addEventListener('pointerdown', (e) => {
-    if (!zoomMenu.classList.contains('visible')) return;
-    if (zoomMenu.contains(e.target) || zoomBtn.contains(e.target)) return;
-    setMenuOpen(false);
-  });
-
-  slider.addEventListener('input', () => {
-    if (a4Locked && supportsA4Lock()) return;
-    const pct = Number(slider.value) || 100;
-    valueBtn.textContent = pct + '%';
-    applyZoomTarget(pct / 100);
-  });
-  valueBtn.addEventListener('click', () => {
-    if (a4Locked && supportsA4Lock()) {
-      applyZoomTarget(computeA4Zoom());
-    } else {
-      applyZoomTarget(1.0);
-    }
-  });
-  if (a4Toggle) {
-    a4Toggle.addEventListener('change', () => {
-      a4Locked = !!a4Toggle.checked;
-      try { localStorage.setItem('ihn_a4_lock', a4Locked ? '1' : '0'); } catch (_) {}
-      if (a4Locked && supportsA4Lock()) {
-        applyZoomTarget(computeA4Zoom());
-      } else {
-        syncZoomUi();
-      }
-    });
-  }
-
-  // Block pinch-zoom & Ctrl+wheel when A4 lock is active (preserving 1-finger vertical scroll & pen)
-  viewport.addEventListener('wheel', (e) => {
-    if (internalZooming || !(a4Locked && supportsA4Lock())) return;
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-    }
-  }, { capture: true, passive: false });
-
-  const activeTouchIds = new Set();
-  viewport.addEventListener('pointerdown', (e) => {
-    if (e.pointerType !== 'touch') return;
-    activeTouchIds.add(e.pointerId);
-    if (a4Locked && supportsA4Lock() && activeTouchIds.size >= 2) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-    }
-  }, { capture: true, passive: false });
-  viewport.addEventListener('pointermove', (e) => {
-    if (e.pointerType !== 'touch') return;
-    if (a4Locked && supportsA4Lock() && activeTouchIds.size >= 2) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-    }
-  }, { capture: true, passive: false });
-  const dropTouch = (e) => { if (e.pointerType === 'touch') activeTouchIds.delete(e.pointerId); };
-  window.addEventListener('pointerup', dropTouch, true);
-  window.addEventListener('pointercancel', dropTouch, true);
-
-  new MutationObserver(() => syncZoomUi()).observe(container, { attributes: true, attributeFilter: ['style'] });
-  const editorView = document.getElementById('editor-view');
-  if (editorView) {
-    new MutationObserver(() => {
-      if (!editorView.classList.contains('hidden')) {
-        syncZoomUi();
-        if (a4Locked && supportsA4Lock()) setTimeout(() => applyZoomTarget(computeA4Zoom()), 180);
-      } else {
-        setMenuOpen(false);
-      }
-    }).observe(editorView, { attributes: true, attributeFilter: ['class'] });
-  }
-  window.addEventListener('resize', () => {
-    syncZoomUi();
-    if (zoomMenu.classList.contains('visible')) positionMenu();
-    if (a4Locked && supportsA4Lock() && editorView && !editorView.classList.contains('hidden')) {
-      applyZoomTarget(computeA4Zoom());
-    }
-  });
-  syncZoomUi();
+const cap=document.querySelector('#home-nav .home-nav-capsule');
+if(cap&&!cap._lq){
+cap._lq=1;
+const g=document.createElement('span'),ln=document.createElement('span');
+g.className='home-nav-glider';g.setAttribute('aria-hidden','true');ln.className='home-nav-glider-lens';g.appendChild(ln);cap.insertBefore(g,cap.firstChild);
+let q=0,qi=0,sc=0;
+const sp=mkSpring((l,w,bl,mv)=>{setCls(g,'is-moving',mv);g.style.width=w+'px';g.style.transform=`translate3d(${l}px,0,0)`;ln.style.transform=`scaleY(${bl.toFixed(4)})`;}),
+sync=inst=>{
+const ac=cap.querySelector('.home-nav-tab.is-active');
+if(!ac||cap.offsetParent===null){g.style.opacity='0';setCls(cap,'has-liquid-glider',0);return;}
+const pe=ac.querySelector('.home-nav-pill')||ac,cr=cap.getBoundingClientRect(),pr=pe.getBoundingClientRect();
+if(!pr.width)return;
+setCls(cap,'has-liquid-glider',1);g.style.opacity='1';sp.set(pr.left-cr.left,pr.width,!!inst);
+},
+sched=inst=>{qi=qi||!!inst;if(!q){q=requestAnimationFrame(()=>{const i=qi;q=0;qi=0;sync(i);});}};
+new MutationObserver(rs=>{if(rs.some(r=>r.target!==cap&&r.target!==g&&r.target!==ln&&r.target.classList?.contains('home-nav-tab')))sched(0);}).observe(cap,{subtree:true,attributes:true,attributeFilter:['class']});
+const dh=document.getElementById('drive-home');
+if(dh)new MutationObserver(()=>sched(1)).observe(dh,{attributes:true,attributeFilter:['class','data-home-tab']});
+if(typeof ResizeObserver==='function')new ResizeObserver(()=>sched(1)).observe(cap);
+cap.addEventListener('click',()=>sched(0));
+addEventListener('resize',()=>sched(1));
+cap.addEventListener('pointerdown',e=>{if(e.pointerType!=='mouse')sc=1;});
+cap.addEventListener('pointermove',e=>{if(!sc)return;const h=document.elementFromPoint(e.clientX,e.clientY),t=h&&h.closest&&h.closest('.home-nav-tab');if(t&&!t.classList.contains('is-active'))t.click();});
+addEventListener('pointerup',()=>{sc=0;});addEventListener('pointercancel',()=>{sc=0;});
+sched(1);
 }
-
+}
+function initZoomAndA4Lock(){
+const q=s=>document.querySelector(s),zb=q('[data-ih-zoom="btn"]'),zm=q('[data-ih-zoom="menu"]'),sl=q('[data-ih-zoom="slider"]'),vb=q('[data-ih-zoom="value"]'),ar=q('[data-ih-zoom="a4-row"]'),at=q('[data-ih-zoom="a4-toggle"]'),vp=document.getElementById('canvas-viewport'),ct=document.getElementById('canvas-container'),tb=document.getElementById('toolbar');
+if(!zb||!zm||!sl||!vb||!vp||!ct)return;
+let lk=0,iz=0;try{lk=localStorage.getItem('ihn_a4_lock')==='1';}catch(_){}
+const rz=()=>{const m=(ct.style.transform||'').match(/scale\(([0-9.]+)\)/);return m?Math.max(.25,Math.min(4,parseFloat(m[1])||1)):1;},
+canA4=()=>(vp.clientWidth||innerWidth)>=820,
+a4z=()=>{const pw=ct.querySelector('.page-wrapper')?.offsetWidth||794;return Math.max(.85,Math.min(1.15,((vp.clientWidth||innerWidth)-110)/pw));},
+apply=tz=>{const c=Math.max(.5,Math.min(2.5,tz)),r=vp.getBoundingClientRect(),cx=r.left+r.width*.5,cy=r.top+r.height*.5;iz=1;try{for(let i=0;i<40;i++){const cur=rz(),rt=c/cur;if(Math.abs(rt-1)<.032)break;vp.dispatchEvent(new WheelEvent('wheel',{bubbles:true,cancelable:true,ctrlKey:true,deltaY:rt>1?-10:10,clientX:cx,clientY:cy}));}}finally{iz=0;}sync();},
+sync=()=>{const ok=canA4(),el=ok&&lk;if(ar)ar.classList.toggle('hidden',!ok);if(at)at.checked=el;sl.disabled=el;zb.classList.toggle('is-a4-locked',el);const p=Math.round(rz()*100);if(document.activeElement!==sl)sl.value=String(Math.max(50,Math.min(250,p)));vb.textContent=el?'A4':p+'%';},
+pos=()=>{const r=zb.getBoundingClientRect(),hz=tb&&tb.classList.contains('horizontal'),mw=216,mh=canA4()?92:54;let l,t;if(hz){l=Math.max(12,Math.min(innerWidth-mw-12,r.left+r.width/2-mw/2));t=r.top>mh+24?r.top-mh-10:r.bottom+10;}else{l=Math.max(12,Math.min(innerWidth-mw-12,r.left<innerWidth/2?r.right+12:r.left-mw-12));t=Math.max(60,Math.min(innerHeight-mh-16,r.top-10));}zm.style.left=Math.round(l)+'px';zm.style.top=Math.round(t)+'px';},
+setOpen=o=>{zm.classList.toggle('visible',o);zm.setAttribute('aria-hidden',o?'false':'true');zb.classList.toggle('is-zoom-open',o);zb.setAttribute('aria-expanded',o?'true':'false');if(o){document.getElementById('eraser-menu')?.classList.remove('visible');sync();pos();}};
+zb.addEventListener('click',e=>{e.stopPropagation();setOpen(!zm.classList.contains('visible'));});
+document.addEventListener('pointerdown',e=>{if(zm.classList.contains('visible')&&!zm.contains(e.target)&&!zb.contains(e.target))setOpen(false);});
+sl.addEventListener('input',()=>{if(lk&&canA4())return;const p=Number(sl.value)||100;vb.textContent=p+'%';apply(p/100);});
+vb.addEventListener('click',()=>apply(lk&&canA4()?a4z():1));
+if(at)at.addEventListener('change',()=>{lk=!!at.checked;try{localStorage.setItem('ihn_a4_lock',lk?'1':'0');}catch(_){}if(lk&&canA4())apply(a4z());else sync();});
+vp.addEventListener('wheel',e=>{if(!iz&&lk&&canA4()&&(e.ctrlKey||e.metaKey)){e.preventDefault();e.stopImmediatePropagation();}},{capture:true,passive:false});
+const ts=new Set(),blk=e=>{if(e.pointerType==='touch'&&lk&&canA4()&&ts.size>=2){e.preventDefault();e.stopImmediatePropagation();}};
+vp.addEventListener('pointerdown',e=>{if(e.pointerType==='touch'){ts.add(e.pointerId);blk(e);}},{capture:true,passive:false});
+vp.addEventListener('pointermove',blk,{capture:true,passive:false});
+const dt=e=>{if(e.pointerType==='touch')ts.delete(e.pointerId);};addEventListener('pointerup',dt,true);addEventListener('pointercancel',dt,true);
+new MutationObserver(()=>sync()).observe(ct,{attributes:true,attributeFilter:['style']});
+const ev=document.getElementById('editor-view');
+if(ev)new MutationObserver(()=>{if(!ev.classList.contains('hidden')){sync();if(lk&&canA4())setTimeout(()=>apply(a4z()),180);}else setOpen(false);}).observe(ev,{attributes:true,attributeFilter:['class']});
+addEventListener('resize',()=>{sync();if(zm.classList.contains('visible'))pos();if(lk&&canA4()&&ev&&!ev.classList.contains('hidden'))apply(a4z());});
+sync();
+}
 boot().catch(error => console.error(error));
