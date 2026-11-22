@@ -1,7 +1,7 @@
 'use strict';
 // Inhouse Notes 6 service worker (ARCHITECTURE §12): shell cache only. It stays a classic script at the URL every
 // 5.x page registered, and keeps the VERSION line that boot.js reads to detect a published release.
-const VERSION='6.2.22';
+const VERSION='6.2.23';
 const CACHE=`inhouse-shell-${VERSION}`;
 // One entry per window that announced itself as v6; survives worker restarts.
 const CLIENTS='ihn6-clients';
