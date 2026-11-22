@@ -248,9 +248,9 @@ export default function install(host) {
       const ghost = node?.classList?.contains('drive-folder-ghost') ? node : node?.closest?.('.drive-folder-ghost');
       if (ghost) {
         const opening = ghost.dataset.direction !== 'close';
-        const dur = opening ? 500 : 450;
+        const dur = opening ? 580 : 500;
         if (node === ghost) {
-          options = { ...options, duration: dur, easing: opening ? 'cubic-bezier(0.20, 0.95, 0.30, 1)' : 'cubic-bezier(0.28, 0.05, 0.22, 1)' };
+          options = { ...options, duration: dur, easing: opening ? 'cubic-bezier(0.42, 0, 0.18, 1)' : 'cubic-bezier(0.36, 0, 0.20, 1)' };
           const sheets = ghost.querySelector(':scope > .drive-folder-sheets');
           if (sheets) {
             const slot = document.createElement('div');
@@ -260,42 +260,52 @@ export default function install(host) {
             ghost._sheetsAnim = sheets.animate(
               opening
                 ? [
-                    { transform: 'translateY(0%)', offset: 0, easing: 'cubic-bezier(0.32, 0, 0.2, 1)' },
-                    { transform: 'translateY(55%)', offset: 0.45 },
-                    { transform: 'translateY(55%)', offset: 1 }
+                    { transform: 'translateY(0%)', offset: 0, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' },
+                    { transform: 'translateY(60%)', offset: 0.48 },
+                    { transform: 'translateY(60%)', offset: 1 }
                   ]
                 : [
-                    { transform: 'translateY(55%)', offset: 0 },
-                    { transform: 'translateY(55%)', offset: 0.55, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+                    { transform: 'translateY(60%)', offset: 0 },
+                    { transform: 'translateY(60%)', offset: 0.52, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' },
                     { transform: 'translateY(0%)', offset: 1 }
                   ],
               { duration: dur, fill: 'both' }
             );
           }
         } else if (node.classList.contains('drive-folder-cover')) {
-          const hd = 0.68;
           const closedT = (opening ? keyframes?.[0]?.transform : keyframes?.[1]?.transform) || 'rotateY(0deg)';
           keyframes = opening
             ? [
-                { transform: closedT, opacity: 1, offset: 0, easing: 'cubic-bezier(0.28, 0.05, 0.48, 1)' },
-                { transform: 'rotateY(-96deg)', opacity: 1, offset: hd * 0.84, easing: 'linear' },
-                { transform: 'rotateY(-118deg)', opacity: 0, offset: hd },
-                { transform: 'rotateY(-118deg)', opacity: 0, offset: 1 }
+                { transform: closedT, offset: 0, easing: 'cubic-bezier(0.38, 0, 0.55, 1)' },
+                { transform: 'rotateY(-92deg)', offset: 0.72 },
+                { transform: 'rotateY(-92deg)', offset: 1 }
               ]
             : [
-                { transform: 'rotateY(-118deg)', opacity: 0, offset: 0 },
-                { transform: 'rotateY(-118deg)', opacity: 0, offset: 1 - hd, easing: 'linear' },
-                { transform: 'rotateY(-96deg)', opacity: 1, offset: 1 - hd * 0.84, easing: 'cubic-bezier(0.24, 0.1, 0.22, 1)' },
-                { transform: closedT, opacity: 1, offset: 1 }
+                { transform: 'rotateY(-92deg)', offset: 0 },
+                { transform: 'rotateY(-92deg)', offset: 0.24, easing: 'cubic-bezier(0.22, 0.68, 0.22, 1)' },
+                { transform: closedT, offset: 1 }
               ];
           options = { duration: dur, fill: 'both' };
         } else if (node.classList.contains('drive-folder-print') || node.classList.contains('drive-card-menu')) {
-          keyframes = [{ opacity: 1 }, { opacity: 1 }];
-          options = { duration: dur, fill: 'both' };
+          set(h, null);
+          return;
         } else if (node.classList.contains('drive-folder-view')) {
-          options = { ...options, duration: dur };
-          if (!opening) {
-            keyframes = [{ offset: 0, opacity: 1 }, { offset: 0.36, opacity: 0 }, { offset: 1, opacity: 0 }];
+          const contents = node.parentElement;
+          const bg = node.style.getPropertyValue('--folder-color');
+          if (contents?.classList?.contains('drive-folder-contents')) {
+            if (bg) contents.style.setProperty('--contents-bg', bg);
+            if (opening) {
+              contents.style.opacity = '0';
+              keyframes = [{ opacity: 1 }, { opacity: 1 }];
+              options = { ...options, duration: dur };
+            } else {
+              ghost._contentsAnim = contents.animate(
+                [{ offset: 0, opacity: 1 }, { offset: 0.38, opacity: 0 }, { offset: 1, opacity: 0 }],
+                { duration: dur, easing: 'linear', fill: 'both' }
+              );
+              set(h, null);
+              return;
+            }
           }
         }
       }
@@ -306,6 +316,7 @@ export default function install(host) {
       quiet(() => {
         const ghost = animation?.effect?.target;
         if (ghost?._sheetsAnim) { ghost._sheetsAnim.cancel(); ghost._sheetsAnim = null; }
+        if (ghost?._contentsAnim) { ghost._contentsAnim.cancel(); ghost._contentsAnim = null; }
         animation?.cancel();
       });
     },
@@ -326,17 +337,26 @@ export default function install(host) {
     [DOM | 30]: r => {
       const animation = nodes[r.u32()], play = r.u8(), keyframes = r.ostr(), sync = nodes[r.u32()];
       quiet(() => {
-        if (keyframes !== null) {
-          let kf = JSON.parse(keyframes);
-          const target = animation?.effect?.target;
-          if (target?.classList?.contains('drive-folder-view') && target.closest('.drive-folder-ghost[data-direction="open"]')) {
-            const elapsed = sync ? Math.max(0, Math.min(1, (Number(sync.currentTime) || 0) / 500)) : 0;
-            const from = Math.min(0.85, Math.max(0.14, elapsed + 0.02));
-            const to = Math.min(1, Math.max(0.54, from + 0.18));
-            kf = [{ offset: 0, opacity: 0 }, { offset: from, opacity: 0 }, { offset: to, opacity: 1 }, { offset: 1, opacity: 1 }];
+        const target = animation?.effect?.target;
+        const ghost = target?.classList?.contains('drive-folder-view') ? target.closest('.drive-folder-ghost[data-direction="open"]') : null;
+        if (ghost && keyframes !== null) {
+          const contents = target.parentElement;
+          const elapsed = sync ? Math.max(0, Math.min(1, (Number(sync.currentTime) || 0) / 580)) : 0;
+          const from = Math.min(0.82, Math.max(0.18, elapsed + 0.02));
+          const to = Math.min(1, Math.max(0.58, from + 0.22));
+          const kf = [{ offset: 0, opacity: 0 }, { offset: from, opacity: 0 }, { offset: to, opacity: 1 }, { offset: 1, opacity: 1 }];
+          animation.effect.setKeyframes([{ opacity: 1 }, { opacity: 1 }]);
+          if (play === 1) animation.play();
+          if (sync) animation.startTime = sync.startTime;
+          if (contents?.classList?.contains('drive-folder-contents')) {
+            if (ghost._contentsAnim) ghost._contentsAnim.cancel();
+            const cAnim = contents.animate(kf, { duration: 580, easing: 'linear', fill: 'both' });
+            if (sync && sync.startTime != null) cAnim.startTime = sync.startTime;
+            ghost._contentsAnim = cAnim;
           }
-          animation?.effect?.setKeyframes(kf);
+          return;
         }
+        if (keyframes !== null) animation?.effect?.setKeyframes(JSON.parse(keyframes));
         if (play === 1) animation?.play();
         else if (play === 2) animation?.pause();
         if (sync && animation) animation.startTime = sync.startTime;
