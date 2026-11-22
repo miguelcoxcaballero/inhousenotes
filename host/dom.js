@@ -6,11 +6,11 @@ const KIND_DOM = 1, KIND_POINTER = 2;
 const POINTER_TYPE = { mouse: 1, pen: 2, touch: 3 };
 const HAS_LINEAR = typeof CSS !== 'undefined' && CSS.supports?.('animation-timing-function', 'linear(0, 1)');
 const SPRING_OPEN = HAS_LINEAR
-  ? 'linear(0,0.0345,0.119,0.2308,0.353,0.4743,0.5871,0.6871,0.7724,0.8426,0.8984,0.9413,0.973,0.9954,1.0103,1.0193,1.024,1.0255,1.0248,1.0227,1.02,1.0169,1.0138,1.0108,1.0083,1.006,1.0042,1.0027,1.0016,1.0008,1.0002,0.9998,1)'
-  : 'cubic-bezier(0.22, 1.12, 0.32, 1)';
+  ? 'linear(0,0.0245,0.0876,0.1758,0.2783,0.3863,0.4933,0.5946,0.6871,0.7689,0.839,0.8975,0.9448,0.9817,1.0094,1.0291,1.0421,1.0495,1.0526,1.0525,1.0499,1.0457,1.0406,1.0349,1.0292,1.0237,1.0186,1.014,1.01,1.0067,1.0039,1.0017,1.0001,0.9989,0.998,0.9975,1)'
+  : 'cubic-bezier(0.20, 1.18, 0.32, 1)';
 const SPRING_CLOSE = HAS_LINEAR
-  ? 'linear(0,0.029,0.1021,0.2014,0.3133,0.4277,0.5377,0.6385,0.7276,0.8037,0.8667,0.9173,0.9566,0.986,1.007,1.021,1.0295,1.0337,1.0348,1.0336,1.031,1.0275,1.0235,1.0196,1.0158,1.0123,1.0092,1.0066,1.0045,1.0027,1.0014,1.0004,1)'
-  : 'cubic-bezier(0.22, 1.12, 0.32, 1)';
+  ? 'linear(0,0.0217,0.078,0.1576,0.2511,0.351,0.4515,0.5484,0.6385,0.7199,0.7916,0.8531,0.9046,0.9466,0.9797,1.005,1.0235,1.0362,1.0441,1.0481,1.0491,1.0477,1.0448,1.0408,1.0362,1.0312,1.0263,1.0216,1.0172,1.0133,1.0098,1.0069,1.0044,1.0024,1.0008,0.9996,1)'
+  : 'cubic-bezier(0.20, 1.18, 0.32, 1)';
 
 export default function install(host) {
   // Handles are chosen by Rust: 1..4 fixed, 16.. the ids of index.html, 1024.. dynamic.
@@ -255,7 +255,7 @@ export default function install(host) {
       const ghost = node?.classList?.contains('drive-folder-ghost') ? node : node?.closest?.('.drive-folder-ghost');
       if (ghost) {
         const opening = ghost.dataset.direction !== 'close';
-        const dur = opening ? 560 : 500;
+        const dur = opening ? 580 : 520;
         if (node === ghost) {
           options = { ...options, duration: dur, easing: opening ? SPRING_OPEN : SPRING_CLOSE };
           if (opening) {
@@ -277,7 +277,8 @@ export default function install(host) {
                   ]
                 : [
                     { transform: 'translateY(60%)', offset: 0 },
-                    { transform: 'translateY(60%)', offset: 0.54, easing: 'cubic-bezier(0.18, 1.28, 0.32, 1)' },
+                    { transform: 'translateY(60%)', offset: 0.50, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+                    { transform: 'translateY(-14%)', offset: 0.82, easing: 'cubic-bezier(0.34, 0, 0.45, 1)' },
                     { transform: 'translateY(0%)', offset: 1 }
                   ],
               { duration: dur, fill: 'both' }
@@ -287,13 +288,13 @@ export default function install(host) {
           const closedT = (opening ? keyframes?.[0]?.transform : keyframes?.[1]?.transform) || 'rotateY(0deg)';
           keyframes = opening
             ? [
-                { transform: closedT, offset: 0, easing: 'cubic-bezier(0.28, 0, 0.46, 1)' },
-                { transform: 'rotateY(-92deg)', offset: 0.64 },
+                { transform: closedT, offset: 0, easing: 'cubic-bezier(0.26, 0, 0.46, 1)' },
+                { transform: 'rotateY(-92deg)', offset: 0.62 },
                 { transform: 'rotateY(-92deg)', offset: 1 }
               ]
             : [
                 { transform: 'rotateY(-92deg)', offset: 0 },
-                { transform: 'rotateY(-92deg)', offset: 0.36, easing: 'cubic-bezier(0.18, 1.12, 0.30, 1)' },
+                { transform: 'rotateY(-92deg)', offset: 0.34, easing: 'cubic-bezier(0.18, 1.18, 0.30, 1)' },
                 { transform: closedT, offset: 1 }
               ];
           options = { duration: dur, fill: 'both' };
@@ -351,7 +352,7 @@ export default function install(host) {
         const ghost = target?.classList?.contains('drive-folder-view') ? target.closest('.drive-folder-ghost[data-direction="open"]') : null;
         if (ghost && keyframes !== null) {
           const contents = target.parentElement;
-          const elapsed = sync ? Math.max(0, Math.min(1, (Number(sync.currentTime) || 0) / 560)) : 0;
+          const elapsed = sync ? Math.max(0, Math.min(1, (Number(sync.currentTime) || 0) / 580)) : 0;
           const from = Math.min(0.82, Math.max(0.16, elapsed + 0.02));
           const to = Math.min(1, Math.max(0.54, from + 0.20));
           const kf = [{ offset: 0, opacity: 0 }, { offset: from, opacity: 0 }, { offset: to, opacity: 1 }, { offset: 1, opacity: 1 }];
@@ -360,7 +361,7 @@ export default function install(host) {
           if (sync) animation.startTime = sync.startTime;
           if (contents?.classList?.contains('drive-folder-contents')) {
             if (ghost._contentsAnim) ghost._contentsAnim.cancel();
-            const cAnim = contents.animate(kf, { duration: 560, easing: 'linear', fill: 'both' });
+            const cAnim = contents.animate(kf, { duration: 580, easing: 'linear', fill: 'both' });
             if (sync && sync.startTime != null) cAnim.startTime = sync.startTime;
             ghost._contentsAnim = cAnim;
           }

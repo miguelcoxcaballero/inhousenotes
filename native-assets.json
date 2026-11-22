@@ -12,8 +12,8 @@
       "mime": "application/javascript"
     },
     "/host/dom.js": {
-      "sha256": "38058762b5b903e90c358b1a718bee12dc0b6589a71791d98348345f021ce269",
-      "size": 19464,
+      "sha256": "356b7adf6d22aaf9ca86f87ae8b895e9771777480a4cc135147d1ff5bc624296",
+      "size": 19632,
       "mime": "application/javascript"
     },
     "/host/export-worker.js": {
