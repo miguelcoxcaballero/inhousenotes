@@ -1,7 +1,7 @@
 'use strict';
 // Inhouse Notes 6 service worker (ARCHITECTURE §12): shell cache only. It stays a classic script at the URL every
 // 5.x page registered, and keeps the VERSION line that boot.js reads to detect a published release.
-const VERSION='6.2.26';
+const VERSION='6.2.27';
 const CACHE=`inhouse-shell-${VERSION}`;
 // One entry per window that announced itself as v6; survives worker restarts.
 const CLIENTS='ihn6-clients';
@@ -11,7 +11,8 @@ if(['127.0.0.1','localhost','[::1]'].includes(self.location.hostname))self.INHOU
 self.addEventListener('install',event=>event.waitUntil((async()=>{
     const cache=await caches.open(CACHE);
     // Installation is atomic: an incomplete shell never displaces a working one.
-    await cache.addAll(self.INHOUSE_OFFLINE_ASSETS);
+    // Bypass the browser's HTTP disk cache so a new shell never inherits stale JS/CSS from an earlier release.
+    await Promise.all(self.INHOUSE_OFFLINE_ASSETS.map(async p=>{const r=await fetch(new Request(p,{cache:'reload'}));if(!r.ok)throw new Error(p);await cache.put(p,r);}));
     // Take over right away instead of waiting for every tab to close, so a
     // reload shows the release that was just published.
     await self.skipWaiting();
