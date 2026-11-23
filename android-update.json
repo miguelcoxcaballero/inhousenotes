@@ -1,0 +1,10 @@
+{
+  "version": "1.0.29",
+  "versionCode": 30,
+  "required": true,
+  "apkSizeBytes": 6593065,
+  "apkSha256": "11263a277e03941cb884cea8a1e079b42a4d94a3fc98cbe11de3c25bad30efcc",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.29/inhouse-notes-release-v1.0.29.apk",
+  "publishedAppVersion": "5.19.0",
+  "releaseNotes": "Shared Google login across apps."
+}
